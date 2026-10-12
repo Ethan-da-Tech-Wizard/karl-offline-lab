@@ -209,3 +209,13 @@ speculative decoding, and uses a circuit breaker to avoid repeated OOM reloads.
 - ✅ Milestone 5: Hackable Decoupling
 - ✅ Milestone 6: Agentic Loop (Autonomous Self-Iteration)
 - ✅ Milestone 7: Interactive Session Branching (Conversation Tree)
+
+---
+
+## License
+
+Karl is released under the [GNU Affero General Public License v3.0](LICENSE) (AGPL-3.0). This is compatible with its GPL- and AGPL-licensed dependencies, PyQt6 and PyMuPDF. If you run a modified Karl as a network service, the AGPL requires you to offer your users the source code of your modified version.
+
+The VS Code extension in `oss/vss_extension/` keeps its own MIT license.
+
+**Models** are downloaded separately and are not part of this repository. Each model has its own license, and they differ (some Llama-based models use the Llama community license). Check the model page before using or redistributing one.
