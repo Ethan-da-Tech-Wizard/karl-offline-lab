@@ -320,7 +320,9 @@ class WebSocketServerManager:
         # previously had no protection against reading another user's files.
         try:
             homes_root = os.path.dirname(user_home) or "/home"
-            if os.path.isdir(homes_root):
+            # If $HOME is /root, its parent is "/" -- not a homes directory.
+            # Skipping it avoids blocking every top-level path (e.g. /tmp).
+            if homes_root != os.sep and os.path.isdir(homes_root):
                 for entry in os.listdir(homes_root):
                     candidate = os.path.join(homes_root, entry)
                     if os.path.isdir(candidate) and candidate != user_home:
