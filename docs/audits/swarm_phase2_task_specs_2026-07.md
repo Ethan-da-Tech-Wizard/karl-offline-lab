@@ -14,7 +14,7 @@ Implement token-efficient prompt compression directly into Karl's live LLM gener
 ### Task 1: Native Machine-Speak Prompting
 
 #### 1. Modify prompt construction
-- **Target File**: [interaction_loop.py](file:///home/ethan/karl/core/interaction_loop.py)
+- **Target File**: [interaction_loop.py](../../core/interaction_loop.py)
 - **Imports**: Add `from app.utils.compactor import compact_trace_for_ai` at the top.
 - **Interface updates**:
   - In `build_prompt(system_prompt, chat_history)`:
@@ -73,7 +73,7 @@ Implement token-efficient prompt compression directly into Karl's live LLM gener
     ```
 
 #### 2. Wire speculative decoding in ModelLoader
-- **Target File**: [model_loader.py](file:///home/ethan/karl/app/engine/model_loader.py)
+- **Target File**: [model_loader.py](../../app/engine/model_loader.py)
 - **Loader integration**:
   - Locate `get_instance(...)` method.
   - Read `data/draft_model.json` to determine if a draft model is configured.
@@ -123,7 +123,7 @@ Automatically extract structured SFT training datasets from the local codebase s
 
 ### Task 2: Dataset Merging & Quality Validation
 
-- **Target File**: [curate_code_datasets.py](file:///home/ethan/karl/tools/curate_code_datasets.py)
+- **Target File**: [curate_code_datasets.py](../../tools/curate_code_datasets.py)
 - **Features to implement**:
   - Add a dataset merger function `merge_datasets(curated_path: Path, synthetic_path: Path, output_path: Path)`:
     - Read curated examples from `data/training/code/sft.jsonl` and synthetic examples from `data/training/code/synthetic_code_sft.jsonl`.
@@ -132,7 +132,7 @@ Automatically extract structured SFT training datasets from the local codebase s
     - **Token Length Guard**: Estimate token count using a character length heuristic (e.g. `chars // 4`). If the combined SFT prompt + response exceeds 3,500 tokens, discard it to prevent OOM errors during GPU training.
   - Merge the verified datasets, shuffle them randomly, and save the output to `data/training/code/merged_sft.jsonl`.
 
-- **Target File**: [auto_train_lora.py](file:///home/ethan/karl/tools/auto_train_lora.py)
+- **Target File**: [auto_train_lora.py](../../tools/auto_train_lora.py)
   - Change the default `--dataset` command-line argument path to point to `data/training/code/merged_sft.jsonl`.
   - Print a configuration report before launching the trainer, showing total validated examples, training epochs, batch size, and target attention projection modules.
 
