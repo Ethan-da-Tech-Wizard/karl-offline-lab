@@ -1,6 +1,6 @@
 # License review — Karl — Offline LLM Lab
 
-Reviewed 2026-10-12. Original project code retains **MIT** terms in [LICENSE](../LICENSE).
+Reviewed 2026-10-12. Original project code uses **AGPL-3.0** terms in [LICENSE](../LICENSE).
 
 The owner selected MIT for previously unlicensed original code. Existing licenses were preserved. This choice does not relicense copied code, dependencies, datasets, model weights, fonts, logos, or game assets.
 
@@ -39,7 +39,7 @@ The owner selected MIT for previously unlicensed original code. Existing license
 
 ## Project-specific considerations
 
-PyQt6 is GPL-3.0-only or commercially licensed, and PyMuPDF is AGPL/commercial ([PyQt terms](https://www.riverbankcomputing.com/commercial/license-faq), [PyMuPDF terms](https://pymupdf.readthedocs.io/en/latest/about.html#license-and-copyright)). An MIT source license does not erase those obligations. Choose and satisfy a compatible distribution route before shipping a combined installer or hosted service. Model licenses also apply separately.
+PyQt6 is GPL-3.0-only or commercially licensed, and PyMuPDF is AGPL/commercial ([PyQt terms](https://www.riverbankcomputing.com/commercial/license-faq), [PyMuPDF terms](https://pymupdf.readthedocs.io/en/latest/about.html#license-and-copyright)). The AGPL project license does not remove dependency-specific obligations. Choose and satisfy a compatible distribution route before shipping a combined installer or hosted service. Model licenses also apply separately.
 
 ## Remaining work before binary distribution
 
