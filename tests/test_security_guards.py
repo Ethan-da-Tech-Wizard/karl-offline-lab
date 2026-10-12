@@ -75,6 +75,17 @@ class TestIsSafePath(unittest.TestCase):
         # caught by the realpath check in _is_safe_path.
         self.assertTrue(self.server._is_safe_path("/tmp"))
 
+    def test_root_home_keeps_tmp_available_and_sensitive_paths_blocked(self):
+        expanduser = os.path.expanduser
+        with patch(
+            'app.engine.websocket_server.os.path.expanduser',
+            side_effect=lambda path: '/root' if path == '~' else expanduser(path),
+        ):
+            server = _make_server()
+            self.assertTrue(server._is_safe_path('/tmp/karl-workspace'))
+            self.assertFalse(server._is_safe_path('/etc/passwd'))
+            self.assertFalse(server._is_safe_path('/root/.ssh/id_rsa'))
+
     def test_blocks_home_root(self):
         home = os.path.expanduser("~")
         self.assertFalse(self.server._is_safe_path(home))
