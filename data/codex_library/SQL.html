@@ -1,0 +1,17 @@
+
+        <h2 style='color:#00C2FF; margin-top:0;'>💾 SQL Database & Index Design</h2>
+        <p style='color:#9090A8; line-height:1.4;'>Complete reference for transaction isolation tiers, index architecture, query performance, and execution plans.</p>
+        
+        <h4 style='color:#E4E4F0; margin-bottom:4px;'>1. Transaction Isolation & Locking</h4>
+        <p style='color:#9090A8; margin-top:0; line-height:1.4;'>Isolation levels control query concurrency anomalies (dirty reads, non-repeatable reads, phantom reads): Read Uncommitted, Read Committed, Repeatable Read, Serializable. Locks control row and table updates:</p>
+        <pre style='background:#10101C; border:1px solid #23233A; color:#A8D158; padding:8px; font-family:monospace;'>-- Explicitly lock rows for updating during transaction
+SELECT * FROM sessions WHERE id = 42 FOR UPDATE;</pre>
+
+        <h4 style='color:#E4E4F0; margin-bottom:4px;'>2. B-Tree & Hash Index Structure</h4>
+        <p style='color:#9090A8; margin-top:0; line-height:1.4;'>B-Tree indices maintain sorted key structures for range matches. Hash indices locate matches in O(1) time but do not support range scans:</p>
+        <pre style='background:#10101C; border:1px solid #23233A; color:#A8D158; padding:8px; font-family:monospace;'>CREATE INDEX idx_user_sessions ON sessions (user_id, updated_at);</pre>
+
+        <h4 style='color:#E4E4F0; margin-bottom:4px;'>3. Query Performance & Execution Plans</h4>
+        <p style='color:#9090A8; margin-top:0; line-height:1.4;'>Analyze performance using database engine execution visualizers to spot index scans vs full table scans:</p>
+        <pre style='background:#10101C; border:1px solid #23233A; color:#A8D158; padding:8px; font-family:monospace;'>EXPLAIN ANALYZE SELECT * FROM sessions WHERE user_id = 10 ORDER BY updated_at DESC;</pre>
+    

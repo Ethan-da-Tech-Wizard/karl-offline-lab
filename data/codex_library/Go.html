@@ -1,0 +1,37 @@
+
+        <h2 style='color:#00C2FF; margin-top:0;'>🐹 Go Runtime & Concurrency Guide</h2>
+        <p style='color:#9090A8; line-height:1.4;'>Go is a compiled systems language featuring high concurrency. This manual covers goroutines scheduling, CSP channels, maps/slices allocations, and error propagation patterns.</p>
+        
+        <h3 style='color:#E4E4F0; margin-bottom:4px; border-bottom:1px solid #252535; padding-bottom:4px;'>1. Go Concurrency: Goroutines & Channels</h3>
+        <pre style='color:#2DD4A0; background:#07070D; padding:8px; border-radius:4px; font-size:9.5pt; font-family:monospace;'>
+package main
+
+import (
+	"fmt"
+	"time"
+)
+
+func fetchStats(ch chan<- string) {
+	time.Sleep(100 * time.Millisecond)
+	ch <- "Stats retrieved"
+}
+
+func main() {
+	ch := make(chan string, 1) // Buffered channel
+	go fetchStats(ch)
+
+	select {
+	case res := <-ch:
+		fmt.Println("Result:", res)
+	case <-time.After(200 * time.Millisecond):
+		fmt.Println("Operation timed out")
+	}
+}
+        </pre>
+
+        <h3 style='color:#E4E4F0; margin-bottom:4px; border-bottom:1px solid #252535; padding-bottom:4px;'>2. Go Slice & Map Allocation Internals</h3>
+        <ul>
+          <li style='color:#9090A8; margin-bottom:4px;'><b>Slices:</b> Header structure contains: pointer to underlying array, length (<code>len</code>), and capacity (<code>cap</code>). Reallocating beyond capacity doubles memory footprint.</li>
+          <li style='color:#9090A8; margin-bottom:4px;'><b>Maps:</b> Implemented as hash tables. Buckets hold key-value items. Reaches 80% load factor triggers map grow operations (rehashing elements into twice the bucket array size).</li>
+        </ul>
+    
