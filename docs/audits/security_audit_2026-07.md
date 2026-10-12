@@ -432,7 +432,7 @@ capability too.
 ```bash
 $ id
 uid=1001(otheruser) gid=1001(otheruser)   # different local user, same machine
-$ cat /home/ethan/karl/data/bridge_token.json   # world-readable
+$ cat /path/to/karl/data/bridge_token.json   # world-readable
 {"token": "...", "tokens": {"...": ["read:telemetry","read:kb","write:kb","admin:execute"]}, ...}
 $ # connect to wss://localhost:<port>/?token=<stolen token> — full admin access
 ```
