@@ -1,0 +1,1624 @@
+:root {
+    /* Backgrounds — follow VS Code's own surfaces so dark/light themes both work */
+    --karl-bg: var(--vscode-sideBar-background, #0d1117);
+    --karl-panel: var(--vscode-editor-background, #0f1620);
+    --karl-panel-hi: var(--vscode-editorWidget-background, var(--vscode-editor-background, #152030));
+
+    /* Border: widget border blended with the current accent */
+    --karl-border: color-mix(in srgb, var(--vscode-widget-border, #1e3a5f) 60%, var(--karl-accent));
+
+    /* Karl brand accent palette — overridden by theme/custom-accent picker */
+    --karl-accent: #00c2ff;
+    --karl-accent-2: #7dd3fc;
+    --karl-good: #72f5a4;
+    --karl-warn: #f6d365;
+    --karl-danger: #ff6b7a;
+
+    /* Text — always follow VS Code so light themes read correctly */
+    --karl-muted: var(--vscode-descriptionForeground, #6b8fa8);
+    --karl-text: var(--vscode-foreground, #e2e8f0);
+
+    /* Focus ring — uses VS Code's focusBorder so keyboard nav is always visible */
+    --karl-focus-border: var(--vscode-focusBorder, var(--karl-accent));
+
+    /* Link color */
+    --karl-link: var(--vscode-textLink-foreground, var(--karl-accent));
+
+    --karl-radius: 8px;
+}
+
+* {
+    box-sizing: border-box;
+}
+
+body {
+    margin: 0;
+    padding: 10px;
+    min-width: 0;
+    color: var(--karl-text);
+    background:
+        linear-gradient(135deg, rgba(0, 194, 255, 0.08), transparent 32%),
+        radial-gradient(circle at 90% 0%, rgba(125, 211, 252, 0.14), transparent 28%),
+        var(--karl-bg);
+    font-family: var(--vscode-font-family);
+    font-size: 12px;
+    line-height: 1.45;
+}
+
+body::before {
+    content: "";
+    position: fixed;
+    inset: 0;
+    pointer-events: none;
+    background:
+        linear-gradient(transparent 0, rgba(255,255,255,0.025) 1px, transparent 2px),
+        linear-gradient(90deg, transparent 0, rgba(0,194,255,0.025) 1px, transparent 2px);
+    background-size: 36px 36px;
+    opacity: 0.42;
+}
+
+.shell {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+}
+
+.glow-panel,
+.workspace,
+.subpanel,
+.metric,
+.queue-card,
+.change-card,
+.source-list,
+.result-card,
+.model-card,
+.queue-list,
+.branch-tree,
+.token-preview,
+.loss-plot,
+.studio-log,
+.eval-log,
+.lab-output,
+.diff-view,
+.codex-viewer,
+#terminal,
+.chat,
+.thoughts {
+    position: relative;
+    border: 1px solid color-mix(in srgb, var(--karl-border) 70%, transparent);
+    background: linear-gradient(180deg, var(--karl-panel), color-mix(in srgb, var(--karl-panel) 80%, #000));
+    border-radius: var(--karl-radius);
+    box-shadow: 0 0 0 1px rgba(0, 194, 255, 0.04), 0 10px 28px rgba(0, 0, 0, 0.22);
+}
+
+.glow-panel::before,
+.workspace.active::before,
+.change-card::before {
+    content: "";
+    position: absolute;
+    inset: -1px;
+    pointer-events: none;
+    border-radius: inherit;
+    background: linear-gradient(90deg, transparent, rgba(0, 194, 255, 0.75), rgba(255, 255, 255, 0.4), transparent);
+    opacity: 0.32;
+    mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
+    -webkit-mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
+    padding: 1px;
+    -webkit-mask-composite: xor;
+    mask-composite: exclude;
+    animation: trace 5s linear infinite;
+}
+
+@keyframes trace {
+    from { filter: hue-rotate(0deg); transform: translateX(-1px); }
+    50% { opacity: 0.62; }
+    to { filter: hue-rotate(18deg); transform: translateX(1px); }
+}
+
+.topbar {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    padding: 12px;
+}
+
+h1,
+h2 {
+    margin: 0;
+    letter-spacing: 0;
+    color: var(--vscode-sideBarTitle-foreground, var(--karl-text));
+}
+
+h1 {
+    font-size: 18px;
+}
+
+h2 {
+    font-size: 15px;
+}
+
+.eyebrow {
+    color: var(--karl-accent-2);
+    font-size: 9px;
+    font-weight: 800;
+    text-transform: uppercase;
+    letter-spacing: 1.2px;
+}
+
+.bridge {
+    display: flex;
+    align-items: center;
+    gap: 7px;
+    min-width: max-content;
+    color: var(--karl-muted);
+    font-weight: 700;
+    text-transform: uppercase;
+    font-size: 10px;
+}
+
+.status-dot {
+    width: 9px;
+    height: 9px;
+    border-radius: 99px;
+    background: var(--karl-danger);
+    box-shadow: 0 0 12px var(--karl-danger);
+}
+
+.status-dot.connecting,
+.status-dot.running,
+.status-dot.busy {
+    background: var(--karl-warn);
+    box-shadow: 0 0 14px var(--karl-warn);
+}
+
+.status-dot.connected {
+    background: var(--karl-good);
+    box-shadow: 0 0 14px var(--karl-good);
+}
+
+.scanner-line {
+    height: 2px;
+    background: linear-gradient(90deg, transparent, var(--karl-accent), var(--karl-accent-2), transparent);
+    box-shadow: 0 0 18px var(--karl-accent);
+    animation: scan 2.2s ease-in-out infinite;
+}
+
+@keyframes scan {
+    0% { transform: translateX(-50%); opacity: 0.2; }
+    50% { transform: translateX(35%); opacity: 0.85; }
+    100% { transform: translateX(105%); opacity: 0.2; }
+}
+
+/* ── streaming cursor ─────────────────────────────────────────────────────── */
+
+@keyframes karl-blink {
+    0%, 100% { opacity: 1; }
+    50%       { opacity: 0; }
+}
+
+.streaming-cursor {
+    display: inline-block;
+    width: 2px;
+    height: 1em;
+    background: var(--karl-accent);
+    margin-left: 1px;
+    vertical-align: text-bottom;
+    border-radius: 1px;
+    box-shadow: 0 0 6px var(--karl-accent);
+    animation: karl-blink 0.85s ease-in-out infinite;
+    flex-shrink: 0;
+}
+
+body[data-motion="reduced"] .streaming-cursor {
+    animation: none;
+    opacity: 1;
+}
+
+.runtime-grid,
+.settings-grid {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 8px;
+}
+
+.metric {
+    padding: 8px;
+    min-width: 0;
+}
+
+.metric span,
+label,
+summary {
+    display: block;
+    color: var(--karl-muted);
+    font-size: 9px;
+    font-weight: 800;
+    text-transform: uppercase;
+    letter-spacing: 0.8px;
+}
+
+.metric strong {
+    display: block;
+    margin-top: 3px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    color: var(--karl-text);
+    font-size: 11px;
+}
+
+.tabs {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 6px;
+}
+
+.tab,
+button {
+    min-height: 30px;
+    border: 1px solid color-mix(in srgb, var(--karl-border) 45%, transparent);
+    border-radius: 7px;
+    background: color-mix(in srgb, var(--vscode-button-secondaryBackground, #243241) 82%, #001423);
+    color: var(--vscode-button-secondaryForeground, var(--karl-text));
+    font: inherit;
+    font-weight: 750;
+    cursor: pointer;
+}
+
+button:hover,
+.tab:hover {
+    border-color: var(--karl-accent);
+    box-shadow: 0 0 14px color-mix(in srgb, var(--karl-accent) 24%, transparent);
+}
+
+.tab.active,
+button.primary {
+    /* Dark text reads perfectly on the bright accent gradient */
+    color: #00131c;
+    background: linear-gradient(
+        180deg,
+        color-mix(in srgb, var(--karl-accent) 55%, #fff),
+        var(--karl-accent)
+    );
+    border-color: color-mix(in srgb, var(--karl-accent) 45%, #fff);
+    box-shadow: 0 0 18px color-mix(in srgb, var(--karl-accent) 38%, transparent);
+}
+
+button.danger {
+    background: color-mix(in srgb, var(--karl-danger) 34%, var(--karl-panel));
+    color: var(--karl-text);
+    border-color: color-mix(in srgb, var(--karl-danger) 65%, transparent);
+}
+
+button:disabled {
+    opacity: 0.45;
+    cursor: not-allowed;
+    box-shadow: none;
+}
+
+.connection-row {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto auto;
+    gap: 8px;
+    align-items: end;
+    padding: 10px;
+}
+
+.offline-panel {
+    display: none;
+    overflow: hidden;
+    padding: 10px;
+}
+
+.offline-panel.active {
+    display: block;
+}
+
+.offline-panel p {
+    margin: 8px 0 0;
+    color: var(--karl-muted);
+}
+
+.settings {
+    padding: 10px;
+}
+
+.settings summary {
+    cursor: pointer;
+}
+
+.settings-grid {
+    margin-top: 10px;
+}
+
+main {
+    min-height: 360px;
+}
+
+.workspace {
+    display: none;
+    padding: 12px;
+}
+
+.workspace.active {
+    display: block;
+}
+
+.section-head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 10px;
+    margin-bottom: 12px;
+}
+
+label {
+    margin-bottom: 10px;
+}
+
+input,
+textarea,
+select {
+    width: 100%;
+    margin-top: 5px;
+    padding: 8px;
+    border-radius: 7px;
+    border: 1px solid color-mix(in srgb, var(--vscode-input-border, var(--karl-border)) 75%, transparent);
+    background: color-mix(in srgb, var(--vscode-input-background) 86%, #020817);
+    color: var(--vscode-input-foreground);
+    font-family: inherit;
+    font-size: 12px;
+}
+
+textarea {
+    resize: vertical;
+}
+
+input:focus,
+textarea:focus,
+select:focus {
+    outline: none;
+    border-color: var(--karl-focus-border);
+    box-shadow:
+        0 0 0 1px color-mix(in srgb, var(--karl-focus-border) 35%, transparent),
+        0 0 18px color-mix(in srgb, var(--karl-focus-border) 18%, transparent);
+}
+
+.check {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    text-transform: none;
+    letter-spacing: 0;
+    font-size: 11px;
+}
+
+.check input {
+    width: auto;
+    margin: 0;
+}
+
+.action-row,
+.composer {
+    display: flex;
+    gap: 8px;
+    margin: 10px 0;
+}
+
+.workbench-grid {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr);
+    gap: 10px;
+    margin-bottom: 12px;
+}
+
+.subpanel {
+    padding: 10px;
+    min-width: 0;
+}
+
+.quick-actions {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 7px;
+    margin-bottom: 12px;
+}
+
+.quick-action {
+    justify-content: flex-start;
+    text-align: left;
+    min-height: 34px;
+    padding: 7px 9px;
+}
+
+.context-meter {
+    margin: 0 0 10px;
+    padding: 8px 10px;
+    border-radius: 7px;
+    border: 1px solid color-mix(in srgb, var(--karl-border) 55%, transparent);
+    background: rgba(255, 255, 255, 0.035);
+    color: var(--karl-muted);
+    font-size: 10px;
+}
+
+.context-meter.ok {
+    border-color: color-mix(in srgb, var(--karl-good) 70%, transparent);
+    color: var(--karl-good);
+}
+
+.context-meter.warn {
+    border-color: color-mix(in srgb, var(--karl-warn) 70%, transparent);
+    color: var(--karl-warn);
+}
+
+.queue-panel {
+    margin-top: 12px;
+}
+
+.mini-head {
+    margin-bottom: 6px;
+}
+
+.mini-head h2 {
+    font-size: 12px;
+}
+
+.task-queue,
+.recent-list,
+.queue-list,
+.branch-tree {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    margin-bottom: 8px;
+}
+
+.task-queue.empty,
+.recent-list.empty,
+.queue-list.empty,
+.branch-tree.empty {
+    padding: 8px;
+    border: 1px solid rgba(125, 211, 252, 0.16);
+    border-radius: 7px;
+    color: var(--karl-muted);
+}
+
+.task-item,
+.recent-item,
+.queue-row,
+.branch-node {
+    border: 1px solid rgba(125, 211, 252, 0.18);
+    border-radius: 7px;
+    background: rgba(255, 255, 255, 0.035);
+    color: var(--karl-text);
+    padding: 8px;
+    text-align: left;
+}
+
+.task-item {
+    display: block;
+}
+
+.queue-row,
+.branch-node {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto auto;
+    align-items: center;
+    gap: 8px;
+}
+
+.branch-node {
+    grid-template-columns: minmax(0, 1fr) auto;
+    cursor: pointer;
+}
+
+.branch-node.active {
+    border-color: var(--karl-accent);
+    box-shadow: inset 2px 0 0 var(--karl-accent);
+}
+
+.queue-row span,
+.branch-node span {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.task-item strong,
+.recent-item strong,
+.queue-row strong,
+.branch-node strong {
+    display: block;
+    color: var(--karl-accent-2);
+    font-size: 10px;
+    text-transform: uppercase;
+}
+
+.task-item span,
+.recent-item span {
+    display: block;
+    margin-top: 3px;
+    color: var(--karl-muted);
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.task-item.running {
+    border-color: var(--karl-warn);
+}
+
+.task-item.completed {
+    border-color: var(--karl-good);
+}
+
+.task-item.failed {
+    border-color: var(--karl-danger);
+}
+
+.compact-actions {
+    margin: 0;
+}
+
+.composer input {
+    margin-top: 0;
+}
+
+.timeline {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    margin: 12px 0;
+}
+
+.timeline-item {
+    border-left: 2px solid var(--karl-accent);
+    padding: 6px 8px;
+    background: color-mix(in srgb, var(--karl-accent) 8%, transparent);
+    border-radius: 5px;
+}
+
+#terminal,
+pre {
+    font-family: var(--vscode-editor-font-family, monospace);
+}
+
+#terminal {
+    height: 190px;
+    overflow: auto;
+    padding: 10px;
+    white-space: pre-wrap;
+}
+
+.chat {
+    height: 330px;
+    overflow: auto;
+    padding: 10px;
+    margin-bottom: 10px;
+}
+
+.message {
+    margin-bottom: 10px;
+    padding: 8px 10px;
+    border-radius: 8px;
+    max-width: 94%;
+    border: 1px solid transparent;
+}
+
+.message.user {
+    margin-left: auto;
+    background: color-mix(in srgb, var(--karl-accent) 12%, transparent);
+    border-color: color-mix(in srgb, var(--karl-accent) 32%, transparent);
+}
+
+.message.assistant {
+    background: color-mix(in srgb, var(--vscode-editor-foreground, #fff) 4%, transparent);
+    border-color: color-mix(in srgb, var(--karl-accent-2) 18%, transparent);
+}
+
+.message-role {
+    margin-bottom: 4px;
+    color: var(--karl-accent-2);
+    font-size: 9px;
+    font-weight: 800;
+    text-transform: uppercase;
+}
+
+.thoughts {
+    display: none;
+    flex-direction: column;
+    padding: 0;
+    margin-bottom: 10px;
+    overflow: hidden;
+}
+
+.thoughts.active {
+    display: flex;
+}
+
+/* ── collapsible reasoning panel header ──────────────────────────────────── */
+
+.thoughts-header {
+    display: flex;
+    align-items: center;
+    gap: 7px;
+    padding: 7px 10px;
+    cursor: pointer;
+    user-select: none;
+    border-bottom: 1px solid color-mix(in srgb, var(--karl-border) 45%, transparent);
+    transition: background 0.15s;
+    flex-shrink: 0;
+}
+
+.thoughts-header:hover {
+    background: color-mix(in srgb, var(--karl-accent) 7%, transparent);
+}
+
+.thoughts-header.thoughts-header--collapsed {
+    border-bottom-color: transparent;
+}
+
+.thoughts-toggle {
+    font-size: 10px;
+    color: var(--karl-accent);
+    width: 12px;
+    flex-shrink: 0;
+    text-align: center;
+}
+
+.thoughts-token-count {
+    margin-left: auto;
+    color: var(--karl-muted);
+    font-size: 9px;
+    font-weight: 700;
+    font-variant-numeric: tabular-nums;
+    flex-shrink: 0;
+}
+
+.thoughts-pulse-dot {
+    width: 6px;
+    height: 6px;
+    border-radius: 50%;
+    background: var(--karl-accent);
+    box-shadow: 0 0 6px var(--karl-accent);
+    opacity: 0;
+    flex-shrink: 0;
+    transition: opacity 0.2s;
+}
+
+.thoughts-pulse-dot.active {
+    opacity: 1;
+    animation: karl-blink 1.2s ease-in-out infinite;
+}
+
+/* ── thought body (the <pre> element) ────────────────────────────────────── */
+
+.thoughts-body {
+    max-height: 160px;
+    min-height: 0;
+    overflow: auto;
+    margin: 0;
+    padding: 8px 10px;
+    color: var(--karl-accent-2);
+    white-space: pre-wrap;
+    font-family: var(--vscode-editor-font-family, monospace);
+    font-size: 11px;
+    line-height: 1.5;
+    transition: max-height 0.22s ease, padding 0.22s ease;
+}
+
+.queue.empty,
+.source-list,
+.result-list,
+.model-list {
+    min-height: 80px;
+}
+
+.queue-card,
+.change-card,
+.result-card,
+.model-card {
+    padding: 10px;
+    margin-bottom: 8px;
+}
+
+.change-title,
+.model-title {
+    font-weight: 800;
+    color: var(--karl-text);
+}
+
+.change-meta,
+.model-meta,
+.result-meta {
+    margin-top: 4px;
+    color: var(--karl-muted);
+    font-size: 10px;
+}
+
+.state-chip {
+    display: inline-flex;
+    align-items: center;
+    min-height: 16px;
+    padding: 1px 6px;
+    border-radius: 999px;
+    border: 1px solid var(--karl-border);
+    color: var(--karl-accent-2);
+    text-transform: uppercase;
+    font-size: 9px;
+    font-weight: 800;
+}
+
+.state-chip.previewed {
+    border-color: var(--karl-warn);
+    color: var(--karl-warn);
+}
+
+.state-chip.applied {
+    border-color: var(--karl-good);
+    color: var(--karl-good);
+}
+
+.state-chip.rejected {
+    border-color: var(--karl-danger);
+    color: var(--karl-danger);
+}
+
+.change-actions {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 6px;
+    margin-top: 8px;
+}
+
+.change-actions button {
+    min-height: 27px;
+    padding: 4px 5px;
+    font-size: 10px;
+}
+
+.risk {
+    display: inline-flex;
+    align-items: center;
+    padding: 1px 6px;
+    border-radius: 999px;
+    text-transform: uppercase;
+    font-size: 9px;
+    font-weight: 800;
+}
+
+.risk.low {
+    border: 1px solid var(--karl-good);
+    color: var(--karl-good);
+}
+
+.risk.medium {
+    border: 1px solid var(--karl-warn);
+    color: var(--karl-warn);
+}
+
+.risk.high {
+    border: 1px solid var(--karl-danger);
+    color: var(--karl-danger);
+}
+
+.source-list,
+.result-list,
+.codex-viewer,
+.diff-view,
+.token-preview,
+.studio-log,
+.eval-log {
+    padding: 8px;
+    overflow: auto;
+}
+
+.source-item {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    gap: 8px;
+    padding: 7px 8px;
+    border-bottom: 1px solid rgba(125, 211, 252, 0.15);
+    cursor: pointer;
+}
+
+.source-item:hover,
+.source-item.active {
+    background: color-mix(in srgb, var(--karl-accent) 12%, transparent);
+}
+
+.source-name {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.result-card pre {
+    white-space: pre-wrap;
+    margin: 8px 0 0;
+    color: var(--vscode-editor-foreground);
+}
+
+.split {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr);
+    gap: 8px;
+}
+
+.lab-output {
+    min-height: 130px;
+    max-height: 230px;
+    overflow: auto;
+    padding: 10px;
+    white-space: pre-wrap;
+}
+
+.diff-view {
+    min-height: 140px;
+    white-space: pre-wrap;
+}
+
+.token-preview {
+    min-height: 64px;
+    margin: 8px 0;
+    color: var(--karl-muted);
+}
+
+.loss-plot {
+    display: grid;
+    place-items: center;
+    min-height: 130px;
+    margin: 10px 0;
+    color: var(--karl-muted);
+    background:
+        linear-gradient(90deg, rgba(125, 211, 252, 0.08) 1px, transparent 1px),
+        linear-gradient(0deg, rgba(125, 211, 252, 0.08) 1px, transparent 1px),
+        rgba(0, 194, 255, 0.035);
+    background-size: 28px 28px;
+}
+
+.studio-log,
+.eval-log {
+    min-height: 150px;
+    white-space: pre-wrap;
+    font-family: var(--vscode-editor-font-family, monospace);
+    color: var(--vscode-editor-foreground);
+}
+
+.meter {
+    width: 100%;
+    height: 10px;
+    overflow: hidden;
+    border-radius: 999px;
+    border: 1px solid color-mix(in srgb, var(--karl-border) 55%, transparent);
+    background: rgba(255, 255, 255, 0.05);
+}
+
+.meter span {
+    display: block;
+    width: 0%;
+    height: 100%;
+    background: linear-gradient(90deg, var(--karl-accent), var(--karl-accent-2));
+    box-shadow: 0 0 16px var(--karl-accent);
+}
+
+.diff-add {
+    color: var(--karl-good);
+}
+
+.diff-del {
+    color: var(--karl-danger);
+}
+
+.codex-viewer {
+    height: 300px;
+}
+
+.theme-description {
+    margin: -2px 0 12px;
+    color: var(--karl-muted);
+    border-left: 2px solid var(--karl-accent);
+    padding: 8px 10px;
+    background: rgba(0, 194, 255, 0.08);
+    border-radius: 6px;
+}
+
+.swatch-grid {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 8px;
+    margin: 10px 0;
+}
+
+.swatch {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    min-width: 0;
+    color: var(--karl-muted);
+    font-size: 9px;
+    text-transform: uppercase;
+}
+
+.swatch span {
+    width: 22px;
+    height: 22px;
+    border-radius: 5px;
+    border: 1px solid rgba(255, 255, 255, 0.35);
+    box-shadow: 0 0 12px currentColor;
+}
+
+/* Subtabs Layout */
+.subtabs {
+    display: flex;
+    gap: 6px;
+    border-bottom: 1px solid rgba(125, 211, 252, 0.16);
+    padding-bottom: 6px;
+    margin-bottom: 10px;
+}
+
+.subtab {
+    min-height: 26px;
+    padding: 3px 10px;
+    font-size: 11px;
+    border-radius: 5px;
+    font-weight: 600;
+}
+
+.subtab.active {
+    color: #00131c;
+    background: linear-gradient(
+        180deg,
+        color-mix(in srgb, var(--karl-accent) 55%, #fff),
+        var(--karl-accent)
+    );
+    border-color: color-mix(in srgb, var(--karl-accent) 45%, #fff);
+    box-shadow: 0 0 10px color-mix(in srgb, var(--karl-accent) 20%, transparent);
+}
+
+.subworkspace {
+    display: none;
+}
+
+.subworkspace.active {
+    display: block;
+}
+
+/* Theme Previews Grid */
+.theme-grid {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 8px;
+    margin-top: 8px;
+}
+
+.theme-card {
+    padding: 8px;
+    border: 1px solid rgba(125, 211, 252, 0.18);
+    border-radius: 7px;
+    background: rgba(255, 255, 255, 0.035);
+    cursor: pointer;
+    text-align: left;
+    transition: border-color 0.2s, box-shadow 0.2s;
+    display: flex;
+    flex-direction: column;
+    justify-content: space-between;
+}
+
+.theme-card:hover,
+.theme-card.active {
+    border-color: var(--karl-accent);
+    box-shadow: 0 0 12px rgba(0, 194, 255, 0.22);
+}
+
+.theme-card-title {
+    font-weight: 750;
+    font-size: 11px;
+    margin-bottom: 4px;
+    color: var(--karl-text);
+}
+
+.theme-card-colors {
+    display: flex;
+    gap: 4px;
+    margin-bottom: 6px;
+}
+
+.theme-card-colors span {
+    width: 14px;
+    height: 14px;
+    border-radius: 3px;
+    border: 1px solid rgba(255, 255, 255, 0.18);
+}
+
+.theme-card-desc {
+    font-size: 9px;
+    color: var(--karl-muted);
+    line-height: 1.3;
+}
+
+/* Status grids for Cockpit & Git */
+.cockpit-status-grid,
+.diagnostics-summary-grid {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 8px;
+    padding: 10px;
+    margin-bottom: 10px;
+}
+
+.git-status-card {
+    border-radius: var(--karl-radius);
+    padding: 10px;
+    background: rgba(255, 255, 255, 0.03);
+    border: 1px solid rgba(125, 211, 252, 0.12);
+    font-family: var(--vscode-editor-font-family, monospace);
+    margin-bottom: 10px;
+}
+
+/* Layout Modes Implementations */
+
+/* 1. Compact Sidebar Layout Mode */
+body[data-layout="compact-sidebar"] {
+    padding: 6px;
+    font-size: 11px;
+}
+
+body[data-layout="compact-sidebar"] .shell {
+    gap: 6px;
+}
+
+body[data-layout="compact-sidebar"] .topbar {
+    padding: 8px;
+}
+
+body[data-layout="compact-sidebar"] h1 {
+    font-size: 14px;
+}
+
+body[data-layout="compact-sidebar"] .tabs {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 4px;
+}
+
+body[data-layout="compact-sidebar"] .tab,
+body[data-layout="compact-sidebar"] button {
+    min-height: 24px;
+    padding: 2px 4px;
+    font-size: 10px;
+}
+
+body[data-layout="compact-sidebar"] .workspace {
+    padding: 6px;
+}
+
+body[data-layout="compact-sidebar"] .metric {
+    padding: 4px 6px;
+}
+
+body[data-layout="compact-sidebar"] .metric strong {
+    font-size: 10px;
+}
+
+body[data-layout="compact-sidebar"] .chat,
+body[data-layout="compact-sidebar"] #terminal {
+    height: 180px;
+}
+
+body[data-layout="compact-sidebar"] .quick-actions {
+    grid-template-columns: 1fr;
+    gap: 4px;
+}
+
+/* 2. Wide Panel Layout Mode */
+body[data-layout="wide-panel"] main {
+    display: grid;
+}
+
+body[data-layout="wide-panel"] .workspace.active {
+    min-height: 520px;
+}
+
+@media (min-width: 680px) {
+    body[data-layout="wide-panel"] .cockpit-status-grid {
+        grid-template-columns: repeat(4, minmax(0, 1fr));
+    }
+    body[data-layout="wide-panel"] .workbench-grid {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+}
+
+/* 3. Focus / Layout Mode modifiers */
+body[data-layout="review-bay"] #workspace-changes {
+    box-shadow: 0 0 0 1px var(--karl-accent), 0 0 24px rgba(0, 194, 255, 0.2);
+}
+
+body[data-layout="review-bay"] .tabs .tab[data-workspace="changes"] {
+    border-color: var(--karl-accent);
+    box-shadow: 0 0 10px rgba(0, 194, 255, 0.2);
+}
+
+body[data-layout="swarm-ops"] #workspace-swarm {
+    box-shadow: 0 0 0 1px var(--karl-accent), 0 0 24px rgba(0, 194, 255, 0.2);
+}
+
+body[data-layout="swarm-ops"] .tabs .tab[data-workspace="swarm"] {
+    border-color: var(--karl-accent);
+}
+
+body[data-layout="swarm-ops"] #terminal {
+    height: 350px;
+}
+
+body[data-layout="knowledge-scout"] #workspace-knowledge {
+    box-shadow: 0 0 0 1px var(--karl-accent), 0 0 24px rgba(0, 194, 255, 0.2);
+}
+
+body[data-layout="knowledge-scout"] .tabs .tab[data-workspace="knowledge"] {
+    border-color: var(--karl-accent);
+}
+
+body[data-layout="knowledge-scout"] .source-list {
+    min-height: 180px;
+}
+
+body[data-layout="prompt-lab"] #workspace-lab {
+    box-shadow: 0 0 0 1px var(--karl-accent), 0 0 24px rgba(0, 194, 255, 0.2);
+}
+
+body[data-layout="prompt-lab"] .tabs .tab[data-workspace="lab"] {
+    border-color: var(--karl-accent);
+}
+
+body[data-layout="prompt-lab"] .lab-output {
+    min-height: 200px;
+}
+
+body[data-layout="vision-desk"] #workspace-vision {
+    box-shadow: 0 0 0 1px var(--karl-accent), 0 0 24px rgba(0, 194, 255, 0.2);
+}
+
+body[data-layout="vision-desk"] .tabs .tab[data-workspace="vision"] {
+    border-color: var(--karl-accent);
+}
+
+/* 4. High Contrast Modifier Mode */
+body[data-layout-contrast="high"] {
+    --karl-bg: #000000;
+    --karl-panel: #0a0a0a;
+    --karl-panel-hi: #181818;
+    --karl-border: #ffffff;
+    --karl-muted: #aaaaaa;
+}
+
+body[data-layout-contrast="high"] .glow-panel,
+body[data-layout-contrast="high"] .workspace,
+body[data-layout-contrast="high"] button,
+body[data-layout-contrast="high"] input,
+body[data-layout-contrast="high"] textarea {
+    border: 1.5px solid #ffffff;
+    box-shadow: none !important;
+}
+
+/* Reduced Motion Mode Modifier */
+body[data-motion="reduced"] *,
+body[data-motion="reduced"] *::before,
+body[data-motion="reduced"] *::after {
+    animation: none !important;
+    transition: none !important;
+}
+
+code {
+    color: var(--karl-accent-2);
+}
+
+::-webkit-scrollbar {
+    width: 7px;
+    height: 7px;
+}
+
+::-webkit-scrollbar-track {
+    background: transparent;
+}
+
+::-webkit-scrollbar-thumb {
+    background: color-mix(in srgb, var(--karl-accent) 34%, transparent);
+    border-radius: 99px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+    background: var(--karl-accent);
+}
+
+@media (min-width: 560px) {
+    .tabs {
+        grid-template-columns: repeat(4, minmax(0, 1fr));
+    }
+
+    .split {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+
+    .quick-actions {
+        grid-template-columns: repeat(3, minmax(0, 1fr));
+    }
+
+    .workbench-grid {
+        grid-template-columns: minmax(0, 2fr) minmax(180px, 1fr);
+    }
+}
+
+@media (min-width: 820px) {
+    .tabs {
+        grid-template-columns: repeat(11, minmax(0, 1fr));
+    }
+}
+
+@media (prefers-reduced-motion: reduce) {
+    *,
+    *::before,
+    *::after {
+        animation: none !important;
+        transition: none !important;
+    }
+}
+
+/* ═══════════════════════════════════════════════════════════════════
+   HEAVENSCAPE LAYER — glassmorphic surfaces, ws-state chat border,
+   inner tabs, token animation, swarm feed, log subtabs
+   ═══════════════════════════════════════════════════════════════════ */
+
+/* ── glassmorphic blur on primary surfaces ────────────────────────── */
+
+.glow-panel,
+.workspace,
+.subpanel,
+.metric,
+.chat,
+.thoughts,
+.queue-card,
+.change-card,
+.result-card,
+.model-card {
+    backdrop-filter: blur(12px) saturate(1.15);
+    -webkit-backdrop-filter: blur(12px) saturate(1.15);
+}
+
+/* Semi-transparent so the blur effect is visible through the surface */
+.glow-panel {
+    background: linear-gradient(
+        160deg,
+        color-mix(in srgb, var(--karl-panel) 80%, transparent),
+        color-mix(in srgb, var(--karl-panel) 72%, #000)
+    );
+    box-shadow:
+        0 0 0 1px rgba(0, 194, 255, 0.06),
+        0 0 10px rgba(0, 194, 255, 0.2),
+        0 12px 32px rgba(0, 0, 0, 0.28);
+}
+
+.chat,
+.thoughts {
+    background: color-mix(in srgb, var(--karl-panel) 74%, transparent);
+}
+
+/* ── chat window ws-state reactive border ─────────────────────────── */
+
+.chat {
+    transition: border-color 0.45s ease, box-shadow 0.45s ease;
+}
+
+body[data-ws-state="connected"] .chat {
+    border-color: color-mix(in srgb, var(--karl-good) 52%, transparent);
+    box-shadow:
+        0 0 16px color-mix(in srgb, var(--karl-good) 14%, transparent),
+        inset 0 0 0 1px color-mix(in srgb, var(--karl-good) 10%, transparent);
+}
+
+body[data-ws-state="generating"] .chat {
+    border-color: color-mix(in srgb, var(--karl-warn) 72%, transparent);
+    animation: chat-gen-pulse 1.5s ease-in-out infinite;
+}
+
+body[data-ws-state="offline"] .chat,
+body[data-ws-state="error"] .chat {
+    border-color: color-mix(in srgb, var(--karl-danger) 35%, transparent);
+    box-shadow: 0 0 10px color-mix(in srgb, var(--karl-danger) 8%, transparent);
+}
+
+body[data-ws-state="connecting"] .chat {
+    border-color: color-mix(in srgb, var(--karl-warn) 40%, transparent);
+}
+
+@keyframes chat-gen-pulse {
+    0%, 100% {
+        box-shadow:
+            0 0 16px color-mix(in srgb, var(--karl-warn) 16%, transparent),
+            inset 0 0 0 1px color-mix(in srgb, var(--karl-warn) 12%, transparent);
+    }
+    50% {
+        box-shadow:
+            0 0 28px color-mix(in srgb, var(--karl-warn) 38%, transparent),
+            inset 0 0 0 1px color-mix(in srgb, var(--karl-warn) 22%, transparent);
+    }
+}
+
+/* ── token stream entrance animation ──────────────────────────────── */
+
+@keyframes token-in {
+    from { opacity: 0; transform: translateY(2px); }
+    to   { opacity: 1; transform: translateY(0); }
+}
+
+.token-appear {
+    display: inline;
+    animation: token-in 0.085s ease-out both;
+}
+
+body[data-motion="reduced"] .token-appear {
+    animation: none;
+}
+
+/* ── inner chat tab bar ────────────────────────────────────────────── */
+
+.chat-inner-tabs {
+    display: flex;
+    align-items: center;
+    gap: 5px;
+    margin-bottom: 8px;
+    padding-bottom: 7px;
+    border-bottom: 1px solid color-mix(in srgb, var(--karl-border) 38%, transparent);
+    flex-wrap: wrap;
+}
+
+.chat-inner-tab {
+    min-height: 23px;
+    padding: 2px 10px;
+    font-size: 10px;
+    border-radius: 5px;
+    font-weight: 700;
+    transition: border-color 0.18s ease, box-shadow 0.18s ease,
+                background 0.18s ease, color 0.18s ease;
+}
+
+.chat-inner-tab.active {
+    color: #00131c;
+    background: linear-gradient(
+        180deg,
+        color-mix(in srgb, var(--karl-accent) 58%, #fff),
+        var(--karl-accent)
+    );
+    border-color: color-mix(in srgb, var(--karl-accent) 48%, #fff);
+    box-shadow: 0 0 10px color-mix(in srgb, var(--karl-accent) 26%, transparent);
+}
+
+/* Thoughts visibility toggle — sits at the right of the inner tab bar */
+.chat-toggle {
+    margin-left: auto;
+    min-height: 22px;
+    padding: 1px 8px;
+    font-size: 9px;
+    border-radius: 5px;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    opacity: 0.58;
+    transition: opacity 0.2s, box-shadow 0.2s, border-color 0.2s;
+}
+
+.chat-toggle.active {
+    opacity: 1;
+    border-color: color-mix(in srgb, var(--karl-accent) 55%, transparent);
+    box-shadow: 0 0 8px color-mix(in srgb, var(--karl-accent) 20%, transparent);
+}
+
+/* Panel switching */
+.chat-tab-panel {
+    display: none;
+}
+
+.chat-tab-panel.active {
+    display: block;
+}
+
+/* ── reasoning full-view panel ─────────────────────────────────────── */
+
+.reasoning-full {
+    max-height: 400px;
+    min-height: 80px;
+    overflow: auto;
+    padding: 10px;
+    margin: 0;
+    color: var(--karl-accent-2);
+    font-family: var(--vscode-editor-font-family, monospace);
+    font-size: 11px;
+    line-height: 1.55;
+    white-space: pre-wrap;
+    border-radius: var(--karl-radius);
+    background: color-mix(in srgb, var(--karl-panel) 78%, transparent);
+    border: 1px solid color-mix(in srgb, var(--karl-accent) 18%, transparent);
+    backdrop-filter: blur(8px);
+    -webkit-backdrop-filter: blur(8px);
+}
+
+/* ── swarm progress feed ───────────────────────────────────────────── */
+
+.swarm-feed {
+    display: flex;
+    flex-direction: column;
+    gap: 5px;
+    padding: 4px 0;
+    max-height: 340px;
+    overflow-y: auto;
+}
+
+.swarm-entry {
+    display: grid;
+    grid-template-columns: 48px minmax(0, 1fr);
+    gap: 8px;
+    align-items: baseline;
+    padding: 5px 8px;
+    border-left: 2px solid var(--karl-accent);
+    background: color-mix(in srgb, var(--karl-accent) 6%, transparent);
+    border-radius: 0 5px 5px 0;
+    animation: token-in 0.14s ease-out both;
+}
+
+.swarm-entry-time {
+    color: var(--karl-muted);
+    font-size: 8px;
+    font-variant-numeric: tabular-nums;
+    white-space: nowrap;
+    padding-top: 2px;
+}
+
+.swarm-entry-text strong {
+    display: block;
+    color: var(--karl-accent-2);
+    font-size: 10px;
+    text-transform: uppercase;
+    letter-spacing: 0.4px;
+}
+
+.swarm-entry-text span {
+    color: var(--karl-muted);
+    font-size: 10px;
+    line-height: 1.4;
+}
+
+/* ── log subtabs (inside Logs workspace) ───────────────────────────── */
+
+.log-subtabs {
+    display: flex;
+    gap: 5px;
+    margin-bottom: 8px;
+    padding-bottom: 6px;
+    border-bottom: 1px solid color-mix(in srgb, var(--karl-border) 32%, transparent);
+}
+
+.log-subtab {
+    min-height: 22px;
+    padding: 2px 10px;
+    font-size: 10px;
+    border-radius: 5px;
+    font-weight: 700;
+    transition: border-color 0.18s ease, box-shadow 0.18s ease,
+                background 0.18s ease, color 0.18s ease;
+}
+
+.log-subtab.active {
+    color: #00131c;
+    background: linear-gradient(
+        180deg,
+        color-mix(in srgb, var(--karl-accent) 58%, #fff),
+        var(--karl-accent)
+    );
+    border-color: color-mix(in srgb, var(--karl-accent) 48%, #fff);
+    box-shadow: 0 0 8px color-mix(in srgb, var(--karl-accent) 22%, transparent);
+}
+
+.log-panel {
+    display: none;
+}
+
+.log-panel.active {
+    display: block;
+}
+
+/* ── button & tab hover/focus transitions ──────────────────────────── */
+
+button,
+.tab,
+.chat-inner-tab,
+.log-subtab,
+.subtab {
+    transition: border-color 0.18s ease, box-shadow 0.18s ease,
+                background 0.18s ease, color 0.18s ease, opacity 0.18s ease;
+}
+
+/* ── message role tag — vibrant HSL accents ────────────────────────── */
+
+.message-role {
+    padding: 1px 5px;
+    border-radius: 3px;
+    margin-bottom: 4px;
+    background: linear-gradient(
+        90deg,
+        color-mix(in srgb, var(--karl-accent) 14%, transparent),
+        transparent 80%
+    );
+}
+
+.message.user .message-role {
+    color: hsl(198, 100%, 70%);
+}
+
+.message.assistant .message-role {
+    color: hsl(160, 78%, 62%);
+}
+
+/* ── chat bubble hover polish ──────────────────────────────────────── */
+
+.message {
+    transition: background 0.2s ease, border-color 0.2s ease;
+}
+
+.message.assistant:hover {
+    background: color-mix(in srgb, var(--vscode-editor-foreground, #fff) 6%, transparent);
+    border-color: color-mix(in srgb, var(--karl-accent-2) 28%, transparent);
+}
+
+/* ── thoughts smooth cubic collapse ───────────────────────────────── */
+
+.thoughts-body {
+    transition:
+        max-height 0.3s cubic-bezier(0.4, 0, 0.2, 1),
+        padding    0.3s cubic-bezier(0.4, 0, 0.2, 1),
+        opacity    0.25s ease;
+}
+
+/* ── quick-action hover glow ───────────────────────────────────────── */
+
+.quick-action:hover {
+    background: color-mix(in srgb, var(--karl-accent) 14%, var(--vscode-button-secondaryBackground, #243241));
+    box-shadow: 0 0 14px color-mix(in srgb, var(--karl-accent) 18%, transparent);
+}
+
+/* ── source-item selection highlight ───────────────────────────────── */
+
+.source-item {
+    transition: background 0.15s ease;
+}
+
+/* ── task-item border entrance ─────────────────────────────────────── */
+
+.task-item,
+.recent-item {
+    transition: border-color 0.2s ease, background 0.2s ease;
+}
+
+/* ── Educational Sandbox Workspace Custom Styles ─────────────────── */
+#vocabTable th {
+    border-bottom: 1px solid var(--karl-border);
+    padding: 6px;
+    font-size: 9pt;
+}
+
+#vocabTable td {
+    padding: 4px 6px;
+    border-bottom: 1px dashed rgba(0, 194, 255, 0.1);
+}
+
+#vocabTable tr:hover {
+    background: rgba(0, 194, 255, 0.05);
+}
+
+.studio-log::-webkit-scrollbar {
+    width: 6px;
+}
+.studio-log::-webkit-scrollbar-thumb {
+    background: var(--karl-border);
+    border-radius: 3px;
+}
+
+

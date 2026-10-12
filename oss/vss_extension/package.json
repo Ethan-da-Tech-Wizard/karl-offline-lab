@@ -1,0 +1,323 @@
+{
+  "name": "karl",
+  "displayName": "Karl",
+  "description": "Local Multi-Agent Software Engineering swarm for VS Code, powered by Karl.",
+  "version": "1.4.0",
+  "icon": "media/icon.png",
+  "publisher": "ethan-da-tech-wizard",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/Ethan-da-Tech-Wizard/Karl.git"
+  },
+  "engines": {
+    "vscode": "^1.75.0"
+  },
+  "categories": [
+    "Machine Learning",
+    "Programming Languages"
+  ],
+  "activationEvents": [
+    "onView:karl.sidebarView",
+    "*"
+  ],
+  "main": "./extension.js",
+  "contributes": {
+    "commands": [
+      {
+        "command": "karl.fixSelection",
+        "title": "Ask Karl to Refactor Selection",
+        "category": "Karl"
+      },
+      {
+        "command": "karl.explainSelection",
+        "title": "Karl: Explain Selection",
+        "category": "Karl"
+      },
+      {
+        "command": "karl.refactorSelection",
+        "title": "Karl: Refactor Selection",
+        "category": "Karl"
+      },
+      {
+        "command": "karl.askKarl",
+        "title": "Karl: Ask Karl...",
+        "category": "Karl"
+      },
+      {
+        "command": "karl.sendToSwarm",
+        "title": "Karl: Send to Swarm",
+        "category": "Karl"
+      },
+      {
+        "command": "karl.generateTests",
+        "title": "Generate Tests for Active File",
+        "category": "Karl"
+      },
+      {
+        "command": "karl.reviewActiveFile",
+        "title": "Review Active File",
+        "category": "Karl"
+      },
+      {
+        "command": "karl.askWorkspace",
+        "title": "Ask About Workspace",
+        "category": "Karl"
+      },
+      {
+        "command": "karl.ingestActiveFile",
+        "title": "Ingest Active File into Knowledge Base",
+        "category": "Karl"
+      },
+      {
+        "command": "karl.ingestWorkspaceFolder",
+        "title": "Ingest Workspace Folder into Knowledge Base",
+        "category": "Karl"
+      },
+      {
+        "command": "karl.reviewStagedDiff",
+        "title": "Review Staged Git Diff",
+        "category": "Karl"
+      },
+      {
+        "command": "karl.reviewUnstagedDiff",
+        "title": "Review Unstaged Git Diff",
+        "category": "Karl"
+      },
+      {
+        "command": "karl.explainDiagnostics",
+        "title": "Explain Current Diagnostics",
+        "category": "Karl"
+      },
+      {
+        "command": "karl.explainCurrentFileDiagnostics",
+        "title": "Explain Active File Diagnostics",
+        "category": "Karl"
+      },
+      {
+        "command": "karl.generateCommitMessage",
+        "title": "Generate Commit Message from Staged Diff",
+        "category": "Karl"
+      },
+      {
+        "command": "karl.branchSummary",
+        "title": "Summarize Current Git Branch",
+        "category": "Karl"
+      },
+      {
+        "command": "karl.createImplementationPlan",
+        "title": "Create Implementation Plan from Selected Files",
+        "category": "Karl"
+      },
+      {
+        "command": "karl.searchKbSelection",
+        "title": "Search Knowledge Base from Selection",
+        "category": "Karl"
+      },
+      {
+        "command": "karl.sendCurrentFileToSwarm",
+        "title": "Send Current File to Swarm",
+        "category": "Karl"
+      },
+      {
+        "command": "karl.openReviewBay",
+        "title": "Open Pending Change Review Bay",
+        "category": "Karl"
+      },
+      {
+        "command": "karl.openSidebar",
+        "title": "Open Karl Panel",
+        "category": "Karl"
+      },
+      {
+        "command": "karl.reviewCombinedDiff",
+        "title": "Review Combined Git Diff",
+        "category": "Karl"
+      },
+      {
+        "command": "karl.analyzeImage",
+        "title": "Analyze Image with Karl Vision",
+        "category": "Karl"
+      },
+      {
+        "command": "karl.reviewScreenshotError",
+        "title": "Review Screenshot Error with Karl",
+        "category": "Karl"
+      },
+      {
+        "command": "karl.autoTrain",
+        "title": "Karl: Auto-Train Adapter...",
+        "category": "Karl"
+      }
+    ],
+    "keybindings": [
+      {
+        "command": "karl.explainSelection",
+        "key": "ctrl+shift+k e",
+        "mac": "cmd+shift+k e",
+        "when": "editorTextFocus"
+      },
+      {
+        "command": "karl.refactorSelection",
+        "key": "ctrl+shift+k r",
+        "mac": "cmd+shift+k r",
+        "when": "editorTextFocus && editorHasSelection"
+      },
+      {
+        "command": "karl.askKarl",
+        "key": "ctrl+shift+k a",
+        "mac": "cmd+shift+k a"
+      }
+    ],
+    "menus": {
+      "editor/context": [
+        {
+          "command": "karl.fixSelection",
+          "when": "editorHasSelection",
+          "group": "karl@1"
+        },
+        {
+          "command": "karl.explainSelection",
+          "group": "karl@1",
+          "when": "editorHasSelection"
+        },
+        {
+          "command": "karl.refactorSelection",
+          "group": "karl@2",
+          "when": "editorHasSelection"
+        },
+        {
+          "command": "karl.sendToSwarm",
+          "group": "karl@3",
+          "when": "editorHasSelection"
+        },
+        {
+          "command": "karl.generateTests",
+          "when": "editorTextFocus",
+          "group": "karl@3"
+        },
+        {
+          "command": "karl.reviewActiveFile",
+          "when": "editorTextFocus",
+          "group": "karl@4"
+        },
+        {
+          "command": "karl.searchKbSelection",
+          "when": "editorHasSelection",
+          "group": "karl@5"
+        },
+        {
+          "command": "karl.sendCurrentFileToSwarm",
+          "when": "editorTextFocus",
+          "group": "karl@6"
+        },
+        {
+          "command": "karl.explainCurrentFileDiagnostics",
+          "when": "editorTextFocus",
+          "group": "karl@7"
+        }
+      ],
+      "explorer/context": [
+        {
+          "command": "karl.ingestActiveFile",
+          "when": "resourceScheme == file",
+          "group": "karl@1"
+        },
+        {
+          "command": "karl.ingestWorkspaceFolder",
+          "when": "explorerResourceIsFolder",
+          "group": "karl@2"
+        },
+        {
+          "command": "karl.askWorkspace",
+          "when": "workspaceFolderCount > 0",
+          "group": "karl@3"
+        },
+        {
+          "command": "karl.createImplementationPlan",
+          "when": "resourceScheme == file",
+          "group": "karl@4"
+        },
+        {
+          "command": "karl.reviewActiveFile",
+          "when": "resourceScheme == file",
+          "group": "karl@5"
+        },
+        {
+          "command": "karl.sendCurrentFileToSwarm",
+          "when": "resourceScheme == file",
+          "group": "karl@6"
+        },
+        {
+          "command": "karl.analyzeImage",
+          "when": "resourceScheme == file && resourceExtname =~ /\\.(png|jpe?g|gif|svg|webp)$/i",
+          "group": "karl@7"
+        }
+      ],
+      "scm/title": [
+        {
+          "command": "karl.reviewStagedDiff",
+          "group": "karl@1"
+        },
+        {
+          "command": "karl.reviewUnstagedDiff",
+          "group": "karl@2"
+        },
+        {
+          "command": "karl.reviewCombinedDiff",
+          "group": "karl@2.5"
+        },
+        {
+          "command": "karl.generateCommitMessage",
+          "group": "karl@3"
+        },
+        {
+          "command": "karl.branchSummary",
+          "group": "karl@4"
+        }
+      ]
+    },
+    "viewsContainers": {
+      "activitybar": [
+        {
+          "id": "karl-swarm",
+          "title": "Karl",
+          "icon": "media/icon.png"
+        }
+      ]
+    },
+    "views": {
+      "karl-swarm": [
+        {
+          "type": "webview",
+          "id": "karl.sidebarView",
+          "name": "Karl Control Deck"
+        }
+      ]
+    },
+    "configuration": {
+      "title": "Karl Settings",
+      "properties": {
+        "karl.port": {
+          "type": "integer",
+          "default": 8080,
+          "description": "Port of the local Karl WebSocket server."
+        },
+        "karl.autoConnect": {
+          "type": "boolean",
+          "default": true,
+          "description": "Automatically connect to the Karl server when the sidebar is opened."
+        }
+      }
+    }
+  },
+  "scripts": {
+    "test": "node src/tests/run.js"
+  },
+  "devDependencies": {
+    "eslint": "^8.57.0"
+  },
+  "dependencies": {
+    "ws": "^8.21.0"
+  }
+}

@@ -1,0 +1,126 @@
+# Virtual Environment
+venv/
+
+# Downloaded models (large binary files)
+data/models/
+
+# Vector DB index (regenerate by re-ingesting)
+# NOTE: metadata.json and index.faiss are now persisted but are user-specific artifacts
+data/vector_db/
+
+# Trace logs and sessions (user data, not source)
+data/logs/
+data/sessions/
+
+# Swarm cross-run failure/fix memory — per-workspace runtime state, not source
+data/swarm_memory/
+
+# model_registry.json and vision_model_registry.json are SOURCE CONTROLLED — do not ignore them
+# Runtime-written state files (never commit)
+data/active_model.json
+data/active_vision_model.json
+data/ui_config.json
+data/theme_config.json
+data/agent_memory.json
+data/agent_memory_*.json
+data/mcp_config.json
+
+# Live bridge auth tokens and TLS material — secrets, never commit
+data/bridge_token.json
+data/bridge_token.txt
+data/ssl/
+
+# Personal saved prompt pairs / benchmark runs — user data, not source
+data/prompt_pairs/
+data/eval_last.json
+data/quantization_comparison.json
+data/rag_benchmark_results.json
+data/flywheel/queue/
+
+# Local code-intelligence tool cache (regenerate on demand, not source)
+codelens-out/
+
+# Local scratch datasets (kept on disk, not in source control)
+workers.csv
+workers.xlsx
+*.xlsx
+
+# Training data and fine-tuned adapters (large, user-specific)
+data/training/
+data/adapters/
+data/hf_models/
+unsloth_compiled_cache/
+
+# Eval results (run artifacts — reproducible from datasets)
+eval/results/
+
+# Build artifacts
+__pycache__/
+*.pyc
+*.pyd
+*.pyo
+*.spec
+
+# VS Build Tools installer
+vs_buildtools.exe
+
+# Temp/scratch dirs
+t/
+
+# IDE
+.vscode/
+
+# Scratch directory
+scratch/
+
+# Build artifacts for VS Code extension
+*.vsix
+node_modules/
+# package-lock.json is intentionally NOT ignored: `npm ci` (both locally and
+# in CI's node-verify job) requires a committed lockfile to do a
+# reproducible install, and actions/setup-node's cache-dependency-path
+# can't resolve without one either.
+
+# GitHub synchronization: local credentials and generated dependencies.
+.git/
+.git-local/
+.agents/
+.aws/
+.codex/
+.claude/
+.credentials/
+.browser/
+.pause-state/
+node_modules/
+.venv/
+.venv-*/
+venv/
+py312/
+__pycache__/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.cache/
+.godot/
+.dart_tool/
+.gradle/
+target/
+*.pyc
+*.pyo
+.DS_Store
+*.qcow2
+*.vmdk
+*.vdi
+*.iso
+*.gguf
+*.safetensors
+.env
+.env.*
+!.env.example
+!.env.template
+*.pem
+*.pem.bak
+*.key
+*.p12
+id_rsa*
+id_ed25519*

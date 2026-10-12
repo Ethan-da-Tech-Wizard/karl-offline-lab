@@ -1,0 +1,597 @@
+"""
+Karl MainWindow — sidebar shell + workspace router.
+All heavy logic lives in the individual workspace widgets.
+"""
+
+from __future__ import annotations
+
+import logging
+
+from PyQt6.QtWidgets import (
+    QMainWindow, QWidget, QHBoxLayout, QVBoxLayout,
+    QStackedWidget, QMessageBox,
+)
+from PyQt6.QtCore import QThread, QTimer, pyqtSignal
+from PyQt6.QtGui import QKeySequence, QShortcut
+
+from app.state import AppState
+from app.ui.sidebar import Sidebar
+from app.ui.widgets.status_bar import StatusBar
+from app.ui.workspaces.workbench import WorkbenchWorkspace
+from app.ui.workspaces.prompt_lab import PromptLabWorkspace
+from app.ui.workspaces.knowledge_base import KnowledgeBaseWorkspace
+from app.ui.workspaces.vision_workbench import VisionWorkbench
+from app.ui.workspaces.training_studio import TrainingStudioWorkspace
+from app.ui.workspaces.eval_suite import EvalSuiteWorkspace
+from app.ui.workspaces.system_config import SystemConfigWorkspace
+from app.ui.workspaces.docs import DocsWorkspace
+from app.ui.workspaces.swarm_studio import SwarmStudioWorkspace
+from app.ui.workspaces.flywheel_studio import FlywheelStudioWorkspace
+
+
+logger = logging.getLogger("karl.main_window")
+
+
+class _ModelInitThread(QThread):
+    """Loads the active model off the UI thread at startup."""
+
+    loaded = pyqtSignal(str, object)   # model name, adapter name or None
+    failed = pyqtSignal(str)
+
+    def run(self):
+        from app.engine.model_loader import ModelLoader
+        try:
+            ModelLoader.get_instance()
+            adapter = getattr(ModelLoader, "_active_adapter", None)
+            self.loaded.emit(ModelLoader.model_name(), adapter)
+        except FileNotFoundError:
+            self.failed.emit("no model — run download_test_model.py")
+        except Exception as exc:
+            logger.error("startup model load failed: %s", exc)
+            self.failed.emit(f"model load failed: {exc}")
+
+
+class MainWindow(QMainWindow):
+    """Top-level PyQt shell that routes the sidebar to workspace widgets."""
+
+    def __init__(self):
+        """Create AppState, build the workspace stack, and defer heavy startup work."""
+        super().__init__()
+        self.setWindowTitle("Karl")
+        self.setMinimumSize(760, 560)
+
+        self._state = AppState()
+        self._build_ui()
+        self._load_theme_config()
+        self._connect_signals()
+
+        # Keyboard Navigation Shortcuts
+        self._setup_shortcuts()
+        self._setup_autosave_checkpoint_timer()
+
+        # Heavy startup work is deferred so the window paints first: the
+        # model loads on a worker thread (multi-second under VRAM/disk
+        # pressure) and the WebSocket bridge starts after the first paint.
+        self._model_init_thread = None
+        QTimer.singleShot(0, self._check_autosave_recovery)
+        QTimer.singleShot(0, self._init_model)
+        QTimer.singleShot(0, self._init_websocket_server)
+
+    def _setup_shortcuts(self):
+        # Open Command Palette
+        self._palette_shortcut_k = QShortcut(QKeySequence("Ctrl+K"), self)
+        self._palette_shortcut_k.activated.connect(self._open_command_palette)
+        self._palette_shortcut_p = QShortcut(QKeySequence("Ctrl+P"), self)
+        self._palette_shortcut_p.activated.connect(self._open_command_palette)
+        
+        # Workspace switching (Ctrl+1 to Ctrl+0)
+        self._workspace_shortcuts = []
+        for idx in range(10):
+            key = f"Ctrl+{idx+1}" if idx < 9 else "Ctrl+0"
+            shortcut = QShortcut(QKeySequence(key), self)
+            # Use a helper slot to avoid lambda cell capture issues
+            shortcut.activated.connect(self._make_workspace_switcher(idx))
+            self._workspace_shortcuts.append(shortcut)
+            
+        # Focus input
+        self._focus_shortcut = QShortcut(QKeySequence("Ctrl+L"), self)
+        self._focus_shortcut.activated.connect(self._focus_active_input)
+        
+        # New session
+        self._new_session_shortcut = QShortcut(QKeySequence("Ctrl+Shift+N"), self)
+        self._new_session_shortcut.activated.connect(self.start_new_workbench_session)
+        
+        # Save session snapshot
+        self._save_session_shortcut = QShortcut(QKeySequence("Ctrl+Shift+S"), self)
+        self._save_session_shortcut.activated.connect(self.save_workbench_session)
+
+        # Heavenscape HUD Toggle Shortcuts
+        self._hud_toggle_all_shortcut = QShortcut(QKeySequence("Ctrl+H"), self)
+        self._hud_toggle_all_shortcut.activated.connect(self._workbench.toggle_all_huds)
+
+        self._hud_reasoning_shortcut = QShortcut(QKeySequence("Ctrl+Shift+R"), self)
+        self._hud_reasoning_shortcut.activated.connect(self._workbench.toggle_reasoning_panel)
+
+        self._hud_sessions_shortcut = QShortcut(QKeySequence("Ctrl+Shift+L"), self)
+        self._hud_sessions_shortcut.activated.connect(self._workbench.toggle_sessions_panel)
+
+        self._hud_rag_shortcut = QShortcut(QKeySequence("Ctrl+Shift+G"), self)
+        self._hud_rag_shortcut.activated.connect(self._workbench.toggle_rag_panel)
+
+        self._hud_context_shortcut = QShortcut(QKeySequence("Ctrl+Shift+B"), self)
+        self._hud_context_shortcut.activated.connect(self._workbench.toggle_context_panel)
+
+    def _make_workspace_switcher(self, idx):
+        return lambda: self.switch_workspace(idx)
+
+    def switch_workspace(self, index: int) -> None:
+        self._sidebar.select(index)
+
+    def start_new_workbench_session(self) -> None:
+        self.switch_workspace(0)
+        self._workbench.new_session()
+
+    def save_workbench_session(self) -> None:
+        self.switch_workspace(0)
+        self._workbench.save_current_session()
+
+    def toggle_workbench_rag(self) -> None:
+        self.switch_workspace(0)
+        self._workbench.toggle_rag_pipeline()
+
+    def toggle_workbench_agentic_loop(self) -> None:
+        self.switch_workspace(0)
+        self._workbench.toggle_agentic_loop()
+
+    def open_knowledge_ingest(self) -> None:
+        self.switch_workspace(2)
+        self._knowledge_base.open_ingest_dialog()
+
+    def rebuild_knowledge_index(self) -> None:
+        self.switch_workspace(2)
+        self._knowledge_base.rebuild_index()
+
+    def run_eval_suite(self) -> None:
+        self.switch_workspace(5)
+        self._eval.run_suite()
+
+    def open_system_defaults(self) -> None:
+        self.switch_workspace(7)
+        self._system.show_defaults_tab()
+
+    def _open_command_palette(self):
+        from app.ui.widgets.command_palette import CommandPalette
+        palette = CommandPalette(self, self)
+        palette.exec()
+
+    def _focus_active_input(self):
+        current_widget = self._stack.currentWidget()
+        if not current_widget:
+            return
+        focus_primary = getattr(current_widget, "focus_primary_input", None)
+        if callable(focus_primary) and focus_primary():
+            return
+        for attr in (
+            "_input",
+            "_user_edit",
+            "_analysis_prompt",
+            "_search_input",
+            "_objective_input",
+            "_adapter_name_input",
+            "_dataset_path",
+            "_model_path_input",
+            "_log_token_input",
+        ):
+            inp = getattr(current_widget, attr, None)
+            if inp is not None and inp.isVisible() and inp.isEnabled():
+                inp.setFocus()
+                return
+        from PyQt6.QtWidgets import QLineEdit, QTextEdit
+        inputs = current_widget.findChildren((QLineEdit, QTextEdit))
+        for inp in inputs:
+            if inp.isVisible() and inp.isEnabled() and not inp.isReadOnly():
+                inp.setFocus()
+                break
+
+    # ── build ─────────────────────────────────────────────────────────────────
+
+
+    def _build_ui(self):
+        """Instantiate sidebar, status bar, and the ordered workspace stack."""
+        # Sidebar + stack row
+        content = QWidget()
+        content_layout = QHBoxLayout(content)
+        content_layout.setContentsMargins(0, 0, 0, 0)
+        content_layout.setSpacing(0)
+
+        self._sidebar = Sidebar()
+        content_layout.addWidget(self._sidebar)
+
+        self._stack = QStackedWidget()
+        content_layout.addWidget(self._stack, 1)
+
+        # Create workspaces
+        self._workbench      = WorkbenchWorkspace(self._state)
+        self._prompt_lab     = PromptLabWorkspace(self._state)
+        self._knowledge_base = KnowledgeBaseWorkspace(self._state)
+        self._vision         = VisionWorkbench(self._state)
+        self._training       = TrainingStudioWorkspace(self._state)
+        self._eval           = EvalSuiteWorkspace(self._state)
+        self._swarm          = SwarmStudioWorkspace(self._state)
+        self._system         = SystemConfigWorkspace(self._state)
+        self._docs           = DocsWorkspace(self._state)
+        self._flywheel       = FlywheelStudioWorkspace(self._state)
+
+        for ws in (
+            self._workbench,
+            self._prompt_lab,
+            self._knowledge_base,
+            self._vision,
+            self._training,
+            self._eval,
+            self._swarm,
+            self._system,
+            self._docs,
+            self._flywheel,
+        ):
+            self._stack.addWidget(ws)
+
+        # Status bar
+        self._status_bar = StatusBar()
+
+        # Stack content above status bar
+        wrapper = QWidget()
+        wrapper_layout = QVBoxLayout(wrapper)
+        wrapper_layout.setContentsMargins(0, 0, 0, 0)
+        wrapper_layout.setSpacing(0)
+        wrapper_layout.addWidget(content, 1)
+        wrapper_layout.addWidget(self._status_bar)
+
+        self.setCentralWidget(wrapper)
+
+    def resizeEvent(self, event):
+        super().resizeEvent(event)
+        if hasattr(self, "_sidebar"):
+            self._sidebar.set_compact(event.size().width() < 850)
+
+    def _connect_signals(self):
+        self._sidebar.workspace_changed.connect(self._stack.setCurrentIndex)
+        self._stack.currentChanged.connect(lambda _idx: QTimer.singleShot(0, self._focus_active_input))
+        self._workbench.status_changed.connect(self._on_status_changed)
+        self._workbench.model_changed.connect(self._status_bar.set_model)
+        self._workbench.adapter_changed.connect(self._status_bar.set_adapter)
+        self._workbench.adapter_changed.connect(self._on_adapter_changed)
+        self._workbench.context_stats.connect(self._status_bar.set_context_stats)
+        self._workbench.appearance_requested.connect(self._open_appearance_controls)
+        self._system.adapter_changed.connect(self._status_bar.set_adapter)
+        self._system.adapter_changed.connect(self._on_adapter_changed)
+        self._system.appearance_changed.connect(self._apply_theme_from_state)
+        self._state.state_changed.connect(self._on_state_changed)
+        self._state.change_workspace_requested.connect(self._sidebar.select)
+
+    def _setup_autosave_checkpoint_timer(self):
+        self._autosave_checkpoint_timer = QTimer(self)
+        self._autosave_checkpoint_timer.setInterval(60_000)
+        self._autosave_checkpoint_timer.timeout.connect(self._autosave_active_checkpoint)
+        self._autosave_checkpoint_timer.start()
+
+    def _autosave_active_checkpoint(self):
+        thread = getattr(self._workbench, "_thread", None)
+        chat_running = bool(thread and thread.isRunning())
+        if not (self._state.generating or self._state.swarm_running or chat_running):
+            return
+        try:
+            self._state.memory.save_autosave_checkpoint(
+                self._workbench.chat_history,
+                self._stack.currentIndex(),
+                model_settings={
+                    "model_name": self._state.model_name,
+                    "adapter_name": self._state.adapter_name,
+                    "hyperparams": getattr(self._workbench, "_hyperparams", {}),
+                },
+                active_tab_state={
+                    "workspace_index": self._stack.currentIndex(),
+                    "swarm_running": self._state.swarm_running,
+                    "generating": self._state.generating or chat_running,
+                },
+            )
+        except Exception as exc:
+            logger.warning("Autosave checkpoint failed: %s", exc)
+
+    def _check_autosave_recovery(self):
+        try:
+            checkpoint = self._state.memory.load_autosave_checkpoint()
+        except Exception as exc:
+            logger.warning("Could not read autosave checkpoint: %s", exc)
+            self._state.memory.clear_autosave_checkpoint()
+            return
+        if not checkpoint:
+            return
+
+        from PyQt6.QtCore import QCoreApplication
+        if QCoreApplication.instance() and QCoreApplication.instance().property("is_test"):
+            try:
+                self._restore_autosave_checkpoint(checkpoint)
+            finally:
+                self._state.memory.clear_autosave_checkpoint()
+            return
+
+        timestamp = checkpoint.get("timestamp") or checkpoint.get("updated_time", "unknown time")
+        answer = QMessageBox.question(
+            self,
+            "Recover Unsaved Session",
+            f"Karl recovered an unsaved session from {timestamp}. Would you like to restore it?",
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+            QMessageBox.StandardButton.Yes,
+        )
+        try:
+            if answer == QMessageBox.StandardButton.Yes:
+                self._restore_autosave_checkpoint(checkpoint)
+        finally:
+            self._state.memory.clear_autosave_checkpoint()
+
+    def _restore_autosave_checkpoint(self, checkpoint: dict):
+        from app.utils.session_tree import SessionTree
+
+        raw_tree = checkpoint.get("session_tree") or checkpoint.get("chat_history")
+        if isinstance(raw_tree, dict) and "root" in raw_tree:
+            tree = SessionTree.from_dict(raw_tree)
+        else:
+            tree = SessionTree()
+            for msg in raw_tree or []:
+                tree.add_message(
+                    msg.get("role", "user"),
+                    msg.get("content", ""),
+                    attachments=msg.get("attachments"),
+                )
+
+        self._workbench.chat_history = tree
+        self._workbench._session_id = None
+        self._workbench._current_session_file = None
+
+        model_settings = checkpoint.get("model_settings") or {}
+        hyperparams = model_settings.get("hyperparams")
+        if isinstance(hyperparams, dict) and hasattr(self._workbench, "_hyperparams"):
+            self._workbench._hyperparams.update(hyperparams)
+
+        if model_settings.get("model_name"):
+            self._state.model_name = model_settings["model_name"]
+            self._status_bar.set_model(model_settings["model_name"])
+        if "adapter_name" in model_settings:
+            self._state.adapter_name = model_settings.get("adapter_name")
+            self._status_bar.set_adapter(model_settings.get("adapter_name"))
+
+        active_path = tree.get_active_path()
+        if hasattr(self._workbench, "_chat_view"):
+            self._workbench._chat_view.clear_display()
+            self._workbench._chat_view._messages = [
+                (n.role, n.content, n.id, getattr(n, "attachments", []))
+                for n in active_path
+            ]
+            self._workbench._chat_view._render_all()
+        if hasattr(self._workbench, "_populate_branches_tree"):
+            self._workbench._populate_branches_tree()
+        if hasattr(self._workbench, "_refresh_sessions"):
+            self._workbench._refresh_sessions()
+
+        active_workspace = checkpoint.get("active_workspace")
+        if isinstance(active_workspace, int) and 0 <= active_workspace < self._stack.count():
+            self._sidebar.select(active_workspace)
+
+    def _init_model(self):
+        if self._model_init_thread is not None and self._model_init_thread.isRunning():
+            return
+        self._status_bar.set_state("loading model…", True)
+        self._model_init_thread = _ModelInitThread(self)
+        self._model_init_thread.loaded.connect(self._on_startup_model_loaded)
+        self._model_init_thread.failed.connect(self._on_startup_model_failed)
+        self._model_init_thread.start()
+
+    def _on_startup_model_loaded(self, name: str, adapter: object):
+        self._state.model_name = name
+        self._status_bar.set_model(name)
+
+        # Sync active adapter on load
+        self._state.adapter_name = adapter
+        self._status_bar.set_adapter(adapter)
+
+        # Surface load latency and VRAM bandwidth in the status bar
+        from app.engine.model_loader import ModelLoader
+        self._status_bar.set_load_stats(
+            ModelLoader.load_latency_s(),
+            ModelLoader.vram_bandwidth_gbs(),
+        )
+
+        # Sync workspace dropdowns
+        self._workbench._refresh_model_combo()
+        self._system._scan_adapters()
+        self._status_bar.set_state("idle", False)
+
+    def _on_startup_model_failed(self, message: str):
+        self._status_bar.set_state(message, False)
+
+    # ── slots ─────────────────────────────────────────────────────────────────
+
+    def _on_status_changed(self, text: str, active: bool):
+        self._status_bar.set_state(text, active)
+        state = "idle"
+        if text == "error":
+            state = "error"
+        elif active:
+            state = "generating"
+        self.setProperty("modelState", state)
+        self.style().unpolish(self)
+        self.style().polish(self)
+
+    def _on_adapter_changed(self, name: str):
+        self._state.adapter_name = name if name else None
+
+    def _on_state_changed(self, name: str, value: object):
+        if name in (
+            "theme_preset", "theme_mode", "custom_accent", "layout_preset",
+            "reduced_motion", "glow_enabled", "animation_intensity", "glow_strength"
+        ):
+            self._apply_theme_from_state()
+        elif name == "model_name":
+            self._status_bar.set_model(str(value))
+            from app.engine.model_loader import ModelLoader
+            self._status_bar.set_load_stats(
+                ModelLoader.load_latency_s(),
+                ModelLoader.vram_bandwidth_gbs(),
+            )
+        elif name == "adapter_name":
+            self._status_bar.set_adapter(value)
+
+    def _open_appearance_controls(self):
+        self.switch_workspace(7)
+        if hasattr(self._system, "show_theme_tab"):
+            self._system.show_theme_tab()
+
+    def _load_theme_config(self):
+        from app.engine import config_store
+
+        config = config_store.get_ui_config()
+        self._state.theme_preset = config["theme_preset"]
+        self._state.custom_accent = config["custom_accent"]
+        self._state.layout_preset = config["layout_preset"]
+        self._state.reduced_motion = config["reduced_motion"]
+        self._state.glow_enabled = config["glow_enabled"]
+        self._state.animation_intensity = config["animation_intensity"]
+        self._state.glow_strength = config["glow_strength"]
+        self._state.log_rotation_size_mb = config.get("log_rotation_size_mb", 10)
+        self._state.log_retention_days = config.get("log_retention_days", 30)
+        self._state.max_log_disk_size_mb = config.get("max_log_disk_size_mb", 1024)
+        self._state.single_session_auth = config.get("single_session_auth", False)
+        self._state.thermal_protection_enabled = config.get("thermal_protection_enabled", True)
+        self._state.thermal_protection_threshold = config.get("thermal_protection_threshold", 95)
+
+        self._apply_theme_from_state()
+
+    def _apply_theme_from_state(self):
+        from PyQt6.QtWidgets import QApplication
+        from app.ui.themes import get_theme_stylesheet
+
+        # Re-applying an identical app-wide stylesheet forces Qt to restyle
+        # every widget; skip it when nothing in the compiled QSS changed
+        # (e.g. only glow/animation toggles were touched).
+        stylesheet_str = get_theme_stylesheet(self._state)
+        if stylesheet_str != getattr(self, "_applied_stylesheet", None):
+            QApplication.instance().setStyleSheet(stylesheet_str)
+            self._applied_stylesheet = stylesheet_str
+
+        # Apply theme colors to the workbench workspace
+        self._workbench.update_theme()
+
+        # Apply layout preset
+        self.apply_layout_preset(self._state.layout_preset)
+
+    def apply_layout_preset(self, preset_name: str):
+        # 1. Sidebar and status bar visibilities
+        if preset_name == "Minimal Distraction":
+            self._sidebar.hide()
+            self._status_bar.hide()
+        else:
+            self._sidebar.show()
+            self._status_bar.show()
+
+        # 2. Dock visibilities and layout options in active workspaces
+        # Workbench Workspace Docks
+        if hasattr(self, "_workbench"):
+            wb = self._workbench
+            if hasattr(wb, "_sessions_dock") and hasattr(wb, "_reasoning_dock"):
+                if preset_name in ("Focused Workbench", "Minimal Distraction"):
+                    wb._sessions_dock.hide()
+                    wb._reasoning_dock.hide()
+                elif preset_name == "Max Introspection":
+                    wb._sessions_dock.hide()
+                    wb._reasoning_dock.show()
+                elif preset_name == "Knowledge Heavy":
+                    wb._sessions_dock.show()
+                    wb._reasoning_dock.hide()
+                elif preset_name == "Wide Monitor Command":
+                    wb._sessions_dock.show()
+                    wb._reasoning_dock.show()
+                else:
+                    # Default/Research Lab stays chat-first. HUD buttons reopen
+                    # sessions/reasoning when the user explicitly asks for them.
+                    wb._sessions_dock.hide()
+                    wb._reasoning_dock.hide()
+
+                # Adjust sizes
+                if preset_name == "Wide Monitor Command":
+                    wb._sessions_dock.setMinimumWidth(320)
+                    wb._reasoning_dock.setMinimumWidth(450)
+                else:
+                    wb._sessions_dock.setMinimumWidth(200)
+                    wb._reasoning_dock.setMinimumWidth(280)
+
+    def _init_websocket_server(self):
+        from app.engine.websocket_server import WebSocketServerManager
+        try:
+            self._ws_server = WebSocketServerManager.get_instance(port=8080, state=self._state)
+        except Exception as e:
+            logger.warning(f"Failed to start WebSocket server on boot: {e}")
+
+    def showEvent(self, event):
+        super().showEvent(event)
+        if not hasattr(self, "_bridge_poll_timer"):
+            # Window rendered successfully — release the boot crash-detection lock.
+            from app.engine.feature_flags import release_boot_lock
+            release_boot_lock()
+
+            self._bridge_poll_timer = QTimer(self)
+            self._bridge_poll_timer.timeout.connect(self._poll_bridge_status)
+            self._bridge_poll_timer.start(5000)
+            self._poll_bridge_status()
+
+    def _poll_bridge_status(self):
+        try:
+            from app.engine.websocket_server import WebSocketServerManager
+            ws_mgr = WebSocketServerManager._instance
+            if ws_mgr and ws_mgr.server is not None:
+                n = len(ws_mgr.clients)
+                if n > 0:
+                    self._status_bar.set_bridge_status("connected", n)
+                else:
+                    self._status_bar.set_bridge_status("listening")
+            else:
+                self._status_bar.set_bridge_status("offline")
+        except Exception:
+            try:
+                self._status_bar.set_bridge_status("offline")
+            except Exception:
+                pass
+
+    def closeEvent(self, event):
+        self._workbench.on_close()
+
+        # The llama load cannot be interrupted; wait for it so the process
+        # does not tear down Qt objects under a running thread.
+        if self._model_init_thread is not None and self._model_init_thread.isRunning():
+            self._model_init_thread.wait()
+        system_model_thread = getattr(self._system, "_model_load_thread", None)
+        if system_model_thread is not None and system_model_thread.isRunning():
+            system_model_thread.wait()
+
+        # Safely shut down the WebSocket server connection bridge on exit
+        from app.engine.websocket_server import WebSocketServerManager
+        from app.utils.keychain_manager import revoke_tokens
+        try:
+            WebSocketServerManager.reset_instance()
+        except Exception as e:
+            logger.warning(f"Error during exit teardown: {e}")
+
+        # Purge sensitive tokens from kernel and OS vaults on exit
+        try:
+            revoke_tokens()
+        except Exception:
+            pass
+
+        # Scrub any live shared memory segments before Qt tears down the process.
+        try:
+            from app.utils.ipc_helper import SharedMemoryManager
+            SharedMemoryManager.instance()._cleanup_all()
+        except Exception as e:
+            logger.warning("IPC shared memory cleanup failed during exit: %s", e)
+
+        event.accept()

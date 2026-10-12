@@ -1,0 +1,47 @@
+
+        <h2 style='color:#00C2FF; margin-top:0;'>⚙ C Low-Level Memory Manual</h2>
+        <p style='color:#9090A8; line-height:1.4;'>C provides low-level abstractions and direct memory management. This reference details pointer arithmetic, allocations, and struct padding.</p>
+        
+        <h3 style='color:#E4E4F0; margin-bottom:4px; border-bottom:1px solid #252535; padding-bottom:4px;'>1. Pointer Arithmetic & Allocation Safety</h3>
+        <pre style='color:#2DD4A0; background:#07070D; padding:8px; border-radius:4px; font-size:9.5pt; font-family:monospace;'>
+#include <stdlib.h>
+
+void allocate_buffer() {
+    // Allocate buffer of 10 integers
+    int *buffer = (int*) malloc(10 * sizeof(int));
+    if (buffer == NULL) return; // Guard allocation failure
+    
+    // Pointer Arithmetic
+    int *third_elem = buffer + 2; // Moves pointer by 2 * sizeof(int) bytes
+    *third_elem = 42;
+    
+    free(buffer); // Prevent memory leaks
+}
+        </pre>
+    
+        <h3 style='color:#E4E4F0; margin-bottom:4px; border-bottom:1px solid #252535; padding-bottom:4px;'>3. Unions, Struct alignment & Bit Packing</h3>
+        <p style='color:#9090A8; line-height:1.4;'>Unions store different types in the same memory address location. Struct packing disables padding to optimize layout allocations.</p>
+        <pre style='color:#2DD4A0; background:#07070D; padding:8px; border-radius:4px; font-size:9.5pt; font-family:monospace;'>
+#include <stdio.h>
+
+// Disable alignment padding to restrict size limits
+#pragma pack(push, 1)
+struct AlignedHeader {
+    char type;     // 1 byte
+    int version;   // 4 bytes
+}; // sizeof == 5 bytes (would be 8 bytes with default padding)
+#pragma pack(pop)
+
+union DataPacket {
+    int value;
+    char bytes[4]; // Allows accessing integer bytes directly (type punning)
+};
+
+void run_diagnostics() {
+    union DataPacket packet;
+    packet.value = 0x12345678;
+    if (packet.bytes[0] == 0x78) {
+        printf("System CPU Architecture: Little Endian\n");
+    }
+}
+        </pre>

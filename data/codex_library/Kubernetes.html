@@ -1,0 +1,51 @@
+
+        <h2 style='color:#00C2FF; margin-top:0;'>☸ Kubernetes Orchestration Reference</h2>
+        <p style='color:#9090A8; line-height:1.4;'>Kubernetes manages containerized workloads at scale. This guide contains service patterns and kubectl commands.</p>
+        
+        <h3 style='color:#E4E4F0; margin-bottom:4px; border-bottom:1px solid #252535; padding-bottom:4px;'>1. Kubectl Daily Commands</h3>
+        <pre style='color:#2DD4A0; background:#07070D; padding:8px; border-radius:4px; font-size:9.5pt; font-family:monospace;'>
+# View details of all active pods in a namespace
+kubectl get pods -n production
+
+# Execute shell command inside running pod
+kubectl exec -it my-pod-name -- /bin/sh
+
+# View streams of logs from deployment
+kubectl logs -f deployment/my-deployment
+        </pre>
+    
+        <h3 style='color:#E4E4F0; margin-bottom:4px; border-bottom:1px solid #252535; padding-bottom:4px;'>3. Persistent Volumes & Claim Configurations</h3>
+        <p style='color:#9090A8; line-height:1.4;'>Pods are ephemeral. Decouple storage setups using PersistentVolumes (PV) and PersistentVolumeClaims (PVC).</p>
+        <pre style='color:#2DD4A0; background:#07070D; padding:8px; border-radius:4px; font-size:9.5pt; font-family:monospace;'>
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: static-pvc
+  namespace: production
+spec:
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 10Gi
+  storageClassName: standard
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: api-server
+spec:
+  replicas: 2
+  template:
+    spec:
+      containers:
+        - name: web
+          image: nginx:alpine
+          volumeMounts:
+            - mountPath: "/usr/share/nginx/html"
+              name: data-volume
+      volumes:
+        - name: data-volume
+          persistentVolumeClaim:
+            claimName: static-pvc
+        </pre>

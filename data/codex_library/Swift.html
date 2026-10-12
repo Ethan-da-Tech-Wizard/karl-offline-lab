@@ -1,0 +1,44 @@
+
+        <h2 style='color:#00C2FF; margin-top:0;'>🦅 Swift & SwiftUI Architecture Manual</h2>
+        <p style='color:#9090A8; line-height:1.4;'>Swift is Apple's safe, fast systems language. This manual defines SwiftUI, ARC ownership lifecycles, and modern Swift concurrency systems.</p>
+        
+        <h3 style='color:#E4E4F0; margin-bottom:4px; border-bottom:1px solid #252535; padding-bottom:4px;'>1. Automatic Reference Counting (ARC)</h3>
+        <p style='color:#9090A8; line-height:1.4;'>Swift uses ARC to manage heap memory allocations. Circular reference loops require using `weak` or `unowned` properties to prevent VRAM memory leaks.</p>
+        <pre style='color:#2DD4A0; background:#07070D; padding:8px; border-radius:4px; font-size:9.5pt; font-family:monospace;'>
+class DeviceManager {
+    let name: String
+    // weak prevents cyclic ownership of resources
+    weak var activeDelegate: UserDelegate?
+    
+    init(name: String) { self.name = name }
+}
+        </pre>
+    
+        <h3 style='color:#E4E4F0; margin-bottom:4px; border-bottom:1px solid #252535; padding-bottom:4px;'>3. Swift Concurrency: Actors & Reentrancy</h3>
+        <p style='color:#9090A8; line-height:1.4;'>Actors serialize memory access. Execution yields at <code>await</code> boundaries, allowing other tasks to execute (actor reentrancy). View updates must route to the MainActor.</p>
+        <pre style='color:#2DD4A0; background:#07070D; padding:8px; border-radius:4px; font-size:9.5pt; font-family:monospace;'>
+import Foundation
+
+actor FeedCache {
+    private var cachedData: [String: Data] = [:]
+    
+    // Actor method handles concurrent reads/writes safely
+    func write(_ data: Data, forKey key: String) {
+        cachedData[key] = data
+    }
+}
+
+@MainActor
+class FeedViewModel: ObservableObject {
+    @Published var feedItems: [String] = []
+    private let cache = FeedCache()
+    
+    func updateFeed() async {
+        // Runs on MainActor/UI Thread
+        self.feedItems = ["Loading..."]
+        // Async steps offload execution to concurrent thread pools
+        await cache.write(Data(), forKey: "feed_cache")
+        self.feedItems = ["Updated Feed"]
+    }
+}
+        </pre>
