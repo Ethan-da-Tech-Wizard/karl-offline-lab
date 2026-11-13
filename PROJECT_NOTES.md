@@ -1,19 +1,19 @@
 # Karl
 
-**Karl** is a privacy-first, offline LLM Introspection Environment for Prompt Engineers.
+**Karl** is a local-model workbench prototype. Functionality, privacy, and offline behavior have not been independently verified for every configuration.
 
-It is not LM Studio. It is not Ollama. It is a surgical instrument.
+The notes below describe the project design and historical behavior; current functionality requires independent testing.
 
 ---
 
 ## What Karl Does Differently
 
-- **Zero remote inference calls.** The model runs as a C-extension inside your Python process. The optional VS Code bridge uses localhost only; there is no telemetry and no cloud model server.
-- **You see exactly how it thinks.** Karl splits DeepSeek-R1's `<think>` reasoning blocks into a dedicated live stream panel, separate from the final response.
+- **Local inference design.** The model is intended to run inside the Python process. Privacy, network behavior, and the editor bridge have not been independently verified for every configuration.
+- **Reasoning display.** The design describes a panel for model-generated `<think>` text. Such text is model output and does not prove access to the model’s internal reasoning.
 - **Session Branching.** Interactive conversation tree view allowing you to branch off any message to explore alternate prompts and generation paths.
-- **Every generation is logged.** An immutable JSONL trace file captures the exact prompt, hyperparameters, thought process, and response for every single generation. Your experimental audit trail is guaranteed.
-- **The core is yours to hack.** `core/interaction_loop.py` and `core/cognitive_parser.py` are the live Python scripts that control prompt construction and thought parsing. Karl hot-reloads them on every generation — change the file and click Generate, no restart needed.
-- **RAG on any file.** Drop a PDF, Word doc, Python file, markdown, or CSV into Karl's Knowledge Base. It chunks, embeds, and retrieves locally via `sentence-transformers` + `faiss-cpu`.
+- **Generation traces.** The project describes JSONL logging of prompts, settings and responses. Log completeness, immutability and audit guarantees have not been verified.
+- **Editable core.** The project describes Python modules for prompt construction and parsing, with a reload workflow. Current behavior has not been independently verified.
+- **Document retrieval.** The project describes indexing and retrieval for several document types. File coverage and offline behavior have not been independently verified.
 
 ---
 
@@ -117,6 +117,9 @@ docker compose down
 
 ## VS Code & Code OSS Extension
 
+**Known issue:** The project owner reports that this extension does not work. The instructions and feature descriptions below are historical; they are not evidence that the extension currently functions.
+
+
 Karl contains an integrated editor extension under `oss/vss_extension/`. It is a
 local WSS client for the running Karl app, so the editor can use Karl's
 chat, reasoning stream, prompt lab, Codex docs, and multi-agent coding swarm
@@ -167,10 +170,10 @@ npx ovsx publish karl-1.4.0.vsix -p <your-open-vsx-access-token>
 Karl is a local-first application, but it has the power to execute code and
 interact with your filesystem. 
 
-- **Privacy:** Karl does not phone home. All inference and RAG are offline.
-- **Bridge Security:** The VS Code bridge uses localhost WSS, token validation, and scoped JSON-RPC permissions. The token store is `data/bridge_token.json`.
-- **Path Protection:** Critical system paths are blocked from being targeted by agents or RAG.
-- **Sandboxing:** Code verifications in the auto-train pipeline run inside isolated Docker containers.
+- **Privacy:** The project is designed for local inference and retrieval, but offline and network behavior are not verified for every configuration.
+- **Bridge security:** The design describes a local bridge and token controls; the extension is reported not to work, and these controls have not been independently verified.
+- **Path protection:** Path restrictions are described in the project, but their coverage has not been independently verified.
+- **Sandboxing:** The project describes a container-based verification workflow. Its isolation and current functionality have not been independently verified.
 
 See [docs/10_security_and_safety.md](docs/10_security_and_safety.md) for the full security model and safe usage guidelines.
 
