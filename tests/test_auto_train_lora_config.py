@@ -92,3 +92,82 @@ def test_sft_config_accepts_packing_and_cosine_kwargs_when_trl_available():
     assert cfg.packing is True
     assert cfg.max_length == 4096
     assert str(cfg.lr_scheduler_type) == "SchedulerType.COSINE"
+
+
+@pytest.mark.parametrize("value", [True, False])
+def test_checkpointing_uses_legacy_name_on_older_config(value):
+    class OldConfig:
+        def __init__(self, gradient_checkpointing=False, gradient_checkpointing_kwargs=None):
+            self.enabled = gradient_checkpointing
+            self.options = gradient_checkpointing_kwargs
+
+    options = {"use_reentrant": False}
+    raw = {"gradient_checkpointing": value, "gradient_checkpointing_kwargs": options}
+    cfg = OldConfig(**filter_kwargs_for_class(raw, OldConfig))
+    assert cfg.enabled is value
+    assert cfg.options == options
+    assert raw == {"gradient_checkpointing": value, "gradient_checkpointing_kwargs": options}
+
+
+@pytest.mark.parametrize("value", [True, False])
+def test_checkpointing_prefers_new_name_without_deprecated_alias(value):
+    class NewConfig:
+        def __init__(self, activation_checkpointing=False, activation_checkpointing_kwargs=None,
+                     gradient_checkpointing=None, gradient_checkpointing_kwargs=None):
+            if gradient_checkpointing is not None or gradient_checkpointing_kwargs is not None:
+                raise AssertionError("deprecated checkpointing arguments passed")
+            self.enabled = activation_checkpointing
+            self.options = activation_checkpointing_kwargs
+
+    options = {"use_reentrant": False}
+    raw = {"gradient_checkpointing": value, "gradient_checkpointing_kwargs": options}
+    cfg = NewConfig(**filter_kwargs_for_class(raw, NewConfig))
+    assert cfg.enabled is value
+    assert cfg.options == options
+
+
+def test_explicit_new_checkpointing_setting_takes_precedence():
+    class NewConfig:
+        def __init__(self, activation_checkpointing=None, gradient_checkpointing=None):
+            pass
+
+    raw = {"gradient_checkpointing": True, "activation_checkpointing": False}
+    assert filter_kwargs_for_class(raw, NewConfig) == {"activation_checkpointing": False}
+
+
+def test_checkpointing_unknown_signature_keeps_legacy_and_other_kwargs():
+    class FlexibleConfig:
+        def __init__(self, **kwargs):
+            self.kwargs = kwargs
+
+    raw = {"gradient_checkpointing": True, "future_option": "x"}
+    assert FlexibleConfig(**filter_kwargs_for_class(raw, FlexibleConfig)).kwargs == raw
+
+
+def test_checkpointing_without_supported_parameter_reports_drop(capsys):
+    class NoCheckpointConfig:
+        def __init__(self, output_dir):
+            pass
+
+    assert filter_kwargs_for_class({"output_dir": "out", "gradient_checkpointing": True}, NoCheckpointConfig) == {"output_dir": "out"}
+    assert "gradient_checkpointing" in capsys.readouterr().err
+
+
+def test_checkpointing_accepts_new_only_signature():
+    class NewOnlyConfig:
+        def __init__(self, activation_checkpointing=False):
+            self.enabled = activation_checkpointing
+
+    cfg = NewOnlyConfig(**filter_kwargs_for_class({"gradient_checkpointing": True}, NewOnlyConfig))
+    assert cfg.enabled is True
+
+
+def test_checkpointing_adapts_explicit_new_name_with_flexible_kwargs():
+    class NewFlexibleConfig:
+        def __init__(self, activation_checkpointing=False, **kwargs):
+            self.enabled = activation_checkpointing
+            self.kwargs = kwargs
+
+    cfg = NewFlexibleConfig(**filter_kwargs_for_class({"gradient_checkpointing": True, "other": 2}, NewFlexibleConfig))
+    assert cfg.enabled is True
+    assert cfg.kwargs == {"other": 2}

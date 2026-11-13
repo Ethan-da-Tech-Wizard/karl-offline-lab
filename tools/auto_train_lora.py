@@ -136,10 +136,22 @@ def filter_kwargs_for_class(kwargs: dict, cls) -> dict:
     not silently lost.
     """
     params = inspect.signature(cls.__init__).parameters
+    adapted = dict(kwargs)
+    # Newer Transformers deprecates gradient_checkpointing in favor of
+    # activation_checkpointing. Prefer the new explicit parameter, even if
+    # the constructor still accepts the deprecated alias. Keep the old name
+    # for older constructors and preserve the requested value in either case.
+    for old, new in (
+        ("gradient_checkpointing", "activation_checkpointing"),
+        ("gradient_checkpointing_kwargs", "activation_checkpointing_kwargs"),
+    ):
+        if old in adapted and new in params:
+            adapted.setdefault(new, adapted[old])
+            del adapted[old]
     if any(p.kind == inspect.Parameter.VAR_KEYWORD for p in params.values()):
-        return dict(kwargs)  # __init__ accepts **kwargs -- nothing to filter
-    supported = {k: v for k, v in kwargs.items() if k in params}
-    dropped = sorted(set(kwargs) - set(supported))
+        return adapted  # __init__ accepts **kwargs -- nothing to filter
+    supported = {k: v for k, v in adapted.items() if k in params}
+    dropped = sorted(set(adapted) - set(supported))
     if dropped:
         print(
             f"WARNING: {cls.__name__} in the installed trl version doesn't "
