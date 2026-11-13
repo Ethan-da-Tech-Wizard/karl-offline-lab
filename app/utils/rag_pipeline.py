@@ -22,7 +22,10 @@ from typing import Callable
 
 import faiss
 import numpy as np
-import fitz   # PyMuPDF
+try:
+    import pymupdf as fitz
+except ModuleNotFoundError:
+    import fitz  # PyMuPDF before the pymupdf import name was available
 import docx
 
 from app.utils.db_pool import SQLiteConnectionPool
