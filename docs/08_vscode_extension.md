@@ -1,5 +1,7 @@
 # Karl VS Code Extension
 
+**Known issue:** The project owner reports that the extension does not work. The interface descriptions and setup instructions below document intended or historical behavior, not verified current functionality.
+
 ## Purpose
 
 Karl's VS Code / Code OSS extension is the editor-facing control surface for the
@@ -28,7 +30,7 @@ their own machine.
 
 The extension package lives in `oss/vss_extension/`.
 
-Current capabilities:
+Historically documented and intended capabilities (not verified as currently working):
 
 - Activity Bar view: `Karl Agent Swarm`
 - Command palette / context menu command: `Ask Karl to Refactor Selection`
