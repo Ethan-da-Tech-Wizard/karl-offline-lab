@@ -1,17 +1,17 @@
 # Karl
 
-An offline lab for working with local language models. Karl runs a model inside your own Python process, shows you its reasoning while it generates, and keeps a full trace of every run, so you can see exactly what a prompt did.
+A local language-model workbench prototype. Features and setup described here have not been recently verified end to end.
 
-Nothing leaves your machine. There are no cloud calls and no telemetry, and the optional editor bridge only listens on localhost.
+The project is intended for local operation. Network and privacy behavior have not been independently verified for every configuration; setup can download packages and models.
 
-## What it does
+## Documented features
 
 - **Live reasoning view.** DeepSeek-R1 style `<think>` blocks are split into their own panel, apart from the final answer.
 - **Session branching.** Branch from any message in a conversation to try a different prompt without losing the original.
 - **Generation traces.** Every run is logged to JSONL with the prompt, settings, reasoning and response.
 - **A hackable core.** `core/interaction_loop.py` and `core/cognitive_parser.py` are plain Python files that reload on every generation. Edit one, press Generate, no restart needed.
 - **Local document search.** Add PDFs, Word files, code, markdown or CSVs to the knowledge base and Karl chunks, embeds and retrieves them on your machine.
-- **Extras.** A VS Code / Code OSS extension, a Neovim client, an eval suite, and LoRA training tools.
+- **Experimental extras.** The repository contains editor clients, an eval suite, and LoRA training tools. The VS Code / Code OSS extension is reported not to work and should not be relied upon.
 
 ## What you need
 
@@ -20,7 +20,7 @@ Nothing leaves your machine. There are no cloud calls and no telemetry, and the 
 - **A desktop session for the window.** The interface is PyQt6, which needs the usual Qt system libraries on Linux (for example `libegl1` and `libxkbcommon0` on Debian or Ubuntu). If you only want the backend, run it headless (see below).
 - **Enough memory for your model.** The default 1.5B model needs about 3 GB of RAM and a download of roughly 1 GB. The 7B and 8B models want about 8 GB, the 14B about 16 GB, and the 70B about 48 GB.
 - **A normal user account.** Karl refuses to start as root.
-- **Internet for setup only.** You need it once to install packages, download a model, and let document search fetch its small embedding and reranking models the first time you use it. After that Karl runs offline.
+- **Internet and setup.** The documented setup downloads packages and a model; document search may also fetch embedding and reranking models. Offline operation after setup has not been verified for all configurations.
 
 Optional extras:
 
@@ -49,11 +49,11 @@ python main.py
 
 The model lands in `data/models/`. You can drop other GGUF files there too; `data/model_registry.json` lists the models Karl knows about.
 
-**Headless mode.** `python main.py --headless` starts the backend without a window, for the editor extensions.
+**Headless mode.** The project documents `python main.py --headless` as a backend option. Editor integration is not verified; the VS Code extension is reported not to work.
 
 **GPU setup.** If you have an NVIDIA card, `sudo ./setup_gpu.sh` installs CUDA-enabled PyTorch and the training tools into your virtual environment.
 
-Docker and VS Code extension instructions are in [PROJECT_NOTES.md](PROJECT_NOTES.md).
+Historical Docker and editor instructions are in [PROJECT_NOTES.md](PROJECT_NOTES.md); the VS Code extension is reported not to work.
 
 ## Running the tests
 
@@ -62,7 +62,7 @@ pip install pytest
 python -m pytest
 ~~~
 
-The suite does not need a model or a GPU. One timing-sensitive fuzz test can fail on a slow or busy machine.
+The test suite is documented below; its current status and dependencies have not been independently checked. A timing-sensitive fuzz test may fail on a slow or busy machine.
 
 ## Learn more
 
