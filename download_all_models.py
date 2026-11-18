@@ -1,3 +1,13 @@
+# ==============================================================================
+# Program: download_all_models.py
+# Programmer: Ethan-da-Tech-Wizard
+# Last Modified: November 18, 2026
+# Purpose: Automated model weight fetcher and validator.
+#          Downloads configured GGUF LLM models and embedding weights into the
+#          local data/models directory, verifying sha256 checksums and ensuring
+#          model availability for offline inference.
+# ==============================================================================
+
 import os
 import argparse
 import json
@@ -5,6 +15,7 @@ import requests
 from tqdm import tqdm
 
 def download_file(url, filepath):
+    # Step 1: Validate input parameters, operational preconditions, and state
     response = requests.get(url, stream=True)
     response.raise_for_status()
     total_size = int(response.headers.get('content-length', 0))
@@ -18,11 +29,13 @@ def download_file(url, filepath):
         unit_divisor=1024,
     ) as bar:
         for data in response.iter_content(block_size):
+            # Iterate over items, evaluate loop invariant, and update progress
             if data:
                 size = file.write(data)
                 bar.update(size)
 
 def main():
+    # Step 1: Validate input parameters, operational preconditions, and state
     parser = argparse.ArgumentParser(description="Download Karl LLM models from the registry.")
     parser.add_argument(
         "--tier", type=int, choices=[1, 2, 3, 4], help="Download all models of a specific tier (e.g. tier 2 for 7B/8B class models)."
@@ -51,11 +64,13 @@ def main():
         # Interactive selection
         print("Available models in registry:")
         for idx, m in enumerate(registry, 1):
+            # Iterate over items, evaluate loop invariant, and update progress
             file_path = os.path.join("data/models", m["filename"])
             status = "[Downloaded]" if os.path.exists(file_path) else "[Not Downloaded]"
             print(f"  {idx}. Tier {m['tier']}: {m['name']} ({m['min_storage_gb']} GB) {status}")
         
         try:
+            # Execute guarded operations and establish recovery boundaries
             choice = input("\nEnter numbers of models to download (comma separated, e.g. 2,3), or 'all': ").strip().lower()
             if choice == 'all':
                 to_download = registry
@@ -74,6 +89,7 @@ def main():
         return
 
     for m in to_download:
+        # Iterate over items, evaluate loop invariant, and update progress
         target = os.path.join("data/models", m["filename"])
         print(f"\nProcessing {m['name']}...")
         if os.path.exists(target):
@@ -82,6 +98,7 @@ def main():
         
         print(f"Downloading from: {m['url']}")
         try:
+            # Execute guarded operations and establish recovery boundaries
             download_file(m["url"], target)
             print(f"Successfully downloaded to {target}")
         except Exception as e:

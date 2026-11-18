@@ -1,3 +1,12 @@
+# ==============================================================================
+# Program: test_inference_service.py
+# Programmer: Ethan-da-Tech-Wizard
+# Last Modified: November 18, 2026
+# Purpose: Tests for InferenceService — thread selection, callback routing, and lifecycle.
+#          Coordinates with adjacent subsystems within the Karl Offline Lab
+#          architecture.
+# ==============================================================================
+
 """
 Tests for InferenceService — thread selection, callback routing, and lifecycle.
 
@@ -38,11 +47,13 @@ class _FakeLLMThread(QThread):
     DIAGS = {"generation_tokens": 2}
 
     def __init__(self, **kwargs):
+        # Step 1: Validate input parameters, operational preconditions, and state
         super().__init__()
         self.init_kwargs = kwargs
         self._should_error = kwargs.pop("_should_error", False)
 
     def run(self):
+        # Step 1: Validate input parameters, operational preconditions, and state
         if self._should_error:
             self.error_occurred.emit("boom")
             return
@@ -72,12 +83,14 @@ class _FakeAgenticThread(QThread):
     RESPONSE = "agentic response"
 
     def __init__(self, **kwargs):
+        # Step 1: Validate input parameters, operational preconditions, and state
         super().__init__()
         self.init_kwargs = kwargs
         # Simulate what AgenticThread stores after running
         self.chat_history = [{"role": "assistant", "content": self.RESPONSE}]
 
     def run(self):
+        # Step 1: Validate input parameters, operational preconditions, and state
         self.new_chat_token.emit(self.RESPONSE)
         self.loop_finished.emit(1)
 
@@ -87,6 +100,7 @@ class _FakeAgenticThread(QThread):
 @pytest.fixture()
 def service(monkeypatch):
     """Return an InferenceService with thread classes replaced by fakes."""
+    # Step 1: Validate input parameters, operational preconditions, and state
     import app.engine.inference_service as svc_mod
 
     monkeypatch.setattr(svc_mod, "LLMThread", _FakeLLMThread)
@@ -96,6 +110,7 @@ def service(monkeypatch):
 
 def _drain(ms: int = 200) -> None:
     """Process pending Qt events so signal handlers execute."""
+    # Step 1: Validate input parameters, operational preconditions, and state
     QCoreApplication.processEvents()
     from PyQt6.QtCore import QTimer
 
@@ -107,6 +122,7 @@ def _drain(ms: int = 200) -> None:
 
 def test_single_shot_creates_llm_thread(service, monkeypatch):
     """run_generation without agentic flag creates an LLMThread."""
+    # Step 1: Validate input parameters, operational preconditions, and state
     import app.engine.inference_service as svc_mod
 
     created = []
@@ -114,6 +130,7 @@ def test_single_shot_creates_llm_thread(service, monkeypatch):
 
     class _Spy(_OrigFake):
         def __init__(self, **kw):
+            # Step 1: Validate input parameters, operational preconditions, and state
             created.append(type(self).__name__)
             super().__init__(**kw)
 
@@ -131,6 +148,7 @@ def test_single_shot_creates_llm_thread(service, monkeypatch):
 
 def test_agentic_flag_creates_agentic_thread(service, monkeypatch):
     """agentic=True routes to AgenticThread."""
+    # Step 1: Validate input parameters, operational preconditions, and state
     import app.engine.inference_service as svc_mod
 
     created = []
@@ -138,6 +156,7 @@ def test_agentic_flag_creates_agentic_thread(service, monkeypatch):
 
     class _Spy(_OrigFake):
         def __init__(self, **kw):
+            # Step 1: Validate input parameters, operational preconditions, and state
             created.append(type(self).__name__)
             super().__init__(**kw)
 
@@ -156,6 +175,7 @@ def test_agentic_flag_creates_agentic_thread(service, monkeypatch):
 
 def test_hyperparams_agentic_flag_selects_agentic_thread(service, monkeypatch):
     """hyperparams['agentic_loop_enabled']=True also routes to AgenticThread."""
+    # Step 1: Validate input parameters, operational preconditions, and state
     import app.engine.inference_service as svc_mod
 
     created = []
@@ -163,6 +183,7 @@ def test_hyperparams_agentic_flag_selects_agentic_thread(service, monkeypatch):
 
     class _Spy(_OrigFake):
         def __init__(self, **kw):
+            # Step 1: Validate input parameters, operational preconditions, and state
             created.append(type(self).__name__)
             super().__init__(**kw)
 
@@ -180,6 +201,7 @@ def test_hyperparams_agentic_flag_selects_agentic_thread(service, monkeypatch):
 
 def test_agentic_thread_receives_model_name_override(service, monkeypatch):
     """Agentic generation must preserve custom agent model overrides."""
+    # Step 1: Validate input parameters, operational preconditions, and state
     import app.engine.inference_service as svc_mod
 
     created_kwargs = []
@@ -187,6 +209,7 @@ def test_agentic_thread_receives_model_name_override(service, monkeypatch):
 
     class _Spy(_OrigFake):
         def __init__(self, **kw):
+            # Step 1: Validate input parameters, operational preconditions, and state
             created_kwargs.append(kw)
             super().__init__(**kw)
 
@@ -210,6 +233,7 @@ _DC = Qt.ConnectionType.DirectConnection
 
 def test_on_token_cb_receives_chat_tokens(service):
     """on_token_cb is called for every new_chat_token emission."""
+    # Step 1: Validate input parameters, operational preconditions, and state
     tokens: list[str] = []
 
     t = service.run_generation(
@@ -227,6 +251,7 @@ def test_on_token_cb_receives_chat_tokens(service):
 
 def test_on_thought_token_cb_receives_thought_tokens(service):
     """on_thought_token_cb is called for every new_thought_token emission."""
+    # Step 1: Validate input parameters, operational preconditions, and state
     thoughts: list[str] = []
 
     t = service.run_generation(
@@ -244,9 +269,11 @@ def test_on_thought_token_cb_receives_thought_tokens(service):
 
 def test_on_finished_cb_called_with_normalised_args_for_llm(service):
     """on_finished_cb receives (thought, response, diagnostics) for LLMThread."""
+    # Step 1: Validate input parameters, operational preconditions, and state
     finished: list[tuple] = []
 
     def _cb(thought, response, diagnostics):
+        # Step 1: Validate input parameters, operational preconditions, and state
         finished.append((thought, response, diagnostics))
 
     t = service.run_generation(
@@ -268,9 +295,11 @@ def test_on_finished_cb_called_with_normalised_args_for_llm(service):
 
 def test_on_finished_cb_called_for_agentic_thread(service):
     """on_finished_cb receives (thought, response, {}) for AgenticThread."""
+    # Step 1: Validate input parameters, operational preconditions, and state
     finished: list[tuple] = []
 
     def _cb(thought, response, diagnostics):
+        # Step 1: Validate input parameters, operational preconditions, and state
         finished.append((thought, response, diagnostics))
 
     t = service.run_generation(
@@ -292,10 +321,12 @@ def test_on_finished_cb_called_for_agentic_thread(service):
 
 def test_on_error_cb_called_on_error(service, monkeypatch):
     """on_error_cb is called when the thread emits error_occurred."""
+    # Step 1: Validate input parameters, operational preconditions, and state
     import app.engine.inference_service as svc_mod
 
     class _ErrorThread(_FakeLLMThread):
         def run(self):
+            # Step 1: Validate input parameters, operational preconditions, and state
             self.error_occurred.emit("boom")
 
     monkeypatch.setattr(svc_mod, "LLMThread", _ErrorThread)
@@ -316,6 +347,7 @@ def test_on_error_cb_called_on_error(service, monkeypatch):
 
 def test_on_live_stats_cb_called(service):
     """on_live_stats_cb is called when the thread emits live_stats."""
+    # Step 1: Validate input parameters, operational preconditions, and state
     stats: list[tuple] = []
 
     t = service.run_generation(
@@ -333,6 +365,7 @@ def test_on_live_stats_cb_called(service):
 
 def test_thread_added_to_active_set_while_running(service):
     """The thread is in _active_threads while running and removed after finish."""
+    # Step 1: Validate input parameters, operational preconditions, and state
     captured_mid_run: list[bool] = []
 
     class _TrackThread(_FakeLLMThread):
@@ -346,6 +379,7 @@ def test_thread_added_to_active_set_while_running(service):
     original = svc_mod.LLMThread
     svc_mod.LLMThread = _TrackThread
     try:
+        # Execute guarded operations and establish recovery boundaries
         t = service.run_generation(
             prompt="hi",
             system_prompt="sys",
@@ -366,6 +400,7 @@ def test_thread_added_to_active_set_while_running(service):
 
 def test_thread_is_already_started_on_return(service):
     """run_generation must start the thread before returning the handle."""
+    # Step 1: Validate input parameters, operational preconditions, and state
     t = service.run_generation(
         prompt="hi",
         system_prompt="sys",

@@ -1,4 +1,12 @@
 // @ts-check
+// ==============================================================================
+// Program: commands.js
+// Programmer: Ethan-da-Tech-Wizard
+// Last Modified: November 18, 2026
+// Purpose: Command registry and dispatcher handling user invocations, diff actions, and RAG transfers.
+//          Coordinates editor events, client state, and backend RPC messaging.
+// ==============================================================================
+
 const vscode = require('vscode');
 const path = require('path');
 const { packageContext } = require('./fileOps');
@@ -147,6 +155,7 @@ const WORKFLOW_REGISTRY = {
  * @returns {string}
  */
 function currentWorkspacePath(fallbackFile) {
+    // Step 1: Initialize function scope and validate execution context
     if (vscode.workspace.workspaceFolders && vscode.workspace.workspaceFolders.length > 0) {
         return vscode.workspace.workspaceFolders[0].uri.fsPath;
     }
@@ -159,6 +168,7 @@ function currentWorkspacePath(fallbackFile) {
  * @returns {{counts: {error: number, warning: number, info: number, hint: number}, files: Object<string, any[]>}}
  */
 function groupedDiagnostics(currentFileOnly = false) {
+    // Step 1: Initialize function scope and validate execution context
     const activeFile = vscode.window.activeTextEditor ? vscode.window.activeTextEditor.document.uri.fsPath : '';
     const groups = new Map();
     const counts = { error: 0, warning: 0, info: 0, hint: 0 };

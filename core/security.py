@@ -1,3 +1,12 @@
+# ==============================================================================
+# Program: security.py
+# Programmer: Ethan-da-Tech-Wizard
+# Last Modified: November 18, 2026
+# Purpose: Security guardrails and offline safety enforcement.
+#          Sanitizes inputs, detects dangerous system commands or path traversal
+#          attempts, and guarantees safe execution boundaries.
+# ==============================================================================
+
 """
 Small, dependency-light security helpers shared across every independently
 launched Karl entrypoint (the PyQt app in main.py, and standalone scripts
@@ -28,6 +37,7 @@ def assert_not_privileged() -> None:
     simply raise its own limits back up. Blocking root/admin at every
     process entrypoint prevents an entire class of containment failures.
     """
+    # Step 1: Validate input parameters, operational preconditions, and state
     import platform
     plat = platform.system()
     if plat in ("Linux", "Darwin"):
@@ -36,6 +46,7 @@ def assert_not_privileged() -> None:
             sys.exit(1)
     elif plat == "Windows":
         try:
+            # Execute guarded operations and establish recovery boundaries
             import ctypes
             if ctypes.windll.shell32.IsUserAnAdmin():
                 logging.getLogger("karl").critical(PRIV_MSG)

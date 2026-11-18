@@ -1,3 +1,12 @@
+# ==============================================================================
+# Program: test_swarm_agent_profiles.py
+# Programmer: Ethan-da-Tech-Wizard
+# Last Modified: November 18, 2026
+# Purpose: Comprehensive test suite exercising swarm agent profiles functionality.
+#          Verifies state transitions, error boundaries, regression resistance,
+#          and contract compliance under tests.
+# ==============================================================================
+
 import json
 
 import pytest
@@ -7,6 +16,7 @@ from app.utils import swarm_agent_profiles as profiles
 
 
 def test_load_agent_profiles_includes_normalized_defaults(tmp_path, monkeypatch):
+    # Step 1: Validate input parameters, operational preconditions, and state
     monkeypatch.chdir(tmp_path)
 
     loaded = profiles.load_agent_profiles()
@@ -18,6 +28,7 @@ def test_load_agent_profiles_includes_normalized_defaults(tmp_path, monkeypatch)
 
 
 def test_save_agent_profile_round_trips_and_clamps(tmp_path, monkeypatch):
+    # Step 1: Validate input parameters, operational preconditions, and state
     monkeypatch.chdir(tmp_path)
 
     saved = profiles.save_agent_profile(
@@ -43,6 +54,7 @@ def test_save_agent_profile_round_trips_and_clamps(tmp_path, monkeypatch):
 
 
 def test_save_agent_profile_rejects_invalid_id(tmp_path, monkeypatch):
+    # Step 1: Validate input parameters, operational preconditions, and state
     monkeypatch.chdir(tmp_path)
 
     with pytest.raises(ValueError):
@@ -50,6 +62,7 @@ def test_save_agent_profile_rejects_invalid_id(tmp_path, monkeypatch):
 
 
 def test_active_profile_map_resolves_role_overrides(tmp_path, monkeypatch):
+    # Step 1: Validate input parameters, operational preconditions, and state
     monkeypatch.chdir(tmp_path)
     profiles.save_agent_profile(
         "strict_coder",
@@ -68,6 +81,7 @@ def test_active_profile_map_resolves_role_overrides(tmp_path, monkeypatch):
 
 
 def test_tool_schema_block_respects_allowed_tool_filter():
+    # Step 1: Validate input parameters, operational preconditions, and state
     schema = get_tool_schema_block({"read_file"})
 
     assert "name='read_file'" in schema

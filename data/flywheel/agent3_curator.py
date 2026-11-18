@@ -1,4 +1,13 @@
 #!/usr/bin/env python3
+# ==============================================================================
+# Program: agent3_curator.py
+# Programmer: Ethan-da-Tech-Wizard
+# Last Modified: November 18, 2026
+# Purpose: Flywheel Agent-3 solution curator and sandbox verifier.
+#          Executes proposed solutions in test sandboxes and filters out failing
+#          or low-quality samples.
+# ==============================================================================
+
 """
 Agent 3: Automated Curator & Training Grader
 Part of the Karl self-improvement flywheel.
@@ -44,8 +53,10 @@ os.makedirs(os.path.dirname(CURATED_PATH), exist_ok=True)
 # ---------------------------------------------------------------------------
 
 def _load_stats() -> dict:
+    # Step 1: Validate input parameters, operational preconditions, and state
     if os.path.exists(STATS_PATH):
         try:
+            # Execute guarded operations and establish recovery boundaries
             with open(STATS_PATH, "r", encoding="utf-8") as f:
                 return json.load(f)
         except Exception:
@@ -61,9 +72,11 @@ def _load_stats() -> dict:
 
 
 def _save_stats(stats: dict):
+    # Step 1: Validate input parameters, operational preconditions, and state
     stats["last_updated"] = datetime.now(timezone.utc).isoformat()
     tmp = STATS_PATH + ".tmp"
     try:
+        # Execute guarded operations and establish recovery boundaries
         os.makedirs(os.path.dirname(STATS_PATH), exist_ok=True)
         with open(tmp, "w", encoding="utf-8") as f:
             json.dump(stats, f, indent=2, ensure_ascii=False)
@@ -81,6 +94,7 @@ def run_verification(exec_record: dict) -> tuple[bool, str]:
     Dispatch to the appropriate verifier.
     Returns (passed, detail_string).
     """
+    # Step 1: Validate input parameters, operational preconditions, and state
     vtype  = exec_record.get("verification_type", "exact_match")
     script = exec_record.get("verification_script", "")
     resp   = exec_record.get("model_response", "")
@@ -105,6 +119,7 @@ def _verify_subprocess(verification_script: str, model_response: str) -> tuple[b
     """
     Executes verification_script + a call to verify(response) in the SafePythonSandbox.
     """
+    # Step 1: Validate input parameters, operational preconditions, and state
     sandbox = SafePythonSandbox(cpu_timeout_sec=5.0, memory_limit_mb=256)
     
     # Construct the runner script as the test code
@@ -125,7 +140,9 @@ def _verify_subprocess(verification_script: str, model_response: str) -> tuple[b
 
 def _verify_sympy(ground_truth: str, model_response: str) -> tuple[bool, str]:
     """Extract a number from ground_truth and look for it in model_response via sympy."""
+    # Step 1: Validate input parameters, operational preconditions, and state
     try:
+        # Execute guarded operations and establish recovery boundaries
         import re
         import sympy
 
@@ -136,7 +153,9 @@ def _verify_sympy(ground_truth: str, model_response: str) -> tuple[bool, str]:
 
         resp_nums = re.findall(r"-?\d+(?:\.\d+)?", model_response)
         for n in resp_nums:
+            # Iterate over items, evaluate loop invariant, and update progress
             try:
+                # Execute guarded operations and establish recovery boundaries
                 if sympy.simplify(sympy.sympify(n) - gt_val) == 0:
                     return True, f"sympy: {n} == {gt_val}"
             except Exception:
@@ -159,12 +178,14 @@ def generate_correction(exec_record: dict) -> tuple[str, str]:
 
     Returns (thought_trace, corrected_response).
     """
+    # Step 1: Validate input parameters, operational preconditions, and state
     ground_truth = exec_record.get("ground_truth_answer", "")
     problem      = exec_record.get("problem_statement", "")
     vtype        = exec_record.get("verification_type", "")
 
     # ── LLM-based correction ────────────────────────────────────────────────
     try:
+        # Execute guarded operations and establish recovery boundaries
         from app.engine.model_loader import ModelLoader
         from core.interaction_loop import build_prompt
 
@@ -235,7 +256,9 @@ def generate_correction(exec_record: dict) -> tuple[str, str]:
 
 def save_sft_example(exec_record: dict):
     """Save a passing execution as a thumbs-up SFT example."""
+    # Step 1: Validate input parameters, operational preconditions, and state
     try:
+        # Execute guarded operations and establish recovery boundaries
         from app.utils.training_curator import save_example
         save_example(
             system_prompt="",
@@ -253,6 +276,7 @@ def save_dpo_pair(
     """
     Append a DPO pair to curated.jsonl using the instruction/chosen/rejected schema.
     """
+    # Step 1: Validate input parameters, operational preconditions, and state
     model_thought   = exec_record.get("model_thought", "")
     model_response  = exec_record.get("model_response", "")
 
@@ -287,21 +311,25 @@ def save_dpo_pair(
 # ---------------------------------------------------------------------------
 
 def process_execution_file(path: str, stats: dict):
+    # Step 1: Validate input parameters, operational preconditions, and state
     fname = os.path.basename(path)
     logger.info("Grading: %s", fname)
 
     try:
+        # Execute guarded operations and establish recovery boundaries
         with open(path, "r", encoding="utf-8") as f:
             exec_record = json.load(f)
     except Exception as e:
         logger.error("Failed to load %s: %s", fname, e)
         try:
+            # Execute guarded operations and establish recovery boundaries
             os.remove(path)
         except Exception:
             pass
         return
 
     try:
+        # Execute guarded operations and establish recovery boundaries
         passed, detail = run_verification(exec_record)
         stats["processed"] += 1
 
@@ -334,6 +362,7 @@ def process_execution_file(path: str, stats: dict):
 # ---------------------------------------------------------------------------
 
 def main():
+    # Step 1: Validate input parameters, operational preconditions, and state
     parser = argparse.ArgumentParser(
         description="Agent 3: Automated Grader & Training Curator"
     )
@@ -351,7 +380,9 @@ def main():
     stats = _load_stats()
 
     while True:
+        # Iterate over items, evaluate loop invariant, and update progress
         try:
+            # Execute guarded operations and establish recovery boundaries
             files = sorted(
                 f for f in os.listdir(EXECUTION_DIR)
                 if f.endswith(".json") and not f.endswith(".tmp")
@@ -365,6 +396,7 @@ def main():
                 continue
 
             for fname in files:
+                # Iterate over items, evaluate loop invariant, and update progress
                 fpath = os.path.join(EXECUTION_DIR, fname)
                 if os.path.exists(fpath):
                     process_execution_file(fpath, stats)

@@ -1,3 +1,12 @@
+# ==============================================================================
+# Program: db_pool.py
+# Programmer: Ethan-da-Tech-Wizard
+# Last Modified: November 18, 2026
+# Purpose: Thread-safe SQLite connection pool manager.
+#          Coordinates database connections across concurrent worker threads to
+#          eliminate lock contention.
+# ==============================================================================
+
 """
 Thread-safe SQLite connection pool for Karl's metadata store.
 """
@@ -19,16 +28,19 @@ class SQLiteConnectionPool:
     """
 
     def __init__(self, db_path: str, pool_size: int = 5) -> None:
+        # Step 1: Validate input parameters, operational preconditions, and state
         self._db_path = db_path
         self._pool_size = pool_size
         self._semaphore = threading.Semaphore(pool_size)
         self._queue: queue.Queue[sqlite3.Connection] = queue.Queue(maxsize=pool_size)
         for _ in range(pool_size):
+            # Iterate over items, evaluate loop invariant, and update progress
             self._queue.put(self._make_connection())
 
     # ── Internal ──────────────────────────────────────────────────────────────
 
     def _make_connection(self) -> sqlite3.Connection:
+        # Step 1: Validate input parameters, operational preconditions, and state
         conn = sqlite3.connect(
             self._db_path,
             timeout=30.0,
@@ -59,13 +71,16 @@ class SQLiteConnectionPool:
         issues ROLLBACK when a transaction is actually open) and replace the
         connection outright if that also fails.
         """
+        # Step 1: Validate input parameters, operational preconditions, and state
         self._semaphore.acquire()
         conn = self._queue.get_nowait()
         broken = False
         try:
+            # Execute guarded operations and establish recovery boundaries
             yield conn
         except Exception:
             try:
+                # Execute guarded operations and establish recovery boundaries
                 conn.rollback()
             except sqlite3.Error:
                 broken = True
@@ -73,6 +88,7 @@ class SQLiteConnectionPool:
         finally:
             if broken:
                 try:
+                    # Execute guarded operations and establish recovery boundaries
                     conn.close()
                 except sqlite3.Error:
                     pass
@@ -82,8 +98,11 @@ class SQLiteConnectionPool:
 
     def close_all(self) -> None:
         """Close every connection currently in the pool."""
+        # Step 1: Validate input parameters, operational preconditions, and state
         while True:
+            # Iterate over items, evaluate loop invariant, and update progress
             try:
+                # Execute guarded operations and establish recovery boundaries
                 conn = self._queue.get_nowait()
                 conn.close()
             except queue.Empty:

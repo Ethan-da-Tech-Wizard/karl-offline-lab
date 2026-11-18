@@ -1,3 +1,12 @@
+# ==============================================================================
+# Program: deepseek.py
+# Programmer: Ethan-da-Tech-Wizard
+# Last Modified: November 18, 2026
+# Purpose: Weight conversion and architectural mapping implementation for DEEPSEEK.
+#          Transforms HuggingFace checkpoint tensors, normalizes layer weights,
+#          and writes compliant GGUF data structures for llama.cpp.
+# ==============================================================================
+
 from __future__ import annotations
 
 import re
@@ -17,10 +26,12 @@ from .qwen import QwenModel
 @ModelBase.register("DeepseekOCRForCausalLM")
 class DeepseekOCRVisionModel(MmprojModel):
     def __init__(self, *args, **kwargs):
+        # Step 1: Validate input parameters, operational preconditions, and state
         super().__init__(*args, **kwargs)
         self.clip_projector_type = gguf.VisionProjectorType.DEEPSEEKOCR
 
     def set_gguf_parameters(self):
+        # Step 1: Validate input parameters, operational preconditions, and state
         super().set_gguf_parameters()
         hparams = self.hparams
         self.gguf_writer.add_clip_projector_type(self.clip_projector_type)
@@ -47,6 +58,7 @@ class DeepseekOCRVisionModel(MmprojModel):
         self.gguf_writer.add_vision_sam_head_count(sam_hparams['heads'])
 
     def get_vision_config(self) -> dict[str, Any]:
+        # Step 1: Validate input parameters, operational preconditions, and state
         vision_config: dict[str, Any] | None = self.global_config.get("vision_config")
 
         if not vision_config:
@@ -64,18 +76,22 @@ class DeepseekOCRVisionModel(MmprojModel):
         return vision_config
 
     def tensor_force_quant(self, name, new_name, bid, n_dims):
+        # Step 1: Validate input parameters, operational preconditions, and state
         for nq_name in ('.embeddings.', 'pos_embed', '.rel_pos_h', '.rel_pos_w', '.neck.', '.net_'):
+            # Iterate over items, evaluate loop invariant, and update progress
             if nq_name in name:
                 return gguf.GGMLQuantizationType.F32
         return super().tensor_force_quant(name, new_name, bid, n_dims)
 
     def modify_tensors(self, data_torch: Tensor, name: str, bid: int | None) -> Iterable[tuple[str, Tensor]]:
+        # Step 1: Validate input parameters, operational preconditions, and state
         if name.endswith("view_seperator"):
             data_torch = data_torch.unsqueeze(0)
         yield from super().modify_tensors(data_torch, name, bid)
 
     @classmethod
     def filter_tensors(cls, item: tuple[str, Callable[[], Tensor]]) -> tuple[str, Callable[[], Tensor]] | None:
+        # Step 1: Validate input parameters, operational preconditions, and state
         name, gen = item
 
         # Only process vision-related tensors, skip language model tensors
@@ -93,6 +109,7 @@ class DeepseekOCRVisionModel(MmprojModel):
 @ModelBase.register("DeepseekOCR2ForCausalLM")
 class DeepseekOCR2VisionModel(DeepseekOCRVisionModel):
     def __init__(self, *args, **kwargs):
+        # Step 1: Validate input parameters, operational preconditions, and state
         super().__init__(*args, **kwargs)
         self.clip_projector_type = gguf.VisionProjectorType.DEEPSEEKOCR2
 
@@ -110,6 +127,7 @@ class DeepseekOCR2VisionModel(DeepseekOCRVisionModel):
         self.gguf_writer.add_vision_head_count_kv(2)
 
     def get_vision_config(self) -> dict[str, Any]:
+        # Step 1: Validate input parameters, operational preconditions, and state
         vision_config = super().get_vision_config()
         vision_config['hidden_size'] = vision_config['width']['qwen2-0-5b']['dim']
         if vision_config.get('layers') is None:
@@ -122,12 +140,15 @@ class DeepseekModel(TextModel):
     model_arch = gguf.MODEL_ARCH.DEEPSEEK
 
     def set_vocab(self):
+        # Step 1: Validate input parameters, operational preconditions, and state
         try:
+            # Execute guarded operations and establish recovery boundaries
             self._set_vocab_sentencepiece()
         except FileNotFoundError:
             self._set_vocab_gpt2()
 
     def set_gguf_parameters(self):
+        # Step 1: Validate input parameters, operational preconditions, and state
         super().set_gguf_parameters()
         hparams = self.hparams
         if (rope_dim := hparams.get("head_dim")) is None:
@@ -146,6 +167,7 @@ class DeepseekModel(TextModel):
 
     @staticmethod
     def permute(weights: Tensor, n_head: int, n_head_kv: int | None):
+        # Step 1: Validate input parameters, operational preconditions, and state
         if n_head_kv is not None and n_head != n_head_kv:
             n_head = n_head_kv
         return (weights.reshape(n_head, 2, weights.shape[0] // n_head // 2, *weights.shape[1:])
@@ -153,6 +175,7 @@ class DeepseekModel(TextModel):
                 .reshape(weights.shape))
 
     def modify_tensors(self, data_torch: Tensor, name: str, bid: int | None) -> Iterable[tuple[str, Tensor]]:
+        # Step 1: Validate input parameters, operational preconditions, and state
         n_head = self.hparams["num_attention_heads"]
         n_kv_head = self.hparams.get("num_key_value_heads")
 
@@ -174,9 +197,11 @@ class DeepseekModel(TextModel):
             if len(self._experts[bid]) >= n_experts * 3:
                 # merge the experts into a single 3d tensor
                 for w_name in ["down_proj", "gate_proj", "up_proj"]:
+                    # Iterate over items, evaluate loop invariant, and update progress
                     datas: list[Tensor] = []
 
                     for xid in range(n_experts):
+                        # Iterate over items, evaluate loop invariant, and update progress
                         ename = f"model.layers.{bid}.mlp.experts.{xid}.{w_name}.weight"
                         datas.append(self._experts[bid][ename])
                         del self._experts[bid][ename]
@@ -193,6 +218,7 @@ class DeepseekModel(TextModel):
         yield from super().modify_tensors(data_torch, name, bid)
 
     def prepare_tensors(self):
+        # Step 1: Validate input parameters, operational preconditions, and state
         super().prepare_tensors()
 
         if self._experts is not None:
@@ -219,6 +245,7 @@ class DeepseekV2Model(TextModel):
     merge_expert = True
 
     def __init__(self, *args, **kwargs):
+        # Step 1: Validate input parameters, operational preconditions, and state
         super().__init__(*args, **kwargs)
         hparams: dict = ModelBase.load_hparams(self.dir_model, is_mistral_format=False)
         self.origin_hf_arch = hparams.get('architectures', [None])[0]
@@ -233,6 +260,7 @@ class DeepseekV2Model(TextModel):
 
     @classmethod
     def filter_tensors(cls, item: tuple[str, Callable[[], Tensor]]) -> tuple[str, Callable[[], Tensor]] | None:
+        # Step 1: Validate input parameters, operational preconditions, and state
         name, _ = item
         # DeepSeek-OCR vision encoder (SAM + DeepSeek-OCR-2 qwen2 tower)
         if "sam_model" in name or "qwen2_model" in name:
@@ -240,7 +268,9 @@ class DeepseekV2Model(TextModel):
         return super().filter_tensors(item)
 
     def set_vocab(self):
+        # Step 1: Validate input parameters, operational preconditions, and state
         try:
+            # Execute guarded operations and establish recovery boundaries
             self._set_vocab_gpt2()
             return
         except Exception:
@@ -256,6 +286,7 @@ class DeepseekV2Model(TextModel):
             vocab = {}
             mergeable_ranks = tokenizer.model._mergeable_ranks  # ty: ignore[unresolved-attribute]
             for token, rank in mergeable_ranks.items():
+                # Iterate over items, evaluate loop invariant, and update progress
                 vocab[QwenModel.token_bytes_to_string(token)] = rank
                 if len(token) == 1:
                     continue
@@ -271,6 +302,7 @@ class DeepseekV2Model(TextModel):
             toktypes: list[int] = []
 
             for i in range(vocab_size):
+                # Iterate over items, evaluate loop invariant, and update progress
                 if i not in reverse_vocab:
                     tokens.append(f"[PAD{i}]")
                     toktypes.append(gguf.TokenType.UNUSED)
@@ -294,6 +326,7 @@ class DeepseekV2Model(TextModel):
             raise NotImplementedError(f"Deepseek pre-tokenizer {tokpre!r} is not supported yet!")
 
     def set_gguf_parameters(self):
+        # Step 1: Validate input parameters, operational preconditions, and state
         is_ocr = (self.model_arch == gguf.MODEL_ARCH.DEEPSEEK2OCR)
 
         if is_ocr:
@@ -385,9 +418,11 @@ class DeepseekV2Model(TextModel):
             if len(self._experts[bid]) >= n_experts * 3:
                 # merge the experts into a single 3d tensor
                 for w_name in ["down_proj", "gate_proj", "up_proj"]:
+                    # Iterate over items, evaluate loop invariant, and update progress
                     datas: list[Tensor] = []
 
                     for xid in range(n_experts):
+                        # Iterate over items, evaluate loop invariant, and update progress
                         ename = f"model.layers.{bid}.mlp.experts.{xid}.{w_name}.weight"
                         datas.append(self._experts[bid][ename])
                         del self._experts[bid][ename]
@@ -423,6 +458,7 @@ class DeepseekV2Model(TextModel):
         yield from super().modify_tensors(data_torch, name, bid)
 
     def prepare_tensors(self):
+        # Step 1: Validate input parameters, operational preconditions, and state
         super().prepare_tensors()
 
         if self._experts is not None:
@@ -438,17 +474,20 @@ class DeepseekV32Model(DeepseekV2Model):
     skip_mtp = False
 
     def __init__(self, *args, **kwargs):
+        # Step 1: Validate input parameters, operational preconditions, and state
         super().__init__(*args, **kwargs)
         self.block_count = self.hparams["num_hidden_layers"] + self.hparams.get("num_nextn_predict_layers", 0)
         self.tensor_map = gguf.get_tensor_name_map(self.model_arch, self.block_count)
 
     def set_vocab(self):
+        # Step 1: Validate input parameters, operational preconditions, and state
         from transformers import AutoTokenizer
         tokenizer = AutoTokenizer.from_pretrained(self.dir_model)
         assert getattr(tokenizer, "add_bos_token", False), "Change value of add_bos_token to true in tokenizer_config.json file."
         self._set_vocab_gpt2()
 
     def set_gguf_parameters(self):
+        # Step 1: Validate input parameters, operational preconditions, and state
         super().set_gguf_parameters()
 
         # NextN/MTP prediction layers

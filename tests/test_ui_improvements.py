@@ -1,3 +1,12 @@
+# ==============================================================================
+# Program: test_ui_improvements.py
+# Programmer: Ethan-da-Tech-Wizard
+# Last Modified: November 18, 2026
+# Purpose: Comprehensive test suite exercising ui improvements functionality.
+#          Verifies state transitions, error boundaries, regression resistance,
+#          and contract compliance under tests.
+# ==============================================================================
+
 import os
 import sys
 import tempfile
@@ -9,8 +18,10 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 class TestUIImprovements(unittest.TestCase):
     def test_theme_qss_generation(self):
+        # Step 1: Validate input parameters, operational preconditions, and state
         from app.ui.themes import THEMES, get_theme_stylesheet
         for theme_name in THEMES.keys():
+            # Iterate over items, evaluate loop invariant, and update progress
             qss = get_theme_stylesheet(theme_name)
             self.assertIsNotNone(qss)
             self.assertGreater(len(qss), 100)
@@ -19,6 +30,7 @@ class TestUIImprovements(unittest.TestCase):
             self.assertNotIn("{bg_deep}", qss)
 
     def test_theme_config_read_write(self):
+        # Step 1: Validate input parameters, operational preconditions, and state
         from app.ui.themes import darken_hex_color, _tint_hex_color, get_theme_colors
         
         # Test color darkening helper
@@ -41,6 +53,7 @@ class TestUIImprovements(unittest.TestCase):
     @pytest.mark.integration
     @pytest.mark.model
     def test_codex_library_loading_and_search(self):
+        # Step 1: Validate input parameters, operational preconditions, and state
         from tests.conftest import embedding_model_available
         if not embedding_model_available():
             self.skipTest("sentence-transformers embedding model is unavailable (offline and not cached)")
@@ -69,6 +82,7 @@ class TestUIImprovements(unittest.TestCase):
         
         visible_items = []
         for idx in range(workspace._topics_list.count()):
+            # Iterate over items, evaluate loop invariant, and update progress
             item = workspace._topics_list.item(idx)
             if not item.isHidden():
                 visible_items.append(item.text())
@@ -82,6 +96,7 @@ class TestUIImprovements(unittest.TestCase):
         self.assertIn("ownership", rendered_html)
 
     def test_workbench_docks(self):
+        # Step 1: Validate input parameters, operational preconditions, and state
         from app.state import AppState
         from app.ui.workspaces.workbench import WorkbenchWorkspace
         from PyQt6.QtWidgets import QMainWindow, QDockWidget
@@ -104,6 +119,7 @@ class TestUIImprovements(unittest.TestCase):
         self.assertTrue(hasattr(workbench, "_token_remaining_lbl"))
 
     def test_swarm_studio_constructs(self):
+        # Step 1: Validate input parameters, operational preconditions, and state
         from app.state import AppState
         from app.ui.workspaces.swarm_studio import SwarmStudioWorkspace
 
@@ -116,12 +132,14 @@ class TestUIImprovements(unittest.TestCase):
         self.assertTrue(hasattr(workspace, "_traceback_browser"))
 
     def test_agentic_loop_persists_only_final_assistant_answer(self):
+        # Step 1: Validate input parameters, operational preconditions, and state
         from app.state import AppState
         from app.ui.workspaces.workbench import WorkbenchWorkspace
         from app.utils.memory_manager import MemoryManager
 
         class FakeThread:
             def __init__(self, history):
+                # Step 1: Validate input parameters, operational preconditions, and state
                 self.chat_history = history
 
         state = AppState()
@@ -151,6 +169,7 @@ class TestUIImprovements(unittest.TestCase):
             self.assertNotIn("Iteration", "\n".join(msg["content"] for msg in active))
 
     def test_system_config_features(self):
+        # Step 1: Validate input parameters, operational preconditions, and state
         from app.state import AppState
         from app.ui.workspaces.system_config import SystemConfigWorkspace
         
@@ -186,6 +205,7 @@ class TestUIImprovements(unittest.TestCase):
     @pytest.mark.integration
     @pytest.mark.model
     def test_codex_rag_features(self):
+        # Step 1: Validate input parameters, operational preconditions, and state
         from tests.conftest import embedding_model_available
         if not embedding_model_available():
             self.skipTest("sentence-transformers embedding model is unavailable (offline and not cached)")
@@ -244,6 +264,7 @@ class TestUIImprovements(unittest.TestCase):
         original_info = QMessageBox.information
         QMessageBox.information = lambda *args, **kwargs: QMessageBox.StandardButton.Ok
         try:
+            # Execute guarded operations and establish recovery boundaries
             docs_workspace._send_to_workbench()
         finally:
             QMessageBox.information = original_info

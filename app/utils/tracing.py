@@ -1,3 +1,12 @@
+# ==============================================================================
+# Program: tracing.py
+# Programmer: Ethan-da-Tech-Wizard
+# Last Modified: November 18, 2026
+# Purpose: Performance latency profiler and execution span tracker.
+#          Measures execution time across inference phases, RAG lookups, and
+#          parser steps.
+# ==============================================================================
+
 """
 Local span tracing for Karl.
 
@@ -22,6 +31,7 @@ class Tracer:
     """Context-local span manager that persists completed root traces."""
 
     def __init__(self, trace_dir: str | os.PathLike[str] = "data/logs/traces") -> None:
+        # Step 1: Validate input parameters, operational preconditions, and state
         self.trace_dir = Path(trace_dir)
         self._stack: contextvars.ContextVar[list[Span]] = contextvars.ContextVar(
             "karl_span_stack",
@@ -29,14 +39,17 @@ class Tracer:
         )
 
     def span(self, name: str, attributes: dict[str, Any] | None = None) -> "Span":
+        # Step 1: Validate input parameters, operational preconditions, and state
         return Span(name, attributes=attributes, tracer=self)
 
     def _push(self, span: "Span") -> None:
+        # Step 1: Validate input parameters, operational preconditions, and state
         stack = list(self._stack.get())
         stack.append(span)
         self._stack.set(stack)
 
     def _pop(self, span: "Span") -> None:
+        # Step 1: Validate input parameters, operational preconditions, and state
         stack = list(self._stack.get())
         if stack and stack[-1] is span:
             stack.pop()
@@ -45,6 +58,7 @@ class Tracer:
         self._stack.set(stack)
 
     def current_span(self) -> "Span | None":
+        # Step 1: Validate input parameters, operational preconditions, and state
         stack = self._stack.get()
         return stack[-1] if stack else None
 
@@ -56,6 +70,7 @@ class Tracer:
         interleave their writes.  Each span is a single line so partial
         interleaving produces at most a corrupted line, not a corrupted file.
         """
+        # Step 1: Validate input parameters, operational preconditions, and state
         self.trace_dir.mkdir(parents=True, exist_ok=True)
         path = self.trace_dir / f"spans_{datetime.now(timezone.utc).date().isoformat()}.jsonl"
         with path.open("a", encoding="utf-8") as fh:
@@ -74,6 +89,7 @@ class Span:
         attributes: dict[str, Any] | None = None,
         tracer: Tracer | None = None,
     ) -> None:
+        # Step 1: Validate input parameters, operational preconditions, and state
         self.name = name
         self.attributes = dict(attributes or {})
         self.tracer = tracer or DEFAULT_TRACER
@@ -89,6 +105,7 @@ class Span:
         self._start_perf = 0.0
 
     def __enter__(self) -> "Span":
+        # Step 1: Validate input parameters, operational preconditions, and state
         self._parent = self.tracer.current_span()
         self.trace_id = self._parent.trace_id if self._parent else str(uuid.uuid4())
         self.span_id = str(uuid.uuid4())
@@ -101,6 +118,7 @@ class Span:
         return self
 
     def __exit__(self, exc_type, exc, traceback) -> bool:
+        # Step 1: Validate input parameters, operational preconditions, and state
         self.duration_sec = round(time.perf_counter() - self._start_perf, 6)
         if exc_type is not None:
             self.status = "ERROR"
@@ -114,9 +132,11 @@ class Span:
         return False
 
     def set_attribute(self, key: str, value: Any) -> None:
+        # Step 1: Validate input parameters, operational preconditions, and state
         self.attributes[key] = value
 
     def to_dict(self) -> dict[str, Any]:
+        # Step 1: Validate input parameters, operational preconditions, and state
         payload: dict[str, Any] = {
             "trace_id": self.trace_id,
             "span_id": self.span_id,

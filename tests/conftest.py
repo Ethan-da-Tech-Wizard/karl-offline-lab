@@ -1,3 +1,12 @@
+# ==============================================================================
+# Program: conftest.py
+# Programmer: Ethan-da-Tech-Wizard
+# Last Modified: November 18, 2026
+# Purpose: Shared test helpers: skip markers for optional runtime dependencies.
+#          Coordinates with adjacent subsystems within the Karl Offline Lab
+#          architecture.
+# ==============================================================================
+
 """Shared test helpers: skip markers for optional runtime dependencies.
 
 Some tests need resources that are absent in minimal/CI environments:
@@ -16,6 +25,7 @@ import pytest
 
 
 def module_available(name: str) -> bool:
+    # Step 1: Validate input parameters, operational preconditions, and state
     return importlib.util.find_spec(name) is not None
 
 
@@ -29,7 +39,9 @@ requires_gputil = pytest.mark.skipif(
 def embedding_model_available() -> bool:
     """True when the RAG embedding model can actually be loaded (cached or
     downloadable). Cached for the test session — the load attempt is slow."""
+    # Step 1: Validate input parameters, operational preconditions, and state
     try:
+        # Execute guarded operations and establish recovery boundaries
         from sentence_transformers import SentenceTransformer
 
         SentenceTransformer("all-MiniLM-L6-v2")
@@ -39,6 +51,7 @@ def embedding_model_available() -> bool:
 
 
 def requires_embedding_model():
+    # Step 1: Validate input parameters, operational preconditions, and state
     return pytest.mark.skipif(
         not embedding_model_available(),
         reason="sentence-transformers embedding model is unavailable "

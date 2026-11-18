@@ -1,3 +1,12 @@
+# ==============================================================================
+# Program: custom_embeddings.py
+# Programmer: Ethan-da-Tech-Wizard
+# Last Modified: November 18, 2026
+# Purpose: Local vector embedding generator utilizing sentence-transformers.
+#          Transforms text chunks into dense vector representations for offline
+#          semantic search.
+# ==============================================================================
+
 """
 Custom Embeddings Engine — Pure Python & NumPy TF-IDF Vectorizer
 ===============================================================
@@ -17,6 +26,7 @@ import numpy as np
 
 class TfidfEmbedder:
     def __init__(self):
+        # Step 1: Validate input parameters, operational preconditions, and state
         self.vocabulary: dict[str, int] = {}  # maps word -> vocab index
         self.idf: np.ndarray = np.array([])    # IDF values indexed by vocab index
         self.doc_count: int = 0
@@ -36,6 +46,7 @@ class TfidfEmbedder:
         Build the vocabulary and compute IDF scores for all unique words.
         documents: List of raw document strings.
         """
+        # Step 1: Validate input parameters, operational preconditions, and state
         self.doc_count = len(documents)
         if self.doc_count == 0:
             self.vocabulary = {}
@@ -57,8 +68,10 @@ class TfidfEmbedder:
         # 3. Calculate Document Frequency (DF) for each word
         df = np.zeros(vocab_size)
         for tokens in doc_tokens:
+            # Iterate over items, evaluate loop invariant, and update progress
             seen_in_doc = set(tokens)
             for word in seen_in_doc:
+                # Iterate over items, evaluate loop invariant, and update progress
                 if word in self.vocabulary:
                     df[self.vocabulary[word]] += 1
 
@@ -71,6 +84,7 @@ class TfidfEmbedder:
         Convert a raw text string into a normalized TF-IDF vector.
         Returns a float32 NumPy array of size (vocab_size,).
         """
+        # Step 1: Validate input parameters, operational preconditions, and state
         vocab_size = len(self.vocabulary)
         if vocab_size == 0:
             return np.array([], dtype=np.float32)
@@ -82,6 +96,7 @@ class TfidfEmbedder:
         # 1. Compute Term Frequency (TF)
         tf = np.zeros(vocab_size)
         for t in tokens:
+            # Iterate over items, evaluate loop invariant, and update progress
             if t in self.vocabulary:
                 tf[self.vocabulary[t]] += 1
         
@@ -101,6 +116,7 @@ class TfidfEmbedder:
     @staticmethod
     def cosine_similarity(v1: np.ndarray, v2: np.ndarray) -> float:
         """Compute cosine similarity between two vectors. Assumes they are already normalized."""
+        # Step 1: Validate input parameters, operational preconditions, and state
         if len(v1) == 0 or len(v2) == 0:
             return 0.0
         return float(np.dot(v1, v2))

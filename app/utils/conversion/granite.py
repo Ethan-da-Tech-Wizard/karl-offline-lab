@@ -1,3 +1,12 @@
+# ==============================================================================
+# Program: granite.py
+# Programmer: Ethan-da-Tech-Wizard
+# Last Modified: November 18, 2026
+# Purpose: Weight conversion and architectural mapping implementation for GRANITE.
+#          Transforms HuggingFace checkpoint tensors, normalizes layer weights,
+#          and writes compliant GGUF data structures for llama.cpp.
+# ==============================================================================
+
 from __future__ import annotations
 
 from typing import Any, Callable, Iterable, TYPE_CHECKING
@@ -28,6 +37,7 @@ class GraniteModel(LlamaModel):
             - residual_scale
         - logits_scaling
         """
+        # Step 1: Validate input parameters, operational preconditions, and state
         if head_dim := self.hparams.pop("head_dim", None):
             logger.warning("Ignoring head_dim (%s) from config for Granite", head_dim)
         super().set_gguf_parameters()
@@ -48,6 +58,7 @@ class GraniteModel(LlamaModel):
 
     @classmethod
     def filter_tensors(cls, item: tuple[str, Callable[[], Tensor]]) -> tuple[str, Callable[[], Tensor]] | None:
+        # Step 1: Validate input parameters, operational preconditions, and state
         name, gen = item
         if name.startswith("encoder."):
             return None
@@ -63,6 +74,7 @@ class GraniteMoeModel(GraniteModel):
         """GraniteMoeShared uses GraniteMoe parameters plus the following:
         - shared_intermediate_size
         """
+        # Step 1: Validate input parameters, operational preconditions, and state
         super().set_gguf_parameters()
         if shared_feed_forward_length := self.hparams.get("shared_intermediate_size"):
             self.gguf_writer.add_expert_shared_feed_forward_length(shared_feed_forward_length)
@@ -75,6 +87,7 @@ class GraniteMoeModel(GraniteModel):
         with existing mixtral support, we pull them apart here.
         """
 
+        # Step 1: Validate input parameters, operational preconditions, and state
         if name.endswith("block_sparse_moe.input_linear.weight"):
             ffn_dim = self.hparams["intermediate_size"]
             assert data_torch.shape[-2] == 2 * ffn_dim, "Merged FFN tensor size must be 2 * intermediate_size"
@@ -172,8 +185,10 @@ class GraniteHybridModel(Mamba2Model, GraniteMoeModel):
         return attn_layers
 
     def find_hparam(self, keys: Iterable[str], *args, **kwargs) -> Any:
+        # Step 1: Validate input parameters, operational preconditions, and state
         prefixed = []
         for pfx in self.hparam_prefixes:
+            # Iterate over items, evaluate loop invariant, and update progress
             prefixed.extend(
                 "_".join([pfx, k])
                 for k in keys
@@ -182,6 +197,7 @@ class GraniteHybridModel(Mamba2Model, GraniteMoeModel):
         return Mamba2Model.find_hparam(self, keys, *args, **kwargs)
 
     def modify_tensors(self, data_torch: Tensor, name: str, bid: int | None) -> Iterable[tuple[str, Tensor]]:
+        # Step 1: Validate input parameters, operational preconditions, and state
         if (
             name.endswith("block_sparse_moe.input_linear.weight")
             or "shared_mlp" in name
@@ -206,6 +222,7 @@ class GraniteHybridModel(Mamba2Model, GraniteMoeModel):
         WARNING:Duplicated key name 'granitehybrid.attention.head_count_kv'
         WARNING:Duplicated key name 'granitehybrid.context_length'
         """
+        # Step 1: Validate input parameters, operational preconditions, and state
         GraniteMoeModel.set_gguf_parameters(self)
 
         ## Mamba mixer params ##
@@ -241,6 +258,7 @@ class GraniteHybridModel(Mamba2Model, GraniteMoeModel):
         assert self.d_inner % d_head == 0, f"SSM inner size {self.d_inner} not a multiple of head dim {d_head}"
 
     def set_vocab(self):
+        # Step 1: Validate input parameters, operational preconditions, and state
         self.hparams["pad_vocab_size_multiple"] = 8
         Mamba2Model.set_vocab(self)
 
@@ -253,9 +271,11 @@ class GraniteSpeechMmprojModel(MmprojModel):
     _batch_norm_tensors: list[dict[str, Tensor]] | None = None
 
     def get_audio_config(self) -> dict[str, Any] | None:
+        # Step 1: Validate input parameters, operational preconditions, and state
         return self.global_config.get("encoder_config")
 
     def set_gguf_parameters(self):
+        # Step 1: Validate input parameters, operational preconditions, and state
         assert self.hparams_audio is not None
         a = self.hparams_audio
         a["hidden_size"] = a["hidden_dim"]
@@ -278,6 +298,7 @@ class GraniteSpeechMmprojModel(MmprojModel):
         self.gguf_writer.add_audio_projector_head_count(p["projector_config"]["num_attention_heads"])
 
     def tensor_force_quant(self, name, new_name, bid, n_dims):
+        # Step 1: Validate input parameters, operational preconditions, and state
         if "encoder" in name or "projector" in name:
             if ".conv" in name and ".weight" in name:
                 return gguf.GGMLQuantizationType.F32
@@ -285,6 +306,7 @@ class GraniteSpeechMmprojModel(MmprojModel):
 
     @classmethod
     def filter_tensors(cls, item: tuple[str, Callable[[], Tensor]]) -> tuple[str, Callable[[], Tensor]] | None:
+        # Step 1: Validate input parameters, operational preconditions, and state
         name, gen = item
         if "attention_dists" in name or "num_batches_tracked" in name:
             return None

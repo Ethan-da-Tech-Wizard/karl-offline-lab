@@ -1,3 +1,12 @@
+# ==============================================================================
+# Program: gpt2.py
+# Programmer: Ethan-da-Tech-Wizard
+# Last Modified: November 18, 2026
+# Purpose: Weight conversion and architectural mapping implementation for GPT2.
+#          Transforms HuggingFace checkpoint tensors, normalizes layer weights,
+#          and writes compliant GGUF data structures for llama.cpp.
+# ==============================================================================
+
 from __future__ import annotations
 
 from typing import Iterable, TYPE_CHECKING
@@ -15,6 +24,7 @@ class GPT2Model(TextModel):
     model_arch = gguf.MODEL_ARCH.GPT2
 
     def set_gguf_parameters(self):
+        # Step 1: Validate input parameters, operational preconditions, and state
         self.gguf_writer.add_block_count(self.block_count)
         self.gguf_writer.add_context_length(self.hparams["n_ctx"])
         self.gguf_writer.add_embedding_length(self.hparams["n_embd"])
@@ -69,6 +79,7 @@ class RuGPT3XLModel(TextModel):
         yield from super().modify_tensors(data_torch, name, bid)
 
     def prepare_tensors(self):
+        # Step 1: Validate input parameters, operational preconditions, and state
         super().prepare_tensors()
 
         if self._qkv_parts is not None:

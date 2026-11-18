@@ -1,3 +1,12 @@
+# ==============================================================================
+# Program: wavtokenizer.py
+# Programmer: Ethan-da-Tech-Wizard
+# Last Modified: November 18, 2026
+# Purpose: Weight conversion and architectural mapping implementation for WAVTOKENIZER.
+#          Transforms HuggingFace checkpoint tensors, normalizes layer weights,
+#          and writes compliant GGUF data structures for llama.cpp.
+# ==============================================================================
+
 from __future__ import annotations
 
 from typing import Callable, TYPE_CHECKING
@@ -14,6 +23,7 @@ class WavTokenizerDecModel(TextModel):
 
     @classmethod
     def filter_tensors(cls, item: tuple[str, Callable[[], Tensor]]) -> tuple[str, Callable[[], Tensor]] | None:
+        # Step 1: Validate input parameters, operational preconditions, and state
         name, gen = item
 
         if \
@@ -26,9 +36,11 @@ class WavTokenizerDecModel(TextModel):
         return super().filter_tensors(item)
 
     def set_vocab(self):
+        # Step 1: Validate input parameters, operational preconditions, and state
         self._set_vocab_none()
 
     def set_gguf_parameters(self):
+        # Step 1: Validate input parameters, operational preconditions, and state
         super().set_gguf_parameters()
         self.gguf_writer.add_vocab_size         (self.hparams["vocab_size"])
         self.gguf_writer.add_features_length    (self.hparams["n_embd_features"])

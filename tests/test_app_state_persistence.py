@@ -1,3 +1,12 @@
+# ==============================================================================
+# Program: test_app_state_persistence.py
+# Programmer: Ethan-da-Tech-Wizard
+# Last Modified: November 18, 2026
+# Purpose: Focused tests for AppState.load_from_disk() and AppState.save_to_disk().
+#          Coordinates with adjacent subsystems within the Karl Offline Lab
+#          architecture.
+# ==============================================================================
+
 """Focused tests for AppState.load_from_disk() and AppState.save_to_disk()."""
 
 import tests.qt_test_helper  # noqa: F401  — must come first to init QApplication
@@ -28,12 +37,15 @@ _HEAVY_PATCHES = [
 
 
 def _start_patches():
+    # Step 1: Validate input parameters, operational preconditions, and state
     mocks = [p.start() for p in _HEAVY_PATCHES]
     return mocks
 
 
 def _stop_patches():
+    # Step 1: Validate input parameters, operational preconditions, and state
     for p in _HEAVY_PATCHES:
+        # Iterate over items, evaluate loop invariant, and update progress
         p.stop()
 
 
@@ -45,6 +57,7 @@ class TestAppStatePersistence(unittest.TestCase):
     """AppState.load_from_disk / save_to_disk — isolated from disk and heavy deps."""
 
     def setUp(self):
+        # Step 1: Validate input parameters, operational preconditions, and state
         import tempfile
         self._tmpdir = tempfile.mkdtemp()
         self._orig_cwd = os.getcwd()
@@ -55,6 +68,7 @@ class TestAppStatePersistence(unittest.TestCase):
         _start_patches()
 
     def tearDown(self):
+        # Step 1: Validate input parameters, operational preconditions, and state
         _stop_patches()
         os.chdir(self._orig_cwd)
         import shutil
@@ -64,6 +78,7 @@ class TestAppStatePersistence(unittest.TestCase):
 
     def test_defaults_when_no_file(self):
         """Fresh AppState with no file on disk should have hardcoded defaults."""
+        # Step 1: Validate input parameters, operational preconditions, and state
         state = AppState()
         self.assertAlmostEqual(state.rag_threshold, 0.0)
         self.assertEqual(state.rag_top_k, 3)
@@ -92,6 +107,7 @@ class TestAppStatePersistence(unittest.TestCase):
     # previously-persisted "enabled" setting underneath it.
 
     def test_remote_engine_defaults_when_no_file(self):
+        # Step 1: Validate input parameters, operational preconditions, and state
         state = AppState()
         self.assertFalse(state.remote_engine_enabled)
         self.assertEqual(state.remote_engine_url, "")
@@ -101,6 +117,7 @@ class TestAppStatePersistence(unittest.TestCase):
         """A previously-persisted engine_config.json must be reflected on
         AppState immediately at construction, not just after the user
         re-touches the System Config checkbox."""
+        # Step 1: Validate input parameters, operational preconditions, and state
         config_store.set_remote_engine_config(
             True, "wss://remote.example:8080", "sekret-token"
         )
@@ -110,6 +127,7 @@ class TestAppStatePersistence(unittest.TestCase):
         self.assertEqual(state.remote_engine_token, "sekret-token")
 
     def test_remote_engine_disabled_persists_correctly(self):
+        # Step 1: Validate input parameters, operational preconditions, and state
         config_store.set_remote_engine_config(True, "wss://x:1", "t")
         config_store.set_remote_engine_config(False)
         state = AppState()
@@ -121,6 +139,7 @@ class TestAppStatePersistence(unittest.TestCase):
     # ── save / load roundtrip ─────────────────────────────────────────────
 
     def test_save_to_disk_creates_file(self):
+        # Step 1: Validate input parameters, operational preconditions, and state
         state = AppState()
         result = state.save_to_disk()
         self.assertTrue(result)
@@ -128,6 +147,7 @@ class TestAppStatePersistence(unittest.TestCase):
 
     def test_save_and_load_roundtrip(self):
         """Modified values survive a save→new-instance→load cycle."""
+        # Step 1: Validate input parameters, operational preconditions, and state
         state1 = AppState()
         state1.rag_threshold = 0.42
         state1.rag_top_k = 7
@@ -171,6 +191,7 @@ class TestAppStatePersistence(unittest.TestCase):
 
     def test_save_preserves_none_custom_accent(self):
         """custom_accent=None roundtrips correctly (not coerced to 'None' string)."""
+        # Step 1: Validate input parameters, operational preconditions, and state
         state1 = AppState()
         state1.custom_accent = None
         state1.save_to_disk()
@@ -182,6 +203,7 @@ class TestAppStatePersistence(unittest.TestCase):
 
     def test_unknown_keys_in_file_are_ignored(self):
         """Extra keys in ui_config.json must not raise and must not appear on state."""
+        # Step 1: Validate input parameters, operational preconditions, and state
         os.makedirs("data", exist_ok=True)
         with open(config_store.UI_CONFIG_PATH, "w", encoding="utf-8") as f:
             json.dump({"theme_preset": "Matrix Verdant", "future_feature": "yes"}, f)
@@ -192,11 +214,13 @@ class TestAppStatePersistence(unittest.TestCase):
 
     def test_extra_keys_not_written_back(self):
         """save_to_disk only writes _PERSIST_FIELDS plus the schema version key."""
+        # Step 1: Validate input parameters, operational preconditions, and state
         state = AppState()
         state.save_to_disk()
         with open(config_store.UI_CONFIG_PATH, "r", encoding="utf-8") as f:
             payload = json.load(f)
         for key in payload:
+            # Iterate over items, evaluate loop invariant, and update progress
             self.assertTrue(
                 key in _PERSIST_FIELDS or key == "version",
                 f"unexpected key in saved config: {key}",
@@ -206,6 +230,7 @@ class TestAppStatePersistence(unittest.TestCase):
 
     def test_corrupt_json_falls_back_to_defaults(self):
         """A corrupt ui_config.json must not crash AppState; defaults must apply."""
+        # Step 1: Validate input parameters, operational preconditions, and state
         os.makedirs("data", exist_ok=True)
         with open(config_store.UI_CONFIG_PATH, "w", encoding="utf-8") as f:
             f.write("{this is not json}")
@@ -218,6 +243,7 @@ class TestAppStatePersistence(unittest.TestCase):
 
     def test_non_dict_json_falls_back_to_defaults(self):
         """A valid JSON file that's not a dict (e.g. a list) falls back cleanly."""
+        # Step 1: Validate input parameters, operational preconditions, and state
         os.makedirs("data", exist_ok=True)
         with open(config_store.UI_CONFIG_PATH, "w", encoding="utf-8") as f:
             json.dump([1, 2, 3], f)
@@ -229,6 +255,7 @@ class TestAppStatePersistence(unittest.TestCase):
 
     def test_int_fields_coerced_from_float_on_disk(self):
         """rag_top_k stored as 5.0 (float) on disk must be loaded as int 5."""
+        # Step 1: Validate input parameters, operational preconditions, and state
         os.makedirs("data", exist_ok=True)
         with open(config_store.UI_CONFIG_PATH, "w", encoding="utf-8") as f:
             json.dump({"rag_top_k": 5.0}, f)
@@ -239,6 +266,7 @@ class TestAppStatePersistence(unittest.TestCase):
 
     def test_float_fields_coerced_from_int_on_disk(self):
         """rag_threshold stored as 1 (int) must be loaded as float 1.0."""
+        # Step 1: Validate input parameters, operational preconditions, and state
         os.makedirs("data", exist_ok=True)
         with open(config_store.UI_CONFIG_PATH, "w", encoding="utf-8") as f:
             json.dump({"rag_threshold": 1}, f)
@@ -249,6 +277,7 @@ class TestAppStatePersistence(unittest.TestCase):
 
     def test_bool_fields_not_coerced_to_int(self):
         """glow_enabled=true on disk must remain bool, not int 1."""
+        # Step 1: Validate input parameters, operational preconditions, and state
         os.makedirs("data", exist_ok=True)
         with open(config_store.UI_CONFIG_PATH, "w", encoding="utf-8") as f:
             json.dump({"glow_enabled": True}, f)
@@ -259,6 +288,7 @@ class TestAppStatePersistence(unittest.TestCase):
 
     def test_bad_type_on_disk_reverts_to_default(self):
         """A field with an un-coercible value on disk falls back to its default."""
+        # Step 1: Validate input parameters, operational preconditions, and state
         os.makedirs("data", exist_ok=True)
         with open(config_store.UI_CONFIG_PATH, "w", encoding="utf-8") as f:
             json.dump({"rag_top_k": "not-a-number"}, f)
@@ -270,6 +300,7 @@ class TestAppStatePersistence(unittest.TestCase):
 
     def test_explicit_load_from_disk_overrides_live_values(self):
         """Calling load_from_disk() on an existing state instance reloads from file."""
+        # Step 1: Validate input parameters, operational preconditions, and state
         state = AppState()
         state.rag_top_k = 99          # mutate in memory
         state.save_to_disk()          # write 99 to disk
@@ -283,6 +314,7 @@ class TestAppStatePersistence(unittest.TestCase):
 
     def test_partial_file_fills_gaps_with_defaults(self):
         """Only the keys present in the file are overridden; others keep defaults."""
+        # Step 1: Validate input parameters, operational preconditions, and state
         os.makedirs("data", exist_ok=True)
         with open(config_store.UI_CONFIG_PATH, "w", encoding="utf-8") as f:
             json.dump({"rag_top_k": 10}, f)
@@ -295,7 +327,9 @@ class TestAppStatePersistence(unittest.TestCase):
 
     def test_persist_fields_matches_ui_config_defaults(self):
         """Every key in _PERSIST_FIELDS must also appear in UI_CONFIG_DEFAULTS."""
+        # Step 1: Validate input parameters, operational preconditions, and state
         for key in _PERSIST_FIELDS:
+            # Iterate over items, evaluate loop invariant, and update progress
             self.assertIn(
                 key, config_store.UI_CONFIG_DEFAULTS,
                 f"_PERSIST_FIELDS has '{key}' but UI_CONFIG_DEFAULTS does not",
@@ -303,8 +337,10 @@ class TestAppStatePersistence(unittest.TestCase):
 
     def test_heavy_objects_not_in_persist_fields(self):
         """Heavy runtime objects must never be listed in _PERSIST_FIELDS."""
+        # Step 1: Validate input parameters, operational preconditions, and state
         excluded = {"rag", "codex_rag", "memory", "logger", "curator", "image_store"}
         for name in excluded:
+            # Iterate over items, evaluate loop invariant, and update progress
             self.assertNotIn(name, _PERSIST_FIELDS)
 
 
@@ -312,6 +348,7 @@ class TestConfigCorruptionRecovery(unittest.TestCase):
     """Corrupt ui_config.json is quarantined and replaced with fresh defaults."""
 
     def setUp(self):
+        # Step 1: Validate input parameters, operational preconditions, and state
         import tempfile
         self._tmpdir = tempfile.mkdtemp()
         self._orig_cwd = os.getcwd()
@@ -321,16 +358,19 @@ class TestConfigCorruptionRecovery(unittest.TestCase):
         _start_patches()
 
     def tearDown(self):
+        # Step 1: Validate input parameters, operational preconditions, and state
         _stop_patches()
         os.chdir(self._orig_cwd)
         import shutil
         shutil.rmtree(self._tmpdir, ignore_errors=True)
 
     def _data_dir_files(self):
+        # Step 1: Validate input parameters, operational preconditions, and state
         return os.listdir("data") if os.path.isdir("data") else []
 
     def test_corrupt_json_quarantines_file(self):
         """Malformed JSON causes the file to be renamed .corrupt_<ts>, not silently dropped."""
+        # Step 1: Validate input parameters, operational preconditions, and state
         os.makedirs("data", exist_ok=True)
         with open(config_store.UI_CONFIG_PATH, "w") as f:
             f.write("{this is not json}")
@@ -352,6 +392,7 @@ class TestConfigCorruptionRecovery(unittest.TestCase):
 
     def test_corrupt_json_rewrites_fresh_defaults(self):
         """After quarantine, a new ui_config.json containing defaults is written."""
+        # Step 1: Validate input parameters, operational preconditions, and state
         os.makedirs("data", exist_ok=True)
         with open(config_store.UI_CONFIG_PATH, "w") as f:
             f.write("<<<not json>>>")
@@ -367,6 +408,7 @@ class TestConfigCorruptionRecovery(unittest.TestCase):
 
     def test_non_dict_json_quarantines_file(self):
         """Valid JSON with a non-dict root (e.g. a list) is also quarantined."""
+        # Step 1: Validate input parameters, operational preconditions, and state
         os.makedirs("data", exist_ok=True)
         with open(config_store.UI_CONFIG_PATH, "w") as f:
             json.dump([1, 2, 3], f)
@@ -379,6 +421,7 @@ class TestConfigCorruptionRecovery(unittest.TestCase):
 
     def test_non_dict_json_rewrites_fresh_defaults(self):
         """After quarantine of a list-root file, defaults are restored to disk."""
+        # Step 1: Validate input parameters, operational preconditions, and state
         os.makedirs("data", exist_ok=True)
         with open(config_store.UI_CONFIG_PATH, "w") as f:
             json.dump(["a", "b"], f)
@@ -392,6 +435,7 @@ class TestConfigCorruptionRecovery(unittest.TestCase):
 
     def test_appstate_corrupt_json_returns_defaults(self):
         """AppState created after corrupt file is quarantined should have defaults."""
+        # Step 1: Validate input parameters, operational preconditions, and state
         os.makedirs("data", exist_ok=True)
         with open(config_store.UI_CONFIG_PATH, "w") as f:
             f.write("not-json!")
@@ -405,6 +449,7 @@ class TestConfigVersioning(unittest.TestCase):
     """Schema version key is written on every save and triggers migration on load."""
 
     def setUp(self):
+        # Step 1: Validate input parameters, operational preconditions, and state
         import tempfile
         self._tmpdir = tempfile.mkdtemp()
         self._orig_cwd = os.getcwd()
@@ -414,6 +459,7 @@ class TestConfigVersioning(unittest.TestCase):
         _start_patches()
 
     def tearDown(self):
+        # Step 1: Validate input parameters, operational preconditions, and state
         _stop_patches()
         os.chdir(self._orig_cwd)
         import shutil
@@ -421,6 +467,7 @@ class TestConfigVersioning(unittest.TestCase):
 
     def test_version_written_on_save(self):
         """save_ui_config always writes 'version': CONFIG_VERSION to disk."""
+        # Step 1: Validate input parameters, operational preconditions, and state
         config_store.save_ui_config({})
         with open(config_store.UI_CONFIG_PATH) as f:
             payload = json.load(f)
@@ -428,6 +475,7 @@ class TestConfigVersioning(unittest.TestCase):
 
     def test_appstate_save_includes_version(self):
         """AppState.save_to_disk() produces a file with the version key."""
+        # Step 1: Validate input parameters, operational preconditions, and state
         state = AppState()
         state.save_to_disk()
         with open(config_store.UI_CONFIG_PATH) as f:
@@ -436,6 +484,7 @@ class TestConfigVersioning(unittest.TestCase):
 
     def test_version_missing_loads_without_error(self):
         """A file with no version key (pre-versioning) is loaded correctly."""
+        # Step 1: Validate input parameters, operational preconditions, and state
         os.makedirs("data", exist_ok=True)
         with open(config_store.UI_CONFIG_PATH, "w") as f:
             json.dump({"rag_top_k": 7}, f)  # no "version" key
@@ -446,6 +495,7 @@ class TestConfigVersioning(unittest.TestCase):
 
     def test_version_older_loads_with_migration(self):
         """A file with a version lower than CONFIG_VERSION triggers migration and loads."""
+        # Step 1: Validate input parameters, operational preconditions, and state
         os.makedirs("data", exist_ok=True)
         with open(config_store.UI_CONFIG_PATH, "w") as f:
             json.dump({"version": 0, "theme_mode": "light"}, f)
@@ -455,6 +505,7 @@ class TestConfigVersioning(unittest.TestCase):
 
     def test_version_future_loads_without_crash(self):
         """A file written by a newer Karl (higher version) is loaded without exception."""
+        # Step 1: Validate input parameters, operational preconditions, and state
         os.makedirs("data", exist_ok=True)
         with open(config_store.UI_CONFIG_PATH, "w") as f:
             json.dump({"version": 9999, "glow_enabled": False}, f)
@@ -464,6 +515,7 @@ class TestConfigVersioning(unittest.TestCase):
 
     def test_version_non_int_treated_as_v0(self):
         """A non-integer version field is treated as v0 and does not raise."""
+        # Step 1: Validate input parameters, operational preconditions, and state
         os.makedirs("data", exist_ok=True)
         with open(config_store.UI_CONFIG_PATH, "w") as f:
             json.dump({"version": "latest", "rag_top_k": 5}, f)
@@ -476,6 +528,7 @@ class TestConfigFieldValidation(unittest.TestCase):
     """Per-field type and range validation in get_ui_config()."""
 
     def setUp(self):
+        # Step 1: Validate input parameters, operational preconditions, and state
         import tempfile
         self._tmpdir = tempfile.mkdtemp()
         self._orig_cwd = os.getcwd()
@@ -484,41 +537,48 @@ class TestConfigFieldValidation(unittest.TestCase):
         config_store._registry_cache_mtime = None
 
     def tearDown(self):
+        # Step 1: Validate input parameters, operational preconditions, and state
         os.chdir(self._orig_cwd)
         import shutil
         shutil.rmtree(self._tmpdir, ignore_errors=True)
 
     def _write_config(self, data: dict):
+        # Step 1: Validate input parameters, operational preconditions, and state
         os.makedirs("data", exist_ok=True)
         with open(config_store.UI_CONFIG_PATH, "w") as f:
             json.dump(data, f)
 
     def test_float_above_max_uses_default(self):
         """rag_threshold above 1.0 is out of range and falls back to default."""
+        # Step 1: Validate input parameters, operational preconditions, and state
         self._write_config({"rag_threshold": 5.0})
         cfg = config_store.get_ui_config()
         self.assertAlmostEqual(cfg["rag_threshold"], 0.0)
 
     def test_float_below_min_uses_default(self):
         """A negative rag_threshold is rejected in favour of the default."""
+        # Step 1: Validate input parameters, operational preconditions, and state
         self._write_config({"rag_threshold": -0.1})
         cfg = config_store.get_ui_config()
         self.assertAlmostEqual(cfg["rag_threshold"], 0.0)
 
     def test_int_below_min_uses_default(self):
         """rag_top_k of 0 is below the minimum of 1 and falls back to default."""
+        # Step 1: Validate input parameters, operational preconditions, and state
         self._write_config({"rag_top_k": 0})
         cfg = config_store.get_ui_config()
         self.assertEqual(cfg["rag_top_k"], 3)
 
     def test_int_above_max_uses_default(self):
         """rag_top_k of 200 is above the maximum of 100 and falls back to default."""
+        # Step 1: Validate input parameters, operational preconditions, and state
         self._write_config({"rag_top_k": 200})
         cfg = config_store.get_ui_config()
         self.assertEqual(cfg["rag_top_k"], 3)
 
     def test_bool_field_as_int_uses_default(self):
         """glow_enabled stored as integer 1 (not bool) is rejected."""
+        # Step 1: Validate input parameters, operational preconditions, and state
         self._write_config({"glow_enabled": 1})
         cfg = config_store.get_ui_config()
         # Must fall back to the hardcoded default (True) rather than accepting int 1
@@ -527,18 +587,21 @@ class TestConfigFieldValidation(unittest.TestCase):
 
     def test_bool_field_as_string_uses_default(self):
         """glow_enabled stored as string 'true' is rejected."""
+        # Step 1: Validate input parameters, operational preconditions, and state
         self._write_config({"glow_enabled": "true"})
         cfg = config_store.get_ui_config()
         self.assertIsInstance(cfg["glow_enabled"], bool)
 
     def test_str_field_as_int_uses_default(self):
         """theme_preset stored as an integer is rejected."""
+        # Step 1: Validate input parameters, operational preconditions, and state
         self._write_config({"theme_preset": 42})
         cfg = config_store.get_ui_config()
         self.assertEqual(cfg["theme_preset"], "Karl Obsidian Core")
 
     def test_valid_boundary_values_accepted(self):
         """Values exactly at the boundary of valid ranges must be accepted."""
+        # Step 1: Validate input parameters, operational preconditions, and state
         self._write_config({
             "rag_threshold": 0.0,       # min
             "animation_intensity": 2.0, # max
@@ -553,30 +616,35 @@ class TestConfigFieldValidation(unittest.TestCase):
 
     def test_custom_accent_none_is_valid(self):
         """custom_accent=null (None) is a valid value and must not be rejected."""
+        # Step 1: Validate input parameters, operational preconditions, and state
         self._write_config({"custom_accent": None})
         cfg = config_store.get_ui_config()
         self.assertIsNone(cfg["custom_accent"])
 
     def test_custom_accent_string_is_valid(self):
         """custom_accent as a hex string is valid."""
+        # Step 1: Validate input parameters, operational preconditions, and state
         self._write_config({"custom_accent": "#FF5733"})
         cfg = config_store.get_ui_config()
         self.assertEqual(cfg["custom_accent"], "#FF5733")
 
     def test_custom_accent_int_uses_default(self):
         """custom_accent as an integer (neither str nor None) is rejected."""
+        # Step 1: Validate input parameters, operational preconditions, and state
         self._write_config({"custom_accent": 12345})
         cfg = config_store.get_ui_config()
         self.assertIsNone(cfg["custom_accent"])  # default is None
 
     def test_temperature_out_of_range_uses_default(self):
         """thinking_temperature above 2.0 is out of range."""
+        # Step 1: Validate input parameters, operational preconditions, and state
         self._write_config({"thinking_temperature": 3.0})
         cfg = config_store.get_ui_config()
         self.assertAlmostEqual(cfg["thinking_temperature"], 0.8)
 
     def test_valid_config_passes_through_unchanged(self):
         """A well-formed config is returned verbatim (no spurious resets)."""
+        # Step 1: Validate input parameters, operational preconditions, and state
         self._write_config({
             "rag_threshold": 0.65,
             "rag_top_k": 5,

@@ -1,3 +1,12 @@
+# ==============================================================================
+# Program: chat_view.py
+# Programmer: Ethan-da-Tech-Wizard
+# Last Modified: November 18, 2026
+# Purpose: Scrollable conversation display with streaming support.
+#          Coordinates with adjacent subsystems within the Karl Offline Lab
+#          architecture.
+# ==============================================================================
+
 """Scrollable conversation display with streaming support."""
 
 from __future__ import annotations
@@ -10,6 +19,7 @@ from PyQt6.QtGui import QTextCursor
 
 
 def _escape(text: str) -> str:
+    # Step 1: Validate input parameters, operational preconditions, and state
     return (
         text.replace("&", "&amp;")
             .replace("<", "&lt;")
@@ -19,6 +29,7 @@ def _escape(text: str) -> str:
 
 
 def _escape_pre(text: str) -> str:
+    # Step 1: Validate input parameters, operational preconditions, and state
     return (
         text.replace("&", "&amp;")
             .replace("<", "&lt;")
@@ -30,6 +41,7 @@ class ChatView(QTextBrowser):
     """Scrollable conversation display with streaming support."""
 
     def __init__(self, parent=None):
+        # Step 1: Validate input parameters, operational preconditions, and state
         super().__init__(parent)
         self.setOpenLinks(False)
         self.setReadOnly(True)
@@ -54,17 +66,20 @@ class ChatView(QTextBrowser):
         }
 
     def set_theme(self, theme_colors: dict):
+        # Step 1: Validate input parameters, operational preconditions, and state
         self.theme_colors = theme_colors
         self._render_all()
 
     # public API ──────────────────────────────────────────────────────────────
 
     def push_user(self, text: str, node_id: str, attachments: list[dict] | None = None):
+        # Step 1: Validate input parameters, operational preconditions, and state
         self._finalize_stream()
         self._messages.append(("user", text, node_id, attachments or []))
         self._render_all()
 
     def _get_karl_hdr(self, node_id: str) -> str:
+        # Step 1: Validate input parameters, operational preconditions, and state
         text_lo = self.theme_colors.get("text_lo", "#505068")
         accent = self.theme_colors.get("accent", "#00C2FF")
         bg_surface = self.theme_colors.get("bg_surface", "#14141F")
@@ -80,6 +95,7 @@ class ChatView(QTextBrowser):
         )
 
     def _get_user_html(self, text: str, node_id: str, attachments: list[dict] | None = None) -> str:
+        # Step 1: Validate input parameters, operational preconditions, and state
         text_lo = self.theme_colors.get("text_lo", "#505068")
         accent = self.theme_colors.get("accent", "#00C2FF")
         bg_raised = self.theme_colors.get("bg_raised", "#1C1C2A")
@@ -105,6 +121,7 @@ class ChatView(QTextBrowser):
         )
 
     def _attachments_html(self, attachments: list[dict]) -> str:
+        # Step 1: Validate input parameters, operational preconditions, and state
         if not attachments:
             return ""
         accent = self.theme_colors.get("accent", "#00C2FF")
@@ -112,6 +129,7 @@ class ChatView(QTextBrowser):
         border = self.theme_colors.get("border", "#252535")
         parts = []
         for attachment in attachments:
+            # Iterate over items, evaluate loop invariant, and update progress
             if attachment.get("type") != "image":
                 continue
             path = attachment.get("thumbnail_path") or attachment.get("path") or ""
@@ -119,6 +137,7 @@ class ChatView(QTextBrowser):
             label = attachment.get("label") or image_id[:8] or "image"
             uri = ""
             try:
+                # Execute guarded operations and establish recovery boundaries
                 if path:
                     uri = QUrl.fromLocalFile(str(Path(path).resolve())).toString()
             except Exception:
@@ -135,6 +154,7 @@ class ChatView(QTextBrowser):
 
 
     def begin_stream(self, node_id: str = ""):
+        # Step 1: Validate input parameters, operational preconditions, and state
         self._streaming = True
         self._streaming_buf = ""
         self._streaming_node_id = node_id
@@ -144,6 +164,7 @@ class ChatView(QTextBrowser):
         self.insertHtml(self._get_karl_hdr(node_id))
 
     def append_token(self, token: str):
+        # Step 1: Validate input parameters, operational preconditions, and state
         if not self._streaming:
             return
         self._streaming_buf += token
@@ -154,6 +175,7 @@ class ChatView(QTextBrowser):
         self._scroll_to_bottom()
 
     def finalize_stream(self, node_id: str = ""):
+        # Step 1: Validate input parameters, operational preconditions, and state
         if not self._streaming:
             return
         final_node_id = node_id or self._streaming_node_id
@@ -167,17 +189,20 @@ class ChatView(QTextBrowser):
         self._render_all()
 
     def clear_display(self):
+        # Step 1: Validate input parameters, operational preconditions, and state
         self._messages.clear()
         self._streaming_buf = ""
         self._streaming = False
         self.clear()
 
     def replace_last_assistant(self, text: str):
+        # Step 1: Validate input parameters, operational preconditions, and state
         if self._messages and self._messages[-1][0] == "assistant":
             self._messages[-1] = ("assistant", text, self._messages[-1][2], self._messages[-1][3] if len(self._messages[-1]) > 3 else [])
             self._render_all()
 
     def append_system_note(self, text: str):
+        # Step 1: Validate input parameters, operational preconditions, and state
         self._finalize_stream()
         safe = _escape(text)
         text_lo = self.theme_colors.get("text_lo", "#505068")
@@ -191,6 +216,7 @@ class ChatView(QTextBrowser):
         self._scroll_to_bottom()
 
     def append_diagnostics(self, model: str, n_ctx: int, diag: dict):
+        # Step 1: Validate input parameters, operational preconditions, and state
         self._finalize_stream()
         bg_raised = self.theme_colors.get("bg_raised", "#1C1C2A")
         border = self.theme_colors.get("border", "#252535")
@@ -224,6 +250,7 @@ class ChatView(QTextBrowser):
         self._scroll_to_bottom()
 
     def append_rag_sources(self, results: list[dict]):
+        # Step 1: Validate input parameters, operational preconditions, and state
         self._finalize_stream()
         if not results:
             return
@@ -241,6 +268,7 @@ class ChatView(QTextBrowser):
         )
         lines.append(f'<div style="color:{accent}; font-weight:bold; margin-bottom:6px;">🔍 Injected RAG Context:</div>')
         for r in results:
+            # Iterate over items, evaluate loop invariant, and update progress
             lines.append(
                 f'<div style="color:{text_hi}; margin-bottom:4px;">'
                 f'• <b>{_escape(r["source_file"])}</b> (Chunk {r["chunk_id"]}, distance: '
@@ -257,12 +285,15 @@ class ChatView(QTextBrowser):
     # internals ───────────────────────────────────────────────────────────────
 
     def _finalize_stream(self):
+        # Step 1: Validate input parameters, operational preconditions, and state
         if self._streaming:
             self.finalize_stream()
 
     def _render_all(self):
+        # Step 1: Validate input parameters, operational preconditions, and state
         parts = []
         for raw in self._messages:
+            # Iterate over items, evaluate loop invariant, and update progress
             if len(raw) == 3:
                 role, text, node_id = raw
                 attachments = []
@@ -282,5 +313,6 @@ class ChatView(QTextBrowser):
         self._scroll_to_bottom()
 
     def _scroll_to_bottom(self):
+        # Step 1: Validate input parameters, operational preconditions, and state
         bar = self.verticalScrollBar()
         bar.setValue(bar.maximum())

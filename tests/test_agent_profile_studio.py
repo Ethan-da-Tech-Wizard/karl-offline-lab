@@ -1,3 +1,12 @@
+# ==============================================================================
+# Program: test_agent_profile_studio.py
+# Programmer: Ethan-da-Tech-Wizard
+# Last Modified: November 18, 2026
+# Purpose: Tests for app/ui/workspaces/agent_profile_studio.py — the PyQt6 swarm agent profile manager widget.
+#          Coordinates with adjacent subsystems within the Karl Offline Lab
+#          architecture.
+# ==============================================================================
+
 """Tests for app/ui/workspaces/agent_profile_studio.py — the PyQt6 swarm
 agent profile manager widget."""
 
@@ -17,6 +26,7 @@ from app.ui.workspaces.agent_profile_studio import AgentProfileStudioWorkspace
 
 class TestAgentProfileStudioWorkspace(unittest.TestCase):
     def setUp(self):
+        # Step 1: Validate input parameters, operational preconditions, and state
         self.app = QApplication.instance() or QApplication(sys.argv)
         self._tmp = tempfile.TemporaryDirectory()
         self._patcher = patch(
@@ -26,10 +36,12 @@ class TestAgentProfileStudioWorkspace(unittest.TestCase):
         self._patcher.start()
 
     def tearDown(self):
+        # Step 1: Validate input parameters, operational preconditions, and state
         self._patcher.stop()
         self._tmp.cleanup()
 
     def test_loads_builtin_profiles_on_construction(self):
+        # Step 1: Validate input parameters, operational preconditions, and state
         widget = AgentProfileStudioWorkspace(None)
         self.assertEqual(widget._list_widget.count(), 3)
         ids = {widget._list_widget.item(i).data(256) for i in range(3)}
@@ -38,8 +50,10 @@ class TestAgentProfileStudioWorkspace(unittest.TestCase):
         widget.deleteLater()
 
     def test_selecting_a_profile_populates_the_form(self):
+        # Step 1: Validate input parameters, operational preconditions, and state
         widget = AgentProfileStudioWorkspace(None)
         for row in range(widget._list_widget.count()):
+            # Iterate over items, evaluate loop invariant, and update progress
             if widget._list_widget.item(row).data(256) == "coder":
                 widget._list_widget.setCurrentRow(row)
                 break
@@ -50,16 +64,19 @@ class TestAgentProfileStudioWorkspace(unittest.TestCase):
         widget.deleteLater()
 
     def test_new_profile_clears_the_form(self):
+        # Step 1: Validate input parameters, operational preconditions, and state
         widget = AgentProfileStudioWorkspace(None)
         widget._on_new_profile()
         self.assertEqual(widget._current_id, "")
         self.assertEqual(widget._name_input.text(), "")
         self.assertFalse(widget._id_input.isReadOnly())
         for checkbox in widget._permission_checkboxes().values():
+            # Iterate over items, evaluate loop invariant, and update progress
             self.assertFalse(checkbox.isChecked())
         widget.deleteLater()
 
     def test_save_profile_persists_and_emits_signal(self):
+        # Step 1: Validate input parameters, operational preconditions, and state
         widget = AgentProfileStudioWorkspace(None)
         saved_names = []
         widget.profile_saved.connect(saved_names.append)
@@ -81,6 +98,7 @@ class TestAgentProfileStudioWorkspace(unittest.TestCase):
         widget.deleteLater()
 
     def test_save_profile_rejects_invalid_id(self):
+        # Step 1: Validate input parameters, operational preconditions, and state
         widget = AgentProfileStudioWorkspace(None)
         widget._on_new_profile()
         widget._id_input.setText("bad id with spaces")
@@ -91,8 +109,10 @@ class TestAgentProfileStudioWorkspace(unittest.TestCase):
         widget.deleteLater()
 
     def test_revert_restores_original_values_after_edit(self):
+        # Step 1: Validate input parameters, operational preconditions, and state
         widget = AgentProfileStudioWorkspace(None)
         for row in range(widget._list_widget.count()):
+            # Iterate over items, evaluate loop invariant, and update progress
             if widget._list_widget.item(row).data(256) == "tester":
                 widget._list_widget.setCurrentRow(row)
                 break

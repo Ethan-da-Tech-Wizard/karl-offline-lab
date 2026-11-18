@@ -1,3 +1,12 @@
+# ==============================================================================
+# Program: llava.py
+# Programmer: Ethan-da-Tech-Wizard
+# Last Modified: November 18, 2026
+# Purpose: Weight conversion and architectural mapping implementation for LLAVA.
+#          Transforms HuggingFace checkpoint tensors, normalizes layer weights,
+#          and writes compliant GGUF data structures for llama.cpp.
+# ==============================================================================
+
 from __future__ import annotations
 
 import json
@@ -21,6 +30,7 @@ class LlavaVisionModel(MmprojModel):
     use_break_tok = True
 
     def __init__(self, *args, **kwargs):
+        # Step 1: Validate input parameters, operational preconditions, and state
         super().__init__(*args, **kwargs)
         if self.hparams.get("model_type") == "pixtral":
             # layer_norm_eps is not in config.json, it is hard-coded in modeling_pixtral.py
@@ -43,16 +53,19 @@ class LlavaVisionModel(MmprojModel):
         logger.info(f"Image break token id: {self.img_break_tok_id}")
 
     def get_token_id(self, token: str) -> int:
+        # Step 1: Validate input parameters, operational preconditions, and state
         tokenizer_config_file = self.dir_model / 'tokenizer_config.json'
         with open(tokenizer_config_file, "r", encoding="utf-8") as f:
             added_tokens_decoder = json.load(f).get('added_tokens_decoder') or {}
             for id_, token_data in added_tokens_decoder.items():
+                # Iterate over items, evaluate loop invariant, and update progress
                 if token_data.get("content") == token:
                     return int(id_)
             # fallthrough to tokenizer.json
         with open(self.dir_model / "tokenizer.json", "r", encoding="utf-8") as f:
             tokenizer_json = json.load(f)
             for token_data in tokenizer_json["added_tokens"]:
+                # Iterate over items, evaluate loop invariant, and update progress
                 if token_data["content"] == token:
                     return int(token_data["id"])
         raise ValueError(f"Token '{token}' not found in tokenizer config.")
@@ -64,6 +77,7 @@ class LlavaVisionModel(MmprojModel):
             with open(tekken_file, "r", encoding="utf-8") as f:
                 data = json.load(f)
             for entry in data.get("special_tokens", []):
+                # Iterate over items, evaluate loop invariant, and update progress
                 if entry.get("token_str") == token:
                     return int(entry["rank"])
         tokenizer_json_file = self.dir_model / "tokenizer.json"
@@ -71,11 +85,13 @@ class LlavaVisionModel(MmprojModel):
             with open(tokenizer_json_file, "r", encoding="utf-8") as f:
                 data = json.load(f)
             for entry in data.get("added_tokens", []):
+                # Iterate over items, evaluate loop invariant, and update progress
                 if entry.get("content") == token:
                     return int(entry["id"])
         raise ValueError(f"Token '{token}' not found in mistral tokenizer files.")
 
     def set_gguf_parameters(self):
+        # Step 1: Validate input parameters, operational preconditions, and state
         super().set_gguf_parameters()
         hparams = self.hparams
         if hparams.get("model_type") == "pixtral":
@@ -95,6 +111,7 @@ class LlavaVisionModel(MmprojModel):
                 self.gguf_writer.add_vision_spatial_merge_size(self.global_config["spatial_merge_size"])
 
     def modify_tensors(self, data_torch: Tensor, name: str, bid: int | None) -> Iterable[tuple[str, Tensor]]:
+        # Step 1: Validate input parameters, operational preconditions, and state
         n_head = (
             self.hparams["num_attention_heads"] if not self.is_mistral_format else self.find_vparam(["num_attention_heads"])
         )

@@ -1,3 +1,12 @@
+# ==============================================================================
+# Program: test_dataset_merger.py
+# Programmer: Ethan-da-Tech-Wizard
+# Last Modified: November 18, 2026
+# Purpose: Unit tests for app/utils/dataset_merger.py
+#          Coordinates with adjacent subsystems within the Karl Offline Lab
+#          architecture.
+# ==============================================================================
+
 """
 Unit tests for app/utils/dataset_merger.py
 
@@ -35,6 +44,7 @@ def _record(
     ts: str = "2026-01-01T00:00:00+00:00",
     warning: str | None = None,
 ) -> dict:
+    # Step 1: Validate input parameters, operational preconditions, and state
     r: dict = {
         "timestamp": ts,
         "source": source,
@@ -50,13 +60,16 @@ def _record(
 
 
 def _write(path: str, records: list[dict]) -> None:
+    # Step 1: Validate input parameters, operational preconditions, and state
     os.makedirs(os.path.dirname(os.path.abspath(path)), exist_ok=True)
     with open(path, "w", encoding="utf-8") as fh:
         for r in records:
+            # Iterate over items, evaluate loop invariant, and update progress
             fh.write(json.dumps(r) + "\n")
 
 
 def _read(path: str) -> list[dict]:
+    # Step 1: Validate input parameters, operational preconditions, and state
     with open(path, encoding="utf-8") as fh:
         return [json.loads(line) for line in fh if line.strip()]
 
@@ -65,18 +78,23 @@ def _read(path: str) -> list[dict]:
 
 class TestIsAnomalous:
     def test_good_record_passes(self):
+        # Step 1: Validate input parameters, operational preconditions, and state
         assert not _is_anomalous(_record("hi", "hello!"))
 
     def test_missing_messages_key(self):
+        # Step 1: Validate input parameters, operational preconditions, and state
         assert _is_anomalous({"timestamp": "2026-01-01T00:00:00+00:00", "source": "x"})
 
     def test_messages_not_a_list(self):
+        # Step 1: Validate input parameters, operational preconditions, and state
         assert _is_anomalous({"messages": "bad"})
 
     def test_too_few_messages(self):
+        # Step 1: Validate input parameters, operational preconditions, and state
         assert _is_anomalous({"messages": [{"role": "user", "content": "hi"}]})
 
     def test_no_assistant_turn(self):
+        # Step 1: Validate input parameters, operational preconditions, and state
         r = {"messages": [
             {"role": "system", "content": "sys"},
             {"role": "user",   "content": "hi"},
@@ -84,10 +102,12 @@ class TestIsAnomalous:
         assert _is_anomalous(r)
 
     def test_empty_assistant_response(self):
+        # Step 1: Validate input parameters, operational preconditions, and state
         assert _is_anomalous(_record("hi", ""))
         assert _is_anomalous(_record("hi", "   "))
 
     def test_traceback_dump_filtered(self):
+        # Step 1: Validate input parameters, operational preconditions, and state
         bad_response = (
             "Traceback (most recent call last):\n"
             "  File 'x.py', line 1\n"
@@ -96,6 +116,7 @@ class TestIsAnomalous:
         assert _is_anomalous(_record("hi", bad_response))
 
     def test_latency_warning_flag_filtered(self):
+        # Step 1: Validate input parameters, operational preconditions, and state
         assert _is_anomalous(_record("hi", "good", warning="thermal"))
 
     def test_long_traceback_not_filtered(self):
@@ -106,25 +127,30 @@ class TestIsAnomalous:
 
 class TestHashing:
     def test_exact_hash_stable(self):
+        # Step 1: Validate input parameters, operational preconditions, and state
         r = _record("hello", "world")
         assert _exact_hash(r) == _exact_hash(r.copy())
 
     def test_different_assistant_differs_in_exact_hash(self):
+        # Step 1: Validate input parameters, operational preconditions, and state
         r1 = _record("hello", "world")
         r2 = _record("hello", "universe")
         assert _exact_hash(r1) != _exact_hash(r2)
 
     def test_same_prompt_shares_prompt_key(self):
+        # Step 1: Validate input parameters, operational preconditions, and state
         r1 = _record("hello", "world")
         r2 = _record("hello", "universe")
         assert _prompt_key(r1) == _prompt_key(r2)
 
     def test_different_prompts_differ_in_prompt_key(self):
+        # Step 1: Validate input parameters, operational preconditions, and state
         r1 = _record("hello", "world")
         r2 = _record("goodbye", "world")
         assert _prompt_key(r1) != _prompt_key(r2)
 
     def test_prompt_key_ignores_assistant(self):
+        # Step 1: Validate input parameters, operational preconditions, and state
         r1 = _record("hi", "response A", ts="2025-01-01T00:00:00+00:00")
         r2 = _record("hi", "response B", ts="2026-06-01T00:00:00+00:00")
         assert _prompt_key(r1) == _prompt_key(r2)
@@ -134,13 +160,16 @@ class TestHashing:
 
 class TestMergeFiles:
     def setup_method(self):
+        # Step 1: Validate input parameters, operational preconditions, and state
         self._tmpdir = tempfile.TemporaryDirectory()
         self.tmp = self._tmpdir.name
 
     def teardown_method(self):
+        # Step 1: Validate input parameters, operational preconditions, and state
         self._tmpdir.cleanup()
 
     def _paths(self):
+        # Step 1: Validate input parameters, operational preconditions, and state
         return (
             os.path.join(self.tmp, "primary.jsonl"),
             os.path.join(self.tmp, "incoming.jsonl"),
@@ -149,6 +178,7 @@ class TestMergeFiles:
     # ── stat keys ────────────────────────────────────────────────────────────
 
     def test_return_keys_match_spec(self):
+        # Step 1: Validate input parameters, operational preconditions, and state
         primary, incoming = self._paths()
         _write(primary, [])
         _write(incoming, [_record("Q", "A")])
@@ -158,6 +188,7 @@ class TestMergeFiles:
     # ── plain add ────────────────────────────────────────────────────────────
 
     def test_new_record_is_added(self):
+        # Step 1: Validate input parameters, operational preconditions, and state
         primary, incoming = self._paths()
         _write(primary, [_record("Q1", "A1")])
         _write(incoming, [_record("Q2", "A2")])
@@ -168,6 +199,7 @@ class TestMergeFiles:
         assert len(_read(primary)) == 2
 
     def test_multiple_new_records(self):
+        # Step 1: Validate input parameters, operational preconditions, and state
         primary, incoming = self._paths()
         _write(primary, [])
         _write(incoming, [_record(f"Q{i}", f"A{i}") for i in range(5)])
@@ -178,6 +210,7 @@ class TestMergeFiles:
     # ── duplicate detection ───────────────────────────────────────────────────
 
     def test_exact_duplicate_skipped(self):
+        # Step 1: Validate input parameters, operational preconditions, and state
         primary, incoming = self._paths()
         r = _record("Q", "A")
         _write(primary, [r])
@@ -189,6 +222,7 @@ class TestMergeFiles:
 
     def test_same_prompt_same_response_is_duplicate(self):
         """Identical prompt + response from a different source tag is still a duplicate."""
+        # Step 1: Validate input parameters, operational preconditions, and state
         primary, incoming = self._paths()
         _write(primary, [_record("Q", "A", source="thumbs_up")])
         _write(incoming, [_record("Q", "A", source="corrected")])
@@ -197,6 +231,7 @@ class TestMergeFiles:
         assert stats["added"] == 0
 
     def test_multiple_duplicates_all_counted(self):
+        # Step 1: Validate input parameters, operational preconditions, and state
         primary, incoming = self._paths()
         records = [_record(f"Q{i}", f"A{i}") for i in range(4)]
         _write(primary, records)
@@ -208,6 +243,7 @@ class TestMergeFiles:
     # ── conflict resolution ───────────────────────────────────────────────────
 
     def test_newer_incoming_replaces_older_primary(self):
+        # Step 1: Validate input parameters, operational preconditions, and state
         primary, incoming = self._paths()
         _write(primary, [_record("Q", "OldAnswer", ts="2025-01-01T00:00:00+00:00")])
         _write(incoming, [_record("Q", "NewAnswer", ts="2026-06-01T00:00:00+00:00")])
@@ -219,6 +255,7 @@ class TestMergeFiles:
         assert asst == "NewAnswer"
 
     def test_older_incoming_does_not_replace_newer_primary(self):
+        # Step 1: Validate input parameters, operational preconditions, and state
         primary, incoming = self._paths()
         _write(primary, [_record("Q", "NewerAnswer", ts="2026-06-01T00:00:00+00:00")])
         _write(incoming, [_record("Q", "OlderAnswer", ts="2025-01-01T00:00:00+00:00")])
@@ -230,6 +267,7 @@ class TestMergeFiles:
         assert asst == "NewerAnswer"
 
     def test_same_timestamp_conflict_keeps_primary(self):
+        # Step 1: Validate input parameters, operational preconditions, and state
         ts = "2026-03-15T12:00:00+00:00"
         primary, incoming = self._paths()
         _write(primary, [_record("Q", "PrimaryAnswer", ts=ts)])
@@ -242,6 +280,7 @@ class TestMergeFiles:
     # ── error / anomaly filtering ─────────────────────────────────────────────
 
     def test_empty_assistant_response_counted_as_error(self):
+        # Step 1: Validate input parameters, operational preconditions, and state
         primary, incoming = self._paths()
         _write(primary, [])
         _write(incoming, [_record("Q", ""), _record("Q2", "fine")])
@@ -250,6 +289,7 @@ class TestMergeFiles:
         assert stats["added"] == 1
 
     def test_latency_warning_counted_as_error(self):
+        # Step 1: Validate input parameters, operational preconditions, and state
         primary, incoming = self._paths()
         _write(primary, [])
         _write(incoming, [_record("Q", "fine", warning="thermal")])
@@ -258,6 +298,7 @@ class TestMergeFiles:
         assert stats["added"] == 0
 
     def test_traceback_response_counted_as_error(self):
+        # Step 1: Validate input parameters, operational preconditions, and state
         primary, incoming = self._paths()
         _write(primary, [])
         bad = _record("Q", "Traceback (most recent call last):\n  TypeError: bad")
@@ -266,6 +307,7 @@ class TestMergeFiles:
         assert stats["errors"] == 1
 
     def test_malformed_json_line_skipped_gracefully(self):
+        # Step 1: Validate input parameters, operational preconditions, and state
         primary, incoming = self._paths()
         _write(primary, [])
         # Write one valid line and one garbage line
@@ -279,6 +321,7 @@ class TestMergeFiles:
         assert len(_read(primary)) == 2
 
     def test_missing_messages_key_counted_as_error(self):
+        # Step 1: Validate input parameters, operational preconditions, and state
         primary, incoming = self._paths()
         _write(primary, [])
         bad = {"timestamp": "2026-01-01T00:00:00+00:00", "source": "x"}
@@ -288,6 +331,7 @@ class TestMergeFiles:
         assert stats["added"] == 0
 
     def test_does_not_crash_on_empty_incoming(self):
+        # Step 1: Validate input parameters, operational preconditions, and state
         primary, incoming = self._paths()
         _write(primary, [_record("Q", "A")])
         _write(incoming, [])
@@ -296,6 +340,7 @@ class TestMergeFiles:
         assert len(_read(primary)) == 1
 
     def test_does_not_crash_on_empty_primary(self):
+        # Step 1: Validate input parameters, operational preconditions, and state
         primary, incoming = self._paths()
         _write(primary, [])
         _write(incoming, [_record("Q", "A")])
@@ -303,6 +348,7 @@ class TestMergeFiles:
         assert stats["added"] == 1
 
     def test_does_not_crash_when_primary_missing(self):
+        # Step 1: Validate input parameters, operational preconditions, and state
         incoming = os.path.join(self.tmp, "incoming.jsonl")
         primary = os.path.join(self.tmp, "sub", "primary.jsonl")
         _write(incoming, [_record("Q", "A")])
@@ -313,6 +359,7 @@ class TestMergeFiles:
     # ── output integrity ──────────────────────────────────────────────────────
 
     def test_output_is_valid_jsonl(self):
+        # Step 1: Validate input parameters, operational preconditions, and state
         primary, incoming = self._paths()
         _write(primary, [_record("Q1", "A1")])
         _write(incoming, [_record("Q2", "A2"), _record("Q3", "A3")])
@@ -320,11 +367,13 @@ class TestMergeFiles:
         records = _read(primary)
         assert len(records) == 3
         for r in records:
+            # Iterate over items, evaluate loop invariant, and update progress
             assert "messages" in r
             assert isinstance(r["messages"], list)
 
     def test_primary_anomalous_records_cleaned_on_merge(self):
         """Corrupt records already in primary are removed during a merge pass."""
+        # Step 1: Validate input parameters, operational preconditions, and state
         primary, incoming = self._paths()
         _write(primary, [
             _record("Good", "fine"),
@@ -339,6 +388,7 @@ class TestMergeFiles:
 
     def test_write_is_atomic(self):
         """A .merge_tmp file must not persist after merge completes."""
+        # Step 1: Validate input parameters, operational preconditions, and state
         primary, incoming = self._paths()
         _write(primary, [])
         _write(incoming, [_record("Q", "A")])
@@ -348,6 +398,7 @@ class TestMergeFiles:
     # ── validate_file ─────────────────────────────────────────────────────────
 
     def test_validate_file_counts(self):
+        # Step 1: Validate input parameters, operational preconditions, and state
         path = os.path.join(self.tmp, "check.jsonl")
         _write(path, [
             _record("Q1", "A1"),           # valid
@@ -361,5 +412,6 @@ class TestMergeFiles:
         assert result["invalid"] == 2
 
     def test_validate_file_missing_path(self):
+        # Step 1: Validate input parameters, operational preconditions, and state
         result = DatasetMerger.validate_file("/nonexistent/path/data.jsonl")
         assert result == {"total": 0, "valid": 0, "invalid": 0}

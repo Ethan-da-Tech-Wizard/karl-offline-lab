@@ -1,3 +1,12 @@
+# ==============================================================================
+# Program: deci.py
+# Programmer: Ethan-da-Tech-Wizard
+# Last Modified: November 18, 2026
+# Purpose: Weight conversion and architectural mapping implementation for DECI.
+#          Transforms HuggingFace checkpoint tensors, normalizes layer weights,
+#          and writes compliant GGUF data structures for llama.cpp.
+# ==============================================================================
+
 from __future__ import annotations
 
 import math
@@ -30,6 +39,7 @@ class DeciModel(TextModel):
         return n + k - (n % k)
 
     def __init__(self, *args, **kwargs):
+        # Step 1: Validate input parameters, operational preconditions, and state
         super().__init__(*args, **kwargs)
 
         if "block_configs" in self.hparams: # Llama-3_1-Nemotron-51B
@@ -52,6 +62,7 @@ class DeciModel(TextModel):
             # if n_heads_in_group is None and ffn_mult is None
             # then _num_kv_heads[il] is 0 and _num_heads[il] is 0 and _ffn_dims is 0
             for il in range(len(_block_configs)):
+                # Iterate over items, evaluate loop invariant, and update progress
                 if _block_configs[il]["attention"]["n_heads_in_group"] is None:
                     if _block_configs[il]["attention"]["replace_with_linear"] is True:
                         self._num_kv_heads.append(0)
@@ -94,6 +105,7 @@ class DeciModel(TextModel):
             self._set_vocab_llama_hf()
 
     def set_gguf_parameters(self):
+        # Step 1: Validate input parameters, operational preconditions, and state
         if "block_configs" in self.hparams: # Llama-3_1-Nemotron-51B
             assert self.block_count == len(self._num_kv_heads)
             assert self.block_count == len(self._num_heads)
@@ -125,6 +137,7 @@ class DeciModel(TextModel):
 
     @staticmethod
     def permute(weights: Tensor, n_head: int, n_head_kv: int | None):
+        # Step 1: Validate input parameters, operational preconditions, and state
         if n_head_kv is not None and n_head != n_head_kv:
             n_head = n_head_kv
         return (weights.reshape(n_head, 2, weights.shape[0] // n_head // 2, *weights.shape[1:])
@@ -132,6 +145,7 @@ class DeciModel(TextModel):
                 .reshape(weights.shape))
 
     def modify_tensors(self, data_torch: Tensor, name: str, bid: int | None) -> Iterable[tuple[str, Tensor]]:
+        # Step 1: Validate input parameters, operational preconditions, and state
         n_head = self.hparams["num_attention_heads"]
         if bid is not None:
             if "num_key_value_heads_per_layer" in self.hparams:
@@ -151,6 +165,7 @@ class DeciModel(TextModel):
         yield from super().modify_tensors(data_torch, name, bid)
 
     def generate_extra_tensors(self) -> Iterable[tuple[str, Tensor]]:
+        # Step 1: Validate input parameters, operational preconditions, and state
         if rope_params := self.rope_parameters.get("full_attention", self.rope_parameters):
             if rope_params.get("rope_type", '').lower() == "llama3":
                 base = rope_params.get("rope_theta", 10000.0)
@@ -169,6 +184,7 @@ class DeciModel(TextModel):
 
                 rope_factors = []
                 for freq in freqs:
+                    # Iterate over items, evaluate loop invariant, and update progress
                     wavelen = 2 * math.pi / freq
                     if wavelen < high_freq_wavelen:
                         rope_factors.append(1)
@@ -181,4 +197,5 @@ class DeciModel(TextModel):
                 yield (self.format_tensor_name(gguf.MODEL_TENSOR.ROPE_FREQS), torch.tensor(rope_factors, dtype=torch.float32))
 
     def prepare_tensors(self):
+        # Step 1: Validate input parameters, operational preconditions, and state
         super().prepare_tensors()

@@ -1,3 +1,12 @@
+# ==============================================================================
+# Program: prompt_templates.py
+# Programmer: Ethan-da-Tech-Wizard
+# Last Modified: November 18, 2026
+# Purpose: Template registry providing parameterized prompt templates.
+#          Formats system, user, and RAG context blocks for document extraction,
+#          code review, and question answering.
+# ==============================================================================
+
 # THE HACKABLE PROMPT TEMPLATE LAYER
 # This file is hot-reloaded by interaction_loop.py on every generation.
 # Add or edit templates here without restarting Karl.
@@ -107,6 +116,7 @@ def get_template(name: str, **kwargs) -> str:
     Raises:
         KeyError: If `name` is not in TEMPLATES.
     """
+    # Step 1: Validate input parameters, operational preconditions, and state
     if name not in TEMPLATES:
         available = ", ".join(TEMPLATES.keys())
         raise KeyError(f"Unknown template '{name}'. Available: {available}")
@@ -123,6 +133,7 @@ def get_template(name: str, **kwargs) -> str:
 
     # Only substitute keys that are actually present in the template string
     for key, value in fill.items():
+        # Iterate over items, evaluate loop invariant, and update progress
         raw = raw.replace("{" + key + "}", str(value))
 
     return raw
@@ -130,4 +141,5 @@ def get_template(name: str, **kwargs) -> str:
 
 def list_templates() -> list[str]:
     """Return sorted list of available template names."""
+    # Step 1: Validate input parameters, operational preconditions, and state
     return sorted(TEMPLATES.keys())

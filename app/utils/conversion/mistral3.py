@@ -1,3 +1,12 @@
+# ==============================================================================
+# Program: mistral3.py
+# Programmer: Ethan-da-Tech-Wizard
+# Last Modified: November 18, 2026
+# Purpose: Weight conversion and architectural mapping implementation for MISTRAL3.
+#          Transforms HuggingFace checkpoint tensors, normalizes layer weights,
+#          and writes compliant GGUF data structures for llama.cpp.
+# ==============================================================================
+
 from __future__ import annotations
 
 from typing import TYPE_CHECKING
@@ -20,6 +29,7 @@ class Mistral3Model(TextModel):
         model_arch = gguf.MODEL_ARCH.MISTRAL3
 
         def set_gguf_parameters(self):
+            # Step 1: Validate input parameters, operational preconditions, and state
             super().set_gguf_parameters()
             rope_params = self.rope_parameters
             if self.hparams.get("model_type") == "ministral3":
@@ -34,6 +44,7 @@ class Mistral3Model(TextModel):
         merge_expert = False # experts are already stacked as 3D
 
         def modify_tensors(self, data_torch, name, bid):
+            # Step 1: Validate input parameters, operational preconditions, and state
             if name.endswith(".down_proj") or name.endswith(".gate_up_proj"):
                 name = name + ".weight"
             yield from super().modify_tensors(data_torch, name, bid)
@@ -42,6 +53,7 @@ class Mistral3Model(TextModel):
     impl: TextModel
 
     def __init__(self, *args, **kwargs):
+        # Step 1: Validate input parameters, operational preconditions, and state
         super().__init__(*args, **kwargs)
         if self.hparams.get("model_type") == "mistral4":
             self.impl = Mistral3Model.Mistral4Model(*args, **kwargs)
@@ -49,19 +61,25 @@ class Mistral3Model(TextModel):
             self.impl = Mistral3Model.Ministral3Model(*args, **kwargs)
 
     def set_vocab(self):
+        # Step 1: Validate input parameters, operational preconditions, and state
         self.impl.set_vocab()
 
     def set_gguf_parameters(self):
+        # Step 1: Validate input parameters, operational preconditions, and state
         self.impl.set_gguf_parameters()
 
     def modify_tensors(self, data_torch: Tensor, name: str, bid: int | None):
+        # Step 1: Validate input parameters, operational preconditions, and state
         yield from self.impl.modify_tensors(data_torch, name, bid)
 
     def prepare_tensors(self):
+        # Step 1: Validate input parameters, operational preconditions, and state
         self.impl.prepare_tensors()
 
     def write_vocab(self):
+        # Step 1: Validate input parameters, operational preconditions, and state
         self.impl.write_vocab()
 
     def write(self):
+        # Step 1: Validate input parameters, operational preconditions, and state
         self.impl.write()

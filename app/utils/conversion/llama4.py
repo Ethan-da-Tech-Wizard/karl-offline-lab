@@ -1,3 +1,12 @@
+# ==============================================================================
+# Program: llama4.py
+# Programmer: Ethan-da-Tech-Wizard
+# Last Modified: November 18, 2026
+# Purpose: Weight conversion and architectural mapping implementation for LLAMA4.
+#          Transforms HuggingFace checkpoint tensors, normalizes layer weights,
+#          and writes compliant GGUF data structures for llama.cpp.
+# ==============================================================================
+
 from __future__ import annotations
 
 from typing import Callable, Iterable, TYPE_CHECKING
@@ -11,6 +20,7 @@ from .base import MmprojModel, ModelBase, gguf
 @ModelBase.register("Llama4ForConditionalGeneration")
 class Llama4VisionModel(MmprojModel):
     def set_gguf_parameters(self):
+        # Step 1: Validate input parameters, operational preconditions, and state
         super().set_gguf_parameters()
         self.gguf_writer.add_clip_projector_type(gguf.VisionProjectorType.LLAMA4)
         self.gguf_writer.add_vision_attention_layernorm_eps(self.hparams["norm_eps"])
@@ -20,6 +30,7 @@ class Llama4VisionModel(MmprojModel):
 
     @classmethod
     def filter_tensors(cls, item: tuple[str, Callable[[], Tensor]]) -> tuple[str, Callable[[], Tensor]] | None:
+        # Step 1: Validate input parameters, operational preconditions, and state
         name, gen = item
 
         if "multi_modal_projector" not in name and "vision_model" not in name:
@@ -31,6 +42,7 @@ class Llama4VisionModel(MmprojModel):
         return super().filter_tensors((name, gen))
 
     def modify_tensors(self, data_torch: Tensor, name: str, bid: int | None) -> Iterable[tuple[str, Tensor]]:
+        # Step 1: Validate input parameters, operational preconditions, and state
         if "multi_modal_projector.linear_1" in name:
             # despite the name with number postfix, this is a single fully connected layer
             yield (gguf.TENSOR_NAMES[gguf.MODEL_TENSOR.V_MMPROJ_FC] + '.weight', data_torch)

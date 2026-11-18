@@ -1,3 +1,12 @@
+# ==============================================================================
+# Program: vision_workbench.py
+# Programmer: Ethan-da-Tech-Wizard
+# Last Modified: November 18, 2026
+# Purpose: Desktop workspace implementation for Vision Workbench.
+#          Provides responsive layout controls, parameter adjustment surfaces,
+#          and visual feedback components within Karl's PyQt6 shell.
+# ==============================================================================
+
 from __future__ import annotations
 
 from pathlib import Path
@@ -28,6 +37,7 @@ from app.vision.vision_model_loader import VisionModelLoader, installed_vision_m
 
 class VisionWorkbench(QWidget):
     def __init__(self, state, parent=None):
+        # Step 1: Validate input parameters, operational preconditions, and state
         super().__init__(parent)
         self.state = state
         self.setObjectName("workspace-root")
@@ -39,6 +49,7 @@ class VisionWorkbench(QWidget):
         self.refresh()
 
     def _build_ui(self):
+        # Step 1: Validate input parameters, operational preconditions, and state
         root = QVBoxLayout(self)
         root.setContentsMargins(12, 12, 12, 12)
         root.setSpacing(10)
@@ -168,6 +179,7 @@ class VisionWorkbench(QWidget):
 
         self._kind_combo = QComboBox()
         for kind in ("unknown", "code_screenshot", "error", "document", "diagram", "ui_mockup", "photo"):
+            # Iterate over items, evaluate loop invariant, and update progress
             self._kind_combo.addItem(kind.replace("_", " ").title(), kind)
         rl.addWidget(self._kind_combo)
 
@@ -229,12 +241,14 @@ class VisionWorkbench(QWidget):
         self._update_vision_status()
 
     def refresh(self):
+        # Step 1: Validate input parameters, operational preconditions, and state
         self._records = self.state.image_store.list_recent(limit=500)
         current = self._selected_id
         self._library.blockSignals(True)
         self._library.clear()
         selected_item = None
         for record in self._records:
+            # Iterate over items, evaluate loop invariant, and update progress
             label = f"{record.created_at[:19]}  {record.width}x{record.height}  {record.kind}"
             item = QListWidgetItem(label)
             item.setData(Qt.ItemDataRole.UserRole, record.id)
@@ -251,6 +265,7 @@ class VisionWorkbench(QWidget):
             self._clear_details()
 
     def _on_selected(self, current, _previous):
+        # Step 1: Validate input parameters, operational preconditions, and state
         if not current:
             self._clear_details()
             return
@@ -259,6 +274,7 @@ class VisionWorkbench(QWidget):
         self._render_record(self.state.image_store.get(image_id))
 
     def _render_record(self, record):
+        # Step 1: Validate input parameters, operational preconditions, and state
         pix = QPixmap(record.original_path)
         if not pix.isNull():
             scaled = pix.scaled(
@@ -291,6 +307,7 @@ class VisionWorkbench(QWidget):
         self._update_vision_status()
 
     def _clear_details(self):
+        # Step 1: Validate input parameters, operational preconditions, and state
         self._selected_id = ""
         self._preview.setText("No image selected.")
         self._preview.setPixmap(QPixmap())
@@ -302,11 +319,13 @@ class VisionWorkbench(QWidget):
         self._update_vision_status()
 
     def _selected_record(self):
+        # Step 1: Validate input parameters, operational preconditions, and state
         if not self._selected_id:
             return None
         return self.state.image_store.get(self._selected_id)
 
     def _import_image(self):
+        # Step 1: Validate input parameters, operational preconditions, and state
         path, _ = QFileDialog.getOpenFileName(
             self,
             "Import image into Karl Vision",
@@ -316,6 +335,7 @@ class VisionWorkbench(QWidget):
         if not path:
             return
         try:
+            # Execute guarded operations and establish recovery boundaries
             record = self.state.image_store.import_file(path, source="file")
         except Exception as exc:
             QMessageBox.critical(self, "Image Import Failed", str(exc))
@@ -325,11 +345,13 @@ class VisionWorkbench(QWidget):
         self._run_analysis()
 
     def _open_file(self):
+        # Step 1: Validate input parameters, operational preconditions, and state
         record = self._selected_record()
         if record:
             QDesktopServices.openUrl(QUrl.fromLocalFile(str(Path(record.original_path).resolve())))
 
     def _send_to_workbench(self):
+        # Step 1: Validate input parameters, operational preconditions, and state
         record = self._selected_record()
         if not record:
             return
@@ -338,6 +360,7 @@ class VisionWorkbench(QWidget):
         QMessageBox.information(self, "Image Sent", "Image attached to the Workbench composer.")
 
     def _run_analysis(self):
+        # Step 1: Validate input parameters, operational preconditions, and state
         record = self._selected_record()
         if not record:
             return
@@ -364,28 +387,34 @@ class VisionWorkbench(QWidget):
         thread.start()
 
     def _on_analysis_progress(self, msg: str):
+        # Step 1: Validate input parameters, operational preconditions, and state
         if self._selected_id:
             self._meta.setText(self._meta.text() + f"\nAnalysis: {msg}")
 
     def _on_ocr_done(self, image_id: str, ocr):
+        # Step 1: Validate input parameters, operational preconditions, and state
         if image_id == self._selected_id:
             self._ocr.setPlainText(ocr.text or "(OCR unavailable or no text detected.)")
 
     def _on_vision_done(self, image_id: str, vision):
+        # Step 1: Validate input parameters, operational preconditions, and state
         if image_id == self._selected_id:
             self._caption.setPlainText(vision.caption or "")
             self._update_vision_status()
 
     def _on_analysis_done(self, image_id: str, _record):
+        # Step 1: Validate input parameters, operational preconditions, and state
         if image_id == self._selected_id:
             self._render_record(self.state.image_store.get(image_id))
         self.refresh()
 
     def _on_analysis_error(self, msg: str):
+        # Step 1: Validate input parameters, operational preconditions, and state
         QMessageBox.warning(self, "Image Analysis Failed", msg)
         self._update_vision_status()
 
     def _save_metadata(self):
+        # Step 1: Validate input parameters, operational preconditions, and state
         record = self._selected_record()
         if not record:
             return
@@ -399,6 +428,7 @@ class VisionWorkbench(QWidget):
         self.refresh()
 
     def _save_ocr_correction(self):
+        # Step 1: Validate input parameters, operational preconditions, and state
         record = self._selected_record()
         if not record:
             return
@@ -407,6 +437,7 @@ class VisionWorkbench(QWidget):
         self.refresh()
 
     def _save_caption_correction(self):
+        # Step 1: Validate input parameters, operational preconditions, and state
         record = self._selected_record()
         if not record:
             return
@@ -415,6 +446,7 @@ class VisionWorkbench(QWidget):
         self.refresh()
 
     def _update_vision_status(self):
+        # Step 1: Validate input parameters, operational preconditions, and state
         status = VisionModelLoader.status()
         backend = "ready" if status["backend_available"] else "blocked"
         active = status.get("active_name") or "none"

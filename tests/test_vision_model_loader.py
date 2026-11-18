@@ -1,3 +1,12 @@
+# ==============================================================================
+# Program: test_vision_model_loader.py
+# Programmer: Ethan-da-Tech-Wizard
+# Last Modified: November 18, 2026
+# Purpose: Comprehensive test suite exercising vision model loader functionality.
+#          Verifies state transitions, error boundaries, regression resistance,
+#          and contract compliance under tests.
+# ==============================================================================
+
 import os
 import sys
 
@@ -7,6 +16,7 @@ from app.vision.vision_model_loader import installed_vision_models, read_vision_
 
 
 def test_vision_registry_is_readable():
+    # Step 1: Validate input parameters, operational preconditions, and state
     entries = read_vision_registry()
 
     assert entries
@@ -16,6 +26,7 @@ def test_vision_registry_is_readable():
 
 
 def test_installed_vision_models_reports_paths_and_install_state():
+    # Step 1: Validate input parameters, operational preconditions, and state
     rows = installed_vision_models()
 
     assert rows

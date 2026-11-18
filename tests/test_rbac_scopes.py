@@ -1,3 +1,12 @@
+# ==============================================================================
+# Program: test_rbac_scopes.py
+# Programmer: Ethan-da-Tech-Wizard
+# Last Modified: November 18, 2026
+# Purpose: RBAC / Scope-Based Access Control Tests.
+#          Coordinates with adjacent subsystems within the Karl Offline Lab
+#          architecture.
+# ==============================================================================
+
 """
 RBAC / Scope-Based Access Control Tests.
 
@@ -39,6 +48,7 @@ _TOKEN_STORE: dict[str, list[str]] = {
 
 
 def _stub_init_security(self) -> None:
+    # Step 1: Validate input parameters, operational preconditions, and state
     self.bridge_token = _ADMIN_TOKEN
     self._token_created_at = time.time()
     self._token_store = dict(_TOKEN_STORE)   # copy so tests can't pollute each other
@@ -51,6 +61,7 @@ class _TestServer:
     _port: int = 19997
 
     def __enter__(self):
+        # Step 1: Validate input parameters, operational preconditions, and state
         from app.engine.websocket_server import WebSocketServerManager
 
         self._patches = [
@@ -62,6 +73,7 @@ class _TestServer:
             patch.object(WebSocketServerManager, "_build_ssl_context", return_value=None),
         ]
         for p in self._patches:
+            # Iterate over items, evaluate loop invariant, and update progress
             p.start()
 
         self._mgr = WebSocketServerManager(port=self._port, state=None)
@@ -70,23 +82,28 @@ class _TestServer:
         return self._mgr
 
     def __exit__(self, *_):
+        # Step 1: Validate input parameters, operational preconditions, and state
         if self._mgr is not None:
             try:
+                # Execute guarded operations and establish recovery boundaries
                 self._mgr.loop.call_soon_threadsafe(self._mgr.loop.stop)
                 self._mgr.loop_thread.join(timeout=3.0)
             except Exception:
                 pass
         for p in reversed(self._patches):
+            # Iterate over items, evaluate loop invariant, and update progress
             p.stop()
 
 
 def _url(port: int, token: str) -> str:
+    # Step 1: Validate input parameters, operational preconditions, and state
     return f"ws://127.0.0.1:{port}?token={token}"
 
 
 # ── Helper: single RPC round-trip ─────────────────────────────────────────────
 
 async def _rpc(url: str, method: str, params: dict | None = None, rpc_id: int = 1) -> dict:
+    # Step 1: Validate input parameters, operational preconditions, and state
     async with websockets.connect(url, open_timeout=3.0) as ws:
         await ws.send(json.dumps({
             "jsonrpc": "2.0",
@@ -103,11 +120,15 @@ async def _rpc(url: str, method: str, params: dict | None = None, rpc_id: int = 
 def test_invalid_token_rejected_with_4001():
     """Connecting with an unknown token must be rejected with WebSocket close code 4001."""
 
+    # Step 1: Validate input parameters, operational preconditions, and state
     async def _connect_invalid(url: str) -> int | None:
+        # Step 1: Validate input parameters, operational preconditions, and state
         try:
+            # Execute guarded operations and establish recovery boundaries
             async with websockets.connect(url, open_timeout=3.0) as ws:
                 # Drain until the server closes — the handler rejects immediately.
                 try:
+                    # Execute guarded operations and establish recovery boundaries
                     async with asyncio.timeout(2.0):
                         async for _ in ws:
                             pass
@@ -128,6 +149,7 @@ def test_invalid_token_rejected_with_4001():
 
 def test_read_telemetry_scope_allows_get_runtime_status():
     """A token with only read:telemetry scope must be allowed to call get_runtime_status."""
+    # Step 1: Validate input parameters, operational preconditions, and state
     with _TestServer() as mgr:
         url = _url(mgr.port, _READ_TOKEN)
         result = asyncio.run(_rpc(url, "get_runtime_status"))
@@ -138,6 +160,7 @@ def test_read_telemetry_scope_allows_get_runtime_status():
 
 def test_read_telemetry_scope_denied_for_submit_chat():
     """A token with only read:telemetry scope must receive -32001 for submit_chat."""
+    # Step 1: Validate input parameters, operational preconditions, and state
     with _TestServer() as mgr:
         url = _url(mgr.port, _READ_TOKEN)
         result = asyncio.run(_rpc(url, "submit_chat", {"message": "hello"}))
@@ -153,6 +176,7 @@ def test_read_telemetry_scope_denied_for_submit_chat():
 
 def test_read_telemetry_scope_denied_for_submit_task():
     """A token with only read:telemetry scope must receive -32001 for submit_task."""
+    # Step 1: Validate input parameters, operational preconditions, and state
     with _TestServer() as mgr:
         url = _url(mgr.port, _READ_TOKEN)
         result = asyncio.run(_rpc(url, "submit_task", {
@@ -174,6 +198,7 @@ def test_read_kb_scope_allows_search_kb_but_denies_ingest():
     in the test environment because self.rag is a MagicMock; that is acceptable
     — it proves the scope guard passed and the method was dispatched.
     """
+    # Step 1: Validate input parameters, operational preconditions, and state
     with _TestServer() as mgr:
         url = _url(mgr.port, _KB_TOKEN)
         allow_result = asyncio.run(_rpc(url, "list_kb_sources"))
@@ -192,6 +217,7 @@ def test_read_kb_scope_allows_search_kb_but_denies_ingest():
 
 def test_admin_token_can_call_all_scoped_methods():
     """The admin token (full scopes) must not be blocked by the scope guard."""
+    # Step 1: Validate input parameters, operational preconditions, and state
     with _TestServer() as mgr:
         url = _url(mgr.port, _ADMIN_TOKEN)
         status = asyncio.run(_rpc(url, "get_runtime_status"))
@@ -199,6 +225,7 @@ def test_admin_token_can_call_all_scoped_methods():
 
     # Neither may carry a -32001 Permission Denied error
     for resp in (status, kb):
+        # Iterate over items, evaluate loop invariant, and update progress
         if "error" in resp:
             assert resp["error"]["code"] != -32001, (
                 f"Admin token must not be blocked by scope guard: {resp}"
@@ -207,6 +234,7 @@ def test_admin_token_can_call_all_scoped_methods():
 
 def test_method_scopes_map_is_complete():
     """Verify that METHOD_SCOPES contains exactly the methods specified in the prompt."""
+    # Step 1: Validate input parameters, operational preconditions, and state
     from app.engine.websocket_server import WebSocketServerManager
 
     expected = {
@@ -244,7 +272,9 @@ def test_method_scopes_map_is_complete():
 def test_add_scoped_token_registers_new_token():
     """add_scoped_token() creates a new token that is accepted by the server."""
 
+    # Step 1: Validate input parameters, operational preconditions, and state
     async def _connect_new_token(url: str) -> dict:
+        # Step 1: Validate input parameters, operational preconditions, and state
         async with websockets.connect(url, open_timeout=3.0) as ws:
             await ws.send(json.dumps({
                 "jsonrpc": "2.0", "id": 1, "method": "get_runtime_status", "params": {},
@@ -262,6 +292,7 @@ def test_add_scoped_token_registers_new_token():
 
 def test_generate_scoped_token_cli(tmp_path):
     """add_scoped_token utility writes the token to the on-disk store."""
+    # Step 1: Validate input parameters, operational preconditions, and state
     import uuid
     from app.utils.keychain_manager import add_scoped_token, get_token_scopes
 

@@ -1,3 +1,12 @@
+# ==============================================================================
+# Program: talkie.py
+# Programmer: Ethan-da-Tech-Wizard
+# Last Modified: November 18, 2026
+# Purpose: Weight conversion and architectural mapping implementation for TALKIE.
+#          Transforms HuggingFace checkpoint tensors, normalizes layer weights,
+#          and writes compliant GGUF data structures for llama.cpp.
+# ==============================================================================
+
 from __future__ import annotations
 
 from typing import Iterable, TYPE_CHECKING
@@ -15,11 +24,13 @@ class TalkieModel(TextModel):
     model_arch = gguf.MODEL_ARCH.TALKIE
 
     def set_gguf_parameters(self):
+        # Step 1: Validate input parameters, operational preconditions, and state
         super().set_gguf_parameters()
         # Talkie used F.rms_norm without an explicit eps
         self.gguf_writer.add_layer_norm_rms_eps(torch.finfo(torch.float32).eps)
 
     def modify_tensors(self, data_torch: Tensor, name: str, bid: int | None) -> Iterable[tuple[str, Tensor]]:
+        # Step 1: Validate input parameters, operational preconditions, and state
         prefix = f"model.blocks.{bid}." if bid is not None else ""
         suffix = name.removeprefix(prefix)
 

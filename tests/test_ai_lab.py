@@ -1,3 +1,12 @@
+# ==============================================================================
+# Program: test_ai_lab.py
+# Programmer: Ethan-da-Tech-Wizard
+# Last Modified: November 18, 2026
+# Purpose: Comprehensive test suite exercising ai lab functionality.
+#          Verifies state transitions, error boundaries, regression resistance,
+#          and contract compliance under tests.
+# ==============================================================================
+
 import os
 import json
 import unittest
@@ -12,6 +21,7 @@ from app.utils.rag_pipeline import RAGPipeline
 
 class TestAILabWorkspace(unittest.TestCase):
     def setUp(self):
+        # Step 1: Validate input parameters, operational preconditions, and state
         self.state = AppState()
         self.temp_dir = tempfile.mkdtemp()
         self.state.rag = RAGPipeline(index_path=self.temp_dir, namespace="test")
@@ -30,6 +40,7 @@ class TestAILabWorkspace(unittest.TestCase):
         # Restore backup or remove custom_agents.json
         if os.path.exists(self.custom_agents_path):
             try:
+                # Execute guarded operations and establish recovery boundaries
                 os.remove(self.custom_agents_path)
             except OSError:
                 pass
@@ -39,6 +50,7 @@ class TestAILabWorkspace(unittest.TestCase):
                 f.write(self.backup_content)
 
     def test_construction_and_layout(self):
+        # Step 1: Validate input parameters, operational preconditions, and state
         workspace = AILabWorkspace(self.state)
         self.assertIsNotNone(workspace)
         self.assertTrue(isinstance(workspace._tabs, QTabWidget))
@@ -70,6 +82,7 @@ class TestAILabWorkspace(unittest.TestCase):
         self.assertTrue(hasattr(workspace, "_publish_btn"))
 
     def test_sparse_pipeline_math(self):
+        # Step 1: Validate input parameters, operational preconditions, and state
         workspace = AILabWorkspace(self.state)
         
         # Set text to sandbox docs
@@ -95,6 +108,7 @@ class TestAILabWorkspace(unittest.TestCase):
         self.assertIn("Norm", results_html)
 
     def test_custom_agent_publishing(self):
+        # Step 1: Validate input parameters, operational preconditions, and state
         workspace = AILabWorkspace(self.state)
         
         # Mock values
@@ -117,6 +131,7 @@ class TestAILabWorkspace(unittest.TestCase):
         workspace.agent_published.connect(published_agent_id.append)
         
         try:
+            # Execute guarded operations and establish recovery boundaries
             workspace._publish_agent()
         finally:
             QMessageBox.information = original_info

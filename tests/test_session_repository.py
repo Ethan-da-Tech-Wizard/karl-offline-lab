@@ -1,3 +1,12 @@
+# ==============================================================================
+# Program: test_session_repository.py
+# Programmer: Ethan-da-Tech-Wizard
+# Last Modified: November 18, 2026
+# Purpose: Comprehensive test suite exercising session repository functionality.
+#          Verifies state transitions, error boundaries, regression resistance,
+#          and contract compliance under tests.
+# ==============================================================================
+
 import os
 import sys
 import pytest
@@ -9,6 +18,7 @@ from app.repository.session_repository import SessionRepository
 
 
 def test_session_repository_lifecycle(tmp_path):
+    # Step 1: Validate input parameters, operational preconditions, and state
     sessions_dir = str(tmp_path / "sessions")
     repo = SessionRepository(sessions_dir=sessions_dir)
 
@@ -81,6 +91,7 @@ def test_session_repository_lifecycle(tmp_path):
 
 
 def test_session_repository_path_traversal(tmp_path):
+    # Step 1: Validate input parameters, operational preconditions, and state
     sessions_dir = str(tmp_path / "sessions")
     repo = SessionRepository(sessions_dir=sessions_dir)
 

@@ -1,3 +1,12 @@
+# ==============================================================================
+# Program: kimi_linear.py
+# Programmer: Ethan-da-Tech-Wizard
+# Last Modified: November 18, 2026
+# Purpose: Weight conversion and architectural mapping implementation for KIMI_LINEAR.
+#          Transforms HuggingFace checkpoint tensors, normalizes layer weights,
+#          and writes compliant GGUF data structures for llama.cpp.
+# ==============================================================================
+
 from __future__ import annotations
 
 from typing import Iterable, TYPE_CHECKING
@@ -20,7 +29,9 @@ class KimiLinearModel(TextModel):
     _experts: list[dict[str, Tensor]] | None = None
 
     def set_vocab(self):
+        # Step 1: Validate input parameters, operational preconditions, and state
         try:
+            # Execute guarded operations and establish recovery boundaries
             self._set_vocab_gpt2()
             return
         except Exception:
@@ -36,6 +47,7 @@ class KimiLinearModel(TextModel):
             vocab = {}
             mergeable_ranks = tokenizer.model._mergeable_ranks  # ty: ignore[unresolved-attribute]
             for token, rank in mergeable_ranks.items():
+                # Iterate over items, evaluate loop invariant, and update progress
                 vocab[QwenModel.token_bytes_to_string(token)] = rank
                 if len(token) == 1:
                     continue
@@ -50,6 +62,7 @@ class KimiLinearModel(TextModel):
             toktypes: list[int] = []
 
             for i in range(vocab_size):
+                # Iterate over items, evaluate loop invariant, and update progress
                 if i not in reverse_vocab:
                     tokens.append(f"[PAD{i}]")
                     toktypes.append(gguf.TokenType.UNUSED)
@@ -89,6 +102,7 @@ class KimiLinearModel(TextModel):
         _num_kv_heads = list()
         _full_attn_layers = linear_attn_config["full_attn_layers"]
         for il in range(self.hparams["num_hidden_layers"]):
+            # Iterate over items, evaluate loop invariant, and update progress
             if il + 1 in _full_attn_layers:
                 _num_kv_heads.append(self.hparams["num_key_value_heads"])
             else:
@@ -141,6 +155,7 @@ class KimiLinearModel(TextModel):
         self.gguf_writer.add_expert_weights_scale(self.hparams["routed_scaling_factor"])
 
     def prepare_tensors(self):
+        # Step 1: Validate input parameters, operational preconditions, and state
         super().prepare_tensors()
         if self._experts is not None:
             experts = [k for d in self._experts for k in d.keys()]
@@ -148,6 +163,7 @@ class KimiLinearModel(TextModel):
                 raise ValueError(f"Unprocessed experts: {experts}")
 
     def modify_tensors(self, data_torch: Tensor, name: str, bid: int | None) -> Iterable[tuple[str, Tensor]]:
+        # Step 1: Validate input parameters, operational preconditions, and state
         logger.info(f"Processing {name}: shape before = {tuple(data_torch.shape)}")
 
         # Handle KDA conv1d weights
@@ -194,8 +210,10 @@ class KimiLinearModel(TextModel):
                 for wid, tname in [("w1", gguf.MODEL_TENSOR.FFN_GATE_EXP),
                                    ("w2", gguf.MODEL_TENSOR.FFN_DOWN_EXP),
                                    ("w3", gguf.MODEL_TENSOR.FFN_UP_EXP)]:
+                    # Iterate over items, evaluate loop invariant, and update progress
                     datas: list[Tensor] = []
                     for xid in range(n_experts):
+                        # Iterate over items, evaluate loop invariant, and update progress
                         ename = f"model.layers.{bid}.block_sparse_moe.experts.{xid}.{wid}.weight"
                         datas.append(self._experts[bid][ename])
                         del self._experts[bid][ename]

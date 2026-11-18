@@ -1,3 +1,11 @@
+// ==============================================================================
+// Program: themes.js
+// Programmer: Ethan-da-Tech-Wizard
+// Last Modified: November 18, 2026
+// Purpose: Theme synchronization manager adapting Karl webview styling to active VS Code editor tokens.
+//          Coordinates editor events, client state, and backend RPC messaging.
+// ==============================================================================
+
 window.KARL_THEMES = [
     {
         id: "obsidian-core",

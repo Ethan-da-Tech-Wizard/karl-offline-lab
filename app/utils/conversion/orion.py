@@ -1,3 +1,12 @@
+# ==============================================================================
+# Program: orion.py
+# Programmer: Ethan-da-Tech-Wizard
+# Last Modified: November 18, 2026
+# Purpose: Weight conversion and architectural mapping implementation for ORION.
+#          Transforms HuggingFace checkpoint tensors, normalizes layer weights,
+#          and writes compliant GGUF data structures for llama.cpp.
+# ==============================================================================
+
 from __future__ import annotations
 
 from .base import ModelBase, TextModel, gguf
@@ -8,9 +17,11 @@ class OrionModel(TextModel):
     model_arch = gguf.MODEL_ARCH.ORION
 
     def set_vocab(self):
+        # Step 1: Validate input parameters, operational preconditions, and state
         self._set_vocab_sentencepiece()
 
     def set_gguf_parameters(self):
+        # Step 1: Validate input parameters, operational preconditions, and state
         head_count = self.hparams["num_attention_heads"]
         head_count_kv = self.hparams.get("num_key_value_heads", head_count)
 

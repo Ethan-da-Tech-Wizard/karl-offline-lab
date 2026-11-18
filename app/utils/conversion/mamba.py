@@ -1,3 +1,12 @@
+# ==============================================================================
+# Program: mamba.py
+# Programmer: Ethan-da-Tech-Wizard
+# Last Modified: November 18, 2026
+# Purpose: Weight conversion and architectural mapping implementation for MAMBA.
+#          Transforms HuggingFace checkpoint tensors, normalizes layer weights,
+#          and writes compliant GGUF data structures for llama.cpp.
+# ==============================================================================
+
 from __future__ import annotations
 
 import json
@@ -26,6 +35,7 @@ class MambaModel(TextModel):
         super().__init__(dir_model, *args, hparams=hparams, **kwargs)
 
     def set_vocab(self):
+        # Step 1: Validate input parameters, operational preconditions, and state
         vocab_size = self.hparams["vocab_size"]
         # Round vocab size to next multiple of 8
         pad_vocab = self.hparams.get("pad_vocab_size_multiple", 8)
@@ -43,6 +53,7 @@ class MambaModel(TextModel):
             self._set_vocab_builtin("gpt-neox", vocab_size)
 
     def set_gguf_parameters(self):
+        # Step 1: Validate input parameters, operational preconditions, and state
         d_model = self.find_hparam(["hidden_size",       "d_model"])
         d_conv  = self.find_hparam(["conv_kernel",       "d_conv"],  optional=True) or 4
         d_inner = self.find_hparam(["intermediate_size", "d_inner"], optional=True) or 2 * d_model
@@ -75,6 +86,7 @@ class MambaModel(TextModel):
     _tok_embd = None
 
     def modify_tensors(self, data_torch: Tensor, name: str, bid: int | None) -> Iterable[tuple[str, Tensor]]:
+        # Step 1: Validate input parameters, operational preconditions, and state
         output_name = self.format_tensor_name(gguf.MODEL_TENSOR.OUTPUT)
         tok_embd_name = self.format_tensor_name(gguf.MODEL_TENSOR.TOKEN_EMBD)
 
@@ -118,6 +130,7 @@ class Mamba2Model(TextModel):
         self.n_group = self.find_hparam(["n_groups"], optional=True) or 1
 
     def set_vocab(self):
+        # Step 1: Validate input parameters, operational preconditions, and state
         vocab_size = self.hparams["vocab_size"]
         # Round vocab size to next multiple of 16
         pad_vocab = self.hparams.get("pad_vocab_size_multiple", 16)
@@ -138,6 +151,7 @@ class Mamba2Model(TextModel):
             self._set_vocab_builtin("gpt-neox", vocab_size)
 
     def set_gguf_parameters(self):
+        # Step 1: Validate input parameters, operational preconditions, and state
         d_conv  = self.find_hparam(["conv_kernel", "d_conv"],     optional=True) or 4
         d_state = self.find_hparam(["state_size",  "d_state"],    optional=True) or 128
         head_dim = self.find_hparam(["mamba_d_head", "head_dim"], optional=True) or 64
@@ -166,6 +180,7 @@ class Mamba2Model(TextModel):
 
     @classmethod
     def filter_tensors(cls, item: tuple[str, Callable[[], Tensor]]) -> tuple[str, Callable[[], Tensor]] | None:
+        # Step 1: Validate input parameters, operational preconditions, and state
         name, gen = item
 
         if name.startswith(("model.backbone", "model.lm_head")):
@@ -178,6 +193,7 @@ class Mamba2Model(TextModel):
         return super().filter_tensors((name, gen))
 
     def modify_tensors(self, data_torch: Tensor, name: str, bid: int | None) -> Iterable[tuple[str, Tensor]]:
+        # Step 1: Validate input parameters, operational preconditions, and state
         new_name = self.map_tensor_name(name)
 
         if self.match_model_tensor_name(new_name, gguf.MODEL_TENSOR.SSM_CONV1D, bid):

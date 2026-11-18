@@ -1,3 +1,12 @@
+-- ==============================================================================
+-- Program: karl.lua
+-- Programmer: Ethan-da-Tech-Wizard
+-- Last Modified: November 18, 2026
+-- Purpose: Lightweight Neovim bridge client connecting the editor to Karl's WebSocket server.
+--          Supports interactive asking, visual selection explanation, floating
+--          markdown preview windows, and asynchronous task execution.
+-- ==============================================================================
+
 -- Lightweight Karl bridge client for Neovim.
 --
 -- Usage:

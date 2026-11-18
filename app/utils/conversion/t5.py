@@ -1,3 +1,12 @@
+# ==============================================================================
+# Program: t5.py
+# Programmer: Ethan-da-Tech-Wizard
+# Last Modified: November 18, 2026
+# Purpose: Weight conversion and architectural mapping implementation for T5.
+#          Transforms HuggingFace checkpoint tensors, normalizes layer weights,
+#          and writes compliant GGUF data structures for llama.cpp.
+# ==============================================================================
+
 from __future__ import annotations
 
 import json
@@ -20,6 +29,7 @@ class T5Model(TextModel):
     model_arch = gguf.MODEL_ARCH.T5
 
     def __init__(self, *args, **kwargs):
+        # Step 1: Validate input parameters, operational preconditions, and state
         super().__init__(*args, **kwargs)
         self.shared_token_embeddings_found = False
 
@@ -64,6 +74,7 @@ class T5Model(TextModel):
         toktypes: list[int] = [SentencePieceTokenTypes.UNUSED] * vocab_size
 
         for token_id in range(tokenizer.vocab_size()):
+            # Iterate over items, evaluate loop invariant, and update progress
             piece = tokenizer.IdToPiece(token_id)
             text = piece.encode("utf-8")
             score = tokenizer.GetScore(token_id)
@@ -87,6 +98,7 @@ class T5Model(TextModel):
             with open(added_tokens_file, "r", encoding="utf-8") as f:
                 added_tokens_json = json.load(f)
                 for key in added_tokens_json:
+                    # Iterate over items, evaluate loop invariant, and update progress
                     token_id = added_tokens_json[key]
                     if token_id >= vocab_size:
                         logger.warning(f'ignore token {token_id}: id is out of range, max={vocab_size - 1}')
@@ -100,6 +112,7 @@ class T5Model(TextModel):
             pad_count = vocab_size - len(tokens)
             logger.debug(f"Padding vocab with {pad_count} token(s) - [PAD1] through [PAD{pad_count}]")
             for i in range(1, pad_count + 1):
+                # Iterate over items, evaluate loop invariant, and update progress
                 tokens.append(bytes(f"[PAD{i}]", encoding="utf-8"))
                 scores.append(-1000.0)
                 toktypes.append(SentencePieceTokenTypes.UNUSED)
@@ -118,6 +131,7 @@ class T5Model(TextModel):
         special_vocab.add_to_gguf(self.gguf_writer)
 
     def set_gguf_parameters(self):
+        # Step 1: Validate input parameters, operational preconditions, and state
         if (n_ctx := self.find_hparam(["n_positions"], optional=True)) is None:
             logger.warning("Couldn't find context length in config.json, assuming default value of 512")
             n_ctx = 512
@@ -157,6 +171,7 @@ class T5EncoderModel(TextModel):
     model_arch = gguf.MODEL_ARCH.T5ENCODER
 
     def __init__(self, *args, **kwargs):
+        # Step 1: Validate input parameters, operational preconditions, and state
         super().__init__(*args, **kwargs)
         self.shared_token_embeddings_found = False
 
@@ -201,6 +216,7 @@ class T5EncoderModel(TextModel):
         toktypes: list[int] = [SentencePieceTokenTypes.UNUSED] * vocab_size
 
         for token_id in range(tokenizer.vocab_size()):
+            # Iterate over items, evaluate loop invariant, and update progress
             piece = tokenizer.IdToPiece(token_id)
             text = piece.encode("utf-8")
             score = tokenizer.GetScore(token_id)
@@ -224,6 +240,7 @@ class T5EncoderModel(TextModel):
             with open(added_tokens_file, "r", encoding="utf-8") as f:
                 added_tokens_json = json.load(f)
                 for key in added_tokens_json:
+                    # Iterate over items, evaluate loop invariant, and update progress
                     token_id = added_tokens_json[key]
                     if token_id >= vocab_size:
                         logger.warning(f'ignore token {token_id}: id is out of range, max={vocab_size - 1}')
@@ -237,6 +254,7 @@ class T5EncoderModel(TextModel):
             pad_count = vocab_size - len(tokens)
             logger.debug(f"Padding vocab with {pad_count} token(s) - [PAD1] through [PAD{pad_count}]")
             for i in range(1, pad_count + 1):
+                # Iterate over items, evaluate loop invariant, and update progress
                 tokens.append(bytes(f"[PAD{i}]", encoding="utf-8"))
                 scores.append(-1000.0)
                 toktypes.append(SentencePieceTokenTypes.UNUSED)
@@ -255,6 +273,7 @@ class T5EncoderModel(TextModel):
         special_vocab.add_to_gguf(self.gguf_writer)
 
     def set_gguf_parameters(self):
+        # Step 1: Validate input parameters, operational preconditions, and state
         if (n_ctx := self.find_hparam(["n_positions"], optional=True)) is None:
             logger.warning("Couldn't find context length in config.json, assuming default value of 512")
             n_ctx = 512

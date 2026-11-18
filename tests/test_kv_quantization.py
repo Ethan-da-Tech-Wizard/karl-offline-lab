@@ -1,7 +1,17 @@
+# ==============================================================================
+# Program: test_kv_quantization.py
+# Programmer: Ethan-da-Tech-Wizard
+# Last Modified: November 18, 2026
+# Purpose: Comprehensive test suite exercising kv quantization functionality.
+#          Verifies state transitions, error boundaries, regression resistance,
+#          and contract compliance under tests.
+# ==============================================================================
+
 from unittest.mock import MagicMock, patch
 
 
 def _reset_model_loader_state(ModelLoader):
+    # Step 1: Validate input parameters, operational preconditions, and state
     ModelLoader._instance = None
     ModelLoader._instance_locked = False
     ModelLoader._active_generation_count = 0
@@ -13,6 +23,7 @@ def _reset_model_loader_state(ModelLoader):
 
 
 def _run_loader_with_patches(fake_llama):
+    # Step 1: Validate input parameters, operational preconditions, and state
     from app.engine.model_loader import ModelLoader
 
     orig = {
@@ -27,6 +38,7 @@ def _run_loader_with_patches(fake_llama):
     }
 
     try:
+        # Execute guarded operations and establish recovery boundaries
         _reset_model_loader_state(ModelLoader)
         with patch("app.engine.model_loader.Llama", side_effect=fake_llama), \
              patch.object(
@@ -42,6 +54,7 @@ def _run_loader_with_patches(fake_llama):
              patch("app.engine.config_store.read_json", return_value={}), \
              patch("subprocess.run", return_value=MagicMock(returncode=0)):
             try:
+                # Execute guarded operations and establish recovery boundaries
                 ModelLoader.get_instance(model_path="data/models/deepseek-r1-1.5b.gguf")
             except RuntimeError:
                 pass
@@ -57,9 +70,11 @@ def _run_loader_with_patches(fake_llama):
 
 
 def test_quantized_kv_cache_passes_q8_type_overrides_to_llama():
+    # Step 1: Validate input parameters, operational preconditions, and state
     captured_kwargs = []
 
     def fake_llama(**kwargs):
+        # Step 1: Validate input parameters, operational preconditions, and state
         captured_kwargs.append(kwargs)
         raise RuntimeError("stop after constructor capture")
 
@@ -71,10 +86,12 @@ def test_quantized_kv_cache_passes_q8_type_overrides_to_llama():
 
 
 def test_quantized_kv_cache_falls_back_when_type_overrides_are_unsupported():
+    # Step 1: Validate input parameters, operational preconditions, and state
     captured_kwargs = []
     loaded = MagicMock()
 
     def fake_llama(**kwargs):
+        # Step 1: Validate input parameters, operational preconditions, and state
         captured_kwargs.append(dict(kwargs))
         if "type_k" in kwargs or "type_v" in kwargs:
             raise TypeError("unexpected keyword argument 'type_k'")

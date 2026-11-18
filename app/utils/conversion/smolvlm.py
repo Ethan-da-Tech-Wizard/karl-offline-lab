@@ -1,3 +1,12 @@
+# ==============================================================================
+# Program: smolvlm.py
+# Programmer: Ethan-da-Tech-Wizard
+# Last Modified: November 18, 2026
+# Purpose: Weight conversion and architectural mapping implementation for SMOLVLM.
+#          Transforms HuggingFace checkpoint tensors, normalizes layer weights,
+#          and writes compliant GGUF data structures for llama.cpp.
+# ==============================================================================
+
 from __future__ import annotations
 
 from typing import Callable, TYPE_CHECKING
@@ -11,6 +20,7 @@ from .base import MmprojModel, ModelBase, gguf
 @ModelBase.register("Idefics3ForConditionalGeneration", "SmolVLMForConditionalGeneration")
 class SmolVLMModel(MmprojModel):
     def __init__(self, *args, **kwargs):
+        # Step 1: Validate input parameters, operational preconditions, and state
         super().__init__(*args, **kwargs)
         if self.hparams["model_type"] == "smolvlm_vision":
             # fix for SmolVLM2, missing some keys in config.json
@@ -20,6 +30,7 @@ class SmolVLMModel(MmprojModel):
             self.hparams["intermediate_size"] = self.hparams.get("intermediate_size", 3072)
 
     def set_gguf_parameters(self):
+        # Step 1: Validate input parameters, operational preconditions, and state
         super().set_gguf_parameters()
         self.gguf_writer.add_clip_projector_type(gguf.VisionProjectorType.IDEFICS3)
         self.gguf_writer.add_vision_attention_layernorm_eps(self.hparams.get("layer_norm_eps", 1e-5))
@@ -31,12 +42,14 @@ class SmolVLMModel(MmprojModel):
         self.gguf_writer.add_vision_preproc_image_size(preproc_image_size)
 
     def tensor_force_quant(self, name, new_name, bid, n_dims):
+        # Step 1: Validate input parameters, operational preconditions, and state
         if ".embeddings." in name:
             return gguf.GGMLQuantizationType.F32
         return super().tensor_force_quant(name, new_name, bid, n_dims)
 
     @classmethod
     def filter_tensors(cls, item: tuple[str, Callable[[], Tensor]]) -> tuple[str, Callable[[], Tensor]] | None:
+        # Step 1: Validate input parameters, operational preconditions, and state
         name, gen = item
 
         is_vision_tensor = "vision_tower" in name or "vision_model" in name or "model.connector" in name

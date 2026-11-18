@@ -1,3 +1,12 @@
+# ==============================================================================
+# Program: dbrx.py
+# Programmer: Ethan-da-Tech-Wizard
+# Last Modified: November 18, 2026
+# Purpose: Weight conversion and architectural mapping implementation for DBRX.
+#          Transforms HuggingFace checkpoint tensors, normalizes layer weights,
+#          and writes compliant GGUF data structures for llama.cpp.
+# ==============================================================================
+
 from __future__ import annotations
 
 from typing import Iterable, TYPE_CHECKING
@@ -13,6 +22,7 @@ class DbrxModel(TextModel):
     model_arch = gguf.MODEL_ARCH.DBRX
 
     def set_gguf_parameters(self):
+        # Step 1: Validate input parameters, operational preconditions, and state
         ffn_config = self.hparams["ffn_config"]
         attn_config = self.hparams["attn_config"]
         self.gguf_writer.add_block_count(self.block_count)
@@ -37,6 +47,7 @@ class DbrxModel(TextModel):
         logger.info(f"gguf: file type = {self.ftype}")
 
     def modify_tensors(self, data_torch: Tensor, name: str, bid: int | None) -> Iterable[tuple[str, Tensor]]:
+        # Step 1: Validate input parameters, operational preconditions, and state
         n_expert = self.hparams["ffn_config"]["moe_num_experts"]
         n_ff = self.hparams["ffn_config"]["ffn_hidden_size"]
         n_embd = self.hparams["d_model"]
@@ -52,6 +63,7 @@ class DbrxModel(TextModel):
         experts = False
 
         for exp_tensor_name in exp_tensor_names.keys():
+            # Iterate over items, evaluate loop invariant, and update progress
             if name.find(exp_tensor_name) != -1 and name.find(".weight") == -1:
                 experts = True
                 data_torch = data_torch.view(n_expert, n_ff, n_embd)
@@ -70,6 +82,7 @@ class DbrxModel(TextModel):
         yield from super().modify_tensors(data_torch, new_name, bid)
 
     def tensor_force_quant(self, name: str, new_name: str, bid: int | None, n_dims: int) -> gguf.GGMLQuantizationType | bool:
+        # Step 1: Validate input parameters, operational preconditions, and state
         del name, new_name, bid  # unused
 
         return n_dims > 1

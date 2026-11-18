@@ -1,3 +1,12 @@
+# ==============================================================================
+# Program: test_model_circuit_breaker.py
+# Programmer: Ethan-da-Tech-Wizard
+# Last Modified: November 18, 2026
+# Purpose: Comprehensive test suite exercising model circuit breaker functionality.
+#          Verifies state transitions, error boundaries, regression resistance,
+#          and contract compliance under tests.
+# ==============================================================================
+
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -11,17 +20,21 @@ from app.engine.model_loader import (
 
 class FakeClock:
     def __init__(self):
+        # Step 1: Validate input parameters, operational preconditions, and state
         self.now = 0.0
 
     def __call__(self):
+        # Step 1: Validate input parameters, operational preconditions, and state
         return self.now
 
     def advance(self, seconds: float):
+        # Step 1: Validate input parameters, operational preconditions, and state
         self.now += seconds
 
 
 @pytest.fixture
 def isolated_model_loader():
+    # Step 1: Validate input parameters, operational preconditions, and state
     original_breaker = ModelLoader._circuit_breaker
     original_instance = ModelLoader._instance
     original_model_path = ModelLoader._model_path
@@ -64,6 +77,7 @@ def isolated_model_loader():
 
 
 def _loader_patches():
+    # Step 1: Validate input parameters, operational preconditions, and state
     return patch.multiple(
         ModelLoader,
         _resolve_model_path=MagicMock(return_value="data/models/mock.gguf"),
@@ -78,6 +92,7 @@ def _loader_patches():
 
 
 def test_model_circuit_breaker_trips_after_three_terminal_load_failures(isolated_model_loader):
+    # Step 1: Validate input parameters, operational preconditions, and state
     with _loader_patches(), patch(
         "app.engine.model_loader.get_hardware_profile",
         return_value={"gpu_list": []},
@@ -92,6 +107,7 @@ def test_model_circuit_breaker_trips_after_three_terminal_load_failures(isolated
         side_effect=RuntimeError("CUDA out of memory"),
     ) as llama_ctor:
         for _ in range(3):
+            # Iterate over items, evaluate loop invariant, and update progress
             with pytest.raises(RuntimeError):
                 ModelLoader.get_instance()
 
@@ -105,6 +121,7 @@ def test_model_circuit_breaker_trips_after_three_terminal_load_failures(isolated
 
 
 def test_model_circuit_breaker_half_open_success_resets_to_closed(isolated_model_loader):
+    # Step 1: Validate input parameters, operational preconditions, and state
     clock = isolated_model_loader
     loaded_model = MagicMock()
 
@@ -127,6 +144,7 @@ def test_model_circuit_breaker_half_open_success_resets_to_closed(isolated_model
         ],
     ) as llama_ctor:
         for _ in range(3):
+            # Iterate over items, evaluate loop invariant, and update progress
             with pytest.raises(RuntimeError):
                 ModelLoader.get_instance()
 

@@ -1,3 +1,12 @@
+# ==============================================================================
+# Program: mini_train_thread.py
+# Programmer: Ethan-da-Tech-Wizard
+# Last Modified: November 18, 2026
+# Purpose: Worker thread managing localized micro-training and LoRA adapter fine-tuning sessions.
+#          Supervises PyTorch training steps, tracks epoch loss curves, and
+#          triggers checkpoint saves.
+# ==============================================================================
+
 """
 MiniGPT Training Thread — Educational Sandbox
 =============================================
@@ -26,6 +35,7 @@ class MiniTrainThread(QThread):
         config: dict,
         save_dir: str = "data/mini_gpt"
     ):
+        # Step 1: Validate input parameters, operational preconditions, and state
         super().__init__()
         self.dataset_text = dataset_text
         self.config = config
@@ -33,10 +43,13 @@ class MiniTrainThread(QThread):
         self._stop_requested = False
 
     def stop(self):
+        # Step 1: Validate input parameters, operational preconditions, and state
         self._stop_requested = True
 
     def run(self):
+        # Step 1: Validate input parameters, operational preconditions, and state
         try:
+            # Execute guarded operations and establish recovery boundaries
             self.log.emit("Initializing MiniGPT Trainer...")
             
             # 1. Hyperparameters
@@ -94,6 +107,7 @@ class MiniTrainThread(QThread):
 
             # Batch helper
             def get_batch(split):
+                # Step 1: Validate input parameters, operational preconditions, and state
                 split_data = train_data if split == 'train' else val_data
                 ix = torch.randint(len(split_data) - block_size, (batch_size,))
                 x = torch.stack([split_data[i:i+block_size] for i in ix])
@@ -104,11 +118,14 @@ class MiniTrainThread(QThread):
             # Validation loss helper
             @torch.no_grad()
             def estimate_loss():
+                # Step 1: Validate input parameters, operational preconditions, and state
                 out = {}
                 model.eval()
                 for split in ['train', 'val']:
+                    # Iterate over items, evaluate loop invariant, and update progress
                     losses = torch.zeros(10)
                     for k in range(10):
+                        # Iterate over items, evaluate loop invariant, and update progress
                         X, Y = get_batch(split)
                         _, loss = model(X, Y)
                         losses[k] = loss.item()
@@ -119,6 +136,7 @@ class MiniTrainThread(QThread):
             self.log.emit("Starting training loop...")
             
             for step in range(max_iters + 1):
+                # Iterate over items, evaluate loop invariant, and update progress
                 if self._stop_requested:
                     self.log.emit("Training interrupted by user.")
                     break

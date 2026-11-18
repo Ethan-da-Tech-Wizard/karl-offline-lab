@@ -1,3 +1,12 @@
+# ==============================================================================
+# Program: raw_test.py
+# Programmer: Ethan-da-Tech-Wizard
+# Last Modified: November 18, 2026
+# Purpose: Minimal direct inference test script.
+#          Exercises ModelLoader and basic ChatML prompt generation bypassing
+#          PyQt6 and asynchronous threading abstractions.
+# ==============================================================================
+
 """
 Quick raw model test -- bypasses all UI/threading.
 Run: python raw_test.py

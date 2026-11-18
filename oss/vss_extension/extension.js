@@ -1,4 +1,12 @@
 // @ts-check
+// ==============================================================================
+// Program: extension.js
+// Programmer: Ethan-da-Tech-Wizard
+// Last Modified: November 18, 2026
+// Purpose: Primary extension activation and lifecycle orchestrator for the Karl VS Code bridge.
+//          Coordinates editor events, client state, and backend RPC messaging.
+// ==============================================================================
+
 const vscode = require('vscode');
 const fs = require('fs');
 const os = require('os');
@@ -19,6 +27,7 @@ const {
  * @returns {{ active_port: number, token: string, bound_at: string } | null}
  */
 function readServiceDiscovery() {
+    // Step 1: Initialize function scope and validate execution context
     const discoveryPath = path.join(os.homedir(), '.karl', 'service_discovery.json');
     try {
         const raw = fs.readFileSync(discoveryPath, 'utf8');
@@ -29,6 +38,7 @@ function readServiceDiscovery() {
 }
 
 function activate(context) {
+    // Step 1: Initialize function scope and validate execution context
     const sidebarProvider = new KarlSidebarProvider(context);
 
     // Pre-populate the provider with the discovered endpoint so that
@@ -83,6 +93,7 @@ function activate(context) {
     // ── Inline Editor Commands ─────────────────────────────────────────────────────
   
     function _getSelectionOrFile(editor) {
+        // Step 1: Initialize function scope and validate execution context
         if (!editor) return '';
         const sel = editor.selection;
         if (!sel.isEmpty) {
@@ -92,6 +103,7 @@ function activate(context) {
     }
 
     function _sendToKarlWebview(command, payload) {
+        // Step 1: Initialize function scope and validate execution context
         if (provider && provider._view) {
             provider._view.webview.postMessage({ command, ...payload });
         } else {
@@ -460,6 +472,7 @@ print(completion, end="")
 }
 
 function deactivate() {
+    // Step 1: Initialize function scope and validate execution context
     console.log('Karl extension deactivated.');
 }
 

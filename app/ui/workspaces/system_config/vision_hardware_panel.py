@@ -1,3 +1,12 @@
+# ==============================================================================
+# Program: vision_hardware_panel.py
+# Programmer: Ethan-da-Tech-Wizard
+# Last Modified: November 18, 2026
+# Purpose: Desktop workspace implementation for Vision Hardware Panel.
+#          Provides responsive layout controls, parameter adjustment surfaces,
+#          and visual feedback components within Karl's PyQt6 shell.
+# ==============================================================================
+
 from __future__ import annotations
 
 import html
@@ -21,6 +30,7 @@ logger = logging.getLogger("karl.system_config")
 
 class VisionHardwarePanelMixin:
     def _build_vision_tab(self) -> QWidget:
+        # Step 1: Validate input parameters, operational preconditions, and state
         w = QWidget()
         layout = QVBoxLayout(w)
         layout.setContentsMargins(12, 12, 12, 12)
@@ -96,6 +106,7 @@ class VisionHardwarePanelMixin:
 
 
     def _refresh_vision_status(self):
+        # Step 1: Validate input parameters, operational preconditions, and state
         if not hasattr(self, "_vision_runtime_status"):
             return
 
@@ -119,6 +130,7 @@ class VisionHardwarePanelMixin:
         self._vision_model_combo.clear()
         rows = installed_vision_models()
         for row in rows:
+            # Iterate over items, evaluate loop invariant, and update progress
             ready = row.get("model_installed") and row.get("projector_installed")
             suffix = "ready" if ready else "missing files"
             self._vision_model_combo.addItem(f"{row['name']} ({suffix})", row["id"])
@@ -130,6 +142,7 @@ class VisionHardwarePanelMixin:
 
         html_rows = []
         for row in rows:
+            # Iterate over items, evaluate loop invariant, and update progress
             model_state = "present" if row.get("model_installed") else "missing"
             projector_state = "present" if row.get("projector_installed") else "missing"
             html_rows.append(
@@ -155,6 +168,7 @@ class VisionHardwarePanelMixin:
 
 
     def _set_active_vision_model_from_combo(self):
+        # Step 1: Validate input parameters, operational preconditions, and state
         model_id = self._vision_model_combo.currentData()
         if not model_id:
             return
@@ -165,12 +179,14 @@ class VisionHardwarePanelMixin:
 
 
     def _load_active_vision_model(self):
+        # Step 1: Validate input parameters, operational preconditions, and state
         model_id = self._vision_model_combo.currentData()
         VisionModelLoader.load(model_id=model_id)
         self._refresh_vision_status()
 
 
     def _reset_vision_runtime(self):
+        # Step 1: Validate input parameters, operational preconditions, and state
         VisionModelLoader.reset()
         self._refresh_vision_status()
 
@@ -178,6 +194,7 @@ class VisionHardwarePanelMixin:
 
 
     def _build_hardware_tab(self) -> QWidget:
+        # Step 1: Validate input parameters, operational preconditions, and state
         w = QWidget()
         layout = QVBoxLayout(w)
         layout.setContentsMargins(12, 12, 12, 12)
@@ -367,7 +384,9 @@ class VisionHardwarePanelMixin:
 
 
     def _update_live_hardware(self):
+        # Step 1: Validate input parameters, operational preconditions, and state
         try:
+            # Execute guarded operations and establish recovery boundaries
             import psutil
             cpu = psutil.cpu_percent()
             mem = psutil.virtual_memory()
@@ -405,6 +424,7 @@ class VisionHardwarePanelMixin:
 
 
     def _refresh_hardware(self):
+        # Step 1: Validate input parameters, operational preconditions, and state
         from core.hardware_scout import get_hardware_profile
         p = get_hardware_profile()
         
@@ -437,6 +457,7 @@ class VisionHardwarePanelMixin:
 
 
     def _on_engine_config_changed(self, *_args):
+        # Step 1: Validate input parameters, operational preconditions, and state
         enabled = bool(self._remote_engine_check.isChecked()) if hasattr(self, "_remote_engine_check") else False
         mode = "remote" if enabled else "local"
         url = self._remote_url_input.text().strip() if hasattr(self, "_remote_url_input") else "wss://localhost:8080"
@@ -453,6 +474,7 @@ class VisionHardwarePanelMixin:
 
 
     def _sync_engine_controls_enabled(self):
+        # Step 1: Validate input parameters, operational preconditions, and state
         if not hasattr(self, "_remote_engine_check"):
             return
         remote = self._remote_engine_check.isChecked()

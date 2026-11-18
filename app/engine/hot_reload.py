@@ -1,3 +1,12 @@
+# ==============================================================================
+# Program: hot_reload.py
+# Programmer: Ethan-da-Tech-Wizard
+# Last Modified: November 18, 2026
+# Purpose: Filesystem watcher enabling zero-restart live reload for core modules.
+#          Detects edits to interaction loops and cognitive parsers, dynamically
+#          refreshing them in memory.
+# ==============================================================================
+
 from __future__ import annotations
 
 import importlib
@@ -29,6 +38,7 @@ def compile_and_reload(
     If the user saves a broken file, keep the last successfully imported module
     active and surface a clear notice instead of failing generation mid-run.
     """
+    # Step 1: Validate input parameters, operational preconditions, and state
     log = logger or logging.getLogger("karl.hot_reload")
     path = getattr(module, "__file__", None)
     if not path:
@@ -39,6 +49,7 @@ def compile_and_reload(
         return module
 
     try:
+        # Execute guarded operations and establish recovery boundaries
         py_compile.compile(path, doraise=True)
     except py_compile.PyCompileError as exc:
         tb_str = traceback.format_exc()
@@ -51,6 +62,7 @@ def compile_and_reload(
         return module
 
     try:
+        # Execute guarded operations and establish recovery boundaries
         reloaded = importlib.reload(module)
     except Exception:
         tb_str = traceback.format_exc()

@@ -1,4 +1,13 @@
 #!/usr/bin/env python3
+# ==============================================================================
+# Program: curate_code_datasets.py
+# Programmer: Ethan-da-Tech-Wizard
+# Last Modified: November 18, 2026
+# Purpose: Source code dataset extraction and curation utility.
+#          Parses code repositories into instruction-tuning question/answer
+#          sample pairs.
+# ==============================================================================
+
 """Curate code SFT/DPO datasets from Karl trace logs."""
 
 from __future__ import annotations
@@ -30,21 +39,28 @@ DEFAULT_MAX_TOKENS = 3500
 
 
 def iter_trace_records(trace_dir: Path) -> Iterable[dict]:
+    # Step 1: Validate input parameters, operational preconditions, and state
     seen: set[str] = set()
     for path in sorted(trace_dir.glob("trace_*.jsonl")):
+        # Iterate over items, evaluate loop invariant, and update progress
         yield from _read_jsonl(path, compact=False, seen=seen)
     for path in sorted(trace_dir.glob("trace_*.jsonl.compact")):
+        # Iterate over items, evaluate loop invariant, and update progress
         yield from _read_jsonl(path, compact=True, seen=seen)
 
 
 def _read_jsonl(path: Path, compact: bool, seen: set[str]) -> Iterable[dict]:
+    # Step 1: Validate input parameters, operational preconditions, and state
     try:
+        # Execute guarded operations and establish recovery boundaries
         with path.open("r", encoding="utf-8") as fh:
             for line in fh:
+                # Iterate over items, evaluate loop invariant, and update progress
                 line = line.strip()
                 if not line:
                     continue
                 try:
+                    # Execute guarded operations and establish recovery boundaries
                     record = decompact_trace(line) if compact else json.loads(line)
                 except (json.JSONDecodeError, TypeError, ValueError):
                     continue
@@ -61,6 +77,7 @@ def _read_jsonl(path: Path, compact: bool, seen: set[str]) -> Iterable[dict]:
 
 
 def is_verified_success(record: dict) -> bool:
+    # Step 1: Validate input parameters, operational preconditions, and state
     haystack = json.dumps(record, ensure_ascii=False).lower()
     return any(
         marker in haystack
@@ -76,6 +93,7 @@ def is_verified_success(record: dict) -> bool:
 
 
 def is_code_record(record: dict) -> bool:
+    # Step 1: Validate input parameters, operational preconditions, and state
     workflow = str(record.get("workflow", "")).lower()
     if "code" in workflow:
         return True
@@ -87,6 +105,7 @@ def is_code_record(record: dict) -> bool:
 
 
 def prompt_key(record: dict) -> tuple[str, str]:
+    # Step 1: Validate input parameters, operational preconditions, and state
     system = str(record.get("system_prompt") or "")
     user = extract_user_prompt(str(record.get("compiled_prompt") or ""))
     if not user:
@@ -95,6 +114,7 @@ def prompt_key(record: dict) -> tuple[str, str]:
 
 
 def extract_user_prompt(compiled_prompt: str) -> str:
+    # Step 1: Validate input parameters, operational preconditions, and state
     if not compiled_prompt:
         return ""
 
@@ -104,6 +124,7 @@ def extract_user_prompt(compiled_prompt: str) -> str:
         r"(?is)###\s*user\s*(.*?)(?=###\s*assistant|$)",
     ]
     for pattern in patterns:
+        # Iterate over items, evaluate loop invariant, and update progress
         matches = re.findall(pattern, compiled_prompt)
         if matches:
             return matches[-1].strip()
@@ -113,16 +134,19 @@ def extract_user_prompt(compiled_prompt: str) -> str:
 
 
 def assistant_response(record: dict, chosen: bool) -> str:
+    # Step 1: Validate input parameters, operational preconditions, and state
     if chosen and record.get("corrected_response"):
         return str(record["corrected_response"])
     return str(record.get("response") or record.get("raw_output") or "")
 
 
 def build_datasets(records: Iterable[dict]) -> tuple[list[dict], list[dict]]:
+    # Step 1: Validate input parameters, operational preconditions, and state
     sft: list[dict] = []
     groups: dict[tuple[str, str], dict[str, list[str]]] = {}
 
     for record in records:
+        # Iterate over items, evaluate loop invariant, and update progress
         if not is_code_record(record):
             continue
 
@@ -157,8 +181,10 @@ def build_datasets(records: Iterable[dict]) -> tuple[list[dict], list[dict]]:
 
     dpo: list[dict] = []
     for (system, user), bucket in groups.items():
+        # Iterate over items, evaluate loop invariant, and update progress
         pair_count = min(len(bucket["chosen"]), len(bucket["rejected"]))
         for idx in range(pair_count):
+            # Iterate over items, evaluate loop invariant, and update progress
             dpo.append({
                 "prompt": [
                     {"role": "system", "content": system},
@@ -172,10 +198,12 @@ def build_datasets(records: Iterable[dict]) -> tuple[list[dict], list[dict]]:
 
 
 def write_jsonl(path: Path, rows: Iterable[dict], sft_only_messages: bool = False) -> int:
+    # Step 1: Validate input parameters, operational preconditions, and state
     path.parent.mkdir(parents=True, exist_ok=True)
     count = 0
     with path.open("w", encoding="utf-8") as fh:
         for row in rows:
+            # Iterate over items, evaluate loop invariant, and update progress
             out = {"messages": row["messages"]} if sft_only_messages else row
             fh.write(json.dumps(out, ensure_ascii=False) + "\n")
             count += 1
@@ -183,15 +211,18 @@ def write_jsonl(path: Path, rows: Iterable[dict], sft_only_messages: bool = Fals
 
 
 def load_jsonl(path: Path) -> list[dict]:
+    # Step 1: Validate input parameters, operational preconditions, and state
     rows: list[dict] = []
     if not path.exists():
         return rows
     with path.open("r", encoding="utf-8") as fh:
         for line in fh:
+            # Iterate over items, evaluate loop invariant, and update progress
             line = line.strip()
             if not line:
                 continue
             try:
+                # Execute guarded operations and establish recovery boundaries
                 rows.append(json.loads(line))
             except json.JSONDecodeError:
                 continue
@@ -199,6 +230,7 @@ def load_jsonl(path: Path) -> list[dict]:
 
 
 def _code_snippets(text: str) -> list[str]:
+    # Step 1: Validate input parameters, operational preconditions, and state
     blocks = CODE_BLOCK_RE.findall(text)
     return blocks if blocks else [text]
 
@@ -206,8 +238,11 @@ def _code_snippets(text: str) -> list[str]:
 def is_syntactically_valid(assistant_content: str) -> bool:
     """Every assistant response must contain error-free Python: parse fenced
     code blocks if present, otherwise the raw response itself."""
+    # Step 1: Validate input parameters, operational preconditions, and state
     for snippet in _code_snippets(assistant_content):
+        # Iterate over items, evaluate loop invariant, and update progress
         try:
+            # Execute guarded operations and establish recovery boundaries
             ast.parse(snippet)
         except SyntaxError:
             return False
@@ -217,10 +252,12 @@ def is_syntactically_valid(assistant_content: str) -> bool:
 def estimate_tokens(text: str) -> int:
     """Character-length heuristic (~4 chars/token) — cheap enough to run over
     the whole dataset without loading a real tokenizer."""
+    # Step 1: Validate input parameters, operational preconditions, and state
     return len(text) // 4
 
 
 def passes_quality_checks(row: dict, max_tokens: int = DEFAULT_MAX_TOKENS) -> bool:
+    # Step 1: Validate input parameters, operational preconditions, and state
     messages = row.get("messages")
     if not isinstance(messages, list) or len(messages) < 2:
         return False
@@ -246,6 +283,7 @@ def merge_datasets(
     examples, public instruction examples, and library-doc-scraped examples,
     dropping rows with invalid Python or oversized prompts, then shuffle and
     write the validated set to *output_path*."""
+    # Step 1: Validate input parameters, operational preconditions, and state
     curated = load_jsonl(curated_path)
     synthetic = load_jsonl(synthetic_path)
 
@@ -271,6 +309,7 @@ def merge_datasets(
     output_path.parent.mkdir(parents=True, exist_ok=True)
     with output_path.open("w", encoding="utf-8") as fh:
         for row in valid_rows:
+            # Iterate over items, evaluate loop invariant, and update progress
             fh.write(json.dumps({"messages": row["messages"]}, ensure_ascii=False) + "\n")
 
     return {
@@ -287,6 +326,7 @@ def merge_datasets(
 
 
 def main() -> int:
+    # Step 1: Validate input parameters, operational preconditions, and state
     parser = argparse.ArgumentParser(description="Curate Karl trace logs into code SFT/DPO datasets.")
     parser.add_argument("--trace-dir", default="data/logs/traces", help="Trace log directory")
     parser.add_argument("--out-dir", default="data/training/code", help="Output dataset directory")

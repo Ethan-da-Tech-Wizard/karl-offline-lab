@@ -1,3 +1,12 @@
+# ==============================================================================
+# Program: command_r.py
+# Programmer: Ethan-da-Tech-Wizard
+# Last Modified: November 18, 2026
+# Purpose: Weight conversion and architectural mapping implementation for COMMAND_R.
+#          Transforms HuggingFace checkpoint tensors, normalizes layer weights,
+#          and writes compliant GGUF data structures for llama.cpp.
+# ==============================================================================
+
 from __future__ import annotations
 
 from typing import Iterable, TYPE_CHECKING
@@ -15,6 +24,7 @@ class CommandR2Model(TextModel):
     model_arch = gguf.MODEL_ARCH.COMMAND_R
 
     def __init__(self, *args, **kwargs):
+        # Step 1: Validate input parameters, operational preconditions, and state
         super().__init__(*args, **kwargs)
 
         # max_position_embeddings = 8192 in config.json but model was actually
@@ -23,6 +33,7 @@ class CommandR2Model(TextModel):
         self.hparams["max_position_embeddings"] = self.find_hparam(["model_max_length", "max_position_embeddings"])
 
     def set_gguf_parameters(self):
+        # Step 1: Validate input parameters, operational preconditions, and state
         super().set_gguf_parameters()
         self.gguf_writer.add_logit_scale(self.hparams["logit_scale"])
         self.gguf_writer.add_rope_scaling_type(gguf.RopeScalingType.NONE)
@@ -33,6 +44,7 @@ class Cohere2Model(TextModel):
     model_arch = gguf.MODEL_ARCH.COHERE2
 
     def set_gguf_parameters(self):
+        # Step 1: Validate input parameters, operational preconditions, and state
         super().set_gguf_parameters()
 
         self.gguf_writer.add_logit_scale(self.hparams["logit_scale"])

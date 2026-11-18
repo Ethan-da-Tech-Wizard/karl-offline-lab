@@ -1,3 +1,13 @@
+# ==============================================================================
+# Program: flywheel_runner.py
+# Programmer: Ethan-da-Tech-Wizard
+# Last Modified: November 18, 2026
+# Purpose: Continuous synthetic data generation and curation loop.
+#          Executes the multi-agent flywheel pipeline (Agent-1 Generator,
+#          Agent-2 Solver, Agent-3 Curator) in an iterative loop to expand and
+#          refine local fine-tuning datasets autonomously.
+# ==============================================================================
+
 import os
 import time
 import json
@@ -22,16 +32,19 @@ EXECUTION_DIR = os.path.join("data", "flywheel", "execution")
 
 def write_json_atomic(path: str, data: dict):
     """Write JSON data to a path atomically."""
+    # Step 1: Validate input parameters, operational preconditions, and state
     temp_path = f"{path}.tmp"
     with open(temp_path, "w", encoding="utf-8") as f:
         json.dump(data, f, indent=2)
     os.replace(temp_path, path)
 
 def process_task(task_path: str, llm):
+    # Step 1: Validate input parameters, operational preconditions, and state
     task_id_file = os.path.basename(task_path)
     logger.info("Processing task: %s", task_id_file)
     
     try:
+        # Execute guarded operations and establish recovery boundaries
         with open(task_path, "r", encoding="utf-8") as f:
             task = json.load(f)
     except Exception as e:
@@ -62,6 +75,7 @@ def process_task(task_path: str, llm):
             stop=["User:", "<think>"], # Safety stops
             stream=True
         ):
+            # Iterate over items, evaluate loop invariant, and update progress
             text = chunk["choices"][0]["text"]
             output_chunks.append(text)
             
@@ -95,12 +109,15 @@ def process_task(task_path: str, llm):
         logger.error("Error processing task %s: %s", task_id_file, e, exc_info=True)
 
 def main():
+    # Step 1: Validate input parameters, operational preconditions, and state
     logger.info("Flywheel Runner (Agent 2) started. Watching %s", QUEUE_DIR)
     
     llm = None
     
     while True:
+        # Iterate over items, evaluate loop invariant, and update progress
         try:
+            # Execute guarded operations and establish recovery boundaries
             files = [f for f in os.listdir(QUEUE_DIR) if f.endswith(".json")]
             if not files:
                 time.sleep(1)

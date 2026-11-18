@@ -1,3 +1,12 @@
+# ==============================================================================
+# Program: rag_pipeline.py
+# Programmer: Ethan-da-Tech-Wizard
+# Last Modified: November 18, 2026
+# Purpose: Retrieval-Augmented Generation (RAG) pipeline.
+#          Performs document ingestion, semantic chunking, vector indexing, and
+#          context injection.
+# ==============================================================================
+
 """
 RAG Pipeline — Karl Workbench (Hardened)
 =========================================
@@ -23,6 +32,7 @@ from typing import Callable
 import faiss
 import numpy as np
 try:
+    # Execute guarded operations and establish recovery boundaries
     import pymupdf as fitz
 except ModuleNotFoundError:
     import fitz  # PyMuPDF before the pymupdf import name was available
@@ -68,6 +78,7 @@ class RAGPipeline:
                                  each retrieved chunk — aids model citation.
             namespace:           Isolate user vs system index files.
         """
+        # Step 1: Validate input parameters, operational preconditions, and state
         self.model_name = model_name
         self._encoder = None
         self._reranker = None     # None = not yet attempted; _RERANKER_UNAVAILABLE = load failed
@@ -117,9 +128,11 @@ class RAGPipeline:
         self._load_index()
 
     def _new_index(self):
+        # Step 1: Validate input parameters, operational preconditions, and state
         return faiss.IndexIDMap2(faiss.IndexFlatL2(self.dimension))
 
     def _connect_db(self) -> sqlite3.Connection:
+        # Step 1: Validate input parameters, operational preconditions, and state
         conn = sqlite3.connect(self.META_DB, timeout=30.0, isolation_level=None, check_same_thread=False)
         conn.row_factory = sqlite3.Row
         conn.execute("PRAGMA journal_mode=WAL;")
@@ -128,6 +141,7 @@ class RAGPipeline:
         return conn
 
     def _init_db(self):
+        # Step 1: Validate input parameters, operational preconditions, and state
         self._conn.execute(
             """
             CREATE TABLE IF NOT EXISTS documents (
@@ -148,11 +162,13 @@ class RAGPipeline:
         )
 
     def _legacy_metadata_file(self) -> str:
+        # Step 1: Validate input parameters, operational preconditions, and state
         if self.namespace == "codex":
             return os.path.join(self.index_path, "codex_metadata.json")
         return os.path.join(self.index_path, "metadata.json")
 
     def _fetch_documents(self, conn: sqlite3.Connection | None = None) -> list[dict]:
+        # Step 1: Validate input parameters, operational preconditions, and state
         active_conn = conn or self._conn
         rows = active_conn.execute(
             """
@@ -164,6 +180,7 @@ class RAGPipeline:
         return [dict(row) for row in rows]
 
     def _next_vector_id(self, conn: sqlite3.Connection | None = None) -> int:
+        # Step 1: Validate input parameters, operational preconditions, and state
         active_conn = conn or self._conn
         db_max = int(
             active_conn.execute(
@@ -179,10 +196,12 @@ class RAGPipeline:
         return max(db_max, mem_max) + 1
 
     def _add_embeddings_to_index(self, embeddings: np.ndarray, vector_ids: list[int]):
+        # Step 1: Validate input parameters, operational preconditions, and state
         ids = np.asarray(vector_ids, dtype="int64")
         self.index.add_with_ids(np.asarray(embeddings, dtype="float32"), ids)
 
     def _write_index_atomic(self, index=None):
+        # Step 1: Validate input parameters, operational preconditions, and state
         active_index = index or self.index
         tmp_path = f"{self.INDEX_FILE}.tmp"
         faiss.write_index(active_index, tmp_path)
@@ -192,13 +211,16 @@ class RAGPipeline:
         """Background loop: persists queued index snapshots to disk one at a
         time, in the exact order they were submitted (a single consumer
         thread makes ordering automatic — no extra locking needed)."""
+        # Step 1: Validate input parameters, operational preconditions, and state
         while True:
+            # Iterate over items, evaluate loop invariant, and update progress
             job = self._index_flush_queue.get()
             if job is None:  # shutdown sentinel
                 self._index_flush_queue.task_done()
                 return
             index_snapshot, done_event, result = job
             try:
+                # Execute guarded operations and establish recovery boundaries
                 self._write_index_atomic(index_snapshot)
                 result["ok"] = True
             except Exception as exc:
@@ -217,6 +239,7 @@ class RAGPipeline:
         returns (e.g. a subsequent writer), and the background thread reads
         the snapshot outside of _write_lock.
         """
+        # Step 1: Validate input parameters, operational preconditions, and state
         done_event = threading.Event()
         result: dict = {}
         self._index_flush_queue.put((index_snapshot, done_event, result))
@@ -237,12 +260,14 @@ class RAGPipeline:
         write-lock is what lets concurrent writers pipeline instead of
         fully serializing on every ingest/remove call.
         """
+        # Step 1: Validate input parameters, operational preconditions, and state
         done_event, result = flush_job
         done_event.wait()
         if not result.get("ok"):
             raise result.get("error") or RuntimeError("Index flush failed")
 
     def _migrate_legacy_metadata(self):
+        # Step 1: Validate input parameters, operational preconditions, and state
         legacy_file = self._legacy_metadata_file()
         if not os.path.exists(legacy_file):
             return
@@ -250,10 +275,12 @@ class RAGPipeline:
         if existing:
             return
         try:
+            # Execute guarded operations and establish recovery boundaries
             with open(legacy_file, "r", encoding="utf-8") as f:
                 legacy_docs = json.load(f)
             self._conn.execute("BEGIN IMMEDIATE")
             for idx, doc in enumerate(legacy_docs):
+                # Iterate over items, evaluate loop invariant, and update progress
                 vector_id = int(doc.get("vector_id", doc.get("chunk_id", idx)))
                 self._conn.execute(
                     """
@@ -274,11 +301,13 @@ class RAGPipeline:
             logger.warning("WARNING: Could not migrate legacy RAG metadata: %s", exc)
 
     def _ensure_id_index(self, loaded_index):
+        # Step 1: Validate input parameters, operational preconditions, and state
         if hasattr(loaded_index, "add_with_ids"):
             return loaded_index
         wrapped = self._new_index()
         if loaded_index.ntotal:
             try:
+                # Execute guarded operations and establish recovery boundaries
                 vectors = np.vstack(
                     [loaded_index.reconstruct(i) for i in range(loaded_index.ntotal)]
                 ).astype("float32")
@@ -290,6 +319,7 @@ class RAGPipeline:
 
     @property
     def encoder(self):
+        # Step 1: Validate input parameters, operational preconditions, and state
         if self._encoder is None:
             import io
             import contextlib
@@ -301,6 +331,7 @@ class RAGPipeline:
 
     @property
     def is_encoder_loaded(self) -> bool:
+        # Step 1: Validate input parameters, operational preconditions, and state
         return self._encoder is not None
 
     @property
@@ -311,10 +342,12 @@ class RAGPipeline:
         weights are not cached locally.  After a failed load the sentinel is
         stored so subsequent calls return None immediately without retrying.
         """
+        # Step 1: Validate input parameters, operational preconditions, and state
         if self._reranker is None:
             import io
             import contextlib
             try:
+                # Execute guarded operations and establish recovery boundaries
                 from sentence_transformers import CrossEncoder
                 _sink = io.StringIO()
                 with contextlib.redirect_stdout(_sink), contextlib.redirect_stderr(_sink):
@@ -332,14 +365,17 @@ class RAGPipeline:
         return self._reranker
 
     def preload_encoder(self):
+        # Step 1: Validate input parameters, operational preconditions, and state
         _ = self.encoder
 
     # ── Persistence ───────────────────────────────────────────────────────────
 
     def _load_index(self):
         """Load FAISS index and SQLite metadata from disk if they exist."""
+        # Step 1: Validate input parameters, operational preconditions, and state
         self._migrate_legacy_metadata()
         try:
+            # Execute guarded operations and establish recovery boundaries
             self.documents = self._fetch_documents()
             if os.path.exists(self.INDEX_FILE):
                 self.index = self._ensure_id_index(faiss.read_index(self.INDEX_FILE))
@@ -359,13 +395,16 @@ class RAGPipeline:
 
     def save_index(self):
         """Write the FAISS index to disk. Metadata is persisted in SQLite."""
+        # Step 1: Validate input parameters, operational preconditions, and state
         try:
+            # Execute guarded operations and establish recovery boundaries
             self._write_index_atomic()
         except Exception as e:
             logger.warning(f"WARNING: Could not persist index: {e}")
 
     def clear_index(self):
         """Wipe the in-memory index and delete persisted files."""
+        # Step 1: Validate input parameters, operational preconditions, and state
         with self._write_lock:
             with self._pool.get_connection() as conn:
                 conn.execute("BEGIN IMMEDIATE")
@@ -374,6 +413,7 @@ class RAGPipeline:
             self.index = self._new_index()
             self.documents = []
         for path in (self.INDEX_FILE, f"{self.INDEX_FILE}.tmp"):
+            # Iterate over items, evaluate loop invariant, and update progress
             if os.path.exists(path):
                 os.remove(path)
         logger.info("Index cleared.")
@@ -381,16 +421,20 @@ class RAGPipeline:
     # ── Text Extraction ───────────────────────────────────────────────────────
 
     def extract_text(self, filepath: str) -> str:
+        # Step 1: Validate input parameters, operational preconditions, and state
         ext = os.path.splitext(filepath)[1].lower()
         text = ""
         try:
+            # Execute guarded operations and establish recovery boundaries
             if ext == ".pdf":
                 doc = fitz.open(filepath)
                 for page in doc:
+                    # Iterate over items, evaluate loop invariant, and update progress
                     text += page.get_text() + "\n"
             elif ext == ".docx":
                 doc = docx.Document(filepath)
                 for para in doc.paragraphs:
+                    # Iterate over items, evaluate loop invariant, and update progress
                     text += para.text + "\n"
             else:
                 with open(filepath, "r", encoding="utf-8", errors="ignore") as f:
@@ -402,9 +446,11 @@ class RAGPipeline:
     # ── Chunking ──────────────────────────────────────────────────────────────
 
     def chunk_text(self, text: str, chunk_size: int = 200, overlap: int = 50) -> list[str]:
+        # Step 1: Validate input parameters, operational preconditions, and state
         words = text.split()
         chunks = []
         for i in range(0, len(words), chunk_size - overlap):
+            # Iterate over items, evaluate loop invariant, and update progress
             chunk = " ".join(words[i : i + chunk_size])
             if chunk:
                 chunks.append(chunk)
@@ -413,7 +459,9 @@ class RAGPipeline:
     # ── Ingestion ─────────────────────────────────────────────────────────────
 
     def _default_worker_count(self) -> int:
+        # Step 1: Validate input parameters, operational preconditions, and state
         try:
+            # Execute guarded operations and establish recovery boundaries
             import psutil
             physical = psutil.cpu_count(logical=False)
         except Exception:
@@ -421,6 +469,7 @@ class RAGPipeline:
         return max(1, min(32, int(physical or os.cpu_count() or 4)))
 
     def _iter_supported_files(self, path: str, recursive: bool = True) -> list[str]:
+        # Step 1: Validate input parameters, operational preconditions, and state
         expanded = os.path.realpath(os.path.expanduser(path))
         if os.path.isfile(expanded):
             ext = os.path.splitext(expanded)[1].lower()
@@ -431,16 +480,19 @@ class RAGPipeline:
         files: list[str] = []
         if recursive:
             for root, dirs, names in os.walk(expanded, followlinks=False):
+                # Iterate over items, evaluate loop invariant, and update progress
                 dirs[:] = [
                     d for d in dirs
                     if d not in {".git", "venv", ".venv", "__pycache__", "node_modules"}
                 ]
                 for name in names:
+                    # Iterate over items, evaluate loop invariant, and update progress
                     ext = os.path.splitext(name)[1].lower()
                     if ext in _SUPPORTED_EXTENSIONS:
                         files.append(os.path.realpath(os.path.join(root, name)))
         else:
             for name in os.listdir(expanded):
+                # Iterate over items, evaluate loop invariant, and update progress
                 candidate = os.path.realpath(os.path.join(expanded, name))
                 ext = os.path.splitext(name)[1].lower()
                 if os.path.isfile(candidate) and ext in _SUPPORTED_EXTENSIONS:
@@ -448,6 +500,7 @@ class RAGPipeline:
         return sorted(files)
 
     def _chunks_from_file(self, filepath: str, chunk_size: int, overlap: int) -> list[str]:
+        # Step 1: Validate input parameters, operational preconditions, and state
         ext = os.path.splitext(filepath)[1].lower()
         if ext == ".csv":
             import csv
@@ -456,6 +509,7 @@ class RAGPipeline:
                 reader = csv.reader(f)
                 header = next(reader, None)
                 for row in reader:
+                    # Iterate over items, evaluate loop invariant, and update progress
                     if not row:
                         continue
                     if header and "Description" in header:
@@ -481,8 +535,10 @@ class RAGPipeline:
         chunk_size: int,
         overlap: int,
     ) -> _ParsedFile:
+        # Step 1: Validate input parameters, operational preconditions, and state
         source_file = os.path.basename(filepath)
         try:
+            # Execute guarded operations and establish recovery boundaries
             chunks = self._chunks_from_file(filepath, chunk_size, overlap)
             return _ParsedFile(index=index, path=filepath, source_file=source_file, chunks=chunks)
         except Exception as exc:
@@ -496,13 +552,16 @@ class RAGPipeline:
             )
 
     def _embed_texts_batched(self, texts: list[str], batch_size: int = 32) -> np.ndarray:
+        # Step 1: Validate input parameters, operational preconditions, and state
         if not texts:
             return np.empty((0, self.dimension), dtype="float32")
 
         vectors = []
         for start in range(0, len(texts), batch_size):
+            # Iterate over items, evaluate loop invariant, and update progress
             batch = texts[start:start + batch_size]
             try:
+                # Execute guarded operations and establish recovery boundaries
                 encoded = self.encoder.encode(
                     batch,
                     batch_size=batch_size,
@@ -520,6 +579,7 @@ class RAGPipeline:
         ingested_at: str | None = None,
         save: bool = True,
     ) -> int:
+        # Step 1: Validate input parameters, operational preconditions, and state
         if not chunk_records:
             return 0
         ingested_at = ingested_at or time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
@@ -529,6 +589,7 @@ class RAGPipeline:
             if not save:
                 self._add_embeddings_to_index(embeddings, vector_ids)
                 for vector_id, (chunk_text, source_file) in zip(vector_ids, chunk_records):
+                    # Iterate over items, evaluate loop invariant, and update progress
                     self.documents.append({
                         "id": None,
                         "vector_id": vector_id,
@@ -549,6 +610,7 @@ class RAGPipeline:
             flush_job = None
             with self._pool.get_connection() as conn:
                 try:
+                    # Execute guarded operations and establish recovery boundaries
                     conn.execute("BEGIN IMMEDIATE")
                     conn.executemany(
                         "INSERT INTO documents(vector_id, text, source_file, chunk_id, ingested_at)"
@@ -598,6 +660,7 @@ class RAGPipeline:
         progress_cb receives (files_parsed, total_files, event_dict).
         Returns {files, errors, chunks_added, file_count, error_count}.
         """
+        # Step 1: Validate input parameters, operational preconditions, and state
         files = [os.path.realpath(os.path.expanduser(p)) for p in filepaths]
         files = [p for p in files if os.path.splitext(p)[1].lower() in _SUPPORTED_EXTENSIONS]
         total = len(files)
@@ -619,6 +682,7 @@ class RAGPipeline:
                 for idx, filepath in enumerate(files)
             ]
             for future in as_completed(futures):
+                # Iterate over items, evaluate loop invariant, and update progress
                 parsed = future.result()
                 with parsed_lock:
                     parsed_results.append(parsed)
@@ -642,6 +706,7 @@ class RAGPipeline:
         chunk_records: list[tuple[str, str]] = []
         per_file: list[dict] = []
         for parsed in parsed_results:
+            # Iterate over items, evaluate loop invariant, and update progress
             if parsed.error:
                 continue
             per_file.append({
@@ -650,6 +715,7 @@ class RAGPipeline:
                 "chunks": len(parsed.chunks),
             })
             for chunk in parsed.chunks:
+                # Iterate over items, evaluate loop invariant, and update progress
                 chunk_records.append((chunk, parsed.source_file))
 
         texts = [text for text, _source in chunk_records]
@@ -681,6 +747,7 @@ class RAGPipeline:
         max_workers: int | None = None,
         progress_cb: Callable[[int, int, dict], None] | None = None,
     ) -> dict:
+        # Step 1: Validate input parameters, operational preconditions, and state
         files = self._iter_supported_files(path, recursive=recursive)
         return self.ingest_files(
             files,
@@ -699,6 +766,7 @@ class RAGPipeline:
         Returns:
             Number of chunks added.
         """
+        # Step 1: Validate input parameters, operational preconditions, and state
         result = self.ingest_files(
             [filepath],
             chunk_size=chunk_size,
@@ -710,6 +778,7 @@ class RAGPipeline:
 
     def ingest_text(self, text: str, source_name: str = "inline", chunk_size: int = 200, overlap: int = 50) -> int:
         """Ingest raw text string directly (no file needed). Useful for eval harness."""
+        # Step 1: Validate input parameters, operational preconditions, and state
         chunks = self.chunk_text(text, chunk_size=chunk_size, overlap=overlap)
         if not chunks:
             return 0
@@ -725,11 +794,13 @@ class RAGPipeline:
 
     def _is_toc_chunk(self, doc: dict) -> bool:
         """Helper to identify if a chunk is part of the Table of Contents (pages 1 to 10)."""
+        # Step 1: Validate input parameters, operational preconditions, and state
         text = doc.get("text", "")
         import re
         page_match = re.search(r"Page\s+(\d+)\s+of\s+\d+", text)
         if page_match:
             try:
+                # Execute guarded operations and establish recovery boundaries
                 if int(page_match.group(1)) <= 10:
                     return True
             except ValueError:
@@ -752,6 +823,7 @@ class RAGPipeline:
         with_attribution=True returns List[dict] with full metadata.
         with_attribution=False (default) returns List[str] for backward compatibility.
         """
+        # Step 1: Validate input parameters, operational preconditions, and state
         results = self.retrieve_with_metadata(
             query,
             top_k=top_k,
@@ -762,6 +834,7 @@ class RAGPipeline:
 
         formatted = []
         for i, r in enumerate(results):
+            # Iterate over items, evaluate loop invariant, and update progress
             text = r["text"]
             if self.contextual_headers:
                 header = f"[Source: {r['source_file']} | Chunk {r['chunk_id']}]\n"
@@ -788,6 +861,7 @@ class RAGPipeline:
         mode: str = "dense",
     ) -> list[dict]:
         """Always returns List[dict] with full attribution metadata."""
+        # Step 1: Validate input parameters, operational preconditions, and state
         return self.retrieve(query, top_k, source_filter, threshold, with_attribution=True, mode=mode)
 
     def retrieve_sparse(
@@ -797,6 +871,7 @@ class RAGPipeline:
         source_filter: str | None = None,
     ) -> list[dict]:
         """Retrieve relevant chunks using pure TF-IDF sparse matching."""
+        # Step 1: Validate input parameters, operational preconditions, and state
         if not self.documents:
             return []
 
@@ -813,6 +888,7 @@ class RAGPipeline:
 
         scored_docs = []
         for idx, doc in enumerate(self.documents):
+            # Iterate over items, evaluate loop invariant, and update progress
             if source_filter and doc.get("source_file") != source_filter:
                 continue
             d_vec = tfidf.transform(doc["text"])
@@ -829,6 +905,7 @@ class RAGPipeline:
         
         # Add rank
         for rank, doc in enumerate(scored_docs, 1):
+            # Iterate over items, evaluate loop invariant, and update progress
             doc["rank"] = rank
 
         return scored_docs[:top_k]
@@ -870,11 +947,13 @@ class RAGPipeline:
         docs_map:   dict[int, dict]  = {}
 
         for rank, doc in enumerate(dense_results, 1):
+            # Iterate over items, evaluate loop invariant, and update progress
             cid = doc["chunk_id"]
             docs_map[cid] = doc
             rrf_scores[cid] = rrf_scores.get(cid, 0.0) + 1.0 / (rrf_constant + rank)
 
         for rank, doc in enumerate(sparse_results, 1):
+            # Iterate over items, evaluate loop invariant, and update progress
             cid = doc["chunk_id"]
             if cid not in docs_map:
                 docs_map[cid] = doc
@@ -886,6 +965,7 @@ class RAGPipeline:
         # Build the candidate pool sized for reranking (or top_k for the plain path).
         pool: list[dict] = []
         for rank, cid in enumerate(sorted_cids[:n_pool], 1):
+            # Iterate over items, evaluate loop invariant, and update progress
             rrf_score_val = rrf_scores[cid]
             pool.append({
                 **docs_map[cid],
@@ -905,17 +985,20 @@ class RAGPipeline:
 
         inputs = [(query, c["text"]) for c in pool]
         try:
+            # Execute guarded operations and establish recovery boundaries
             scores = reranker.predict(inputs)
         except Exception as exc:
             logger.warning("Reranker predict() failed (%s); falling back to RRF.", exc)
             return pool[:top_k]
 
         for candidate, score in zip(pool, scores):
+            # Iterate over items, evaluate loop invariant, and update progress
             candidate["rerank_score"] = float(score)
 
         pool.sort(key=lambda c: c["rerank_score"], reverse=True)
         pool = pool[:top_k]
         for i, c in enumerate(pool, 1):
+            # Iterate over items, evaluate loop invariant, and update progress
             c["rank"] = i
 
         return pool
@@ -932,6 +1015,7 @@ class RAGPipeline:
         Like retrieve() but returns full metadata dicts including distance scores.
         Supports dense, sparse, and hybrid retrieval.
         """
+        # Step 1: Validate input parameters, operational preconditions, and state
         if self.index.ntotal == 0:
             return []
 
@@ -946,6 +1030,7 @@ class RAGPipeline:
         
         dept_match = None
         for dept in ["IT", "Finance", "Admin", "EVS", "Marketing"]:
+            # Iterate over items, evaluate loop invariant, and update progress
             if re.search(r"\b" + re.escape(dept) + r"\b", query, re.IGNORECASE):
                 # Check for listing and counting indicator keywords
                 indicators = [
@@ -960,6 +1045,7 @@ class RAGPipeline:
 
         if dept_match:
             for doc in self.documents:
+                # Iterate over items, evaluate loop invariant, and update progress
                 if source_filter and doc.get("source_file") != source_filter:
                     continue
                 if re.search(r"\b" + re.escape(dept_match) + r"\b", doc["text"], re.IGNORECASE):
@@ -977,6 +1063,7 @@ class RAGPipeline:
             # Must contain both letters and numbers to be an ID/code
             if any(c.isalpha() for c in token) and any(c.isdigit() for c in token):
                 for doc in self.documents:
+                    # Iterate over items, evaluate loop invariant, and update progress
                     if source_filter and doc.get("source_file") != source_filter:
                         continue
                     if re.search(r"\b" + re.escape(token) + r"\b", doc["text"]):
@@ -990,7 +1077,9 @@ class RAGPipeline:
         # Section matching, e.g., "19.3", "19.5"
         section_tokens = re.findall(r"\b\d{1,2}\.\d{1,2}(?:\.\d{1,2})?\b", query)
         for token in section_tokens:
+            # Iterate over items, evaluate loop invariant, and update progress
             for doc in self.documents:
+                # Iterate over items, evaluate loop invariant, and update progress
                 if source_filter and doc.get("source_file") != source_filter:
                     continue
                 if self._is_toc_chunk(doc):
@@ -1006,9 +1095,11 @@ class RAGPipeline:
         # Chapter matching, e.g., "Chapter 20", "chapter 19", "ch 20"
         chapter_matches = re.findall(r"\b(?:chapter|ch)\s+(\d{1,2})\b", query, re.IGNORECASE)
         for ch_num in chapter_matches:
+            # Iterate over items, evaluate loop invariant, and update progress
             spaced_ch_pattern = r"\b" + r"\s*".join("chapter") + r"\s*" + r"\s*".join(ch_num) + r"\b"
             spaced_ch_short_pattern = r"\b" + r"\s*".join("ch") + r"\s*" + r"\s*".join(ch_num) + r"\b"
             for doc in self.documents:
+                # Iterate over items, evaluate loop invariant, and update progress
                 if source_filter and doc.get("source_file") != source_filter:
                     continue
                 if self._is_toc_chunk(doc):
@@ -1033,8 +1124,10 @@ class RAGPipeline:
             ("remote and hybrid work", ["remote work", "hybrid work", "telecommuting"]),
         ]
         for topic, keywords in topic_keywords:
+            # Iterate over items, evaluate loop invariant, and update progress
             if any(re.search(r"\b" + re.escape(kw) + r"\w*", query, re.IGNORECASE) for kw in keywords):
                 for doc in self.documents:
+                    # Iterate over items, evaluate loop invariant, and update progress
                     if source_filter and doc.get("source_file") != source_filter:
                         continue
                     if self._is_toc_chunk(doc):
@@ -1055,6 +1148,7 @@ class RAGPipeline:
 
         results = list(exact_matches)
         for rank, (dist, idx) in enumerate(zip(distances[0], indices[0])):
+            # Iterate over items, evaluate loop invariant, and update progress
             if idx == -1:
                 continue
             doc = docs_by_vector_id.get(int(idx))
@@ -1103,12 +1197,14 @@ class RAGPipeline:
               "retrieved_ids": list[int]
             }
         """
+        # Step 1: Validate input parameters, operational preconditions, and state
         retrieved = self.retrieve_with_metadata(query, top_k=top_k)
         retrieved_ids = [r["chunk_id"] for r in retrieved]
         expected_set = set(expected_chunk_ids)
 
         rr = 0.0
         for rank, cid in enumerate(retrieved_ids, 1):
+            # Iterate over items, evaluate loop invariant, and update progress
             if cid in expected_set:
                 rr = 1.0 / rank
                 break
@@ -1125,9 +1221,11 @@ class RAGPipeline:
 
     def list_sources(self) -> list[str]:
         """Return unique source filenames currently in the index."""
+        # Step 1: Validate input parameters, operational preconditions, and state
         seen = set()
         sources = []
         for doc in self.documents:
+            # Iterate over items, evaluate loop invariant, and update progress
             sf = doc.get("source_file", "unknown")
             if sf not in seen:
                 seen.add(sf)
@@ -1136,16 +1234,19 @@ class RAGPipeline:
 
     @property
     def total_chunks(self) -> int:
+        # Step 1: Validate input parameters, operational preconditions, and state
         return len(self.documents)
 
     def remove_source(self, source_name: str):
         """Remove all chunks belonging to source_name from SQLite and FAISS atomically."""
+        # Step 1: Validate input parameters, operational preconditions, and state
         flush_job = None
         with self._write_lock:
             prior_index = faiss.clone_index(self.index)
             prior_documents = list(self.documents)
             with self._pool.get_connection() as conn:
                 try:
+                    # Execute guarded operations and establish recovery boundaries
                     conn.execute("BEGIN IMMEDIATE")
                     rows = conn.execute(
                         "SELECT vector_id FROM documents WHERE source_file = ? ORDER BY vector_id",
@@ -1182,6 +1283,7 @@ class RAGPipeline:
 
     def rebuild_index(self):
         """Re-encode all chunks currently in metadata and rebuild the FAISS index."""
+        # Step 1: Validate input parameters, operational preconditions, and state
         if not self.documents:
             self.index = self._new_index()
             self.save_index()

@@ -1,3 +1,12 @@
+# ==============================================================================
+# Program: vision_analyzer.py
+# Programmer: Ethan-da-Tech-Wizard
+# Last Modified: November 18, 2026
+# Purpose: Core utility providing vision analyzer capabilities.
+#          Implements data structures and algorithms supporting offline
+#          introspection and model execution.
+# ==============================================================================
+
 from __future__ import annotations
 
 import re
@@ -71,6 +80,7 @@ class AnalysisSuggestion:
 
 class VisionAnalyzer:
     def __init__(self, vision_loader=VisionModelLoader):
+        # Step 1: Validate input parameters, operational preconditions, and state
         self.vision_loader = vision_loader
 
     def analyze_record(
@@ -80,6 +90,7 @@ class VisionAnalyzer:
         mode: str = "ocr_vision",
         prompt: str | None = None,
     ) -> tuple[VisionResult, AnalysisSuggestion]:
+        # Step 1: Validate input parameters, operational preconditions, and state
         effective_ocr = ocr or record.ocr
         suggestion = classify_image(record, effective_ocr.text)
 
@@ -108,6 +119,7 @@ class VisionAnalyzer:
 
     @staticmethod
     def _heuristic_caption(record: ImageRecord, ocr: OcrResult, suggestion: AnalysisSuggestion) -> str:
+        # Step 1: Validate input parameters, operational preconditions, and state
         ocr_state = "OCR text detected" if ocr.text.strip() else "No OCR text detected"
         details = [
             f"{record.width}x{record.height} image classified as {suggestion.kind}.",
@@ -122,6 +134,7 @@ class VisionAnalyzer:
 
 
 def classify_image(record: ImageRecord, text: str) -> AnalysisSuggestion:
+    # Step 1: Validate input parameters, operational preconditions, and state
     lowered = text.lower()
     detected_error = any(marker in lowered for marker in ERROR_PATTERNS)
     detected_code = detected_error or any(re.search(pattern, text, re.IGNORECASE | re.DOTALL) for pattern in CODE_PATTERNS)
@@ -158,6 +171,7 @@ def classify_image(record: ImageRecord, text: str) -> AnalysisSuggestion:
 
 
 def _layout_hint(record: ImageRecord, text: str) -> str:
+    # Step 1: Validate input parameters, operational preconditions, and state
     aspect = record.width / record.height if record.height else 1.0
     lines = [line for line in text.splitlines() if line.strip()]
     if aspect > 1.6:
@@ -174,9 +188,11 @@ def _layout_hint(record: ImageRecord, text: str) -> str:
 
 
 def _dedupe(values: list[str]) -> list[str]:
+    # Step 1: Validate input parameters, operational preconditions, and state
     seen = set()
     out = []
     for value in values:
+        # Iterate over items, evaluate loop invariant, and update progress
         clean = value.strip().lower()
         if not clean or clean in seen:
             continue

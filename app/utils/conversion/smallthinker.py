@@ -1,3 +1,12 @@
+# ==============================================================================
+# Program: smallthinker.py
+# Programmer: Ethan-da-Tech-Wizard
+# Last Modified: November 18, 2026
+# Purpose: Weight conversion and architectural mapping implementation for SMALLTHINKER.
+#          Transforms HuggingFace checkpoint tensors, normalizes layer weights,
+#          and writes compliant GGUF data structures for llama.cpp.
+# ==============================================================================
+
 from __future__ import annotations
 
 from typing import Iterable, TYPE_CHECKING
@@ -15,6 +24,7 @@ class SmallThinkerModel(TextModel):
     model_arch = gguf.MODEL_ARCH.SMALLTHINKER
 
     def set_gguf_parameters(self):
+        # Step 1: Validate input parameters, operational preconditions, and state
         super().set_gguf_parameters()
         if (n_experts := self.hparams.get("moe_num_primary_experts")) is not None:
             self.gguf_writer.add_expert_count(n_experts)
@@ -32,6 +42,7 @@ class SmallThinkerModel(TextModel):
         sliding_window_layout = self.hparams.get("sliding_window_layout")
         if sliding_window_layout:
             for i in sliding_window_layout:
+                # Iterate over items, evaluate loop invariant, and update progress
                 if i != 0:
                     sliding_window = self.hparams.get("sliding_window_size")
                     if sliding_window:
@@ -54,9 +65,11 @@ class SmallThinkerModel(TextModel):
             if len(self._experts[bid]) >= n_experts * 3:
                 # merge the experts into a single 3d tensor
                 for w_name in ["down", "gate", "up"]:
+                    # Iterate over items, evaluate loop invariant, and update progress
                     datas: list[Tensor] = []
 
                     for xid in range(n_experts):
+                        # Iterate over items, evaluate loop invariant, and update progress
                         ename = f"model.layers.{bid}.block_sparse_moe.experts.{xid}.{w_name}.weight"
                         datas.append(self._experts[bid][ename])
                         del self._experts[bid][ename]
@@ -73,6 +86,7 @@ class SmallThinkerModel(TextModel):
         yield from super().modify_tensors(data_torch, name, bid)
 
     def prepare_tensors(self):
+        # Step 1: Validate input parameters, operational preconditions, and state
         super().prepare_tensors()
 
         if self._experts is not None:

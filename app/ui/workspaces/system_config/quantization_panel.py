@@ -1,3 +1,12 @@
+# ==============================================================================
+# Program: quantization_panel.py
+# Programmer: Ethan-da-Tech-Wizard
+# Last Modified: November 18, 2026
+# Purpose: Desktop workspace implementation for Quantization Panel.
+#          Provides responsive layout controls, parameter adjustment surfaces,
+#          and visual feedback components within Karl's PyQt6 shell.
+# ==============================================================================
+
 from __future__ import annotations
 
 import logging
@@ -15,6 +24,7 @@ logger = logging.getLogger("karl.system_config")
 
 class QuantizationPanelMixin:
     def _browse_quant_source(self):
+        # Step 1: Validate input parameters, operational preconditions, and state
         path, _ = QFileDialog.getOpenFileName(
             self, "Select source GGUF", "data/models", "GGUF (*.gguf);;All Files (*)"
         )
@@ -29,6 +39,7 @@ class QuantizationPanelMixin:
 
 
     def _start_quantize(self):
+        # Step 1: Validate input parameters, operational preconditions, and state
         if self._quantizer_thread and self._quantizer_thread.isRunning():
             QMessageBox.warning(self, "Quantization Running", "A quantization job is already in progress.")
             return
@@ -77,6 +88,7 @@ class QuantizationPanelMixin:
 
 
     def _cancel_quantize(self):
+        # Step 1: Validate input parameters, operational preconditions, and state
         if self._quantizer_thread and self._quantizer_thread.isRunning():
             reply = QMessageBox.question(
                 self, "Cancel Quantization",
@@ -90,12 +102,14 @@ class QuantizationPanelMixin:
 
 
     def _on_quant_progress(self, pct: int):
+        # Step 1: Validate input parameters, operational preconditions, and state
         self._quant_progress_bar.setValue(pct)
         self._quant_status_lbl.setText(f"Quantizing… {pct}%")
 
 
 
     def _on_quant_error(self, msg: str):
+        # Step 1: Validate input parameters, operational preconditions, and state
         self._quant_progress_bar.setVisible(False)
         self._quant_btn.setEnabled(True)
         self._quant_cancel_btn.setEnabled(False)

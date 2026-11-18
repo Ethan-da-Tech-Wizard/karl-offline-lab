@@ -1,4 +1,13 @@
 # -*- coding: utf-8 -*-
+# ==============================================================================
+# Program: docs_data.py
+# Programmer: Ethan-da-Tech-Wizard
+# Last Modified: November 18, 2026
+# Purpose: Exhaustive reference guides for Karl's Codex workspace. Provides complete, self-contained documentation of grammar, compilers, runtime loops, APIs, and optimization tactics for offline code generation.
+#          Coordinates with adjacent subsystems within the Karl Offline Lab
+#          architecture.
+# ==============================================================================
+
 """
 Exhaustive reference guides for Karl's Codex workspace.
 Provides complete, self-contained documentation of grammar, compilers, runtime loops,

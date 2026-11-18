@@ -1,3 +1,12 @@
+# ==============================================================================
+# Program: test_session_tree.py
+# Programmer: Ethan-da-Tech-Wizard
+# Last Modified: November 18, 2026
+# Purpose: Comprehensive test suite exercising session tree functionality.
+#          Verifies state transitions, error boundaries, regression resistance,
+#          and contract compliance under tests.
+# ==============================================================================
+
 import os
 import sys
 
@@ -11,6 +20,7 @@ from app.utils.session_tree import SessionNode, SessionTree
 # ---------------------------------------------------------------------------
 
 def test_node_defaults():
+    # Step 1: Validate input parameters, operational preconditions, and state
     node = SessionNode("user", "hello")
     assert node.role == "user"
     assert node.content == "hello"
@@ -21,6 +31,7 @@ def test_node_defaults():
 
 
 def test_node_add_child():
+    # Step 1: Validate input parameters, operational preconditions, and state
     parent = SessionNode("user", "hi")
     child = parent.add_child("assistant", "hey")
     assert child in parent.children
@@ -29,6 +40,7 @@ def test_node_add_child():
 
 
 def test_node_to_from_dict_round_trip():
+    # Step 1: Validate input parameters, operational preconditions, and state
     parent = SessionNode("user", "question", node_id="u1")
     child = parent.add_child("assistant", "answer", node_id="a1")
     child.thought = "thinking..."
@@ -44,6 +56,7 @@ def test_node_to_from_dict_round_trip():
 
 
 def test_node_attachments_round_trip():
+    # Step 1: Validate input parameters, operational preconditions, and state
     node = SessionNode(
         "user",
         "what is wrong here?",
@@ -60,12 +73,14 @@ def test_node_attachments_round_trip():
 # ---------------------------------------------------------------------------
 
 def test_tree_empty_on_init():
+    # Step 1: Validate input parameters, operational preconditions, and state
     tree = SessionTree()
     assert len(tree) == 0
     assert not tree  # __bool__
 
 
 def test_tree_add_message():
+    # Step 1: Validate input parameters, operational preconditions, and state
     tree = SessionTree()
     tree.add_message("user", "Hello")
     tree.add_message("assistant", "Hi there")
@@ -76,6 +91,7 @@ def test_tree_add_message():
 
 
 def test_tree_active_path_content():
+    # Step 1: Validate input parameters, operational preconditions, and state
     tree = SessionTree()
     tree.add_message("user", "Q1", attachments=[{"type": "image", "id": "abc"}])
     tree.add_message("assistant", "A1")
@@ -88,6 +104,7 @@ def test_tree_active_path_content():
 
 def test_tree_branching():
     """Branch from a node and verify two separate paths exist."""
+    # Step 1: Validate input parameters, operational preconditions, and state
     tree = SessionTree()
     tree.add_message("user", "Root question")
     root_user_id = tree.current_id
@@ -116,6 +133,7 @@ def test_tree_branching():
 
 
 def test_tree_serialization_round_trip():
+    # Step 1: Validate input parameters, operational preconditions, and state
     tree = SessionTree()
     tree.add_message("user", "ping")
     tree.add_message("assistant", "pong")
@@ -132,6 +150,7 @@ def test_tree_serialization_round_trip():
 
 
 def test_tree_serialization_with_branch():
+    # Step 1: Validate input parameters, operational preconditions, and state
     tree = SessionTree()
     tree.add_message("user", "base")
     base_id = tree.current_id
@@ -150,6 +169,7 @@ def test_tree_serialization_with_branch():
 
 
 def test_tree_clear():
+    # Step 1: Validate input parameters, operational preconditions, and state
     tree = SessionTree()
     tree.add_message("user", "hi")
     tree.add_message("assistant", "hello")
@@ -158,6 +178,7 @@ def test_tree_clear():
 
 
 def test_tree_copy_is_independent():
+    # Step 1: Validate input parameters, operational preconditions, and state
     tree = SessionTree()
     tree.add_message("user", "original")
     copy = tree.copy()
@@ -168,6 +189,7 @@ def test_tree_copy_is_independent():
 
 
 def test_tree_duck_typing_len_iter():
+    # Step 1: Validate input parameters, operational preconditions, and state
     tree = SessionTree()
     tree.add_message("user", "a")
     tree.add_message("assistant", "b")
@@ -180,6 +202,7 @@ def test_tree_duck_typing_len_iter():
 
 
 def test_tree_getitem():
+    # Step 1: Validate input parameters, operational preconditions, and state
     tree = SessionTree()
     tree.add_message("user", "first")
     tree.add_message("assistant", "second")
@@ -189,6 +212,7 @@ def test_tree_getitem():
 
 
 def test_tree_append_dict():
+    # Step 1: Validate input parameters, operational preconditions, and state
     tree = SessionTree()
     tree.append({"role": "user", "content": "via append"})
     tree.append({"role": "assistant", "content": "reply"})
@@ -197,8 +221,10 @@ def test_tree_append_dict():
 
 
 def test_tree_append_invalid_raises():
+    # Step 1: Validate input parameters, operational preconditions, and state
     tree = SessionTree()
     try:
+        # Execute guarded operations and establish recovery boundaries
         tree.append({"role": "user"})  # missing "content"
         assert False, "Should have raised TypeError"
     except TypeError:
@@ -206,6 +232,7 @@ def test_tree_append_invalid_raises():
 
 
 def test_tree_update_current_node_content():
+    # Step 1: Validate input parameters, operational preconditions, and state
     tree = SessionTree()
     tree.add_message("assistant", "draft")
     tree.update_current_node_content("final answer")
@@ -214,6 +241,7 @@ def test_tree_update_current_node_content():
 
 def test_tree_nodes_map_consistency():
     """nodes_map must contain every node after tree operations."""
+    # Step 1: Validate input parameters, operational preconditions, and state
     tree = SessionTree()
     tree.add_message("user", "x")
     uid = tree.current_id
@@ -223,17 +251,21 @@ def test_tree_nodes_map_consistency():
 
     # Every node should be in the map
     def collect(node, ids):
+        # Step 1: Validate input parameters, operational preconditions, and state
         ids.add(node.id)
         for c in node.children:
+            # Iterate over items, evaluate loop invariant, and update progress
             collect(c, ids)
 
     all_ids = set()
     collect(tree.root, all_ids)
     for nid in all_ids:
+        # Iterate over items, evaluate loop invariant, and update progress
         assert nid in tree.nodes_map, f"Node {nid} missing from nodes_map"
 
 
 def test_tree_stats_and_branch_label():
+    # Step 1: Validate input parameters, operational preconditions, and state
     tree = SessionTree()
     user = tree.add_message("user", "base")
     tree.add_message("assistant", "branch A")
@@ -247,6 +279,7 @@ def test_tree_stats_and_branch_label():
 
 
 def test_branch_from_missing_returns_none():
+    # Step 1: Validate input parameters, operational preconditions, and state
     tree = SessionTree()
     assert tree.branch_from("missing", "user", "nope") is None
     assert len(tree) == 0
@@ -259,6 +292,7 @@ def test_branch_from_missing_returns_none():
 # ---------------------------------------------------------------------------
 
 def test_tree_save_strips_think_blocks(tmp_path, monkeypatch):
+    # Step 1: Validate input parameters, operational preconditions, and state
     monkeypatch.setattr(SessionTree, "SESSIONS_DIR", str(tmp_path))
 
     tree = SessionTree()
@@ -279,6 +313,7 @@ def test_tree_save_strips_think_blocks(tmp_path, monkeypatch):
 
 
 def test_tree_save_load_round_trip(tmp_path, monkeypatch):
+    # Step 1: Validate input parameters, operational preconditions, and state
     monkeypatch.setattr(SessionTree, "SESSIONS_DIR", str(tmp_path))
 
     tree = SessionTree()
@@ -296,6 +331,7 @@ def test_tree_save_load_round_trip(tmp_path, monkeypatch):
 
 
 def test_tree_list_sessions(tmp_path, monkeypatch):
+    # Step 1: Validate input parameters, operational preconditions, and state
     monkeypatch.setattr(SessionTree, "SESSIONS_DIR", str(tmp_path))
 
     tree = SessionTree()

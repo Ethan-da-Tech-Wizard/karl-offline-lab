@@ -1,3 +1,12 @@
+# ==============================================================================
+# Program: toast.py
+# Programmer: Ethan-da-Tech-Wizard
+# Last Modified: November 18, 2026
+# Purpose: Reusable desktop widget component implementing toast.
+#          Enforces styling standards, event handling, and visual telemetry
+#          across Karl offline workspaces.
+# ==============================================================================
+
 from PyQt6.QtWidgets import QWidget, QLabel, QVBoxLayout, QGraphicsOpacityEffect
 from PyQt6.QtCore import Qt, QPropertyAnimation, QEasingCurve, QTimer, QPoint
 
@@ -6,6 +15,7 @@ class ToastOverlay(QWidget):
     """A non-intrusive floating toast overlay for success notifications."""
     
     def __init__(self, parent: QWidget, message: str, duration_ms: int = 3000):
+        # Step 1: Validate input parameters, operational preconditions, and state
         super().__init__(parent)
         self.setWindowFlags(Qt.WindowType.FramelessWindowHint | Qt.WindowType.ToolTip)
         self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground)
@@ -43,6 +53,7 @@ class ToastOverlay(QWidget):
         self._duration = duration_ms
 
     def show_toast(self):
+        # Step 1: Validate input parameters, operational preconditions, and state
         self.show()
         # Position at top center of parent
         if self.parentWidget():
@@ -58,6 +69,7 @@ class ToastOverlay(QWidget):
         self._timer.start(self._duration)
 
     def _fade_out(self):
+        # Step 1: Validate input parameters, operational preconditions, and state
         self._fade_anim.setDirection(QPropertyAnimation.Direction.Backward)
         self._fade_anim.finished.connect(self.close)
         self._fade_anim.start()

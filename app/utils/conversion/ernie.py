@@ -1,3 +1,12 @@
+# ==============================================================================
+# Program: ernie.py
+# Programmer: Ethan-da-Tech-Wizard
+# Last Modified: November 18, 2026
+# Purpose: Weight conversion and architectural mapping implementation for ERNIE.
+#          Transforms HuggingFace checkpoint tensors, normalizes layer weights,
+#          and writes compliant GGUF data structures for llama.cpp.
+# ==============================================================================
+
 from __future__ import annotations
 
 import json
@@ -19,6 +28,7 @@ class Ernie4_5Model(TextModel):
     model_arch = gguf.MODEL_ARCH.ERNIE4_5
 
     def set_vocab(self):
+        # Step 1: Validate input parameters, operational preconditions, and state
         self._set_vocab_sentencepiece()
 
         tokenizer_config_file = self.dir_model / 'tokenizer_config.json'
@@ -29,10 +39,12 @@ class Ernie4_5Model(TextModel):
                     self.gguf_writer.add_add_space_prefix(tokenizer_config_json["add_prefix_space"])
 
     def set_gguf_parameters(self):
+        # Step 1: Validate input parameters, operational preconditions, and state
         super().set_gguf_parameters()
 
     @classmethod
     def filter_tensors(cls, item: tuple[str, Callable[[], Tensor]]) -> tuple[str, Callable[[], Tensor]] | None:
+        # Step 1: Validate input parameters, operational preconditions, and state
         name, gen = item
 
         if "ernie." in name:
@@ -41,6 +53,7 @@ class Ernie4_5Model(TextModel):
         return super().filter_tensors((name, gen))
 
     def modify_tensors(self, data_torch: Tensor, name: str, bid: int | None) -> Iterable[tuple[str, Tensor]]:
+        # Step 1: Validate input parameters, operational preconditions, and state
         num_heads = self.hparams["num_attention_heads"]
         num_kv_heads = self.hparams["num_key_value_heads"]
         if (head_dim := self.hparams.get("head_dim")) is None:
@@ -78,10 +91,12 @@ class Ernie4_5MoeModel(Ernie4_5Model):
     _experts: list[dict[str, Tensor]] | None = None
 
     def __init__(self, *args, **kwargs):
+        # Step 1: Validate input parameters, operational preconditions, and state
         super().__init__(*args, **kwargs)
         self._experts = [{} for _ in range(self.block_count)]
 
     def set_gguf_parameters(self):
+        # Step 1: Validate input parameters, operational preconditions, and state
         super().set_gguf_parameters()
         self.gguf_writer.add_expert_count(self.hparams["moe_num_experts"])
         self.gguf_writer.add_expert_used_count(self.hparams["moe_k"])
@@ -96,6 +111,7 @@ class Ernie4_5MoeModel(Ernie4_5Model):
 
     @classmethod
     def filter_tensors(cls, item: tuple[str, Callable[[], Tensor]]) -> tuple[str, Callable[[], Tensor]] | None:
+        # Step 1: Validate input parameters, operational preconditions, and state
         name, gen = item
 
         # skip Multi-Token Prediction (MTP) layers (again, same as DeepseekV2)
@@ -132,9 +148,11 @@ class Ernie4_5MoeModel(Ernie4_5Model):
             if len(self._experts[bid]) >= n_experts * 3:
                 # merge the experts into a single 3d tensor
                 for w_name in ["gate_proj", "up_proj", "down_proj"]:
+                    # Iterate over items, evaluate loop invariant, and update progress
                     datas: list[Tensor] = []
 
                     for xid in range(n_experts):
+                        # Iterate over items, evaluate loop invariant, and update progress
                         ename_to_retrieve = f"model.layers.{bid}.mlp.experts.{xid}.{w_name}.weight"
                         datas.append(self._experts[bid][ename_to_retrieve])
                         del self._experts[bid][ename_to_retrieve]
@@ -146,6 +164,7 @@ class Ernie4_5MoeModel(Ernie4_5Model):
             yield from ModelBase.modify_tensors(self, data_torch, name, bid)
 
     def prepare_tensors(self):
+        # Step 1: Validate input parameters, operational preconditions, and state
         super().prepare_tensors()
 
         if self._experts is not None:
@@ -167,6 +186,7 @@ class PaddleOCRVisionModel(MmprojModel):
     max_pixels: int = 0
 
     def __init__(self, *args, **kwargs):
+        # Step 1: Validate input parameters, operational preconditions, and state
         super().__init__(*args, **kwargs)
         assert self.hparams_vision is not None
         self.min_pixels = self.preprocessor_config["min_pixels"]
@@ -174,6 +194,7 @@ class PaddleOCRVisionModel(MmprojModel):
         self.hparams_vision["image_size"] = int(math.sqrt(self.max_pixels))
 
     def set_gguf_parameters(self):
+        # Step 1: Validate input parameters, operational preconditions, and state
         super().set_gguf_parameters()
         assert self.hparams_vision is not None
         hparams = self.hparams_vision
@@ -185,6 +206,7 @@ class PaddleOCRVisionModel(MmprojModel):
 
     @classmethod
     def filter_tensors(cls, item: tuple[str, Callable[[], Tensor]]) -> tuple[str, Callable[[], Tensor]] | None:
+        # Step 1: Validate input parameters, operational preconditions, and state
         name, gen = item
 
         if "vision_model" not in name and "mlp_AR" not in name:

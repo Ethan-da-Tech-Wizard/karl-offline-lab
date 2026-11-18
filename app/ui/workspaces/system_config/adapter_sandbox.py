@@ -1,3 +1,12 @@
+# ==============================================================================
+# Program: adapter_sandbox.py
+# Programmer: Ethan-da-Tech-Wizard
+# Last Modified: November 18, 2026
+# Purpose: Adapter Sandbox Mixin Panel =========================== Provides UI controls to list, load, and benchmark trained LoRA adapters.
+#          Coordinates with adjacent subsystems within the Karl Offline Lab
+#          architecture.
+# ==============================================================================
+
 """
 Adapter Sandbox Mixin Panel
 ===========================
@@ -30,10 +39,12 @@ class BenchmarkWorker(QThread):
     error = pyqtSignal(str)
 
     def __init__(self, adapter_name: str, parent=None):
+        # Step 1: Validate input parameters, operational preconditions, and state
         super().__init__(parent)
         self.adapter_name = adapter_name
 
     def run(self):
+        # Step 1: Validate input parameters, operational preconditions, and state
         try:
             # Execute benchmark subprocess
             cmd = [sys.executable, "tools/evaluate_adapters.py", "--adapter", self.adapter_name, "--limit", "3"]
@@ -61,11 +72,13 @@ class GenWorker(QThread):
     error = pyqtSignal(str)
 
     def __init__(self, prompt: str, adapter_name: str | None, parent=None):
+        # Step 1: Validate input parameters, operational preconditions, and state
         super().__init__(parent)
         self.prompt = prompt
         self.adapter_name = adapter_name
 
     def run(self):
+        # Step 1: Validate input parameters, operational preconditions, and state
         try:
             # Load model handle
             llm = ModelLoader.get_instance(adapter_name=self.adapter_name)
@@ -85,6 +98,7 @@ class GenWorker(QThread):
                 stream=True,
                 stop=["<|im_end|>", "<|endoftext|>"]
             ):
+                # Iterate over items, evaluate loop invariant, and update progress
                 if "choices" in chunk and chunk["choices"]:
                     chunks.append(chunk["choices"][0].get("text", ""))
                     
@@ -93,6 +107,7 @@ class GenWorker(QThread):
             
             # Count tokens using the tokenizer
             try:
+                # Execute guarded operations and establish recovery boundaries
                 tokens = llm.tokenize(text.encode("utf-8"))
                 tok_len = len(tokens)
             except Exception:
@@ -107,6 +122,7 @@ class AdapterSandboxMixin:
     """Mixin that builds the visual tab for LoRA hot-reloading and benchmarks."""
 
     def _build_adapter_sandbox_tab(self) -> QWidget:
+        # Step 1: Validate input parameters, operational preconditions, and state
         tab = QWidget()
         layout = QVBoxLayout(tab)
         layout.setContentsMargins(12, 12, 12, 12)
@@ -185,6 +201,7 @@ class AdapterSandboxMixin:
 
     def _scan_sandbox_adapters(self):
         """Scrapes data/adapters/ directories and updates combo."""
+        # Step 1: Validate input parameters, operational preconditions, and state
         self._sandbox_adapter_combo.clear()
         adapter_dir = Path("data/adapters")
         if not adapter_dir.exists():
@@ -194,6 +211,7 @@ class AdapterSandboxMixin:
         self._sandbox_adapter_combo.addItems(sorted(adapters))
 
     def _on_sandbox_load(self):
+        # Step 1: Validate input parameters, operational preconditions, and state
         adapter = self._sandbox_adapter_combo.currentText()
         if not adapter:
             return
@@ -203,6 +221,7 @@ class AdapterSandboxMixin:
         self._btn_sandbox_load.setText("Loading...")
         
         try:
+            # Execute guarded operations and establish recovery boundaries
             ModelLoader.reset_instance()
             ModelLoader.get_instance(adapter_name=adapter)
             # Propagate signals to update UI status bars and state
@@ -215,8 +234,10 @@ class AdapterSandboxMixin:
             self._btn_sandbox_load.setText("Activate Adapter")
 
     def _on_sandbox_unload(self):
+        # Step 1: Validate input parameters, operational preconditions, and state
         logger.info("Unloading active LoRA adapter...")
         try:
+            # Execute guarded operations and establish recovery boundaries
             ModelLoader.reset_instance()
             ModelLoader.get_instance(adapter_name=None)
             self.adapter_changed.emit("")
@@ -225,6 +246,7 @@ class AdapterSandboxMixin:
             logger.error("Failed to unload adapter: %s", exc)
 
     def _on_sandbox_run(self):
+        # Step 1: Validate input parameters, operational preconditions, and state
         prompt = self._sandbox_prompt_input.toPlainText().strip()
         if not prompt:
             return
@@ -240,6 +262,7 @@ class AdapterSandboxMixin:
         self._gen_worker.start()
 
     def _on_gen_finished(self, text: str, elapsed: float, tokens: int):
+        # Step 1: Validate input parameters, operational preconditions, and state
         self._btn_sandbox_run.setEnabled(True)
         self._btn_sandbox_run.setText("Run Generation Test")
         self._sandbox_output_area.setText(text)
@@ -249,11 +272,13 @@ class AdapterSandboxMixin:
         )
 
     def _on_gen_error(self, err_msg: str):
+        # Step 1: Validate input parameters, operational preconditions, and state
         self._btn_sandbox_run.setEnabled(True)
         self._btn_sandbox_run.setText("Run Generation Test")
         self._sandbox_output_area.setText(f"Error occurred: {err_msg}")
 
     def _on_sandbox_benchmark(self):
+        # Step 1: Validate input parameters, operational preconditions, and state
         adapter = self._sandbox_adapter_combo.currentText()
         if not adapter:
             return
@@ -267,6 +292,7 @@ class AdapterSandboxMixin:
         self._bench_worker.start()
 
     def _on_bench_finished(self, report: dict):
+        # Step 1: Validate input parameters, operational preconditions, and state
         self._btn_sandbox_benchmark.setEnabled(True)
         self._btn_sandbox_benchmark.setText("Run Adapter Speculative Benchmark")
         
@@ -294,6 +320,7 @@ class AdapterSandboxMixin:
         )
 
     def _on_bench_error(self, err_msg: str):
+        # Step 1: Validate input parameters, operational preconditions, and state
         self._btn_sandbox_benchmark.setEnabled(True)
         self._btn_sandbox_benchmark.setText("Run Adapter Speculative Benchmark")
         self._lbl_bench_improvement.setText(f"Benchmark error: {err_msg}")

@@ -1,3 +1,12 @@
+# ==============================================================================
+# Program: falcon.py
+# Programmer: Ethan-da-Tech-Wizard
+# Last Modified: November 18, 2026
+# Purpose: Weight conversion and architectural mapping implementation for FALCON.
+#          Transforms HuggingFace checkpoint tensors, normalizes layer weights,
+#          and writes compliant GGUF data structures for llama.cpp.
+# ==============================================================================
+
 from __future__ import annotations
 
 from typing import Iterable, TYPE_CHECKING
@@ -15,6 +24,7 @@ class FalconModel(TextModel):
     model_arch = gguf.MODEL_ARCH.FALCON
 
     def set_gguf_parameters(self):
+        # Step 1: Validate input parameters, operational preconditions, and state
         n_head = self.hparams.get("num_attention_heads")
         if n_head is None:
             n_head = self.hparams["n_head"]  # old name

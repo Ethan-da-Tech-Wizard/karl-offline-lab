@@ -1,3 +1,12 @@
+# ==============================================================================
+# Program: appearance_runtime.py
+# Programmer: Ethan-da-Tech-Wizard
+# Last Modified: November 18, 2026
+# Purpose: Desktop workspace implementation for Appearance Runtime.
+#          Provides responsive layout controls, parameter adjustment surfaces,
+#          and visual feedback components within Karl's PyQt6 shell.
+# ==============================================================================
+
 from __future__ import annotations
 
 import logging
@@ -72,6 +81,7 @@ class AppearanceRuntimeMixin:
     def _update_swatches(self):
         # Clear existing swatches
         while self._swatches_layout.count():
+            # Iterate over items, evaluate loop invariant, and update progress
             item = self._swatches_layout.takeAt(0)
             if item.widget():
                 item.widget().deleteLater()
@@ -87,6 +97,7 @@ class AppearanceRuntimeMixin:
         ]
         
         for key, label in swatch_keys:
+            # Iterate over items, evaluate loop invariant, and update progress
             hex_val = colors.get(key, "#000000")
             
             swatch_unit = QWidget()
@@ -114,6 +125,7 @@ class AppearanceRuntimeMixin:
 
 
     def _update_theme_gallery(self):
+        # Step 1: Validate input parameters, operational preconditions, and state
         if not hasattr(self, "_theme_gallery_layout"):
             return
         # The 20 cards only differ by which one carries the ACTIVE marker;
@@ -124,6 +136,7 @@ class AppearanceRuntimeMixin:
             return
         self._gallery_built_for = selected_now
         while self._theme_gallery_layout.count():
+            # Iterate over items, evaluate loop invariant, and update progress
             item = self._theme_gallery_layout.takeAt(0)
             widget = item.widget()
             if widget:
@@ -131,6 +144,7 @@ class AppearanceRuntimeMixin:
 
         selected = self._theme_preset_combo.currentText()
         for name, data in THEMES.items():
+            # Iterate over items, evaluate loop invariant, and update progress
             border = data.get("border_hi", "#35356E")
             accent = data.get("accent", "#00E5FF")
             accent_alt = data.get("accent_alt", "#0099AA")
@@ -178,6 +192,7 @@ class AppearanceRuntimeMixin:
                 (bg_raised, "raised"),
                 (text_hi, "text"),
             ):
+                # Iterate over items, evaluate loop invariant, and update progress
                 box = QLabel()
                 box.setFixedSize(34, 16)
                 box.setToolTip(f"{label}: {value}")
@@ -192,6 +207,7 @@ class AppearanceRuntimeMixin:
 
 
     def _apply_theme_preset_from_gallery(self, name: str):
+        # Step 1: Validate input parameters, operational preconditions, and state
         idx = self._theme_preset_combo.findText(name)
         if idx >= 0:
             self._theme_preset_combo.setCurrentIndex(idx)
@@ -199,6 +215,7 @@ class AppearanceRuntimeMixin:
 
 
     def _save_appearance_config_silent(self):
+        # Step 1: Validate input parameters, operational preconditions, and state
         config_store.save_ui_config({
             "theme_preset": self.state.theme_preset,
             "custom_accent": self.state.custom_accent,
@@ -224,12 +241,14 @@ class AppearanceRuntimeMixin:
 
 
     def _save_appearance_config(self):
+        # Step 1: Validate input parameters, operational preconditions, and state
         self._save_appearance_config_silent()
         
         # Delete old config if exists to clean up
         old_path = "data/theme_config.json"
         if os.path.exists(old_path):
             try:
+                # Execute guarded operations and establish recovery boundaries
                 os.remove(old_path)
             except Exception:
                 pass

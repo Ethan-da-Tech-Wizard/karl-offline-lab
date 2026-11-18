@@ -1,3 +1,12 @@
+# ==============================================================================
+# Program: image_analysis_thread.py
+# Programmer: Ethan-da-Tech-Wizard
+# Last Modified: November 18, 2026
+# Purpose: Background worker thread managing vision and multimodal inference.
+#          Processes images, generates embeddings, performs OCR analysis, and
+#          returns structured findings to the UI.
+# ==============================================================================
+
 from __future__ import annotations
 
 from PyQt6.QtCore import QThread, pyqtSignal
@@ -22,6 +31,7 @@ class ImageAnalysisThread(QThread):
         prompt: str | None = None,
         parent=None,
     ):
+        # Step 1: Validate input parameters, operational preconditions, and state
         super().__init__(parent)
         self.image_store = image_store
         self.image_id = image_id
@@ -30,7 +40,9 @@ class ImageAnalysisThread(QThread):
         self.prompt = prompt
 
     def run(self):
+        # Step 1: Validate input parameters, operational preconditions, and state
         try:
+            # Execute guarded operations and establish recovery boundaries
             record = self.image_store.get(self.image_id)
             image_path = record.processed_path or record.original_path
 

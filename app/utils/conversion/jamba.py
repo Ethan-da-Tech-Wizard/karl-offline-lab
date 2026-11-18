@@ -1,3 +1,12 @@
+# ==============================================================================
+# Program: jamba.py
+# Programmer: Ethan-da-Tech-Wizard
+# Last Modified: November 18, 2026
+# Purpose: Weight conversion and architectural mapping implementation for JAMBA.
+#          Transforms HuggingFace checkpoint tensors, normalizes layer weights,
+#          and writes compliant GGUF data structures for llama.cpp.
+# ==============================================================================
+
 from __future__ import annotations
 
 from typing import Iterable, TYPE_CHECKING
@@ -15,6 +24,7 @@ class JambaModel(TextModel):
     model_arch = gguf.MODEL_ARCH.JAMBA
 
     def set_vocab(self):
+        # Step 1: Validate input parameters, operational preconditions, and state
         if (self.dir_model / "tokenizer.model").is_file():
             self._set_vocab_sentencepiece()
         else:
@@ -22,6 +32,7 @@ class JambaModel(TextModel):
             self.gguf_writer.add_add_space_prefix(False)
 
     def set_gguf_parameters(self):
+        # Step 1: Validate input parameters, operational preconditions, and state
         d_model = self.find_hparam(["hidden_size", "mamba_d_model"])
         d_conv  = self.find_hparam(["mamba_d_conv"],  optional=True) or 4
         d_inner = self.hparams["mamba_expand"] * d_model
@@ -81,9 +92,11 @@ class JambaModel(TextModel):
 
                 # merge the experts into a single 3d tensor
                 for wid in ["down_proj", "gate_proj", "up_proj"]:
+                    # Iterate over items, evaluate loop invariant, and update progress
                     datas: list[Tensor] = []
 
                     for xid in range(n_experts):
+                        # Iterate over items, evaluate loop invariant, and update progress
                         ename = f"model.layers.{bid}.feed_forward.experts.{xid}.{wid}.weight"
                         datas.append(self._experts[bid][ename])
                         del self._experts[bid][ename]
@@ -110,6 +123,7 @@ class JambaModel(TextModel):
         yield (new_name, data_torch)
 
     def prepare_tensors(self):
+        # Step 1: Validate input parameters, operational preconditions, and state
         super().prepare_tensors()
 
         if self._experts is not None:

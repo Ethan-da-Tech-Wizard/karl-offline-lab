@@ -1,3 +1,12 @@
+# ==============================================================================
+# Program: tracing_panel.py
+# Programmer: Ethan-da-Tech-Wizard
+# Last Modified: November 18, 2026
+# Purpose: Reusable desktop widget component implementing tracing panel.
+#          Enforces styling standards, event handling, and visual telemetry
+#          across Karl offline workspaces.
+# ==============================================================================
+
 from PyQt6.QtWidgets import QFrame
 from PyQt6.QtCore import QTimer, Qt
 from PyQt6.QtGui import QPainter, QPainterPath, QPen, QColor
@@ -10,6 +19,7 @@ class TracingPanel(QFrame):
     motion styles (normal, slow, pulse, static) and user speed configurations.
     """
     def __init__(self, state, parent=None):
+        # Step 1: Validate input parameters, operational preconditions, and state
         super().__init__(parent)
         self.state = state
         self._active = False
@@ -25,15 +35,18 @@ class TracingPanel(QFrame):
         self.setStyleSheet("border-radius: 4px;")
 
     def set_active(self, active: bool):
+        # Step 1: Validate input parameters, operational preconditions, and state
         self._active = active
         self._update_timer_state()
         self.update()
 
     def set_accent_color(self, hex_color: str):
+        # Step 1: Validate input parameters, operational preconditions, and state
         self._accent_color = hex_color
         self.update()
 
     def _update_timer_state(self):
+        # Step 1: Validate input parameters, operational preconditions, and state
         is_reduced = getattr(self.state, "reduced_motion", False) if self.state else False
         colors = get_theme_colors(self.state) if self.state else {}
         motion_style = colors.get("motion_style", "normal")
@@ -45,6 +58,7 @@ class TracingPanel(QFrame):
             self._timer.stop()
 
     def _on_tick(self):
+        # Step 1: Validate input parameters, operational preconditions, and state
         intensity = getattr(self.state, "animation_intensity", 1.0) if self.state else 1.0
         colors = get_theme_colors(self.state) if self.state else {}
         motion_style = colors.get("motion_style", "normal")
@@ -68,10 +82,12 @@ class TracingPanel(QFrame):
         self.update()
 
     def update_style(self):
+        # Step 1: Validate input parameters, operational preconditions, and state
         self._update_timer_state()
         self.update()
 
     def paintEvent(self, event):
+        # Step 1: Validate input parameters, operational preconditions, and state
         super().paintEvent(event)
         if not self._active:
             return

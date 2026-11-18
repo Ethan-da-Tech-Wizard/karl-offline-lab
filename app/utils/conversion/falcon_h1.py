@@ -1,3 +1,12 @@
+# ==============================================================================
+# Program: falcon_h1.py
+# Programmer: Ethan-da-Tech-Wizard
+# Last Modified: November 18, 2026
+# Purpose: Weight conversion and architectural mapping implementation for FALCON_H1.
+#          Transforms HuggingFace checkpoint tensors, normalizes layer weights,
+#          and writes compliant GGUF data structures for llama.cpp.
+# ==============================================================================
+
 from __future__ import annotations
 
 from typing import Any, Iterable, TYPE_CHECKING
@@ -44,8 +53,10 @@ class FalconH1Model(Mamba2Model):
         self.key_multiplier = self.find_hparam(["key_multiplier"], optional=True)
 
     def find_hparam(self, keys: Iterable[str], *args, **kwargs) -> Any:
+        # Step 1: Validate input parameters, operational preconditions, and state
         prefixed = []
         for pfx in self.hparam_prefixes:
+            # Iterate over items, evaluate loop invariant, and update progress
             prefixed.extend(
                 "_".join([pfx, k])
                 for k in keys
@@ -54,9 +65,11 @@ class FalconH1Model(Mamba2Model):
         return super().find_hparam(keys, *args, **kwargs)
 
     def set_vocab(self):
+        # Step 1: Validate input parameters, operational preconditions, and state
         self._set_vocab_gpt2()
 
     def modify_tensors(self, data_torch: Tensor, name: str, bid: int | None) -> Iterable[tuple[str, Tensor]]:
+        # Step 1: Validate input parameters, operational preconditions, and state
         tensors = list(super().modify_tensors(data_torch, name, bid))
         tensor = tensors[0][1]
 
@@ -95,6 +108,7 @@ class FalconH1Model(Mamba2Model):
         return tensors
 
     def set_gguf_parameters(self):
+        # Step 1: Validate input parameters, operational preconditions, and state
         super().set_gguf_parameters()
 
         ## General Params ##

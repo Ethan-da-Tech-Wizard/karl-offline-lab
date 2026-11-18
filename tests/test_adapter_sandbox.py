@@ -1,3 +1,12 @@
+# ==============================================================================
+# Program: test_adapter_sandbox.py
+# Programmer: Ethan-da-Tech-Wizard
+# Last Modified: November 18, 2026
+# Purpose: Unit Tests for Adapter Sandbox & Speculative Evaluation ========================================================= Verifies evaluate_model_performance and visual PyQt6 sandbox components.
+#          Coordinates with adjacent subsystems within the Karl Offline Lab
+#          architecture.
+# ==============================================================================
+
 """
 Unit Tests for Adapter Sandbox & Speculative Evaluation
 =========================================================
@@ -25,6 +34,7 @@ class TestAdapterSandbox(unittest.TestCase):
         cls.app = QApplication.instance() or QApplication([])
 
     def test_extract_code_block(self):
+        # Step 1: Validate input parameters, operational preconditions, and state
         text_with_fences = "Some thought\n```python\nprint('hello')\n```\nSome footer"
         self.assertEqual(extract_code_block(text_with_fences), "print('hello')")
         
@@ -34,6 +44,7 @@ class TestAdapterSandbox(unittest.TestCase):
     @patch("app.engine.model_loader.ModelLoader.get_instance")
     @patch("app.engine.model_loader.ModelLoader.reset_instance")
     def test_evaluate_model_performance_tps(self, mock_reset, mock_get_instance):
+        # Step 1: Validate input parameters, operational preconditions, and state
         mock_llm = MagicMock()
         mock_llm.return_value = [{"choices": [{"text": "```python\ndef add(a, b): return a + b\n```"}]}]
         mock_llm.tokenize.return_value = [1, 2, 3, 4, 5]
@@ -48,6 +59,7 @@ class TestAdapterSandbox(unittest.TestCase):
 
     @patch("subprocess.run")
     def test_benchmark_worker_success(self, mock_run):
+        # Step 1: Validate input parameters, operational preconditions, and state
         mock_run.return_value = MagicMock(returncode=0)
         
         # Mock writing of report file
@@ -65,6 +77,7 @@ class TestAdapterSandbox(unittest.TestCase):
             json.dump(report_data, fh)
             
         try:
+            # Execute guarded operations and establish recovery boundaries
             worker = BenchmarkWorker("math_adapter")
             
             # Setup signal handlers
@@ -82,6 +95,7 @@ class TestAdapterSandbox(unittest.TestCase):
 
     @patch("app.engine.model_loader.ModelLoader.get_instance")
     def test_gen_worker_tps(self, mock_get_instance):
+        # Step 1: Validate input parameters, operational preconditions, and state
         mock_llm = MagicMock()
         mock_llm.return_value = [{"choices": [{"text": "print('speed test')"}]}]
         mock_llm.tokenize.return_value = [1, 2, 3]

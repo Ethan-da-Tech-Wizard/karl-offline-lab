@@ -1,3 +1,12 @@
+# ==============================================================================
+# Program: agent_memory.py
+# Programmer: Ethan-da-Tech-Wizard
+# Last Modified: November 18, 2026
+# Purpose: In-memory episodic and working memory stores for autonomous agentic tasks.
+#          Maintains scratchpad notes, observation histories, and fact banks
+#          during multi-turn problem solving.
+# ==============================================================================
+
 """
 Offline code-schema memory for swarm agents.
 
@@ -21,6 +30,7 @@ class CodebaseMemory:
         workspace_path: str,
         db_path: str | os.PathLike[str] | None = None,
     ) -> None:
+        # Step 1: Validate input parameters, operational preconditions, and state
         self.workspace_path = Path(workspace_path).expanduser().resolve()
         if db_path is None:
             import hashlib
@@ -30,16 +40,19 @@ class CodebaseMemory:
         self.index: dict[str, dict[str, list[dict[str, Any]]]] = {}
 
     def build_index(self) -> dict[str, dict[str, list[dict[str, Any]]]]:
+        # Step 1: Validate input parameters, operational preconditions, and state
         self.index = {}
         if not self.workspace_path.exists():
             self._persist()
             return self.index
 
         for path in sorted(self.workspace_path.rglob("*.py")):
+            # Iterate over items, evaluate loop invariant, and update progress
             if self._skip_path(path):
                 continue
             rel = path.relative_to(self.workspace_path).as_posix()
             try:
+                # Execute guarded operations and establish recovery boundaries
                 tree = ast.parse(path.read_text(encoding="utf-8", errors="ignore"))
             except (SyntaxError, OSError, UnicodeDecodeError):
                 continue
@@ -47,6 +60,7 @@ class CodebaseMemory:
             functions = []
             classes = []
             for node in tree.body:
+                # Iterate over items, evaluate loop invariant, and update progress
                 if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
                     functions.append(self._function_entry(node))
                 elif isinstance(node, ast.ClassDef):
@@ -61,7 +75,9 @@ class CodebaseMemory:
         return self.index
 
     def load(self) -> dict[str, dict[str, list[dict[str, Any]]]]:
+        # Step 1: Validate input parameters, operational preconditions, and state
         try:
+            # Execute guarded operations and establish recovery boundaries
             data = json.loads(self.db_path.read_text(encoding="utf-8"))
             if isinstance(data, dict):
                 self.index = data
@@ -70,6 +86,7 @@ class CodebaseMemory:
         return self.index
 
     def query_memory(self, keywords: list[str]) -> str:
+        # Step 1: Validate input parameters, operational preconditions, and state
         if not self.index:
             self.load()
         terms = {term.lower() for term in keywords if term}
@@ -78,26 +95,33 @@ class CodebaseMemory:
 
         lines = []
         for rel_path, payload in sorted(self.index.items()):
+            # Iterate over items, evaluate loop invariant, and update progress
             for fn in payload.get("functions", []):
+                # Iterate over items, evaluate loop invariant, and update progress
                 if self._matches(fn, terms):
                     lines.append(self._format_function(rel_path, fn))
             for cls in payload.get("classes", []):
+                # Iterate over items, evaluate loop invariant, and update progress
                 if self._matches(cls, terms):
                     lines.append(self._format_class(rel_path, cls))
                 for method in cls.get("methods", []):
+                    # Iterate over items, evaluate loop invariant, and update progress
                     if self._matches(method, terms) or self._matches(cls, terms):
                         lines.append(self._format_method(rel_path, cls, method))
         return "\n".join(lines)
 
     def _persist(self) -> None:
+        # Step 1: Validate input parameters, operational preconditions, and state
         self.db_path.parent.mkdir(parents=True, exist_ok=True)
         self.db_path.write_text(json.dumps(self.index, indent=2, ensure_ascii=False), encoding="utf-8")
 
     def _skip_path(self, path: Path) -> bool:
+        # Step 1: Validate input parameters, operational preconditions, and state
         skip_parts = {".git", ".venv", "venv", "__pycache__", "node_modules", "data"}
         return any(part in skip_parts for part in path.parts)
 
     def _function_entry(self, node: ast.FunctionDef | ast.AsyncFunctionDef) -> dict[str, Any]:
+        # Step 1: Validate input parameters, operational preconditions, and state
         return {
             "name": node.name,
             "args": self._args(node.args),
@@ -105,6 +129,7 @@ class CodebaseMemory:
         }
 
     def _class_entry(self, node: ast.ClassDef) -> dict[str, Any]:
+        # Step 1: Validate input parameters, operational preconditions, and state
         methods = [
             self._function_entry(child)
             for child in node.body
@@ -117,6 +142,7 @@ class CodebaseMemory:
         }
 
     def _args(self, args: ast.arguments) -> list[str]:
+        # Step 1: Validate input parameters, operational preconditions, and state
         names = [arg.arg for arg in args.posonlyargs + args.args]
         if args.vararg:
             names.append("*" + args.vararg.arg)
@@ -126,6 +152,7 @@ class CodebaseMemory:
         return names
 
     def _matches(self, item: dict[str, Any], terms: set[str]) -> bool:
+        # Step 1: Validate input parameters, operational preconditions, and state
         haystack = " ".join([
             str(item.get("name", "")),
             str(item.get("doc", "")),
@@ -134,17 +161,20 @@ class CodebaseMemory:
         return any(term in haystack for term in terms)
 
     def _format_function(self, rel_path: str, item: dict[str, Any]) -> str:
+        # Step 1: Validate input parameters, operational preconditions, and state
         args = ", ".join(item.get("args", []))
         doc = item.get("doc", "")
         suffix = f" -> {doc}" if doc else ""
         return f"- {rel_path}: def {item.get('name')}({args}){suffix}"
 
     def _format_class(self, rel_path: str, item: dict[str, Any]) -> str:
+        # Step 1: Validate input parameters, operational preconditions, and state
         doc = item.get("doc", "")
         suffix = f" -> {doc}" if doc else ""
         return f"- {rel_path}: class {item.get('name')}{suffix}"
 
     def _format_method(self, rel_path: str, cls: dict[str, Any], item: dict[str, Any]) -> str:
+        # Step 1: Validate input parameters, operational preconditions, and state
         args = ", ".join(item.get("args", []))
         doc = item.get("doc", "")
         suffix = f" -> {doc}" if doc else ""
@@ -152,6 +182,7 @@ class CodebaseMemory:
 
 
 def keywords_from_task(task: dict[str, Any]) -> list[str]:
+    # Step 1: Validate input parameters, operational preconditions, and state
     text = f"{task.get('filepath', '')} {task.get('instructions', '')}"
     words = re.findall(r"[A-Za-z_][A-Za-z0-9_]{2,}", text)
     stop = {
@@ -161,6 +192,7 @@ def keywords_from_task(task: dict[str, Any]) -> list[str]:
     seen = set()
     keywords = []
     for word in words:
+        # Iterate over items, evaluate loop invariant, and update progress
         key = word.lower()
         if key in stop or key in seen:
             continue

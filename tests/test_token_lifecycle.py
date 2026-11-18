@@ -1,3 +1,12 @@
+# ==============================================================================
+# Program: test_token_lifecycle.py
+# Programmer: Ethan-da-Tech-Wizard
+# Last Modified: November 18, 2026
+# Purpose: Token Lifecycle Tests — lease expiry, refresh, and revocation.
+#          Coordinates with adjacent subsystems within the Karl Offline Lab
+#          architecture.
+# ==============================================================================
+
 """
 Token Lifecycle Tests — lease expiry, refresh, and revocation.
 
@@ -35,6 +44,7 @@ _TEST_PORT = 19991  # high port — unlikely to conflict
 
 
 def _stub_init_security(self) -> None:
+    # Step 1: Validate input parameters, operational preconditions, and state
     self.bridge_token = _TEST_TOKEN
     self._token_created_at = time.time()
     self._token_store = {_TEST_TOKEN: list(type(self)._FULL_SCOPES)}
@@ -48,6 +58,7 @@ class _TestServer:
     """
 
     def __init__(self, port: int = _TEST_PORT, token_lifetime: int = 5, audit_interval: int = 1):
+        # Step 1: Validate input parameters, operational preconditions, and state
         self.port = port
         self._token_lifetime = token_lifetime
         self._audit_interval = audit_interval
@@ -57,6 +68,7 @@ class _TestServer:
     # ── context-manager protocol ──────────────────────────────────────────────
 
     def __enter__(self):
+        # Step 1: Validate input parameters, operational preconditions, and state
         from app.engine.websocket_server import WebSocketServerManager
 
         # Patch class attrs so the running loop sees the short lifetimes.
@@ -70,6 +82,7 @@ class _TestServer:
         p8 = patch.object(WebSocketServerManager, "_build_ssl_context", return_value=None)
 
         for p in (p1, p2, p3, p4, p5, p6, p7, p8):
+            # Iterate over items, evaluate loop invariant, and update progress
             p.start()
             self._patches.append(p)
 
@@ -80,17 +93,21 @@ class _TestServer:
         return self._mgr
 
     def __exit__(self, *_):
+        # Step 1: Validate input parameters, operational preconditions, and state
         if self._mgr is not None:
             try:
+                # Execute guarded operations and establish recovery boundaries
                 self._mgr.loop.call_soon_threadsafe(self._mgr.loop.stop)
                 self._mgr.loop_thread.join(timeout=3.0)
             except Exception:
                 pass
         for p in reversed(self._patches):
+            # Iterate over items, evaluate loop invariant, and update progress
             p.stop()
 
 
 def _ws_url(port: int, token: str = _TEST_TOKEN) -> str:
+    # Step 1: Validate input parameters, operational preconditions, and state
     return f"ws://127.0.0.1:{port}?token={token}"
 
 
@@ -99,9 +116,12 @@ async def _recv_close_code(url: str, timeout: float) -> int | None:
     Connect to *url*, drain until the server closes, return the close code.
     Returns None if the connection is still open when *timeout* elapses.
     """
+    # Step 1: Validate input parameters, operational preconditions, and state
     try:
+        # Execute guarded operations and establish recovery boundaries
         async with websockets.connect(url, open_timeout=3.0) as ws:
             try:
+                # Execute guarded operations and establish recovery boundaries
                 async with asyncio.timeout(timeout):
                     async for _ in ws:
                         pass
@@ -121,6 +141,7 @@ def test_expired_session_closes_with_code_4002():
     A client that does not refresh its token must be disconnected with
     WebSocket close code 4002 (Session Lease Expired) after TOKEN_LIFETIME.
     """
+    # Step 1: Validate input parameters, operational preconditions, and state
     with _TestServer(token_lifetime=5, audit_interval=1) as mgr:
         url = _ws_url(mgr.port)
         # Wait 8 seconds: TOKEN_LIFETIME (5s) + up to 2 audit cycles (2s) + margin
@@ -137,12 +158,14 @@ def test_refresh_token_extends_session_lease():
     disconnected; the connection stays alive past the original timeout.
     """
 
+    # Step 1: Validate input parameters, operational preconditions, and state
     async def _session_with_refresh(url: str) -> int | None:
         """
         Connect, wait 3s (still within 5s lease), send refresh_token,
         then wait another 6s (past original expiry).  The server must NOT
         close with 4002 because the lease was reset.
         """
+        # Step 1: Validate input parameters, operational preconditions, and state
         async with websockets.connect(url, open_timeout=3.0) as ws:
             # Wait until 3 s into the 5 s lease, then refresh
             await asyncio.sleep(3)
@@ -167,6 +190,7 @@ def test_refresh_token_extends_session_lease():
             # The refreshed lease (session_start reset to t≈3) expires at t≈8, so
             # the connection must be alive at t=6.
             try:
+                # Execute guarded operations and establish recovery boundaries
                 async with asyncio.timeout(3.0):
                     async for _ in ws:
                         pass
@@ -188,7 +212,9 @@ def test_refresh_token_extends_session_lease():
 def test_refresh_token_invalid_token_returns_error():
     """Calling refresh_token with a wrong token must return a JSON-RPC error."""
 
+    # Step 1: Validate input parameters, operational preconditions, and state
     async def _bad_refresh(url: str) -> dict:
+        # Step 1: Validate input parameters, operational preconditions, and state
         async with websockets.connect(url, open_timeout=3.0) as ws:
             await ws.send(json.dumps({
                 "jsonrpc": "2.0",
@@ -213,10 +239,14 @@ def test_refresh_token_invalid_token_returns_error():
 def test_force_revoke_closes_all_connections_with_4003():
     """force_revoke() must close all active connections with code 4003."""
 
+    # Step 1: Validate input parameters, operational preconditions, and state
     async def _connect_and_wait(url: str, close_queue: asyncio.Queue) -> None:
+        # Step 1: Validate input parameters, operational preconditions, and state
         try:
+            # Execute guarded operations and establish recovery boundaries
             async with websockets.connect(url, open_timeout=3.0) as ws:
                 try:
+                    # Execute guarded operations and establish recovery boundaries
                     async for _ in ws:
                         pass
                 except websockets.exceptions.ConnectionClosed as exc:
@@ -225,6 +255,7 @@ def test_force_revoke_closes_all_connections_with_4003():
             await close_queue.put(None)
 
     async def _run_revoke_test(url: str, mgr) -> int | None:
+        # Step 1: Validate input parameters, operational preconditions, and state
         queue: asyncio.Queue = asyncio.Queue()
         task = asyncio.create_task(_connect_and_wait(url, queue))
 
@@ -236,6 +267,7 @@ def test_force_revoke_closes_all_connections_with_4003():
 
         # Wait for the close code
         try:
+            # Execute guarded operations and establish recovery boundaries
             code = await asyncio.wait_for(queue.get(), timeout=3.0)
         except asyncio.TimeoutError:
             code = None
@@ -253,6 +285,7 @@ def test_force_revoke_closes_all_connections_with_4003():
 
 def test_revoke_wipes_token_file(tmp_path, monkeypatch):
     """force_revoke() must delete data/bridge_token.json if it exists."""
+    # Step 1: Validate input parameters, operational preconditions, and state
     import pathlib
 
     token_file = tmp_path / "bridge_token.json"

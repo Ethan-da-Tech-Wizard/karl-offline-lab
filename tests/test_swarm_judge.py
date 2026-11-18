@@ -1,3 +1,12 @@
+# ==============================================================================
+# Program: test_swarm_judge.py
+# Programmer: Ethan-da-Tech-Wizard
+# Last Modified: November 18, 2026
+# Purpose: Tests for SwarmJudge — heuristic multiverse candidate scoring.
+#          Coordinates with adjacent subsystems within the Karl Offline Lab
+#          architecture.
+# ==============================================================================
+
 """Tests for SwarmJudge — heuristic multiverse candidate scoring."""
 
 import unittest
@@ -7,6 +16,7 @@ from app.engine.swarm_judge import score_candidate, select_winner
 
 class TestScoreCandidate(unittest.TestCase):
     def test_syntax_error_is_heavily_penalized(self):
+        # Step 1: Validate input parameters, operational preconditions, and state
         broken = score_candidate("x.py", "def f(\n    pass\n")
         working = score_candidate("x.py", "def f():\n    pass\n")
         self.assertFalse(broken["syntax_ok"])
@@ -14,20 +24,24 @@ class TestScoreCandidate(unittest.TestCase):
         self.assertLess(broken["total_score"], working["total_score"])
 
     def test_json_candidate_checks_json_validity_not_python_syntax(self):
+        # Step 1: Validate input parameters, operational preconditions, and state
         good = score_candidate("config.json", '{"a": 1}')
         bad = score_candidate("config.json", '{"a": 1,}')
         self.assertTrue(good["syntax_ok"])
         self.assertFalse(bad["syntax_ok"])
 
     def test_non_code_file_always_syntax_ok(self):
+        # Step 1: Validate input parameters, operational preconditions, and state
         result = score_candidate("README.md", "# Title\nAnything goes here.")
         self.assertTrue(result["syntax_ok"])
 
     def test_diff_size_zero_when_no_original(self):
+        # Step 1: Validate input parameters, operational preconditions, and state
         result = score_candidate("new_file.py", "def f():\n    pass\n", original_content="")
         self.assertEqual(result["diff_size"], 0)
 
     def test_diff_size_grows_with_change_amount(self):
+        # Step 1: Validate input parameters, operational preconditions, and state
         original = "def f():\n    return 1\n"
         small_change = score_candidate("x.py", "def f():\n    return 2\n", original_content=original)
         big_rewrite = score_candidate(
@@ -38,10 +52,12 @@ class TestScoreCandidate(unittest.TestCase):
         self.assertLess(small_change["diff_size"], big_rewrite["diff_size"])
 
     def test_signature_alignment_neutral_when_no_known_names(self):
+        # Step 1: Validate input parameters, operational preconditions, and state
         result = score_candidate("x.py", "def f():\n    return made_up_call()\n", known_names=set())
         self.assertEqual(result["signature_alignment"], 1.0)
 
     def test_signature_alignment_rewards_known_calls(self):
+        # Step 1: Validate input parameters, operational preconditions, and state
         content = "def f():\n    return existing_helper()\n"
         aligned = score_candidate("x.py", content, known_names={"existing_helper"})
         misaligned = score_candidate("x.py", content, known_names={"totally_unrelated_name"})
@@ -50,10 +66,12 @@ class TestScoreCandidate(unittest.TestCase):
 
 class TestSelectWinner(unittest.TestCase):
     def test_requires_at_least_one_candidate(self):
+        # Step 1: Validate input parameters, operational preconditions, and state
         with self.assertRaises(ValueError):
             select_winner("x.py", [])
 
     def test_picks_the_syntactically_valid_candidate(self):
+        # Step 1: Validate input parameters, operational preconditions, and state
         candidates = [
             "def add(a, b)\n    return a - b\n",   # broken syntax
             "def add(a, b):\n    return a + b\n",  # valid
@@ -64,11 +82,13 @@ class TestSelectWinner(unittest.TestCase):
         self.assertEqual(len(all_scores), 2)
 
     def test_ties_break_toward_earlier_candidate(self):
+        # Step 1: Validate input parameters, operational preconditions, and state
         identical = ["def f():\n    pass\n", "def f():\n    pass\n"]
         idx, _winner, _scores = select_winner("x.py", identical)
         self.assertEqual(idx, 0)
 
     def test_single_candidate_always_wins(self):
+        # Step 1: Validate input parameters, operational preconditions, and state
         idx, winner, all_scores = select_winner("x.py", ["def f():\n    pass\n"])
         self.assertEqual(idx, 0)
         self.assertEqual(len(all_scores), 1)

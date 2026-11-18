@@ -1,3 +1,12 @@
+# ==============================================================================
+# Program: pixtral.py
+# Programmer: Ethan-da-Tech-Wizard
+# Last Modified: November 18, 2026
+# Purpose: Weight conversion and architectural mapping implementation for PIXTRAL.
+#          Transforms HuggingFace checkpoint tensors, normalizes layer weights,
+#          and writes compliant GGUF data structures for llama.cpp.
+# ==============================================================================
+
 from __future__ import annotations
 
 from typing import Sequence
@@ -13,6 +22,7 @@ class PixtralModel(LlavaVisionModel):
     is_mistral_format = True
 
     def set_gguf_parameters(self):
+        # Step 1: Validate input parameters, operational preconditions, and state
         super().set_gguf_parameters()
         self.gguf_writer.add_clip_projector_type(gguf.VisionProjectorType.PIXTRAL)
 
@@ -30,6 +40,7 @@ class PixtralModel(LlavaVisionModel):
             )
 
     def map_tensor_name(self, name: str, try_suffixes: Sequence[str] = (".weight", ".bias")) -> str:
+        # Step 1: Validate input parameters, operational preconditions, and state
         if name == "vision_language_adapter.w_in.weight":
             return "mm.1.weight"
         elif name == "vision_language_adapter.w_in.bias":

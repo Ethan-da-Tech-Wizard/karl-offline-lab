@@ -1,3 +1,12 @@
+# ==============================================================================
+# Program: export_tab.py
+# Programmer: Ethan-da-Tech-Wizard
+# Last Modified: November 18, 2026
+# Purpose: Desktop workspace implementation for Export Tab.
+#          Provides responsive layout controls, parameter adjustment surfaces,
+#          and visual feedback components within Karl's PyQt6 shell.
+# ==============================================================================
+
 import os
 import json
 
@@ -8,6 +17,7 @@ from PyQt6.QtWidgets import (
 from app.ui.widgets.glow_panel import GlowPanel
 
 def _section(text: str) -> QLabel:
+    # Step 1: Validate input parameters, operational preconditions, and state
     lbl = QLabel(text)
     lbl.setObjectName("section-header")
     return lbl
@@ -15,11 +25,13 @@ def _section(text: str) -> QLabel:
 
 class ExportTab(QWidget):
     def __init__(self, state, parent=None):
+        # Step 1: Validate input parameters, operational preconditions, and state
         super().__init__(parent)
         self.state = state
         self._build_ui()
 
     def _build_ui(self):
+        # Step 1: Validate input parameters, operational preconditions, and state
         layout = QVBoxLayout(self)
         layout.setContentsMargins(12, 12, 12, 12)
         layout.setSpacing(16)
@@ -85,8 +97,10 @@ class ExportTab(QWidget):
             return
             
         try:
+            # Execute guarded operations and establish recovery boundaries
             with open(curated_file, "r") as f:
                 for line_idx, line in enumerate(f):
+                    # Iterate over items, evaluate loop invariant, and update progress
                     if not line.strip():
                         continue
                     obj = json.loads(line)
@@ -102,6 +116,7 @@ class ExportTab(QWidget):
         if not path:
             return
         try:
+            # Execute guarded operations and establish recovery boundaries
             if mode == "sft":
                 out_path = self.state.curator.export_unsloth(path)
                 count = sum(1 for line in open(out_path, "r", encoding="utf-8"))

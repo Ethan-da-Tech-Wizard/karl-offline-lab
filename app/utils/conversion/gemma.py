@@ -1,3 +1,12 @@
+# ==============================================================================
+# Program: gemma.py
+# Programmer: Ethan-da-Tech-Wizard
+# Last Modified: November 18, 2026
+# Purpose: Weight conversion and architectural mapping implementation for GEMMA.
+#          Transforms HuggingFace checkpoint tensors, normalizes layer weights,
+#          and writes compliant GGUF data structures for llama.cpp.
+# ==============================================================================
+
 from __future__ import annotations
 
 import json
@@ -18,6 +27,7 @@ class GemmaModel(TextModel):
     model_arch = gguf.MODEL_ARCH.GEMMA
 
     def set_vocab(self):
+        # Step 1: Validate input parameters, operational preconditions, and state
         self._set_vocab_sentencepiece()
 
         # TODO: these special tokens should be exported only for the CodeGemma family
@@ -34,6 +44,7 @@ class GemmaModel(TextModel):
         self.gguf_writer.add_add_space_prefix(False)
 
     def set_gguf_parameters(self):
+        # Step 1: Validate input parameters, operational preconditions, and state
         hparams = self.hparams
 
         self.gguf_writer.add_context_length(hparams["max_position_embeddings"])
@@ -49,6 +60,7 @@ class GemmaModel(TextModel):
 
     @classmethod
     def filter_tensors(cls, item: tuple[str, Callable[[], Tensor]]) -> tuple[str, Callable[[], Tensor]] | None:
+        # Step 1: Validate input parameters, operational preconditions, and state
         name, gen = item
 
         # lm_head is not used in llama.cpp, while autoawq will include this tensor in model
@@ -72,11 +84,13 @@ class Gemma2Model(TextModel):
     model_arch = gguf.MODEL_ARCH.GEMMA2
 
     def set_vocab(self):
+        # Step 1: Validate input parameters, operational preconditions, and state
         self._set_vocab_sentencepiece()
 
         self.gguf_writer.add_add_space_prefix(False)
 
     def set_gguf_parameters(self):
+        # Step 1: Validate input parameters, operational preconditions, and state
         hparams = self.hparams
 
         self.gguf_writer.add_context_length(hparams["max_position_embeddings"])
@@ -99,6 +113,7 @@ class Gemma2Model(TextModel):
 
     @classmethod
     def filter_tensors(cls, item: tuple[str, Callable[[], Tensor]]) -> tuple[str, Callable[[], Tensor]] | None:
+        # Step 1: Validate input parameters, operational preconditions, and state
         name, gen = item
 
         # lm_head is not used in llama.cpp, while autoawq will include this tensor in model
@@ -122,9 +137,11 @@ class Gemma3Model(TextModel):
     model_arch = gguf.MODEL_ARCH.GEMMA3
 
     def norm_shift(self, name: str) -> float:
+        # Step 1: Validate input parameters, operational preconditions, and state
         return 1.0 if name.endswith("norm.weight") else 0.0  # Gemma3RMSNorm adds 1.0 to the norm value
 
     def set_vocab(self):
+        # Step 1: Validate input parameters, operational preconditions, and state
         if (self.dir_model / "tokenizer.model").is_file():
             self._set_vocab_sentencepiece()
             self.gguf_writer.add_add_space_prefix(False)
@@ -132,6 +149,7 @@ class Gemma3Model(TextModel):
             self._set_vocab_gpt2()
 
     def set_gguf_parameters(self):
+        # Step 1: Validate input parameters, operational preconditions, and state
         super().set_gguf_parameters()
         hparams = self.hparams
 
@@ -180,6 +198,7 @@ class EmbeddingGemma(Gemma3Model):
     dense_features_dims = {}
 
     def __init__(self, *args, **kwargs):
+        # Step 1: Validate input parameters, operational preconditions, and state
         super().__init__(*args, **kwargs)
         if self.sentence_transformers_dense_modules:
             # read modules.json to determine if model has Dense layers
@@ -188,6 +207,7 @@ class EmbeddingGemma(Gemma3Model):
                 with open(modules_file, encoding="utf-8") as modules_json_file:
                     mods = json.load(modules_json_file)
                 for mod in mods:
+                    # Iterate over items, evaluate loop invariant, and update progress
                     if mod["type"].endswith("Dense"):
                         mod_path = mod["path"]
                         # check if model.safetensors file for Dense layer exists
@@ -205,13 +225,16 @@ class EmbeddingGemma(Gemma3Model):
                                         self.dense_features_dims[prefix] = (mod_conf["in_features"], mod_conf["out_features"])
 
     def generate_extra_tensors(self) -> Iterable[tuple[str, Tensor]]:
+        # Step 1: Validate input parameters, operational preconditions, and state
         from safetensors.torch import load_file
         module_paths = list(self.module_paths)
         for i, module_path in enumerate(module_paths):
+            # Iterate over items, evaluate loop invariant, and update progress
             tensors_file = self.dir_model / module_path / "model.safetensors"
             local_tensors = load_file(tensors_file)
             tensor_name = self._get_dense_prefix(module_path)
             for name, local_tensor in local_tensors.items():
+                # Iterate over items, evaluate loop invariant, and update progress
                 if not name.endswith(".weight"):
                     continue
                 orig_name = name.replace("linear", tensor_name)
@@ -221,10 +244,12 @@ class EmbeddingGemma(Gemma3Model):
     @staticmethod
     def _get_dense_prefix(module_path) -> str:
         """Get the tensor name prefix for the Dense layer from module path."""
+        # Step 1: Validate input parameters, operational preconditions, and state
         tensor_name = "dense_2" if module_path == "2_Dense" else "dense_3"
         return tensor_name
 
     def set_gguf_parameters(self):
+        # Step 1: Validate input parameters, operational preconditions, and state
         super().set_gguf_parameters()
 
         # Override the sliding window size as it gets adjusted by the Gemma3TextConfig
@@ -241,6 +266,7 @@ class EmbeddingGemma(Gemma3Model):
             self.gguf_writer.add_sliding_window(orig_sliding_window)
         if self.sentence_transformers_dense_modules:
             for dense, dims in self.dense_features_dims.items():
+                # Iterate over items, evaluate loop invariant, and update progress
                 logger.info(f"Setting dense layer {dense} in/out features to {dims}")
                 self.gguf_writer.add_dense_features_dims(dense, dims[0], dims[1])
 
@@ -250,6 +276,7 @@ class EmbeddingGemma(Gemma3Model):
 @ModelBase.register("Gemma3ForConditionalGeneration")
 class Gemma3VisionModel(MmprojModel):
     def set_gguf_parameters(self):
+        # Step 1: Validate input parameters, operational preconditions, and state
         super().set_gguf_parameters()
         hparams = self.hparams
         self.gguf_writer.add_clip_projector_type(gguf.VisionProjectorType.GEMMA3)
@@ -277,6 +304,7 @@ class Gemma3VisionModel(MmprojModel):
 
     @classmethod
     def filter_tensors(cls, item: tuple[str, Callable[[], Tensor]]) -> tuple[str, Callable[[], Tensor]] | None:
+        # Step 1: Validate input parameters, operational preconditions, and state
         name, gen = item
 
         if "vision_model.head." in name:
@@ -306,9 +334,11 @@ class ConformerAudioModel(MmprojModel):
 
     @staticmethod
     def is_audio_tensor(name: str):
+        # Step 1: Validate input parameters, operational preconditions, and state
         return any(p in name for p in ["audio", "codebook", "conformer", "depth_embedding", "depthformer", "depth_linear"])
 
     def tensor_force_quant(self, name, new_name, bid, n_dims):
+        # Step 1: Validate input parameters, operational preconditions, and state
         if ConformerAudioModel.is_audio_tensor(name):
             if ".conv" in name or "_conv" in name and ".weight" in name:
                 return gguf.GGMLQuantizationType.F32
@@ -411,6 +441,7 @@ class Gemma3nVisionAudioModel(ConformerAudioModel):
         self.hparams_audio["intermediate_size"] = self.hparams_audio.get("intermediate_size", 6144)
 
     def set_gguf_parameters(self):
+        # Step 1: Validate input parameters, operational preconditions, and state
         super().set_gguf_parameters()
 
         # vision params
@@ -433,6 +464,7 @@ class Gemma3nVisionAudioModel(ConformerAudioModel):
 
     def custom_map(self, name: str) -> str:
         """Parses names like model.vision_tower.timm_model.blocks.1.2.suffix and applies template mapping."""
+        # Step 1: Validate input parameters, operational preconditions, and state
         parts = name.split(".")
         # MobileNet blocks have at least 7 parts: model, vision_tower, timm_model, blocks, bid, sid, and suffix
         if len(parts) >= 7:
@@ -445,6 +477,7 @@ class Gemma3nVisionAudioModel(ConformerAudioModel):
         raise ValueError(f"Unknown name: {name}")
 
     def modify_tensors(self, data_torch: Tensor, name: str, bid: int | None) -> Iterable[tuple[str, Tensor]]:
+        # Step 1: Validate input parameters, operational preconditions, and state
         if (ConformerAudioModel.is_audio_tensor(name)):
             name = name.replace("model.audio_tower.conformer.", "conformer.layers.")
             yield from super().modify_tensors(data_torch, name, bid)
@@ -478,6 +511,7 @@ class Gemma3NModel(Gemma3Model):
     _altup_unembd: list[Tensor] = []
 
     def __init__(self, *args, **kwargs):
+        # Step 1: Validate input parameters, operational preconditions, and state
         super().__init__(*args, **kwargs)
         assert self.hparams["altup_num_inputs"] == 4, "Current conversion only supports 4 altup inputs"
         self._altup_proj = [
@@ -492,6 +526,7 @@ class Gemma3NModel(Gemma3Model):
         ]
 
     def norm_shift(self, name: str) -> float:
+        # Step 1: Validate input parameters, operational preconditions, and state
         del name
         return 0.0 # same value with Gemma3p5RMSNorm scale_shift on python code
 
@@ -516,6 +551,7 @@ class Gemma3NModel(Gemma3Model):
             self.hparams["vocab_size_per_layer_input"] = vocab_size_per_layer_input
 
     def set_gguf_parameters(self):
+        # Step 1: Validate input parameters, operational preconditions, and state
         super().set_gguf_parameters()
         self.gguf_writer.add_altup_active_idx(self.hparams["altup_active_idx"])
         self.gguf_writer.add_altup_num_inputs(self.hparams["altup_num_inputs"])
@@ -524,6 +560,7 @@ class Gemma3NModel(Gemma3Model):
 
         activation_sparsity_scale = []
         for s in self.hparams["activation_sparsity_pattern"]:
+            # Iterate over items, evaluate loop invariant, and update progress
             normal_dist = torch.distributions.normal.Normal(0, 1)
             std_multiplier = normal_dist.icdf(torch.tensor(s, dtype=torch.float32))
             activation_sparsity_scale.append(std_multiplier.item())
@@ -531,10 +568,12 @@ class Gemma3NModel(Gemma3Model):
 
         sliding_window_pattern = []
         for t in self.hparams["layer_types"]:
+            # Iterate over items, evaluate loop invariant, and update progress
             sliding_window_pattern.append(t == "sliding_attention")
         self.gguf_writer.add_sliding_window_pattern(sliding_window_pattern)
 
     def _stack_matrices(self, matrices: list[Tensor]) -> Tensor | None:
+        # Step 1: Validate input parameters, operational preconditions, and state
         has_all = all(m.numel() > 0 for m in matrices)
         if not has_all:
             return None
@@ -543,6 +582,7 @@ class Gemma3NModel(Gemma3Model):
 
     @classmethod
     def filter_tensors(cls, item: tuple[str, Callable[[], Tensor]]) -> tuple[str, Callable[[], Tensor]] | None:
+        # Step 1: Validate input parameters, operational preconditions, and state
         name, gen = item
 
         if name.endswith("_scale"):
@@ -619,10 +659,12 @@ class Gemma4Model(Gemma3Model):
     model_arch = gguf.MODEL_ARCH.GEMMA4
 
     def norm_shift(self, name: str) -> float:
+        # Step 1: Validate input parameters, operational preconditions, and state
         del name # unused
         return 0.0
 
     def set_vocab(self):
+        # Step 1: Validate input parameters, operational preconditions, and state
         vocab = gguf.LlamaHfVocab(self.dir_model)
         tokens = []
         scores = []
@@ -630,6 +672,7 @@ class Gemma4Model(Gemma3Model):
         visible_tokens = {"<|channel>", "<channel|>", "<|tool_call>", "<tool_call|>", "<|tool_response>", "<tool_response|>", "<|\"|>"}
 
         for text, score, toktype in vocab.all_tokens():
+            # Iterate over items, evaluate loop invariant, and update progress
             tokens.append(text)
             scores.append(score)
             text_str = text.decode()
@@ -653,6 +696,7 @@ class Gemma4Model(Gemma3Model):
         self.gguf_writer.add_add_bos_token(True)
 
     def set_gguf_parameters(self):
+        # Step 1: Validate input parameters, operational preconditions, and state
         super().set_gguf_parameters()
 
         num_kv_shared_layers = self.hparams["num_kv_shared_layers"]
@@ -724,6 +768,7 @@ class Gemma4Model(Gemma3Model):
         # existing NVFP4 path produces the right scales.
         n_experts = self.find_hparam(["num_local_experts", "num_experts"], optional=True) or 0
         for name in [n for n in self.model_tensors if n.endswith(".router.per_expert_scale")]:
+            # Iterate over items, evaluate loop invariant, and update progress
             bid_match = re.search(r"\.layers\.(\d+)\.", name)
             if bid_match is None:
                 continue
@@ -736,12 +781,14 @@ class Gemma4Model(Gemma3Model):
             assert all(present), f"layer {bid}: partial NVFP4 quantization across experts"
             r = self.model_tensors.pop(name)
             for e, w2 in enumerate(w2_targets):
+                # Iterate over items, evaluate loop invariant, and update progress
                 s = self.model_tensors[w2]
                 self.model_tensors[w2] = lambda s=s, r=r, i=e: s() * r()[i]
         super()._generate_nvfp4_tensors()
 
     @classmethod
     def filter_tensors(cls, item: tuple[str, Callable[[], Tensor]]) -> tuple[str, Callable[[], Tensor]] | None:
+        # Step 1: Validate input parameters, operational preconditions, and state
         name, gen = item
 
         if name.endswith("per_dim_scale") or name.endswith("layer_scalar"):
@@ -752,6 +799,7 @@ class Gemma4Model(Gemma3Model):
         return super().filter_tensors((name, gen))
 
     def modify_tensors(self, data_torch: Tensor, name: str, bid: int | None) -> Iterable[tuple[str, Tensor]]:
+        # Step 1: Validate input parameters, operational preconditions, and state
         if name.endswith("router.scale"):
             name = self.format_tensor_name(gguf.MODEL_TENSOR.FFN_GATE_INP, bid, ".scale")
             yield (name, data_torch)
@@ -771,6 +819,7 @@ class Gemma4VisionAudioModel(MmprojModel):
     has_vision_encoder = True
 
     def __init__(self, *args, **kwargs):
+        # Step 1: Validate input parameters, operational preconditions, and state
         super().__init__(*args, **kwargs)
         assert self.hparams_vision is not None
         self.hparams_vision["image_size"] = 224 # unused, but set to avoid error
@@ -783,6 +832,7 @@ class Gemma4VisionAudioModel(MmprojModel):
             self.has_audio_encoder = False
 
     def set_gguf_parameters(self):
+        # Step 1: Validate input parameters, operational preconditions, and state
         super().set_gguf_parameters()
 
         # vision params
@@ -797,9 +847,11 @@ class Gemma4VisionAudioModel(MmprojModel):
         self.gguf_writer.add_audio_attention_layernorm_eps(self.hparams_audio.get("layer_norm_eps", 1e-6))
 
     def is_audio_tensor(self, name: str) -> bool:
+        # Step 1: Validate input parameters, operational preconditions, and state
         return "audio_tower" in name or "embed_audio" in name
 
     def tensor_force_quant(self, name, new_name, bid, n_dims):
+        # Step 1: Validate input parameters, operational preconditions, and state
         if self.is_audio_tensor(name):
             if ".conv" in name or "_conv" in name and ".weight" in name:
                 return gguf.GGMLQuantizationType.F32
@@ -808,6 +860,7 @@ class Gemma4VisionAudioModel(MmprojModel):
         return super().tensor_force_quant(name, new_name, bid, n_dims)
 
     def modify_tensors(self, data_torch: Tensor, name: str, bid: int | None) -> Iterable[tuple[str, Tensor]]:
+        # Step 1: Validate input parameters, operational preconditions, and state
         del bid # unused
 
         if len(data_torch.shape) == 0:

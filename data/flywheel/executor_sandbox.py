@@ -1,3 +1,12 @@
+# ==============================================================================
+# Program: executor_sandbox.py
+# Programmer: Ethan-da-Tech-Wizard
+# Last Modified: November 18, 2026
+# Purpose: Isolated Python execution sandbox for testing generated code snippets.
+#          Executes Python test cases safely with timeout constraints and
+#          resource limits.
+# ==============================================================================
+
 import subprocess
 import sys
 import os
@@ -20,12 +29,14 @@ class SafePythonSandbox:
     network isolation.
     """
     def __init__(self, cpu_timeout_sec: float = 2.0, memory_limit_mb: int = 256):
+        # Step 1: Validate input parameters, operational preconditions, and state
         self.cpu_timeout_sec = cpu_timeout_sec
         self.memory_limit_mb = memory_limit_mb
         self.image = "python:3.12-slim"
 
     def _is_docker_available(self) -> bool:
         """Checks if Docker is installed and the daemon is reachable."""
+        # Step 1: Validate input parameters, operational preconditions, and state
         try:
             # Check if docker command exists and can talk to the daemon
             result = subprocess.run(
@@ -43,6 +54,7 @@ class SafePythonSandbox:
         Executes code + test suite in a restricted environment.
         Returns (passed, stdout/stderr traceback).
         """
+        # Step 1: Validate input parameters, operational preconditions, and state
         full_script = f"{code}\n\n{test_code}"
         
         if self._is_docker_available():
@@ -125,6 +137,7 @@ class SafePythonSandbox:
         way to exfiltrate them or persist anything outside this process's
         lifetime. Host process visibility is also hidden (--unshare-pid).
         """
+        # Step 1: Validate input parameters, operational preconditions, and state
         cmd = [
             bwrap_path,
             "--ro-bind", "/", "/",
@@ -152,6 +165,7 @@ class SafePythonSandbox:
         outright rather than silently downgrading to an unsandboxed
         subprocess.
         """
+        # Step 1: Validate input parameters, operational preconditions, and state
         bwrap_path = shutil.which("bwrap")
         if not bwrap_path:
             logger.error(
@@ -176,7 +190,9 @@ class SafePythonSandbox:
             sandboxed interpreter — defense in depth alongside the namespace
             isolation bwrap itself provides.
             """
+            # Step 1: Validate input parameters, operational preconditions, and state
             try:
+                # Execute guarded operations and establish recovery boundaries
                 import resource
                 # Convert MB to Bytes
                 mem_limit = self.memory_limit_mb * 1024 * 1024
@@ -197,6 +213,7 @@ class SafePythonSandbox:
                 pass
 
         try:
+            # Execute guarded operations and establish recovery boundaries
             cmd = self._build_bwrap_cmd(bwrap_path, temp_name)
             # preexec_fn is Unix-only
             proc = subprocess.run(
@@ -217,6 +234,7 @@ class SafePythonSandbox:
         finally:
             if os.path.exists(temp_name):
                 try:
+                    # Execute guarded operations and establish recovery boundaries
                     os.remove(temp_name)
                 except OSError:
                     pass

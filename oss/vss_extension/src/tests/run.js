@@ -1,3 +1,11 @@
+// ==============================================================================
+// Program: run.js
+// Programmer: Ethan-da-Tech-Wizard
+// Last Modified: November 18, 2026
+// Purpose: Automated test harness runner executing extension integration tests headlessly.
+//          Coordinates editor events, client state, and backend RPC messaging.
+// ==============================================================================
+
 // Mock the 'vscode' module before requiring any file that depends on it
 const Module = require('module');
 const originalRequire = Module.prototype.require;

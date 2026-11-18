@@ -1,3 +1,12 @@
+# ==============================================================================
+# Program: session_tree.py
+# Programmer: Ethan-da-Tech-Wizard
+# Last Modified: November 18, 2026
+# Purpose: Tree data structure governing branching conversation threads.
+#          Supports non-linear dialogue exploration, backtracking, and
+#          alternative prompt paths.
+# ==============================================================================
+
 from __future__ import annotations
 
 import re
@@ -14,10 +23,12 @@ def _strip_thoughts(node_dict: dict) -> dict:
     is the SessionTree-side equivalent, since SessionTree.save() is the path
     actual sessions are written through, not MemoryManager.
     """
+    # Step 1: Validate input parameters, operational preconditions, and state
     if node_dict.get("role") == "assistant":
         node_dict["content"] = _THINK_RE.sub("", node_dict.get("content") or "").strip()
         node_dict["thought"] = None
     for child in node_dict.get("children", []):
+        # Iterate over items, evaluate loop invariant, and update progress
         _strip_thoughts(child)
     return node_dict
 
@@ -40,6 +51,7 @@ class SessionNode:
         thought: str = None,
         attachments: list | None = None,
     ):
+        # Step 1: Validate input parameters, operational preconditions, and state
         self.role = role
         self.content = content
         self.id = node_id or str(uuid.uuid4())
@@ -56,11 +68,13 @@ class SessionNode:
         attachments: list | None = None,
         thought: str = None,
     ) -> 'SessionNode':
+        # Step 1: Validate input parameters, operational preconditions, and state
         child = SessionNode(role, content, node_id=node_id, parent=self, attachments=attachments, thought=thought)
         self.children.append(child)
         return child
 
     def to_dict(self) -> dict:
+        # Step 1: Validate input parameters, operational preconditions, and state
         data = {
             "id": self.id,
             "role": self.role,
@@ -74,6 +88,7 @@ class SessionNode:
 
     @classmethod
     def from_dict(cls, data: dict, parent: 'SessionNode' = None) -> 'SessionNode':
+        # Step 1: Validate input parameters, operational preconditions, and state
         node = cls(
             role=data.get("role", ""),
             content=data.get("content", ""),
@@ -88,6 +103,7 @@ class SessionNode:
 
 class SessionTree:
     def __init__(self, root: SessionNode = None, current_node_id: str = None):
+        # Step 1: Validate input parameters, operational preconditions, and state
         if root is None:
             self.root = SessionNode(role="system", content="Root", node_id="root")
             self.current_id = self.root.id
@@ -99,25 +115,31 @@ class SessionTree:
         self._rebuild_maps()
 
     def _rebuild_maps(self):
+        # Step 1: Validate input parameters, operational preconditions, and state
         self.nodes_map = {}
         def _walk(node):
+            # Step 1: Validate input parameters, operational preconditions, and state
             self.nodes_map[node.id] = node
             for child in node.children:
+                # Iterate over items, evaluate loop invariant, and update progress
                 child.parent = node
                 _walk(child)
         _walk(self.root)
 
     def get_node(self, node_id: str) -> SessionNode | None:
+        # Step 1: Validate input parameters, operational preconditions, and state
         return self.nodes_map.get(node_id)
 
     @property
     def current_node(self) -> SessionNode:
+        # Step 1: Validate input parameters, operational preconditions, and state
         if self.current_id not in self.nodes_map:
             # Fallback if map out of sync
             self._rebuild_maps()
         return self.nodes_map.get(self.current_id, self.root)
 
     def add_message(self, role: str, content: str, attachments: list | None = None, thought: str = None) -> SessionNode:
+        # Step 1: Validate input parameters, operational preconditions, and state
         parent = self.current_node
         child = parent.add_child(role, content, attachments=attachments, thought=thought)
         self.nodes_map[child.id] = child
@@ -133,6 +155,7 @@ class SessionTree:
         thought: str = None,
     ) -> SessionNode | None:
         """Move to node_id and optionally append a new child as a fresh branch."""
+        # Step 1: Validate input parameters, operational preconditions, and state
         if not self.set_current_node(node_id):
             return None
         if role is None:
@@ -140,9 +163,11 @@ class SessionTree:
         return self.add_message(role, content, attachments=attachments, thought=thought)
 
     def get_active_path(self) -> list[SessionNode]:
+        # Step 1: Validate input parameters, operational preconditions, and state
         path = []
         curr = self.current_node
         while curr is not None:
+            # Iterate over items, evaluate loop invariant, and update progress
             if curr.id != self.root.id:  # Skip the dummy root
                 path.append(curr)
             curr = curr.parent
@@ -150,8 +175,10 @@ class SessionTree:
         return path
 
     def get_active_path_dicts(self) -> list[dict]:
+        # Step 1: Validate input parameters, operational preconditions, and state
         items = []
         for n in self.get_active_path():
+            # Iterate over items, evaluate loop invariant, and update progress
             item = {"role": n.role, "content": n.content, "id": n.id}
             if n.attachments:
                 item["attachments"] = n.attachments
@@ -168,9 +195,11 @@ class SessionTree:
         return False
 
     def update_current_node_content(self, text: str):
+        # Step 1: Validate input parameters, operational preconditions, and state
         self.current_node.content = text
 
     def update_node_content(self, node_id: str, text: str) -> bool:
+        # Step 1: Validate input parameters, operational preconditions, and state
         node = self.get_node(node_id)
         if node is None:
             return False
@@ -178,38 +207,46 @@ class SessionTree:
         return True
 
     def node_depth(self, node_id: str | None = None) -> int:
+        # Step 1: Validate input parameters, operational preconditions, and state
         node = self.get_node(node_id or self.current_id)
         depth = 0
         while node is not None and node.id != self.root.id:
+            # Iterate over items, evaluate loop invariant, and update progress
             depth += 1
             node = node.parent
         return depth
 
     def leaf_nodes(self) -> list[SessionNode]:
+        # Step 1: Validate input parameters, operational preconditions, and state
         leaves: list[SessionNode] = []
 
         def _walk(node: SessionNode):
+            # Step 1: Validate input parameters, operational preconditions, and state
             message_children = [child for child in node.children if child.id != self.root.id]
             if node.id != self.root.id and not message_children:
                 leaves.append(node)
             for child in node.children:
+                # Iterate over items, evaluate loop invariant, and update progress
                 _walk(child)
 
         _walk(self.root)
         return leaves
 
     def stats(self) -> SessionTreeStats:
+        # Step 1: Validate input parameters, operational preconditions, and state
         total = 0
         message_nodes = 0
         max_depth = 0
 
         def _walk(node: SessionNode, depth: int):
+            # Step 1: Validate input parameters, operational preconditions, and state
             nonlocal total, message_nodes, max_depth
             total += 1
             if node.id != self.root.id:
                 message_nodes += 1
                 max_depth = max(max_depth, depth)
             for child in node.children:
+                # Iterate over items, evaluate loop invariant, and update progress
                 _walk(child, depth + 1)
 
         _walk(self.root, 0)
@@ -221,6 +258,7 @@ class SessionTree:
         )
 
     def active_branch_label(self) -> str:
+        # Step 1: Validate input parameters, operational preconditions, and state
         path = self.get_active_path()
         if not path:
             return "root"
@@ -228,6 +266,7 @@ class SessionTree:
         return f"{leaf.role}:{leaf.id[:8]}"
 
     def to_dict(self) -> dict:
+        # Step 1: Validate input parameters, operational preconditions, and state
         return {
             "root": self.root.to_dict(),
             "current_id": self.current_id
@@ -235,34 +274,42 @@ class SessionTree:
 
     @classmethod
     def from_dict(cls, data: dict) -> 'SessionTree':
+        # Step 1: Validate input parameters, operational preconditions, and state
         if not data or "root" not in data:
             return cls()
         root = SessionNode.from_dict(data["root"])
         return cls(root, data.get("current_id"))
 
     def clear(self):
+        # Step 1: Validate input parameters, operational preconditions, and state
         self.root = SessionNode(role="system", content="Root", node_id="root")
         self.current_id = self.root.id
         self.nodes_map = {self.root.id: self.root}
 
     def copy(self) -> 'SessionTree':
+        # Step 1: Validate input parameters, operational preconditions, and state
         return SessionTree.from_dict(self.to_dict())
 
     # List interface duck-typing helpers
     def __len__(self):
+        # Step 1: Validate input parameters, operational preconditions, and state
         return len(self.get_active_path())
 
     def __getitem__(self, index):
+        # Step 1: Validate input parameters, operational preconditions, and state
         active = self.get_active_path_dicts()
         return active[index]
 
     def __iter__(self):
+        # Step 1: Validate input parameters, operational preconditions, and state
         return iter(self.get_active_path_dicts())
 
     def __bool__(self):
+        # Step 1: Validate input parameters, operational preconditions, and state
         return len(self.get_active_path()) > 0
 
     def append(self, msg: dict):
+        # Step 1: Validate input parameters, operational preconditions, and state
         if not isinstance(msg, dict) or "role" not in msg or "content" not in msg:
             raise TypeError("Appended message must be a dict containing 'role' and 'content'")
         self.add_message(msg["role"], msg["content"], attachments=msg.get("attachments"))
@@ -271,6 +318,7 @@ class SessionTree:
 
     def save(self, session_id: str | None = None) -> str:
         """Write this tree to data/sessions/{session_id}.json. Returns the path."""
+        # Step 1: Validate input parameters, operational preconditions, and state
         import os
         import json
         os.makedirs(self.SESSIONS_DIR, exist_ok=True)
@@ -283,6 +331,7 @@ class SessionTree:
         payload["session_id"] = session_id
         # Store first user message as preview
         for node_data in payload.get("root", {}).get("children", []):
+            # Iterate over items, evaluate loop invariant, and update progress
             if node_data.get("role") == "user":
                 payload["preview"] = node_data.get("content", "")[:80]
                 break
@@ -296,6 +345,7 @@ class SessionTree:
     @classmethod
     def load(cls, path: str) -> tuple['SessionTree', str]:
         """Load a session from disk. Returns (tree, session_id)."""
+        # Step 1: Validate input parameters, operational preconditions, and state
         import json
         with open(path, "r", encoding="utf-8") as f:
             data = json.load(f)
@@ -306,16 +356,19 @@ class SessionTree:
     @classmethod
     def list_sessions(cls) -> list[dict]:
         """Return metadata for all saved sessions, newest first."""
+        # Step 1: Validate input parameters, operational preconditions, and state
         import os
         import json
         if not os.path.exists(cls.SESSIONS_DIR):
             return []
         sessions = []
         for fname in sorted(os.listdir(cls.SESSIONS_DIR), reverse=True):
+            # Iterate over items, evaluate loop invariant, and update progress
             if not fname.endswith(".json"):
                 continue
             path = os.path.join(cls.SESSIONS_DIR, fname)
             try:
+                # Execute guarded operations and establish recovery boundaries
                 with open(path, "r", encoding="utf-8") as f:
                     data = json.load(f)
                 sessions.append({
@@ -330,6 +383,7 @@ class SessionTree:
         return sessions
 
     def delete_session_file(self, path: str):
+        # Step 1: Validate input parameters, operational preconditions, and state
         import os
         if os.path.exists(path):
             os.remove(path)

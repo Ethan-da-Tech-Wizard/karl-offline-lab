@@ -1,9 +1,19 @@
+# ==============================================================================
+# Program: command_palette.py
+# Programmer: Ethan-da-Tech-Wizard
+# Last Modified: November 18, 2026
+# Purpose: Reusable desktop widget component implementing command palette.
+#          Enforces styling standards, event handling, and visual telemetry
+#          across Karl offline workspaces.
+# ==============================================================================
+
 from PyQt6.QtWidgets import QDialog, QLineEdit, QListWidget, QListWidgetItem, QVBoxLayout
 from PyQt6.QtCore import Qt, QSize
 from PyQt6.QtGui import QKeyEvent
 
 class CommandPalette(QDialog):
     def __init__(self, main_window, parent=None):
+        # Step 1: Validate input parameters, operational preconditions, and state
         super().__init__(parent or main_window)
         self.main_window = main_window
         self.setWindowFlags(Qt.WindowType.FramelessWindowHint | Qt.WindowType.Dialog)
@@ -67,17 +77,21 @@ class CommandPalette(QDialog):
         self.input_edit.setFocus()
 
     def _populate_list(self):
+        # Step 1: Validate input parameters, operational preconditions, and state
         self.list_widget.clear()
         for title, action in self._commands:
+            # Iterate over items, evaluate loop invariant, and update progress
             item = QListWidgetItem(title)
             item.setData(Qt.ItemDataRole.UserRole, action)
             self.list_widget.addItem(item)
         self.list_widget.setCurrentRow(0)
 
     def _filter_commands(self, text):
+        # Step 1: Validate input parameters, operational preconditions, and state
         query = text.strip().lower()
         self.list_widget.clear()
         for title, action in self._commands:
+            # Iterate over items, evaluate loop invariant, and update progress
             if not query or query in title.lower():
                 item = QListWidgetItem(title)
                 item.setData(Qt.ItemDataRole.UserRole, action)
@@ -85,6 +99,7 @@ class CommandPalette(QDialog):
         self.list_widget.setCurrentRow(0)
 
     def keyPressEvent(self, event: QKeyEvent):
+        # Step 1: Validate input parameters, operational preconditions, and state
         if event.key() == Qt.Key.Key_Escape:
             self.reject()
         elif event.key() == Qt.Key.Key_Up:
@@ -104,6 +119,7 @@ class CommandPalette(QDialog):
             super().keyPressEvent(event)
 
     def _execute_selected(self):
+        # Step 1: Validate input parameters, operational preconditions, and state
         curr_item = self.list_widget.currentItem()
         if not curr_item:
             return
@@ -114,6 +130,7 @@ class CommandPalette(QDialog):
         # Fallback to search list of commands if not set via filtering UserRole
         if not action:
             for t, act in self._commands:
+                # Iterate over items, evaluate loop invariant, and update progress
                 if t == title:
                     action = act
                     break
@@ -123,6 +140,7 @@ class CommandPalette(QDialog):
             action()
 
     def showEvent(self, event):
+        # Step 1: Validate input parameters, operational preconditions, and state
         super().showEvent(event)
         # Position command palette at top center of main window
         if self.parentWidget():

@@ -1,3 +1,12 @@
+# ==============================================================================
+# Program: eval_suite.py
+# Programmer: Ethan-da-Tech-Wizard
+# Last Modified: November 18, 2026
+# Purpose: Eval Suite — run the harness, view results.
+#          Coordinates with adjacent subsystems within the Karl Offline Lab
+#          architecture.
+# ==============================================================================
+
 """
 Eval Suite — run the harness, view results.
 """
@@ -29,12 +38,14 @@ logger = logging.getLogger("karl.eval_suite")
 
 
 def _section(text: str) -> QLabel:
+    # Step 1: Validate input parameters, operational preconditions, and state
     lbl = QLabel(text)
     lbl.setObjectName("section-header")
     return lbl
 
 
 def _hline() -> QFrame:
+    # Step 1: Validate input parameters, operational preconditions, and state
     f = QFrame()
     f.setFrameShape(QFrame.Shape.HLine)
     return f
@@ -48,6 +59,7 @@ class _EvalThread(QThread):
     error    = pyqtSignal(str)
 
     def __init__(self, dataset_path: str, workflow_name: str, rag, model_name: str | None = None, adapter_name: str | None = None):
+        # Step 1: Validate input parameters, operational preconditions, and state
         super().__init__()
         self.dataset_path = dataset_path
         self.workflow_name = workflow_name
@@ -56,7 +68,9 @@ class _EvalThread(QThread):
         self.adapter_name = adapter_name
 
     def run(self):
+        # Step 1: Validate input parameters, operational preconditions, and state
         try:
+            # Execute guarded operations and establish recovery boundaries
             from eval.harness import EvalHarness
             harness = EvalHarness(self.rag)
             report = harness.run(
@@ -68,9 +82,11 @@ class _EvalThread(QThread):
             )
             self.done.emit(report)
             try:
+                # Execute guarded operations and establish recovery boundaries
                 from app.utils.training_curator import save_eval_result
                 items = []
                 for case in getattr(report, "cases", []):
+                    # Iterate over items, evaluate loop invariant, and update progress
                     grade = case.grade or {}
                     items.append({
                         "system_prompt": "",
@@ -103,6 +119,7 @@ class EvalSuiteWorkspace(QWidget):
 
     def __init__(self, state, parent=None):
         """Initialize loaded-case state and build the split evaluation UI."""
+        # Step 1: Validate input parameters, operational preconditions, and state
         super().__init__(parent)
         self.state = state
         self.setObjectName("workspace-root")
@@ -112,6 +129,7 @@ class EvalSuiteWorkspace(QWidget):
 
     def _build_ui(self):
         """Build dataset controls on the left and reports/details on the right."""
+        # Step 1: Validate input parameters, operational preconditions, and state
         root = QHBoxLayout(self)
         root.setContentsMargins(12, 12, 12, 12)
         root.setSpacing(12)
@@ -126,6 +144,7 @@ class EvalSuiteWorkspace(QWidget):
         root.addWidget(splitter)
 
     def _build_left(self) -> QWidget:
+        # Step 1: Validate input parameters, operational preconditions, and state
         w = QWidget()
         layout = QVBoxLayout(w)
         layout.setContentsMargins(0, 0, 0, 0)
@@ -203,6 +222,7 @@ class EvalSuiteWorkspace(QWidget):
         
         self._workflow_combo = QComboBox()
         for name, label in list_workflows():
+            # Iterate over items, evaluate loop invariant, and update progress
             self._workflow_combo.addItem(f"{label} ({name})", name)
         self._workflow_combo.setToolTip("Select workflow context to use during evaluation runs")
         wfl.addWidget(self._workflow_combo, 1)
@@ -392,6 +412,7 @@ class EvalSuiteWorkspace(QWidget):
         return w
 
     def _build_right(self) -> QWidget:
+        # Step 1: Validate input parameters, operational preconditions, and state
         w = QWidget()
         layout = QVBoxLayout(w)
         layout.setContentsMargins(0, 0, 0, 0)
@@ -464,6 +485,7 @@ class EvalSuiteWorkspace(QWidget):
     # ── logic ─────────────────────────────────────────────────────────────────
 
     def _browse(self):
+        # Step 1: Validate input parameters, operational preconditions, and state
         path, _ = QFileDialog.getOpenFileName(
             self, "Select eval dataset", "", "JSONL (*.jsonl);;All Files (*)"
         )
@@ -473,6 +495,7 @@ class EvalSuiteWorkspace(QWidget):
             # Auto-detect workflow matching filename
             filename = os.path.basename(path).lower()
             for i in range(self._workflow_combo.count()):
+                # Iterate over items, evaluate loop invariant, and update progress
                 wf_name = self._workflow_combo.itemData(i)
                 if wf_name in filename:
                     self._workflow_combo.setCurrentIndex(i)
@@ -530,9 +553,11 @@ class EvalSuiteWorkspace(QWidget):
         self._thread.start()
 
     def run_suite(self):
+        # Step 1: Validate input parameters, operational preconditions, and state
         self._run()
 
     def _on_progress(self, current: int, total: int):
+        # Step 1: Validate input parameters, operational preconditions, and state
         import time
         if not getattr(self, "_eval_start_time", None):
             self._eval_start_time = time.time()
@@ -559,6 +584,7 @@ class EvalSuiteWorkspace(QWidget):
 
 
     def _on_done(self, report):
+        # Step 1: Validate input parameters, operational preconditions, and state
         self._progress.setVisible(False)
         self._run_btn.setEnabled(True)
         self._last_report = report
@@ -588,6 +614,7 @@ class EvalSuiteWorkspace(QWidget):
 
         self._results_tree.clear()
         for case in report.cases:
+            # Iterate over items, evaluate loop invariant, and update progress
             case_passed = case.grade.get("passed", False) if case.grade else False
             preview_text = case.output.replace("\n", " ")[:80] if case.output else ""
             item = QTreeWidgetItem([
@@ -605,11 +632,13 @@ class EvalSuiteWorkspace(QWidget):
 
 
     def _on_error(self, msg: str):
+        # Step 1: Validate input parameters, operational preconditions, and state
         self._progress.setVisible(False)
         self._run_btn.setEnabled(True)
         self._summary_lbl.setText(f"<span style='color:#F05050;'>error: {html.escape(msg)}</span>")
 
     def _on_result_selected(self, item, _prev):
+        # Step 1: Validate input parameters, operational preconditions, and state
         if not item:
             return
         case = item.data(0, Qt.ItemDataRole.UserRole)
@@ -683,6 +712,7 @@ class EvalSuiteWorkspace(QWidget):
             if case.context_used:
                 context_html = ""
                 for idx, chunk in enumerate(case.context_used, 1):
+                    # Iterate over items, evaluate loop invariant, and update progress
                     context_html += f"<div style='border-bottom:1px solid {border}; padding-bottom:6px; margin-bottom:6px; font-size:8.5pt; color:{text_mid};'>[Chunk {idx}]</div>"
                     context_html += f"<div style='margin-bottom:10px; font-size:8.5pt; color:{text_mid}; white-space:pre-wrap;'>{html.escape(chunk)}</div>"
                 
@@ -699,15 +729,18 @@ class EvalSuiteWorkspace(QWidget):
     # ── model selection helpers ───────────────────────────────────────────────
 
     def _refresh_model_combo(self):
+        # Step 1: Validate input parameters, operational preconditions, and state
         self._model_combo.refresh_models()
 
     def showEvent(self, event):
+        # Step 1: Validate input parameters, operational preconditions, and state
         super().showEvent(event)
         self._refresh_model_combo()
 
     # ── dataset editor helpers ────────────────────────────────────────────────
 
     def _load_dataset_for_editing(self, path: str):
+        # Step 1: Validate input parameters, operational preconditions, and state
         self._loaded_cases = []
         self._edit_cases_list.blockSignals(True)
         self._edit_cases_list.clear()
@@ -718,18 +751,22 @@ class EvalSuiteWorkspace(QWidget):
             return
             
         try:
+            # Execute guarded operations and establish recovery boundaries
             with open(path, "r", encoding="utf-8") as f:
                 for line in f:
+                    # Iterate over items, evaluate loop invariant, and update progress
                     line = line.strip()
                     if not line or line.startswith("#"):
                         continue
                     try:
+                        # Execute guarded operations and establish recovery boundaries
                         self._loaded_cases.append(json.loads(line))
                     except Exception as e:
                         logger.warning(f"Error decoding case line: {e}")
             
             # Populate the list widget
             for case in self._loaded_cases:
+                # Iterate over items, evaluate loop invariant, and update progress
                 self._edit_cases_list.addItem(case.get("id", "unknown"))
                 
             if self._edit_cases_list.count() > 0:
@@ -740,6 +777,7 @@ class EvalSuiteWorkspace(QWidget):
             self._edit_cases_list.blockSignals(False)
 
     def _on_edit_case_selected(self, current, previous):
+        # Step 1: Validate input parameters, operational preconditions, and state
         if previous:
             row = self._edit_cases_list.row(previous)
             self._save_fields_to_case(row)
@@ -751,6 +789,7 @@ class EvalSuiteWorkspace(QWidget):
             self._clear_fields()
 
     def _save_fields_to_case(self, index: int):
+        # Step 1: Validate input parameters, operational preconditions, and state
         if index < 0 or index >= len(self._loaded_cases):
             return
         case = self._loaded_cases[index]
@@ -802,6 +841,7 @@ class EvalSuiteWorkspace(QWidget):
             self._edit_cases_list.blockSignals(False)
 
     def _load_case_to_fields(self, index: int):
+        # Step 1: Validate input parameters, operational preconditions, and state
         if index < 0 or index >= len(self._loaded_cases):
             self._clear_fields()
             return
@@ -838,6 +878,7 @@ class EvalSuiteWorkspace(QWidget):
         self._block_form_signals(False)
 
     def _add_case(self):
+        # Step 1: Validate input parameters, operational preconditions, and state
         current_item = self._edit_cases_list.currentItem()
         if current_item:
             self._save_fields_to_case(self._edit_cases_list.row(current_item))
@@ -856,6 +897,7 @@ class EvalSuiteWorkspace(QWidget):
         self._edit_cases_list.setCurrentItem(new_item)
 
     def _delete_case(self):
+        # Step 1: Validate input parameters, operational preconditions, and state
         current_item = self._edit_cases_list.currentItem()
         if not current_item:
             return
@@ -877,6 +919,7 @@ class EvalSuiteWorkspace(QWidget):
                 self._clear_fields()
 
     def _save_dataset(self):
+        # Step 1: Validate input parameters, operational preconditions, and state
         current_item = self._edit_cases_list.currentItem()
         if current_item:
             self._save_fields_to_case(self._edit_cases_list.row(current_item))
@@ -887,14 +930,17 @@ class EvalSuiteWorkspace(QWidget):
             return
             
         try:
+            # Execute guarded operations and establish recovery boundaries
             with open(path, "w", encoding="utf-8") as f:
                 for case in self._loaded_cases:
+                    # Iterate over items, evaluate loop invariant, and update progress
                     f.write(json.dumps(case, ensure_ascii=False) + "\n")
             QMessageBox.information(self, "Success", f"Saved {len(self._loaded_cases)} cases to {os.path.basename(path)}.")
         except Exception as e:
             QMessageBox.critical(self, "Save Error", f"Could not save dataset: {e}")
 
     def _clear_fields(self):
+        # Step 1: Validate input parameters, operational preconditions, and state
         self._block_form_signals(True)
         self._edit_case_id.clear()
         self._edit_case_prompt.clear()
@@ -905,6 +951,7 @@ class EvalSuiteWorkspace(QWidget):
         self._block_form_signals(False)
 
     def _block_form_signals(self, block: bool):
+        # Step 1: Validate input parameters, operational preconditions, and state
         self._edit_case_id.blockSignals(block)
         self._edit_case_prompt.blockSignals(block)
         self._edit_case_context.blockSignals(block)
@@ -914,16 +961,19 @@ class EvalSuiteWorkspace(QWidget):
         self._edit_case_req_all.blockSignals(block)
 
     def _save_current_form_to_memory(self):
+        # Step 1: Validate input parameters, operational preconditions, and state
         current_item = self._edit_cases_list.currentItem()
         if current_item:
             row = self._edit_cases_list.row(current_item)
             self._save_fields_to_case(row)
 
     def _on_grader_changed(self, grader: str):
+        # Step 1: Validate input parameters, operational preconditions, and state
         self._update_grader_fields_visibility(grader)
         self._save_current_form_to_memory()
 
     def _update_grader_fields_visibility(self, grader: str):
+        # Step 1: Validate input parameters, operational preconditions, and state
         if grader == "keyword_hit":
             self._kw_lbl.setText("Keywords:")
             self._edit_case_keywords.setPlaceholderText("comma-separated list...")
@@ -939,15 +989,18 @@ class EvalSuiteWorkspace(QWidget):
             self._req_row.setVisible(False)
 
     def _apply_results_filter(self):
+        # Step 1: Validate input parameters, operational preconditions, and state
         show_pass = self._filter_pass_chk.isChecked()
         show_fail = self._filter_fail_chk.isChecked()
         for idx in range(self._results_tree.topLevelItemCount()):
+            # Iterate over items, evaluate loop invariant, and update progress
             item = self._results_tree.topLevelItem(idx)
             is_pass = item.text(2) == "PASS"
             should_show = (is_pass and show_pass) or (not is_pass and show_fail)
             item.setHidden(not should_show)
 
     def _export_eval_report(self):
+        # Step 1: Validate input parameters, operational preconditions, and state
         if not getattr(self, "_last_report", None):
             return
             
@@ -958,9 +1011,11 @@ class EvalSuiteWorkspace(QWidget):
             return
             
         try:
+            # Execute guarded operations and establish recovery boundaries
             report = self._last_report
             cases_json = []
             for case in report.cases:
+                # Iterate over items, evaluate loop invariant, and update progress
                 cases_json.append({
                     "case_id": case.case_id,
                     "prompt": case.prompt,

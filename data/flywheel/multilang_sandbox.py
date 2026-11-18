@@ -1,3 +1,12 @@
+# ==============================================================================
+# Program: multilang_sandbox.py
+# Programmer: Ethan-da-Tech-Wizard
+# Last Modified: November 18, 2026
+# Purpose: Multi-language code execution sandbox supporting Python, JS, Bash, and C/C++.
+#          Compiles and executes multi-language candidate code during automated
+#          flywheel curation.
+# ==============================================================================
+
 """
 Multi-Language Sandboxed Execution Runtime
 ===========================================
@@ -22,6 +31,7 @@ class SafeMultiLangSandbox:
     """Executes TypeScript or Rust code blocks inside resource-bounded shell sandboxes."""
 
     def __init__(self, cpu_timeout_sec: float = 10.0, memory_limit_mb: int = 512):
+        # Step 1: Validate input parameters, operational preconditions, and state
         self.cpu_timeout_sec = cpu_timeout_sec
         self.memory_limit_mb = memory_limit_mb
 
@@ -37,6 +47,7 @@ class SafeMultiLangSandbox:
         Returns:
             Tuple of (success_bool, stdout_stderr_log).
         """
+        # Step 1: Validate input parameters, operational preconditions, and state
         language = language.lower().strip()
         with tempfile.TemporaryDirectory() as temp_dir:
             sandbox_path = Path(temp_dir)

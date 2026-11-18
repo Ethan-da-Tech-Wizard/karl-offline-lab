@@ -1,4 +1,14 @@
 #!/usr/bin/env bash
+# ==============================================================================
+# Program: setup_gpu.sh
+# Programmer: Ethan-da-Tech-Wizard
+# Last Modified: November 18, 2026
+# Purpose: Automated Linux GPU configuration and CUDA acceleration setup script.
+#          Validates root privileges, installs kernel headers, compiles NVIDIA
+#          DKMS modules, installs CUDA-enabled PyTorch, and verifies GPU
+#          detection.
+# ==============================================================================
+
 # setup_gpu.sh — Script to configure NVIDIA GPU, compile DKMS, reinstall CUDA PyTorch, and verify CUDA.
 
 set -e

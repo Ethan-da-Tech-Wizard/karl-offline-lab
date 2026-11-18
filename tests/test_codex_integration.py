@@ -1,3 +1,12 @@
+# ==============================================================================
+# Program: test_codex_integration.py
+# Programmer: Ethan-da-Tech-Wizard
+# Last Modified: November 18, 2026
+# Purpose: Comprehensive test suite exercising codex integration functionality.
+#          Verifies state transitions, error boundaries, regression resistance,
+#          and contract compliance under tests.
+# ==============================================================================
+
 import os
 import sys
 import unittest
@@ -9,6 +18,7 @@ from core.default_prompts import DEFAULT_SYSTEM_PROMPT
 
 class TestCodexIntegration(unittest.TestCase):
     def test_strip_html_tags(self):
+        # Step 1: Validate input parameters, operational preconditions, and state
         html_input = """
         <h2 style='color:#00C2FF;'>⚡ FastAPI</h2>
         <p>A fast web framework.</p>
@@ -91,6 +101,7 @@ class TestCodexIntegration(unittest.TestCase):
         files_to_seed = ["Python.html", "React.html", "Rust.html"]
         originals = {}
         for f_name in files_to_seed:
+            # Iterate over items, evaluate loop invariant, and update progress
             path = os.path.join("data/codex_library", f_name)
             if os.path.exists(path):
                 with open(path, "r", encoding="utf-8") as f:
@@ -99,6 +110,7 @@ class TestCodexIntegration(unittest.TestCase):
                 f.write(f"<h2>{f_name.split('.')[0]} Guide</h2>")
 
         try:
+            # Execute guarded operations and establish recovery boundaries
             chat_history = [
                 {"role": "user", "content": "I want to learn python, react and rust."}
             ]
@@ -120,6 +132,7 @@ class TestCodexIntegration(unittest.TestCase):
         finally:
             # Restore originals
             for f_name, content in originals.items():
+                # Iterate over items, evaluate loop invariant, and update progress
                 path = os.path.join("data/codex_library", f_name)
                 with open(path, "w", encoding="utf-8") as f:
                     f.write(content)

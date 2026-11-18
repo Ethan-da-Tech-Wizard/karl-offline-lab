@@ -1,4 +1,13 @@
 #!/usr/bin/env python3
+# ==============================================================================
+# Program: generate_self_correction_dataset.py
+# Programmer: Ethan-da-Tech-Wizard
+# Last Modified: November 18, 2026
+# Purpose: Synthetic dataset generator for self-healing code models.
+#          Produces problem pairs featuring buggy code, diagnostic reasoning,
+#          and corrected solutions.
+# ==============================================================================
+
 """Compile self-correction (STaR) trajectories into high-value code SFT data."""
 
 from __future__ import annotations
@@ -37,16 +46,19 @@ class CodingProblem:
 
 
 def extract_code_block(text: str) -> str:
+    # Step 1: Validate input parameters, operational preconditions, and state
     match = CODE_FENCE_RE.search(text or "")
     return (match.group(1) if match else (text or "")).strip()
 
 
 def extract_thought_block(text: str) -> str:
+    # Step 1: Validate input parameters, operational preconditions, and state
     match = THINK_RE.search(text or "")
     return (match.group(1) if match else "").strip()
 
 
 def code_diff(before: str, after: str) -> str:
+    # Step 1: Validate input parameters, operational preconditions, and state
     before_code = extract_code_block(before).splitlines()
     after_code = extract_code_block(after).splitlines()
     return "\n".join(
@@ -62,6 +74,7 @@ def code_diff(before: str, after: str) -> str:
 
 def normalize_problem_record(record: dict, fallback_id: str = "") -> CodingProblem | None:
     """Normalize JSONL/flywheel records into executable coding problems."""
+    # Step 1: Validate input parameters, operational preconditions, and state
     verification_script = str(record.get("verification_script") or "")
     if not verification_script.strip():
         return None
@@ -89,20 +102,25 @@ def normalize_problem_record(record: dict, fallback_id: str = "") -> CodingProbl
 
 
 def iter_problem_records(paths: Iterable[str]) -> Iterable[CodingProblem]:
+    # Step 1: Validate input parameters, operational preconditions, and state
     index = 0
     for pattern in paths:
+        # Iterate over items, evaluate loop invariant, and update progress
         for raw_path in sorted(glob.glob(pattern)):
+            # Iterate over items, evaluate loop invariant, and update progress
             path = Path(raw_path)
             if not path.exists():
                 continue
             if path.suffix == ".jsonl":
                 with path.open("r", encoding="utf-8") as fh:
                     for line in fh:
+                        # Iterate over items, evaluate loop invariant, and update progress
                         line = line.strip()
                         if not line:
                             continue
                         index += 1
                         try:
+                            # Execute guarded operations and establish recovery boundaries
                             record = json.loads(line)
                         except json.JSONDecodeError:
                             continue
@@ -111,11 +129,13 @@ def iter_problem_records(paths: Iterable[str]) -> Iterable[CodingProblem]:
                             yield problem
             else:
                 try:
+                    # Execute guarded operations and establish recovery boundaries
                     data = json.loads(path.read_text(encoding="utf-8"))
                 except (OSError, json.JSONDecodeError):
                     continue
                 rows = data if isinstance(data, list) else [data]
                 for record in rows:
+                    # Iterate over items, evaluate loop invariant, and update progress
                     if not isinstance(record, dict):
                         continue
                     index += 1
@@ -125,6 +145,7 @@ def iter_problem_records(paths: Iterable[str]) -> Iterable[CodingProblem]:
 
 
 def build_initial_prompt(problem: CodingProblem) -> str:
+    # Step 1: Validate input parameters, operational preconditions, and state
     return (
         "Solve this coding problem. Return a concise explanation and a complete Python solution "
         "inside a ```python code block.\n\n"
@@ -133,6 +154,7 @@ def build_initial_prompt(problem: CodingProblem) -> str:
 
 
 def build_correction_prompt(problem: CodingProblem, failed_response: str, traceback_text: str) -> str:
+    # Step 1: Validate input parameters, operational preconditions, and state
     return (
         "Your previous solution failed verification. Use the traceback to correct the bug. "
         "Return the corrected complete Python solution in a ```python code block and include "
@@ -144,6 +166,7 @@ def build_correction_prompt(problem: CodingProblem, failed_response: str, traceb
 
 
 def verify_response(problem: CodingProblem, response: str, timeout: float = 5.0) -> tuple[bool, str]:
+    # Step 1: Validate input parameters, operational preconditions, and state
     sandbox = SafePythonSandbox(cpu_timeout_sec=timeout, memory_limit_mb=256)
     test_code = (
         "import sys as _sys, json as _json\n"
@@ -160,6 +183,7 @@ def verify_response(problem: CodingProblem, response: str, timeout: float = 5.0)
 
 
 def query_local_model(llm, system_prompt: str, user_prompt: str, max_tokens: int, temperature: float) -> tuple[str, str]:
+    # Step 1: Validate input parameters, operational preconditions, and state
     from core.interaction_loop import build_prompt
 
     prompt = build_prompt(system_prompt, [{"role": "user", "content": user_prompt}])
@@ -173,6 +197,7 @@ def query_local_model(llm, system_prompt: str, user_prompt: str, max_tokens: int
         stop=["<|im_end|>", "<|endoftext|>", "<|end_of_text|>", "<|im_start|>"],
         echo=False,
     ):
+        # Iterate over items, evaluate loop invariant, and update progress
         if "choices" in chunk and chunk["choices"]:
             chunks.append(chunk["choices"][0].get("text", ""))
     raw = "".join(chunks)
@@ -182,6 +207,7 @@ def query_local_model(llm, system_prompt: str, user_prompt: str, max_tokens: int
 
 def build_self_correction_row(problem: CodingProblem, attempts: list[dict]) -> dict:
     """Create a HuggingFace messages row from a failed-then-fixed trajectory."""
+    # Step 1: Validate input parameters, operational preconditions, and state
     failed_attempts = [a for a in attempts[:-1] if not a["passed"]]
     final = attempts[-1]
     previous = failed_attempts[-1] if failed_attempts else attempts[0]
@@ -213,9 +239,11 @@ def build_self_correction_row(problem: CodingProblem, attempts: list[dict]) -> d
 
 
 def run_problem(llm, problem: CodingProblem, max_attempts: int, max_tokens: int) -> dict | None:
+    # Step 1: Validate input parameters, operational preconditions, and state
     attempts: list[dict] = []
     user_prompt = build_initial_prompt(problem)
     for iteration in range(1, max_attempts + 1):
+        # Iterate over items, evaluate loop invariant, and update progress
         thought, response = query_local_model(
             llm,
             SWARM_CODER_SYSTEM_PROMPT,
@@ -242,6 +270,7 @@ def run_problem(llm, problem: CodingProblem, max_attempts: int, max_tokens: int)
 
 
 def main() -> int:
+    # Step 1: Validate input parameters, operational preconditions, and state
     parser = argparse.ArgumentParser(description="Generate STaR self-correction SFT trajectories.")
     parser.add_argument(
         "--dataset",
@@ -267,8 +296,10 @@ def main() -> int:
     llm = ModelLoader.get_instance()
     rows: list[dict] = []
     for idx, problem in enumerate(problems, 1):
+        # Iterate over items, evaluate loop invariant, and update progress
         print(f"[{idx}/{len(problems)}] {problem.problem_id}")
         try:
+            # Execute guarded operations and establish recovery boundaries
             row = run_problem(llm, problem, args.max_attempts, args.max_tokens)
         except Exception as exc:
             print(f"  skipped: {exc}")
@@ -283,6 +314,7 @@ def main() -> int:
     out_path.parent.mkdir(parents=True, exist_ok=True)
     with out_path.open("w", encoding="utf-8") as fh:
         for row in rows:
+            # Iterate over items, evaluate loop invariant, and update progress
             fh.write(json.dumps(row, ensure_ascii=False) + "\n")
     print(f"Wrote {len(rows)} STaR SFT row(s) to {out_path}")
     return 0

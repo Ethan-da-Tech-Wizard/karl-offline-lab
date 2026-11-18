@@ -1,4 +1,14 @@
 #!/usr/bin/env bash
+# ==============================================================================
+# Program: karl.sh
+# Programmer: Ethan-da-Tech-Wizard
+# Last Modified: November 18, 2026
+# Purpose: Primary Unix startup script for Karl Offline Lab.
+#          Provisions the Python virtual environment, installs dependencies from
+#          requirements.txt, validates baseline model availability, and launches
+#          the main PyQt6 desktop application.
+# ==============================================================================
+
 set -e
 
 # Change directory to the script's location to support running from anywhere

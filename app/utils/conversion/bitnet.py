@@ -1,3 +1,12 @@
+# ==============================================================================
+# Program: bitnet.py
+# Programmer: Ethan-da-Tech-Wizard
+# Last Modified: November 18, 2026
+# Purpose: Weight conversion and architectural mapping implementation for BITNET.
+#          Transforms HuggingFace checkpoint tensors, normalizes layer weights,
+#          and writes compliant GGUF data structures for llama.cpp.
+# ==============================================================================
+
 from __future__ import annotations
 
 from typing import Iterable, TYPE_CHECKING
@@ -13,14 +22,17 @@ class BitnetModel(TextModel):
     model_arch = gguf.MODEL_ARCH.BITNET
 
     def set_vocab(self):
+        # Step 1: Validate input parameters, operational preconditions, and state
         self._set_vocab_sentencepiece()
 
     def set_gguf_parameters(self):
+        # Step 1: Validate input parameters, operational preconditions, and state
         super().set_gguf_parameters()
         self.gguf_writer.add_rope_scaling_type(gguf.RopeScalingType.LINEAR)
         self.gguf_writer.add_rope_scaling_factor(1.0)
 
     def weight_quant(self, weight: Tensor) -> Tensor:
+        # Step 1: Validate input parameters, operational preconditions, and state
         dtype = weight.dtype
         weight = weight.float()
         scale = weight.abs().mean().clamp(min=1e-5)
@@ -32,6 +44,7 @@ class BitnetModel(TextModel):
         return result.type(dtype)
 
     def modify_tensors(self, data_torch: Tensor, name: str, bid: int | None) -> Iterable[tuple[str, Tensor]]:
+        # Step 1: Validate input parameters, operational preconditions, and state
         new_name = self.map_tensor_name(name)
 
         if any(self.match_model_tensor_name(new_name, key, bid) for key in [

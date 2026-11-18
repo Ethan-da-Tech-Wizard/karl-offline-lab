@@ -1,3 +1,12 @@
+# ==============================================================================
+# Program: qt_test_helper.py
+# Programmer: Ethan-da-Tech-Wizard
+# Last Modified: November 18, 2026
+# Purpose: Comprehensive test suite exercising qt helper functionality.
+#          Verifies state transitions, error boundaries, regression resistance,
+#          and contract compliance under tests.
+# ==============================================================================
+
 import os
 import sys
 from PyQt6.QtWidgets import QApplication

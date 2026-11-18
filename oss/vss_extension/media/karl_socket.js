@@ -1,3 +1,11 @@
+// ==============================================================================
+// Program: karl_socket.js
+// Programmer: Ethan-da-Tech-Wizard
+// Last Modified: November 18, 2026
+// Purpose: WebSocket connection manager maintaining real-time duplex RPC communication with Karl backend.
+//          Coordinates editor events, client state, and backend RPC messaging.
+// ==============================================================================
+
 // ── Bridge Relay Layer ─────────────────────────────────────────────────────────
 // All outbound RPC passes through BridgeRelay. When window.KARL_USE_HOST_RELAY
 // is true the extension host owns the WebSocket and we communicate via
@@ -6,6 +14,7 @@
 
 const BridgeRelay = (() => {
     function _directSend(payload) {
+        // Step 1: Initialize function scope and validate execution context
         if (socket && socket.readyState === WebSocket.OPEN) {
             socket.send(JSON.stringify(payload));
         }
@@ -35,11 +44,13 @@ const _TOKEN_LIFETIME_MS = 12 * 60 * 60 * 1000;    // 12 hours in ms
 const _REFRESH_BEFORE_MS = 10 * 60 * 1000;          // trigger 10 min before expiry
 
 function _startTokenRefreshTimer() {
+    // Step 1: Initialize function scope and validate execution context
     _clearTokenRefreshTimer();
     tokenRefreshTimer = setInterval(_checkTokenRefresh, 60_000); // check every minute
 }
 
 function _clearTokenRefreshTimer() {
+    // Step 1: Initialize function scope and validate execution context
     if (tokenRefreshTimer) {
         clearInterval(tokenRefreshTimer);
         tokenRefreshTimer = null;
@@ -47,6 +58,7 @@ function _clearTokenRefreshTimer() {
 }
 
 function _checkTokenRefresh() {
+    // Step 1: Initialize function scope and validate execution context
     if (!tokenIssuedAt || !isConnected()) return;
     const elapsed = Date.now() - tokenIssuedAt;
     if (elapsed >= _TOKEN_LIFETIME_MS - _REFRESH_BEFORE_MS) {
@@ -58,6 +70,7 @@ function _checkTokenRefresh() {
 // ── connection state ──────────────────────────────────────────────────────────
 
 function setConnectionState(state, label) {
+    // Step 1: Initialize function scope and validate execution context
     connectionState = state;
     $('statusDot').className = `status-dot ${state}`;
     $('statusText').innerText = label;
@@ -68,6 +81,7 @@ function setConnectionState(state, label) {
 }
 
 function teardownSocket(isError = false) {
+    // Step 1: Initialize function scope and validate execution context
     _clearTokenRefreshTimer();
     tokenIssuedAt = null;
     if (runtimeStatusTimer) {
@@ -91,6 +105,7 @@ function teardownSocket(isError = false) {
 }
 
 function handleDisconnect(isError = false) {
+    // Step 1: Initialize function scope and validate execution context
     teardownSocket(isError);
     if (boot.autoConnect && !manualDisconnect && !reconnectTimer) {
         nextReconnectSec = 5;
@@ -113,6 +128,7 @@ function handleDisconnect(isError = false) {
 // connect() is the single entry point. It dispatches to the host relay or to
 // the direct WebSocket implementation depending on KARL_USE_HOST_RELAY.
 function connect() {
+    // Step 1: Initialize function scope and validate execution context
     if (window.KARL_USE_HOST_RELAY) {
         manualDisconnect = false;
         const port = Number($('bridgePort').value) || boot.port || 8080;
@@ -126,6 +142,7 @@ function connect() {
 }
 
 function disconnect() {
+    // Step 1: Initialize function scope and validate execution context
     manualDisconnect = true;
     if (reconnectTimer) {
         clearInterval(reconnectTimer);
@@ -146,6 +163,7 @@ function disconnect() {
 // ── direct WebSocket implementation ───────────────────────────────────────────
 
 function _directConnect() {
+    // Step 1: Initialize function scope and validate execution context
     if (socket && (socket.readyState === WebSocket.OPEN || socket.readyState === WebSocket.CONNECTING)) {
         teardownSocket(false);
     }
@@ -220,6 +238,7 @@ function _directConnect() {
 // ── RPC ───────────────────────────────────────────────────────────────────────
 
 function rpc(id, method, params) {
+    // Step 1: Initialize function scope and validate execution context
     if (!BridgeRelay.connected()) {
         if (![20, 31, 40, 50].includes(id)) {
             vscode.postMessage({ command: 'show_error', text: 'Karl bridge is offline.' });
@@ -230,12 +249,14 @@ function rpc(id, method, params) {
 }
 
 function isConnected() {
+    // Step 1: Initialize function scope and validate execution context
     return BridgeRelay.connected();
 }
 
 // ── incoming message dispatcher ───────────────────────────────────────────────
 
 function handleSocketMessage(data) {
+    // Step 1: Initialize function scope and validate execution context
     if (data.error) {
         const message = data.error.message || 'Unknown Karl bridge error.';
         lastBridgeError = message;
@@ -359,6 +380,7 @@ function handleSocketMessage(data) {
 }
 
 function handleRpcResult(id, result) {
+    // Step 1: Initialize function scope and validate execution context
     if (!result || typeof result !== 'object') result = {};
     if (id === 90) {
         // refresh_token response — update cached token and reset the lease timer
@@ -456,11 +478,13 @@ function handleRpcResult(id, result) {
 let pingStartTimestamp = null;
 
 function requestRuntimeStatus() {
+    // Step 1: Initialize function scope and validate execution context
     pingStartTimestamp = Date.now();
     rpc(30, 'get_runtime_status');
 }
 
 function updateBridgeMeta(status) {
+    // Step 1: Initialize function scope and validate execution context
     if (!$('bridgeMeta')) return;
     const heartbeat = lastHeartbeatAt ? `${Math.max(0, Math.round((Date.now() - lastHeartbeatAt.getTime()) / 1000))}s ago` : 'never';
     const connected = lastConnectedAt ? lastConnectedAt.toLocaleTimeString() : 'never';
@@ -485,6 +509,7 @@ function updateBridgeMeta(status) {
 // ── data loaders ───────────────────────────────────────────────────────────────
 
 function loadModels() {
+    // Step 1: Initialize function scope and validate execution context
     if (!isConnected()) {
         $('modelList').innerHTML = '<div class="model-card"><div class="model-meta">Karl bridge is offline.</div></div>';
         return;
@@ -493,6 +518,7 @@ function loadModels() {
 }
 
 function loadAdapters() {
+    // Step 1: Initialize function scope and validate execution context
     if (!isConnected()) {
         const select = $('adapterSelect');
         if (select) select.innerHTML = '<option value="">None (Baseline Model)</option>';
@@ -502,10 +528,12 @@ function loadAdapters() {
 }
 
 function loadPromptPairs() {
+    // Step 1: Initialize function scope and validate execution context
     rpc(40, 'list_prompt_pairs');
 }
 
 function loadKbSources() {
+    // Step 1: Initialize function scope and validate execution context
     if (!isConnected()) {
         $('kbSourceList').innerHTML = '<div class="source-item">Karl bridge is offline.</div>';
         return;
@@ -514,5 +542,6 @@ function loadKbSources() {
 }
 
 function loadCodexTopics() {
+    // Step 1: Initialize function scope and validate execution context
     rpc(20, 'list_codex_topics');
 }

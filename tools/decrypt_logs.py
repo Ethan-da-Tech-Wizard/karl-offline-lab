@@ -1,4 +1,12 @@
 #!/usr/bin/env python3
+# ==============================================================================
+# Program: decrypt_logs.py
+# Programmer: Ethan-da-Tech-Wizard
+# Last Modified: November 18, 2026
+# Purpose: Audit log decryption utility for encrypted generation traces.
+#          Decrypts and verifies JSONL trace logs using local encryption keys.
+# ==============================================================================
+
 """
 Karl Log Decryption Utility
 ===========================
@@ -24,6 +32,7 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 _libc = None
 if sys.platform != "win32":
     try:
+        # Execute guarded operations and establish recovery boundaries
         _libc = ctypes.CDLL(None)
     except Exception:
         _libc = None
@@ -33,6 +42,7 @@ _MCL_FUTURE  = 2
 # ─────────────────────────────────────────────────────────────────────────────
 
 try:
+    # Execute guarded operations and establish recovery boundaries
     import psutil
     from core.hardware_scout import get_cpu_flags
     from app.utils.keychain_manager import load_cached_token, save_cached_token
@@ -42,6 +52,7 @@ except ImportError as e:
     sys.exit(1)
 
 def main():
+    # Step 1: Validate input parameters, operational preconditions, and state
     parser = argparse.ArgumentParser(description="Decrypt Karl encrypted trace logs.")
     parser.add_argument("--input", "-i", required=True, help="Path to the .enc log file.")
     parser.add_argument("--output", "-o", required=True, help="Path to save the decrypted .jsonl file.")
@@ -78,6 +89,7 @@ def main():
 
     plaintext_ba = None
     try:
+        # Execute guarded operations and establish recovery boundaries
         print(f"Decrypting {args.input}...")
 
         # Derive the key and decrypt via TraceLogger's canonical decrypt-side
@@ -88,6 +100,7 @@ def main():
         # how this codebase previously ended up with permanently
         # undecryptable archives.
         try:
+            # Execute guarded operations and establish recovery boundaries
             plaintext_ba = TraceLogger.decrypt_archive_with_token(token, args.input)
         except ValueError:
             # Likely invalid token or salt mismatch

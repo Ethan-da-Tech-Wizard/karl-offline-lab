@@ -1,3 +1,12 @@
+# ==============================================================================
+# Program: minimax.py
+# Programmer: Ethan-da-Tech-Wizard
+# Last Modified: November 18, 2026
+# Purpose: Weight conversion and architectural mapping implementation for MINIMAX.
+#          Transforms HuggingFace checkpoint tensors, normalizes layer weights,
+#          and writes compliant GGUF data structures for llama.cpp.
+# ==============================================================================
+
 from __future__ import annotations
 
 from typing import TYPE_CHECKING
@@ -16,6 +25,7 @@ class MiniMaxM2Model(TextModel):
     _experts_cache: dict[int, dict[str, Tensor]] = {}
 
     def set_gguf_parameters(self):
+        # Step 1: Validate input parameters, operational preconditions, and state
         super().set_gguf_parameters()
 
         self.gguf_writer.add_expert_feed_forward_length(self.find_hparam(["intermediate_size"]))
@@ -36,9 +46,11 @@ class MiniMaxM2Model(TextModel):
                 return
 
             for w_name in expert_weights:
+                # Iterate over items, evaluate loop invariant, and update progress
                 datas: list[Tensor] = []
 
                 for xid in range(n_experts):
+                    # Iterate over items, evaluate loop invariant, and update progress
                     ename = f"model.layers.{bid}.block_sparse_moe.experts.{xid}.{w_name}.weight"
                     datas.append(expert_cache[ename])
                     del expert_cache[ename]

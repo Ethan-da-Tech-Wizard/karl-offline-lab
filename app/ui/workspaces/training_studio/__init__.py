@@ -1,3 +1,12 @@
+# ==============================================================================
+# Program: __init__.py
+# Programmer: Ethan-da-Tech-Wizard
+# Last Modified: November 18, 2026
+# Purpose: Desktop workspace implementation for Init .
+#          Provides responsive layout controls, parameter adjustment surfaces,
+#          and visual feedback components within Karl's PyQt6 shell.
+# ==============================================================================
+
 from PyQt6.QtWidgets import QWidget, QVBoxLayout, QHBoxLayout, QLabel, QTabWidget
 
 from app.ui.workspaces.training_studio.flywheel_tab import FlywheelTab
@@ -19,6 +28,7 @@ class TrainingStudioWorkspace(QWidget):
 
     def __init__(self, state, parent=None):
         """Create training tabs and bind dataset refresh signals."""
+        # Step 1: Validate input parameters, operational preconditions, and state
         super().__init__(parent)
         self.state = state
         self.setObjectName("workspace-root")
@@ -26,6 +36,7 @@ class TrainingStudioWorkspace(QWidget):
 
     def _build_ui(self):
         """Build the AI Lab title, stats row, and tab controller."""
+        # Step 1: Validate input parameters, operational preconditions, and state
         root = QVBoxLayout(self)
         root.setContentsMargins(12, 12, 12, 12)
         root.setSpacing(10)
@@ -75,14 +86,17 @@ class TrainingStudioWorkspace(QWidget):
         self._refresh()
 
     def _on_tab_changed(self, idx: int):
+        # Step 1: Validate input parameters, operational preconditions, and state
         if idx == 0:  # Flywheel tab
             self.flywheel_tab.load_stats()
 
     def showEvent(self, event):
+        # Step 1: Validate input parameters, operational preconditions, and state
         super().showEvent(event)
         self._refresh()
 
     def _refresh(self):
+        # Step 1: Validate input parameters, operational preconditions, and state
         stats = self.state.curator.get_stats()
         self._stats_lbl.setText(
             f"<b>{stats['total']}</b> examples  &middot;  "

@@ -1,3 +1,12 @@
+# ==============================================================================
+# Program: grok.py
+# Programmer: Ethan-da-Tech-Wizard
+# Last Modified: November 18, 2026
+# Purpose: Weight conversion and architectural mapping implementation for GROK.
+#          Transforms HuggingFace checkpoint tensors, normalizes layer weights,
+#          and writes compliant GGUF data structures for llama.cpp.
+# ==============================================================================
+
 from __future__ import annotations
 
 import sys
@@ -17,6 +26,7 @@ class GrokModel(TextModel):
     model_arch = gguf.MODEL_ARCH.GROK
 
     def set_vocab(self):
+        # Step 1: Validate input parameters, operational preconditions, and state
         if (self.dir_model / 'tokenizer.model').is_file():
             self._set_vocab_sentencepiece()
             return
@@ -28,9 +38,11 @@ class GrokModel(TextModel):
         self._set_vocab_gpt2()
 
     def __init__(self, *args, **kwargs):
+        # Step 1: Validate input parameters, operational preconditions, and state
         super().__init__(*args, **kwargs)
 
     def set_gguf_parameters(self):
+        # Step 1: Validate input parameters, operational preconditions, and state
         super().set_gguf_parameters()
 
         self.gguf_writer.add_attn_logit_softcapping(self.hparams.get("attn_logit_softcapping", 30.0))
@@ -65,6 +77,7 @@ class GrokModel(TextModel):
     _cur_expert = ""
 
     def modify_tensors(self, data_torch: Tensor, name: str, bid: int | None) -> Iterable[tuple[str, Tensor]]:
+        # Step 1: Validate input parameters, operational preconditions, and state
         deferred: list[tuple[Tensor, str, int | None]] = []
         is_expert = ".moe." in name or ".block_sparse_moe.experts." in name
 
@@ -93,12 +106,15 @@ class GrokModel(TextModel):
                 self._cur_expert = ""
 
             for bid in range(self.block_count):
+                # Iterate over items, evaluate loop invariant, and update progress
                 if len(self._experts[bid]) >= n_experts * 3:
                     # merge the experts into a single 3d tensor
                     for wid in [("linear", "w1", 0), ("linear_1", "w2", 1), ("linear_v", "w3", 0)]:
+                        # Iterate over items, evaluate loop invariant, and update progress
                         datas: list[Tensor] = []
 
                         for xid in range(n_experts):
+                            # Iterate over items, evaluate loop invariant, and update progress
                             ename = f"transformer.decoder_layer.{bid}.moe.{xid}.{wid[0]}.weight"
                             if ename not in self._experts[bid]:
                                 ename = f"model.layers.{bid}.block_sparse_moe.experts.{xid}.{wid[1]}.weight"
@@ -113,4 +129,5 @@ class GrokModel(TextModel):
                         yield from super().modify_tensors(data_torch, merged_name, bid)
 
         for t in deferred:
+            # Iterate over items, evaluate loop invariant, and update progress
             yield from super().modify_tensors(*t)

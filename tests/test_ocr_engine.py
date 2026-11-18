@@ -1,3 +1,12 @@
+# ==============================================================================
+# Program: test_ocr_engine.py
+# Programmer: Ethan-da-Tech-Wizard
+# Last Modified: November 18, 2026
+# Purpose: Comprehensive test suite exercising ocr engine functionality.
+#          Verifies state transitions, error boundaries, regression resistance,
+#          and contract compliance under tests.
+# ==============================================================================
+
 import os
 import sys
 
@@ -7,6 +16,7 @@ from app.vision.ocr_engine import TesseractOcrEngine
 
 
 def test_parse_tsv_extracts_text_confidence_and_boxes():
+    # Step 1: Validate input parameters, operational preconditions, and state
     raw = "\n".join([
         "level\tpage_num\tblock_num\tpar_num\tline_num\tword_num\tleft\ttop\twidth\theight\tconf\ttext",
         "5\t1\t1\t1\t1\t1\t10\t20\t30\t12\t90.0\tError",
@@ -23,6 +33,7 @@ def test_parse_tsv_extracts_text_confidence_and_boxes():
 
 
 def test_unavailable_tesseract_returns_structured_error(tmp_path):
+    # Step 1: Validate input parameters, operational preconditions, and state
     image_path = tmp_path / "missing.png"
     engine = TesseractOcrEngine(executable="definitely-not-installed-tesseract")
     result = engine.analyze(str(image_path))

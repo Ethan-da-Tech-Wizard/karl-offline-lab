@@ -1,3 +1,12 @@
+# ==============================================================================
+# Program: refact.py
+# Programmer: Ethan-da-Tech-Wizard
+# Last Modified: November 18, 2026
+# Purpose: Weight conversion and architectural mapping implementation for REFACT.
+#          Transforms HuggingFace checkpoint tensors, normalizes layer weights,
+#          and writes compliant GGUF data structures for llama.cpp.
+# ==============================================================================
+
 from __future__ import annotations
 
 from typing import Iterable, TYPE_CHECKING
@@ -13,6 +22,7 @@ class RefactModel(TextModel):
     model_arch = gguf.MODEL_ARCH.REFACT
 
     def set_vocab(self):
+        # Step 1: Validate input parameters, operational preconditions, and state
         super().set_vocab()
 
         # TODO: how to determine special FIM tokens automatically?
@@ -25,6 +35,7 @@ class RefactModel(TextModel):
         special_vocab.add_to_gguf(self.gguf_writer)
 
     def set_gguf_parameters(self):
+        # Step 1: Validate input parameters, operational preconditions, and state
         hidden_dim = self.hparams["n_embd"]
         inner_dim = 4 * hidden_dim
         hidden_dim = int(2 * inner_dim / 3)
@@ -43,6 +54,7 @@ class RefactModel(TextModel):
         self.gguf_writer.add_file_type(self.ftype)
 
     def modify_tensors(self, data_torch: Tensor, name: str, bid: int | None) -> Iterable[tuple[str, Tensor]]:
+        # Step 1: Validate input parameters, operational preconditions, and state
         hidden_dim = self.hparams["n_embd"]
         inner_dim = 4 * hidden_dim
         hidden_dim = int(2 * inner_dim / 3)

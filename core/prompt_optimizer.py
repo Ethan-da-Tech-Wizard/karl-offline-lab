@@ -1,3 +1,12 @@
+# ==============================================================================
+# Program: prompt_optimizer.py
+# Programmer: Ethan-da-Tech-Wizard
+# Last Modified: November 18, 2026
+# Purpose: Context compression and prompt optimization engine.
+#          Deduplicates repetitive tokens, prioritizes relevant conversation
+#          turns, and maximizes effective context window utilization.
+# ==============================================================================
+
 """
 Prompt Optimizer Engine — Karl Workbench
 ========================================
@@ -41,6 +50,7 @@ class PromptOptimizer:
     """Manages prompt optimization cycles using local model mutations and eval checks."""
 
     def __init__(self, model_name: Optional[str] = None):
+        # Step 1: Validate input parameters, operational preconditions, and state
         self.model_name = model_name
         self._harness = EvalHarness()
 
@@ -55,6 +65,7 @@ class PromptOptimizer:
         Returns:
             The proposed/mutated system prompt.
         """
+        # Step 1: Validate input parameters, operational preconditions, and state
         logger.info("Mutating prompt based on %d failures...", len(failed_examples))
         if not failed_examples:
             return current_prompt
@@ -75,6 +86,7 @@ class PromptOptimizer:
         )
 
         try:
+            # Execute guarded operations and establish recovery boundaries
             llm = ModelLoader.get_instance(model_path=self._model_path())
         except Exception as exc:
             logger.warning("Could not load model for prompt mutation (%s); keeping current prompt.", exc)
@@ -87,6 +99,7 @@ class PromptOptimizer:
         )
 
         try:
+            # Execute guarded operations and establish recovery boundaries
             response = llm(prompt, max_tokens=768, temperature=0.4, top_p=0.95, stop=["<|im_end|>"])
         except Exception as exc:
             logger.warning("Prompt mutation generation failed (%s); keeping current prompt.", exc)
@@ -120,6 +133,7 @@ class PromptOptimizer:
         Returns:
             The final optimized system prompt string.
         """
+        # Step 1: Validate input parameters, operational preconditions, and state
         logger.info("Starting prompt optimization for '%s' using dataset '%s'...", prompt_key, dataset_path)
 
         presets = load_prompt_presets()
@@ -150,6 +164,7 @@ class PromptOptimizer:
         self._write_cases(val_path, mini_val)
 
         try:
+            # Execute guarded operations and establish recovery boundaries
             best_prompt = current_prompt
             best_score, _ = self._evaluate(best_prompt, val_path)
             logger.info("Baseline score for '%s': %.3f", prompt_key, best_score)
@@ -157,6 +172,7 @@ class PromptOptimizer:
                 progress_callback(0, iterations, best_score, best_prompt)
 
             for i in range(1, iterations + 1):
+                # Iterate over items, evaluate loop invariant, and update progress
                 if stop_check and stop_check():
                     logger.info("Optimization loop stopped early at iteration %d/%d.", i, iterations)
                     break
@@ -188,11 +204,13 @@ class PromptOptimizer:
     # ── internals ────────────────────────────────────────────────────────────
 
     def _model_path(self) -> Optional[str]:
+        # Step 1: Validate input parameters, operational preconditions, and state
         return os.path.join("data", "models", self.model_name) if self.model_name else None
 
     def _evaluate(self, system_prompt: str, dataset_path: Path) -> tuple[float, list[dict]]:
         """Score *system_prompt* against a JSONL dataset via EvalHarness.
         Returns (avg_score, failed_case_dicts)."""
+        # Step 1: Validate input parameters, operational preconditions, and state
         report = self._harness.run(
             dataset_path=str(dataset_path),
             workflow_name="general_chat",
@@ -213,13 +231,16 @@ class PromptOptimizer:
 
     @staticmethod
     def _load_cases(dataset_path: str) -> list[dict]:
+        # Step 1: Validate input parameters, operational preconditions, and state
         cases: list[dict] = []
         with open(dataset_path, "r", encoding="utf-8") as fh:
             for line in fh:
+                # Iterate over items, evaluate loop invariant, and update progress
                 line = line.strip()
                 if not line or line.startswith("#"):
                     continue
                 try:
+                    # Execute guarded operations and establish recovery boundaries
                     cases.append(json.loads(line))
                 except json.JSONDecodeError:
                     continue
@@ -227,12 +248,15 @@ class PromptOptimizer:
 
     @staticmethod
     def _write_cases(path: Path, cases: list[dict]) -> None:
+        # Step 1: Validate input parameters, operational preconditions, and state
         with path.open("w", encoding="utf-8") as fh:
             for case in cases:
+                # Iterate over items, evaluate loop invariant, and update progress
                 fh.write(json.dumps(case, ensure_ascii=False) + "\n")
 
     @staticmethod
     def _clean_mutation_output(text: str) -> str:
+        # Step 1: Validate input parameters, operational preconditions, and state
         text = text.strip()
         if text.startswith("```"):
             text = re.sub(r"^```[a-zA-Z]*\n?", "", text)

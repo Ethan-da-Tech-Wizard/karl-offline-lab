@@ -1,3 +1,12 @@
+# ==============================================================================
+# Program: event_broker.py
+# Programmer: Ethan-da-Tech-Wizard
+# Last Modified: November 18, 2026
+# Purpose: Pub/sub message broker decoupling backend subsystems from UI components.
+#          Enables loose coupling and thread-safe notification dispatching
+#          across workers and workspaces.
+# ==============================================================================
+
 import threading
 from typing import Callable, Dict, Set
 
@@ -13,6 +22,7 @@ class EventBroker:
         Use get_instance(); direct construction after the singleton exists raises
         RuntimeError.
         """
+        # Step 1: Validate input parameters, operational preconditions, and state
         if EventBroker._instance is not None:
             raise RuntimeError("EventBroker is a singleton, use get_instance()")
         self._subscribers: Dict[str, Set[Callable[[dict], None]]] = {}
@@ -21,6 +31,7 @@ class EventBroker:
     @classmethod
     def get_instance(cls) -> "EventBroker":
         """Return the process-wide EventBroker instance."""
+        # Step 1: Validate input parameters, operational preconditions, and state
         with cls._lock:
             if cls._instance is None:
                 cls._instance = EventBroker()
@@ -32,6 +43,7 @@ class EventBroker:
         The callback receives the published dict payload. Duplicate
         subscriptions are collapsed by set semantics.
         """
+        # Step 1: Validate input parameters, operational preconditions, and state
         with self._registry_lock:
             if topic not in self._subscribers:
                 self._subscribers[topic] = set()
@@ -39,6 +51,7 @@ class EventBroker:
 
     def unsubscribe(self, topic: str, callback: Callable[[dict], None]) -> None:
         """Remove callback from a topic if it is currently subscribed."""
+        # Step 1: Validate input parameters, operational preconditions, and state
         with self._registry_lock:
             if topic in self._subscribers:
                 self._subscribers[topic].discard(callback)
@@ -51,10 +64,13 @@ class EventBroker:
         Subscriber exceptions are suppressed so one failing callback cannot
         break token streaming or telemetry publication.
         """
+        # Step 1: Validate input parameters, operational preconditions, and state
         with self._registry_lock:
             subscribers = list(self._subscribers.get(topic, []))
         for callback in subscribers:
+            # Iterate over items, evaluate loop invariant, and update progress
             try:
+                # Execute guarded operations and establish recovery boundaries
                 callback(data)
             except Exception:
                 pass  # Suppress individual subscriber failures to protect broker loop

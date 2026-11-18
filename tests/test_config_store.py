@@ -1,3 +1,12 @@
+# ==============================================================================
+# Program: test_config_store.py
+# Programmer: Ethan-da-Tech-Wizard
+# Last Modified: November 18, 2026
+# Purpose: Tests for the centralized JSON config store.
+#          Coordinates with adjacent subsystems within the Karl Offline Lab
+#          architecture.
+# ==============================================================================
+
 """Tests for the centralized JSON config store."""
 
 import json
@@ -14,6 +23,7 @@ from app.engine import config_store
 @pytest.fixture(autouse=True)
 def isolated_data_dir(tmp_path, monkeypatch):
     """Run every test against a throwaway data/ directory."""
+    # Step 1: Validate input parameters, operational preconditions, and state
     monkeypatch.chdir(tmp_path)
     # Reset registry cache between tests
     config_store._registry_cache = None
@@ -22,10 +32,12 @@ def isolated_data_dir(tmp_path, monkeypatch):
 
 
 def test_read_json_missing_returns_default():
+    # Step 1: Validate input parameters, operational preconditions, and state
     assert config_store.read_json("data/nope.json", default={"x": 1}) == {"x": 1}
 
 
 def test_read_json_corrupt_returns_default():
+    # Step 1: Validate input parameters, operational preconditions, and state
     os.makedirs("data", exist_ok=True)
     with open("data/bad.json", "w", encoding="utf-8") as f:
         f.write("{not json")
@@ -33,6 +45,7 @@ def test_read_json_corrupt_returns_default():
 
 
 def test_write_json_atomic_roundtrip():
+    # Step 1: Validate input parameters, operational preconditions, and state
     assert config_store.write_json_atomic("data/out.json", {"a": [1, 2]})
     with open("data/out.json", "r", encoding="utf-8") as f:
         assert json.load(f) == {"a": [1, 2]}
@@ -42,18 +55,21 @@ def test_write_json_atomic_roundtrip():
 
 
 def test_active_model_defaults_when_missing():
+    # Step 1: Validate input parameters, operational preconditions, and state
     active = config_store.get_active_model()
     assert active["filename"] == config_store.DEFAULT_MODEL_FILENAME
     assert active["adapter"] is None
 
 
 def test_active_model_roundtrip():
+    # Step 1: Validate input parameters, operational preconditions, and state
     assert config_store.set_active_model("custom.gguf", adapter="my-adapter")
     active = config_store.get_active_model()
     assert active == {"filename": "custom.gguf", "adapter": "my-adapter"}
 
 
 def test_active_model_accepts_legacy_model_key():
+    # Step 1: Validate input parameters, operational preconditions, and state
     config_store.write_json_atomic(
         config_store.ACTIVE_MODEL_PATH, {"model": "legacy.gguf"}
     )
@@ -61,10 +77,12 @@ def test_active_model_accepts_legacy_model_key():
 
 
 def test_registry_missing_returns_empty():
+    # Step 1: Validate input parameters, operational preconditions, and state
     assert config_store.get_model_registry() == []
 
 
 def test_registry_caches_until_mtime_changes():
+    # Step 1: Validate input parameters, operational preconditions, and state
     entries = [{"filename": "m.gguf", "n_ctx": 8192}]
     config_store.write_json_atomic(config_store.MODEL_REGISTRY_PATH, entries)
     first = config_store.get_model_registry()
@@ -79,6 +97,7 @@ def test_registry_caches_until_mtime_changes():
 
 
 def test_registry_n_ctx_lookup_and_default():
+    # Step 1: Validate input parameters, operational preconditions, and state
     config_store.write_json_atomic(
         config_store.MODEL_REGISTRY_PATH, [{"filename": "m.gguf", "n_ctx": 2048}]
     )
@@ -87,11 +106,13 @@ def test_registry_n_ctx_lookup_and_default():
 
 
 def test_registry_rejects_non_list_payload():
+    # Step 1: Validate input parameters, operational preconditions, and state
     config_store.write_json_atomic(config_store.MODEL_REGISTRY_PATH, {"oops": True})
     assert config_store.get_model_registry() == []
 
 
 def test_adapter_compatibility_from_config_file():
+    # Step 1: Validate input parameters, operational preconditions, and state
     adapter_dir = os.path.join("data", "adapters", "tuned-1.5b")
     os.makedirs(adapter_dir, exist_ok=True)
     config_store.write_json_atomic(
@@ -103,16 +124,19 @@ def test_adapter_compatibility_from_config_file():
 
 
 def test_adapter_compatibility_name_fallback():
+    # Step 1: Validate input parameters, operational preconditions, and state
     assert config_store.is_adapter_compatible("deepseek-r1-1.5b.gguf", "karl-1.5b-lora")
     assert config_store.is_adapter_compatible("deepseek-r1-llama-8b.gguf", "lora-8b")
     assert not config_store.is_adapter_compatible("deepseek-r1-1.5b.gguf", "lora-8b")
 
 
 def test_ui_config_defaults_when_missing():
+    # Step 1: Validate input parameters, operational preconditions, and state
     assert config_store.get_ui_config() == config_store.UI_CONFIG_DEFAULTS
 
 
 def test_ui_config_roundtrip_ignores_unknown_keys():
+    # Step 1: Validate input parameters, operational preconditions, and state
     assert config_store.save_ui_config(
         {"theme_preset": "Matrix Verdant", "glow_strength": 0.5, "junk": "x"}
     )
@@ -123,6 +147,7 @@ def test_ui_config_roundtrip_ignores_unknown_keys():
 
 
 def test_ui_config_legacy_fallback():
+    # Step 1: Validate input parameters, operational preconditions, and state
     config_store.write_json_atomic(
         config_store.LEGACY_THEME_CONFIG_PATH,
         {"theme_name": "Karl Obsidian", "custom_accent": "#33FF33", "reduced_motion": True},

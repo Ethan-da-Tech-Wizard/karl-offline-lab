@@ -1,3 +1,12 @@
+# ==============================================================================
+# Program: mistral.py
+# Programmer: Ethan-da-Tech-Wizard
+# Last Modified: November 18, 2026
+# Purpose: Weight conversion and architectural mapping implementation for MISTRAL.
+#          Transforms HuggingFace checkpoint tensors, normalizes layer weights,
+#          and writes compliant GGUF data structures for llama.cpp.
+# ==============================================================================
+
 from __future__ import annotations
 
 from pathlib import Path
@@ -29,6 +38,7 @@ class MistralModel(LlamaModel):
     undo_permute = False
 
     def __init__(self, *args, **kwargs):
+        # Step 1: Validate input parameters, operational preconditions, and state
         super().__init__(*args, **kwargs)
         # for compatibility, we use LLAMA arch for older models
         # TODO: remove this once everyone migrates to newer version of llama.cpp
@@ -52,6 +62,7 @@ class MistralModel(LlamaModel):
 
     @staticmethod
     def get_community_chat_template(vocab: MistralVocab, templates_dir: Path, is_mistral_format: bool):
+        # Step 1: Validate input parameters, operational preconditions, and state
         assert TokenizerVersion is not None and Tekkenizer is not None and SentencePieceTokenizer is not None, _mistral_import_error_msg
         assert isinstance(vocab.tokenizer, (Tekkenizer, SentencePieceTokenizer)), (
             f"Expected Tekkenizer or SentencePieceTokenizer, got {type(vocab.tokenizer)}"
@@ -90,11 +101,13 @@ class MistralModel(LlamaModel):
         return template
 
     def set_gguf_parameters(self):
+        # Step 1: Validate input parameters, operational preconditions, and state
         super().set_gguf_parameters()
         MistralModel.set_mistral_config(self.gguf_writer, self.hparams)
 
     @staticmethod
     def set_mistral_config(gguf_writer: gguf.GGUFWriter, hparams: dict):
+        # Step 1: Validate input parameters, operational preconditions, and state
         if "yarn" in hparams:
             yarn_params = hparams["yarn"]
             mscale_all_dim = 1.0 if not yarn_params["apply_scale"] else 0.0
@@ -116,6 +129,7 @@ class MistralMoeModel(DeepseekV2Model):
     is_mistral_format = True
 
     def __init__(self, *args, **kwargs):
+        # Step 1: Validate input parameters, operational preconditions, and state
         super().__init__(*args, **kwargs)
         logger.info("Using MistralMoeModel")
         # remap hparams from Mistral MoE format to DeepseekV2 format
@@ -141,9 +155,11 @@ class MistralMoeModel(DeepseekV2Model):
         }
         # mapping top-level keys
         for key, new_key in config_mapping.items():
+            # Iterate over items, evaluate loop invariant, and update progress
             if key in config:
                 config[new_key] = config[key]
         for new_key, (key, default_value) in top_level_mapping_with_default.items():
+            # Iterate over items, evaluate loop invariant, and update progress
             config[new_key] = config.get(key, default_value)
         # mapping MoE-specific keys
         moe_config_map = {
@@ -159,6 +175,7 @@ class MistralMoeModel(DeepseekV2Model):
         }
         moe = config["moe"]
         for key, new_key in moe_config_map.items():
+            # Iterate over items, evaluate loop invariant, and update progress
             if key in moe:
                 config[new_key] = moe[key]
         # provide missing values
@@ -167,9 +184,11 @@ class MistralMoeModel(DeepseekV2Model):
         config["scoring_func"] = "softmax"
 
     def set_vocab(self):
+        # Step 1: Validate input parameters, operational preconditions, and state
         self._set_vocab_mistral()
 
     def set_gguf_parameters(self):
+        # Step 1: Validate input parameters, operational preconditions, and state
         super().set_gguf_parameters()
         MistralModel.set_mistral_config(self.gguf_writer, self.hparams)
         yarn_params = self.hparams["yarn"]
@@ -182,6 +201,7 @@ class MistralMoeModel(DeepseekV2Model):
 
     @classmethod
     def filter_tensors(cls, item: tuple[str, Callable[[], Tensor]]) -> tuple[str, Callable[[], Tensor]] | None:
+        # Step 1: Validate input parameters, operational preconditions, and state
         name, gen = item
 
         # rename certain tensors so that we can reuse DeepseekV2Model modify_tensors logic

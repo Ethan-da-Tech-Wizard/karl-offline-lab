@@ -1,3 +1,12 @@
+# ==============================================================================
+# Program: test_vision_workbench.py
+# Programmer: Ethan-da-Tech-Wizard
+# Last Modified: November 18, 2026
+# Purpose: Comprehensive test suite exercising vision workbench functionality.
+#          Verifies state transitions, error boundaries, regression resistance,
+#          and contract compliance under tests.
+# ==============================================================================
+
 import os
 import sys
 
@@ -11,6 +20,7 @@ from app.ui.workspaces.vision_workbench import VisionWorkbench
 
 
 def test_vision_workbench_lists_saved_images(tmp_path):
+    # Step 1: Validate input parameters, operational preconditions, and state
     state = AppState()
     state.image_store = state.image_store.__class__(base_dir=str(tmp_path / "images"))
 
@@ -29,6 +39,7 @@ def test_vision_workbench_lists_saved_images(tmp_path):
 
 
 def test_vision_workbench_saves_metadata_and_corrections(tmp_path):
+    # Step 1: Validate input parameters, operational preconditions, and state
     state = AppState()
     state.image_store = state.image_store.__class__(base_dir=str(tmp_path / "images"))
 

@@ -1,3 +1,12 @@
+# ==============================================================================
+# Program: test_graders.py
+# Programmer: Ethan-da-Tech-Wizard
+# Last Modified: November 18, 2026
+# Purpose: Comprehensive test suite exercising graders functionality.
+#          Verifies state transitions, error boundaries, regression resistance,
+#          and contract compliance under tests.
+# ==============================================================================
+
 import os
 import sys
 import pytest
@@ -94,6 +103,7 @@ def test_keyword_hit_grader():
 # ── 4. groundedness ───────────────────────────────────────────────────────────
 
 def test_groundedness_grader():
+    # Step 1: Validate input parameters, operational preconditions, and state
     context = [
         "The standard return policy for electronic items is 15 days.",
         "Meridian Technologies CEO is Sandra Holt."

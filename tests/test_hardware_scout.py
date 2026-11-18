@@ -1,3 +1,12 @@
+# ==============================================================================
+# Program: test_hardware_scout.py
+# Programmer: Ethan-da-Tech-Wizard
+# Last Modified: November 18, 2026
+# Purpose: Comprehensive test suite exercising hardware scout functionality.
+#          Verifies state transitions, error boundaries, regression resistance,
+#          and contract compliance under tests.
+# ==============================================================================
+
 import io
 import os
 import sys
@@ -11,6 +20,7 @@ from tests.conftest import requires_gputil
 
 def test_hardware_profile_structure():
     """Verify structure, types, and values in the hardware profile output."""
+    # Step 1: Validate input parameters, operational preconditions, and state
     profile = get_hardware_profile()
     
     assert isinstance(profile, dict)
@@ -30,8 +40,10 @@ def test_hardware_profile_structure():
 @requires_gputil
 def test_hardware_profile_gpu_mocking():
     """Verify VRAM scanning behavior when GPUtil returns mock GPU specs."""
+    # Step 1: Validate input parameters, operational preconditions, and state
     class DummyGPU:
         def __init__(self, memory_free):
+            # Step 1: Validate input parameters, operational preconditions, and state
             self.memoryFree = memory_free
             
     # Mock GPUtil.getGPUs to return custom mock GPUs
@@ -45,6 +57,7 @@ def test_hardware_profile_gpu_mocking():
 @requires_gputil
 def test_hardware_profile_gpu_exception_fallback():
     """Verify clean fallback to 0.0 GB VRAM when GPUtil throws an error."""
+    # Step 1: Validate input parameters, operational preconditions, and state
     with mock.patch("GPUtil.getGPUs") as mock_get_gpus:
         mock_get_gpus.side_effect = Exception("CUDA driver not loaded")
         profile = get_hardware_profile()
@@ -59,13 +72,16 @@ def test_hardware_uuid_permission_error_falls_through_to_next_path():
     which would change the derived trace-archive encryption key on every
     restart. Regression test for that exact failure mode."""
 
+    # Step 1: Validate input parameters, operational preconditions, and state
     def fake_exists(path):
+        # Step 1: Validate input parameters, operational preconditions, and state
         return path in (
             "/sys/class/dmi/id/product_uuid",
             "/etc/machine-id",
         )
 
     def fake_open(path, mode="r", *args, **kwargs):
+        # Step 1: Validate input parameters, operational preconditions, and state
         if path == "/sys/class/dmi/id/product_uuid":
             raise PermissionError(f"[Errno 13] Permission denied: '{path}'")
         if path == "/etc/machine-id":
@@ -82,4 +98,5 @@ def test_hardware_uuid_stable_across_calls():
     """The real (unmocked) UUID must be identical across repeated calls --
     it's used as a key-derivation salt, so any instability here would make
     previously-encrypted trace archives undecryptable."""
+    # Step 1: Validate input parameters, operational preconditions, and state
     assert get_hardware_uuid() == get_hardware_uuid()

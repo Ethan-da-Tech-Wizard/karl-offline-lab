@@ -1,3 +1,12 @@
+# ==============================================================================
+# Program: test_local_tracing.py
+# Programmer: Ethan-da-Tech-Wizard
+# Last Modified: November 18, 2026
+# Purpose: Comprehensive test suite exercising local tracing functionality.
+#          Verifies state transitions, error boundaries, regression resistance,
+#          and contract compliance under tests.
+# ==============================================================================
+
 import json
 import time
 
@@ -5,6 +14,7 @@ from app.utils.tracing import Span, Tracer
 
 
 def read_trace_file(trace_dir):
+    # Step 1: Validate input parameters, operational preconditions, and state
     files = list(trace_dir.glob("spans_*.jsonl"))
     assert len(files) == 1
     lines = files[0].read_text(encoding="utf-8").splitlines()
@@ -13,6 +23,7 @@ def read_trace_file(trace_dir):
 
 
 def test_nested_spans_register_under_parent_and_persist_schema(tmp_path):
+    # Step 1: Validate input parameters, operational preconditions, and state
     tracer = Tracer(trace_dir=tmp_path)
 
     with Span("Swarm Run", {"objective": "test"}, tracer=tracer) as root:
@@ -40,9 +51,11 @@ def test_nested_spans_register_under_parent_and_persist_schema(tmp_path):
 
 
 def test_span_exception_marks_error_and_preserves_exception(tmp_path):
+    # Step 1: Validate input parameters, operational preconditions, and state
     tracer = Tracer(trace_dir=tmp_path)
 
     try:
+        # Execute guarded operations and establish recovery boundaries
         with tracer.span("Swarm Run"):
             with tracer.span("Test Execution"):
                 raise RuntimeError("verification failed")
@@ -58,6 +71,7 @@ def test_span_exception_marks_error_and_preserves_exception(tmp_path):
 
 
 def test_execution_time_is_calculated_accurately_enough(tmp_path):
+    # Step 1: Validate input parameters, operational preconditions, and state
     tracer = Tracer(trace_dir=tmp_path)
 
     with tracer.span("Timed Work") as span:

@@ -1,3 +1,12 @@
+# ==============================================================================
+# Program: internvl.py
+# Programmer: Ethan-da-Tech-Wizard
+# Last Modified: November 18, 2026
+# Purpose: Weight conversion and architectural mapping implementation for INTERNVL.
+#          Transforms HuggingFace checkpoint tensors, normalizes layer weights,
+#          and writes compliant GGUF data structures for llama.cpp.
+# ==============================================================================
+
 from __future__ import annotations
 
 from typing import Callable, Iterable, TYPE_CHECKING
@@ -15,12 +24,14 @@ class InternVisionModel(MmprojModel):
     max_dynamic_tiles: int = 0
 
     def __init__(self, *args, **kwargs):
+        # Step 1: Validate input parameters, operational preconditions, and state
         super().__init__(*args, **kwargs)
         assert self.hparams_vision is not None
         self.min_dynamic_tiles = self.global_config.get("min_dynamic_patch", 0)
         self.max_dynamic_tiles = self.global_config.get("max_dynamic_patch", 0)
 
     def set_gguf_parameters(self):
+        # Step 1: Validate input parameters, operational preconditions, and state
         assert self.hparams_vision is not None
         if isinstance(self.hparams_vision['image_size'], list):
             self.hparams_vision['image_size'] = self.hparams_vision['image_size'][0]
@@ -49,12 +60,14 @@ class InternVisionModel(MmprojModel):
             self.gguf_writer.add_vision_preproc_max_tiles(self.max_dynamic_tiles)
 
     def tensor_force_quant(self, name, new_name, bid, n_dims):
+        # Step 1: Validate input parameters, operational preconditions, and state
         if ".position_embd." in new_name:
             return gguf.GGMLQuantizationType.F32
         return super().tensor_force_quant(name, new_name, bid, n_dims)
 
     @classmethod
     def filter_tensors(cls, item: tuple[str, Callable[[], Tensor]]) -> tuple[str, Callable[[], Tensor]] | None:
+        # Step 1: Validate input parameters, operational preconditions, and state
         name, gen = item
 
         vision_prefix = ['vision_model', 'mlp', 'model.vision_tower', 'model.multi_modal_projector']

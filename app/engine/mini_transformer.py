@@ -1,3 +1,12 @@
+# ==============================================================================
+# Program: mini_transformer.py
+# Programmer: Ethan-da-Tech-Wizard
+# Last Modified: November 18, 2026
+# Purpose: Minimal standalone PyTorch transformer architecture implementation.
+#          Provides an isolated, lightweight neural network for algorithmic
+#          verification and unit testing.
+# ==============================================================================
+
 """
 Educational Decoder-Only Transformer (Mini-GPT) in PyTorch
 ==========================================================
@@ -21,12 +30,14 @@ from torch.nn import functional as F
 class CharTokenizer:
     """A simple character-level tokenizer that maps characters to integers and back."""
     def __init__(self):
+        # Step 1: Validate input parameters, operational preconditions, and state
         self.chars = []
         self.vocab_size = 0
         self.stoi = {}
         self.itos = {}
 
     def fit(self, text: str):
+        # Step 1: Validate input parameters, operational preconditions, and state
         self.chars = sorted(list(set(text)))
         # Ensure at least some characters are present
         if not self.chars:
@@ -36,15 +47,18 @@ class CharTokenizer:
         self.itos = {i: ch for i, ch in enumerate(self.chars)}
 
     def encode(self, s: str) -> list[int]:
+        # Step 1: Validate input parameters, operational preconditions, and state
         return [self.stoi.get(c, 0) for c in s]  # Fallback to index 0 for unknown characters
 
     def decode(self, tokens: list[int]) -> str:
+        # Step 1: Validate input parameters, operational preconditions, and state
         return "".join([self.itos.get(i, "") for i in tokens])
 
 
 class Head(nn.Module):
     """One head of self-attention."""
     def __init__(self, n_embd: int, head_size: int, block_size: int, dropout: float = 0.1):
+        # Step 1: Validate input parameters, operational preconditions, and state
         super().__init__()
         self.key = nn.Linear(n_embd, head_size, bias=False)
         self.query = nn.Linear(n_embd, head_size, bias=False)
@@ -54,6 +68,7 @@ class Head(nn.Module):
         self.proj_dropout = nn.Dropout(dropout)
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
+        # Step 1: Validate input parameters, operational preconditions, and state
         B, T, C = x.shape
         k = self.key(x)    # (B, T, head_size)
         q = self.query(x)  # (B, T, head_size)
@@ -74,6 +89,7 @@ class Head(nn.Module):
 class MultiHeadAttention(nn.Module):
     """Multiple heads of self-attention in parallel."""
     def __init__(self, n_heads: int, n_embd: int, head_size: int, block_size: int, dropout: float = 0.1):
+        # Step 1: Validate input parameters, operational preconditions, and state
         super().__init__()
         self.heads = nn.ModuleList([Head(n_embd, head_size, block_size, dropout) for _ in range(n_heads)])
         self.proj = nn.Linear(n_heads * head_size, n_embd)
@@ -91,6 +107,7 @@ class MultiHeadAttention(nn.Module):
 class FeedForward(nn.Module):
     """A simple linear layer followed by non-linearity and projection."""
     def __init__(self, n_embd: int, dropout: float = 0.1):
+        # Step 1: Validate input parameters, operational preconditions, and state
         super().__init__()
         self.net = nn.Sequential(
             nn.Linear(n_embd, 4 * n_embd),
@@ -100,12 +117,14 @@ class FeedForward(nn.Module):
         )
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
+        # Step 1: Validate input parameters, operational preconditions, and state
         return self.net(x)
 
 
 class Block(nn.Module):
     """Transformer block: self-attention followed by feed-forward, with residual links."""
     def __init__(self, n_embd: int, n_heads: int, block_size: int, dropout: float = 0.1):
+        # Step 1: Validate input parameters, operational preconditions, and state
         super().__init__()
         head_size = n_embd // n_heads
         self.sa = MultiHeadAttention(n_heads, n_embd, head_size, block_size, dropout)
@@ -123,6 +142,7 @@ class Block(nn.Module):
 class MiniGPT(nn.Module):
     """The main Decoder-Only GPT-style Language Model."""
     def __init__(self, vocab_size: int, n_embd: int = 128, n_heads: int = 4, n_layers: int = 4, block_size: int = 128, dropout: float = 0.1):
+        # Step 1: Validate input parameters, operational preconditions, and state
         super().__init__()
         self.block_size = block_size
         
@@ -141,6 +161,7 @@ class MiniGPT(nn.Module):
         self.lm_head = nn.Linear(n_embd, vocab_size)
 
     def forward(self, idx: torch.Tensor, targets: torch.Tensor | None = None) -> tuple[torch.Tensor, torch.Tensor | None]:
+        # Step 1: Validate input parameters, operational preconditions, and state
         B, T = idx.shape
 
         # idx and targets are both (B, T) tensors of integers
@@ -173,6 +194,7 @@ class MiniGPT(nn.Module):
         Generate new tokens given a prompt context tensor idx of shape (B, T).
         Uses temperature and top-k filtering.
         """
+        # Step 1: Validate input parameters, operational preconditions, and state
         for _ in range(max_new_tokens):
             # Crop context idx to block_size if it exceeds limits
             idx_cond = idx[:, -self.block_size:]

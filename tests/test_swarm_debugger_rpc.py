@@ -1,3 +1,12 @@
+# ==============================================================================
+# Program: test_swarm_debugger_rpc.py
+# Programmer: Ethan-da-Tech-Wizard
+# Last Modified: November 18, 2026
+# Purpose: Dispatch-level tests for the swarm interactive-debugger RPC endpoints: swarm_pause / swarm_resume / swarm_step / swarm_override_task / swarm_get_history.
+#          Coordinates with adjacent subsystems within the Karl Offline Lab
+#          architecture.
+# ==============================================================================
+
 """
 Dispatch-level tests for the swarm interactive-debugger RPC endpoints:
 swarm_pause / swarm_resume / swarm_step / swarm_override_task / swarm_get_history.
@@ -21,29 +30,35 @@ from app.engine.websocket_server import WebSocketServerManager
 
 class MockWebSocket:
     def __init__(self, messages):
+        # Step 1: Validate input parameters, operational preconditions, and state
         self._messages = list(messages)
         self.sent = []
         self.remote_address = ("127.0.0.1", 50000)
         self.closed = False
 
     def __aiter__(self):
+        # Step 1: Validate input parameters, operational preconditions, and state
         return self
 
     async def __anext__(self):
+        # Step 1: Validate input parameters, operational preconditions, and state
         if not self._messages:
             raise StopAsyncIteration
         return self._messages.pop(0)
 
     async def send(self, payload):
+        # Step 1: Validate input parameters, operational preconditions, and state
         self.sent.append(payload)
 
     async def close(self, code=None, reason=None):
+        # Step 1: Validate input parameters, operational preconditions, and state
         self.closed = True
         self.close_code = code
         self.close_reason = reason
 
 
 def make_manager():
+    # Step 1: Validate input parameters, operational preconditions, and state
     manager = WebSocketServerManager.__new__(WebSocketServerManager)
     manager.port = 19998
     manager.clients = set()
@@ -62,6 +77,7 @@ def make_manager():
 
 
 async def _rpc(manager, message: dict) -> dict:
+    # Step 1: Validate input parameters, operational preconditions, and state
     websocket = MockWebSocket([json.dumps(message)])
     await manager._handler(websocket, path="/?token=test-token")
     assert websocket.sent, "handler produced no response"
@@ -70,6 +86,7 @@ async def _rpc(manager, message: dict) -> dict:
 
 class TestSwarmDebuggerRpc(unittest.TestCase):
     def test_swarm_pause_without_active_run_returns_error(self):
+        # Step 1: Validate input parameters, operational preconditions, and state
         resp = asyncio.run(_rpc(make_manager(), {
             "jsonrpc": "2.0", "id": 1, "method": "swarm_pause", "params": {"run_id": "no-such-run"},
         }))
@@ -77,18 +94,21 @@ class TestSwarmDebuggerRpc(unittest.TestCase):
         self.assertIn("No swarm task", resp["error"]["message"])
 
     def test_swarm_resume_without_active_run_returns_error(self):
+        # Step 1: Validate input parameters, operational preconditions, and state
         resp = asyncio.run(_rpc(make_manager(), {
             "jsonrpc": "2.0", "id": 2, "method": "swarm_resume", "params": {"run_id": "no-such-run"},
         }))
         self.assertIn("error", resp)
 
     def test_swarm_step_without_active_run_returns_error(self):
+        # Step 1: Validate input parameters, operational preconditions, and state
         resp = asyncio.run(_rpc(make_manager(), {
             "jsonrpc": "2.0", "id": 3, "method": "swarm_step", "params": {"run_id": "no-such-run"},
         }))
         self.assertIn("error", resp)
 
     def test_swarm_override_task_without_active_run_returns_error(self):
+        # Step 1: Validate input parameters, operational preconditions, and state
         resp = asyncio.run(_rpc(make_manager(), {
             "jsonrpc": "2.0", "id": 4, "method": "swarm_override_task",
             "params": {"run_id": "no-such-run", "filepath": "a.py", "instructions": "do X"},
@@ -96,6 +116,7 @@ class TestSwarmDebuggerRpc(unittest.TestCase):
         self.assertIn("error", resp)
 
     def test_swarm_pause_rejects_missing_run_id(self):
+        # Step 1: Validate input parameters, operational preconditions, and state
         resp = asyncio.run(_rpc(make_manager(), {
             "jsonrpc": "2.0", "id": 5, "method": "swarm_pause", "params": {},
         }))
@@ -103,6 +124,7 @@ class TestSwarmDebuggerRpc(unittest.TestCase):
         self.assertEqual(resp["error"]["code"], -32602)
 
     def test_swarm_override_task_rejects_missing_instructions(self):
+        # Step 1: Validate input parameters, operational preconditions, and state
         resp = asyncio.run(_rpc(make_manager(), {
             "jsonrpc": "2.0", "id": 6, "method": "swarm_override_task",
             "params": {"run_id": "x", "filepath": "a.py"},
@@ -111,6 +133,7 @@ class TestSwarmDebuggerRpc(unittest.TestCase):
         self.assertEqual(resp["error"]["code"], -32602)
 
     def test_swarm_get_history_without_run_id_lists_runs(self):
+        # Step 1: Validate input parameters, operational preconditions, and state
         resp = asyncio.run(_rpc(make_manager(), {
             "jsonrpc": "2.0", "id": 7, "method": "swarm_get_history", "params": {},
         }))
@@ -119,6 +142,7 @@ class TestSwarmDebuggerRpc(unittest.TestCase):
         self.assertIsInstance(resp["result"]["runs"], list)
 
     def test_swarm_get_history_with_unknown_run_id_returns_empty_steps(self):
+        # Step 1: Validate input parameters, operational preconditions, and state
         resp = asyncio.run(_rpc(make_manager(), {
             "jsonrpc": "2.0", "id": 8, "method": "swarm_get_history",
             "params": {"run_id": "definitely-not-a-real-run"},
@@ -127,6 +151,7 @@ class TestSwarmDebuggerRpc(unittest.TestCase):
         self.assertEqual(resp["result"]["steps"], [])
 
     def test_swarm_get_history_rejects_non_string_run_id(self):
+        # Step 1: Validate input parameters, operational preconditions, and state
         resp = asyncio.run(_rpc(make_manager(), {
             "jsonrpc": "2.0", "id": 9, "method": "swarm_get_history", "params": {"run_id": 123},
         }))

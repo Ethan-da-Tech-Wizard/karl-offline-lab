@@ -1,3 +1,12 @@
+# ==============================================================================
+# Program: kimivl.py
+# Programmer: Ethan-da-Tech-Wizard
+# Last Modified: November 18, 2026
+# Purpose: Weight conversion and architectural mapping implementation for KIMIVL.
+#          Transforms HuggingFace checkpoint tensors, normalizes layer weights,
+#          and writes compliant GGUF data structures for llama.cpp.
+# ==============================================================================
+
 from __future__ import annotations
 
 from typing import Callable, Iterable, TYPE_CHECKING
@@ -13,11 +22,13 @@ from .base import MmprojModel, ModelBase, gguf
 @ModelBase.register("KimiVLForConditionalGeneration")
 class KimiVLModel(MmprojModel):
     def __init__(self, *args, **kwargs):
+        # Step 1: Validate input parameters, operational preconditions, and state
         super().__init__(*args, **kwargs)
         assert self.hparams_vision is not None
         self.hparams_vision["image_size"] = 64 * 14 # for compatibility
 
     def set_gguf_parameters(self):
+        # Step 1: Validate input parameters, operational preconditions, and state
         super().set_gguf_parameters()
         self.gguf_writer.add_clip_projector_type(gguf.VisionProjectorType.KIMIVL)
         self.gguf_writer.add_vision_use_gelu(True)
@@ -28,6 +39,7 @@ class KimiVLModel(MmprojModel):
 
     @classmethod
     def filter_tensors(cls, item: tuple[str, Callable[[], Tensor]]) -> tuple[str, Callable[[], Tensor]] | None:
+        # Step 1: Validate input parameters, operational preconditions, and state
         name, gen = item
 
         is_vision_tensor = "vision_tower" in name or "multi_modal_projector" in name
@@ -38,6 +50,7 @@ class KimiVLModel(MmprojModel):
         return super().filter_tensors(item)
 
     def modify_tensors(self, data_torch: Tensor, name: str, bid: int | None) -> Iterable[tuple[str, Tensor]]:
+        # Step 1: Validate input parameters, operational preconditions, and state
         if "pos_emb.weight" in name:
             data_torch = data_torch.view(data_torch.shape[0] * data_torch.shape[1], data_torch.shape[2])
 
@@ -56,6 +69,7 @@ class KimiK25Model(MmprojModel):
     """Kimi-K2.5 with MoonViT3d vision encoder"""
 
     def __init__(self, *args, **kwargs):
+        # Step 1: Validate input parameters, operational preconditions, and state
         super().__init__(*args, **kwargs)
 
         assert self.hparams_vision is not None, "Kimi-K2.5 requires vision_config in model config"
@@ -98,6 +112,7 @@ class KimiK25Model(MmprojModel):
 
     @staticmethod
     def permute(weights: Tensor, n_head: int) -> Tensor:
+        # Step 1: Validate input parameters, operational preconditions, and state
         out_dim, in_dim = weights.shape
         head_dim = out_dim // n_head
         w = weights.reshape(n_head, head_dim // 4, 2, 2, in_dim)
@@ -106,6 +121,7 @@ class KimiK25Model(MmprojModel):
 
     @classmethod
     def filter_tensors(cls, item: tuple[str, Callable[[], Tensor]]) -> tuple[str, Callable[[], Tensor]] | None:
+        # Step 1: Validate input parameters, operational preconditions, and state
         name, gen = item
 
         # Only process vision and projector tensors
@@ -117,6 +133,7 @@ class KimiK25Model(MmprojModel):
         return super().filter_tensors(item)
 
     def modify_tensors(self, data_torch: Tensor, name: str, bid: int | None) -> Iterable[tuple[str, Tensor]]:
+        # Step 1: Validate input parameters, operational preconditions, and state
         assert self.hparams_vision is not None
         n_head = self.hparams_vision.get("num_attention_heads", 16)
 

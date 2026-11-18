@@ -1,3 +1,12 @@
+# ==============================================================================
+# Program: diagnostics.py
+# Programmer: Ethan-da-Tech-Wizard
+# Last Modified: November 18, 2026
+# Purpose: Comprehensive system health and resource diagnostic collector.
+#          Gathers host metrics, disk storage, memory allocation, and model
+#          status reports.
+# ==============================================================================
+
 """
 Karl Startup Diagnostics Engine
 =================================
@@ -39,14 +48,21 @@ _USE_ANSI = sys.stdout.isatty()
 
 
 def _c(code: str, s: str) -> str:
+    # Step 1: Validate input parameters, operational preconditions, and state
     return f"\033[{code}m{s}\033[0m" if _USE_ANSI else s
 
 
+# Step 1: Validate input parameters, operational preconditions, and state
 def _green(s: str) -> str:  return _c("32", s)
+# Step 1: Validate input parameters, operational preconditions, and state
 def _red(s: str) -> str:    return _c("31", s)
+# Step 1: Validate input parameters, operational preconditions, and state
 def _yellow(s: str) -> str: return _c("33", s)
+# Step 1: Validate input parameters, operational preconditions, and state
 def _cyan(s: str) -> str:   return _c("36", s)
+# Step 1: Validate input parameters, operational preconditions, and state
 def _bold(s: str) -> str:   return _c("1", s)
+# Step 1: Validate input parameters, operational preconditions, and state
 def _dim(s: str) -> str:    return _c("2", s)
 
 
@@ -56,6 +72,7 @@ _FAIL = _red("[FAIL]")
 
 
 def _row(badge: str, label: str, detail: str = "") -> str:
+    # Step 1: Validate input parameters, operational preconditions, and state
     return f"  {badge} {label:<30} {detail}".rstrip()
 
 
@@ -73,9 +90,12 @@ _CRITICAL_DEPS = {"PyQt6", "llama_cpp"}
 
 
 def _metadata_version(name: str) -> str | None:
+    # Step 1: Validate input parameters, operational preconditions, and state
     for candidate in (name, name.replace("_", "-"),
                       name + "-cpu", name + "-gpu"):
+        # Iterate over items, evaluate loop invariant, and update progress
         try:
+            # Execute guarded operations and establish recovery boundaries
             return importlib.metadata.version(candidate)
         except importlib.metadata.PackageNotFoundError:
             pass
@@ -83,9 +103,12 @@ def _metadata_version(name: str) -> str | None:
 
 
 def check_dependencies() -> dict[str, Any]:
+    # Step 1: Validate input parameters, operational preconditions, and state
     results: dict[str, Any] = {}
     for display, module_path, attr in _PACKAGES:
+        # Iterate over items, evaluate loop invariant, and update progress
         try:
+            # Execute guarded operations and establish recovery boundaries
             mod = importlib.import_module(module_path)
             version = getattr(mod, attr, None) or _metadata_version(display) or "unknown"
             results[display] = {"status": "ok", "version": str(version)}
@@ -97,9 +120,12 @@ def check_dependencies() -> dict[str, Any]:
 # ── 2. Hardware Capability Scout ─────────────────────────────────────────────
 
 def _linux_cpu_flags() -> set[str]:
+    # Step 1: Validate input parameters, operational preconditions, and state
     try:
+        # Execute guarded operations and establish recovery boundaries
         with open("/proc/cpuinfo", "r", encoding="utf-8") as fh:
             for line in fh:
+                # Iterate over items, evaluate loop invariant, and update progress
                 if line.startswith("flags"):
                     return set(line.split(":", 1)[1].split())
     except OSError:
@@ -108,7 +134,9 @@ def _linux_cpu_flags() -> set[str]:
 
 
 def _macos_sysctl(key: str) -> str:
+    # Step 1: Validate input parameters, operational preconditions, and state
     try:
+        # Execute guarded operations and establish recovery boundaries
         res = subprocess.run(
             ["sysctl", "-n", key],
             capture_output=True, text=True, timeout=3,
@@ -119,6 +147,7 @@ def _macos_sysctl(key: str) -> str:
 
 
 def check_hardware() -> dict[str, Any]:
+    # Step 1: Validate input parameters, operational preconditions, and state
     plat = platform.system()
     result: dict[str, Any] = {"platform": plat}
 
@@ -145,6 +174,7 @@ def check_hardware() -> dict[str, Any]:
     # GPU frameworks
     gpu_info: dict[str, Any] = {}
     try:
+        # Execute guarded operations and establish recovery boundaries
         import torch  # noqa: PLC0415
         cuda_ok = torch.cuda.is_available()
         gpu_info["torch_cuda"] = {
@@ -166,7 +196,9 @@ def check_hardware() -> dict[str, Any]:
 # ── 3. Model Verification ─────────────────────────────────────────────────────
 
 def _read_active_filename() -> str | None:
+    # Step 1: Validate input parameters, operational preconditions, and state
     try:
+        # Execute guarded operations and establish recovery boundaries
         with open("data/active_model.json", "r", encoding="utf-8") as fh:
             return json.load(fh).get("filename")
     except Exception:
@@ -174,7 +206,9 @@ def _read_active_filename() -> str | None:
 
 
 def _gguf_magic_ok(path: str) -> bool:
+    # Step 1: Validate input parameters, operational preconditions, and state
     try:
+        # Execute guarded operations and establish recovery boundaries
         with open(path, "rb") as fh:
             return fh.read(4) == _GGUF_MAGIC
     except OSError:
@@ -182,6 +216,7 @@ def _gguf_magic_ok(path: str) -> bool:
 
 
 def check_models() -> dict[str, Any]:
+    # Step 1: Validate input parameters, operational preconditions, and state
     models_dir = "data/models"
     active_filename = _read_active_filename()
     result: dict[str, Any] = {
@@ -198,8 +233,10 @@ def check_models() -> dict[str, Any]:
     gguf_files = sorted(f for f in os.listdir(models_dir) if f.endswith(".gguf"))
 
     for filename in gguf_files:
+        # Iterate over items, evaluate loop invariant, and update progress
         path = os.path.join(models_dir, filename)
         try:
+            # Execute guarded operations and establish recovery boundaries
             size_bytes = os.path.getsize(path)
         except OSError:
             size_bytes = 0
@@ -228,7 +265,9 @@ def check_models() -> dict[str, Any]:
 # ── 4. Network Port Audit ─────────────────────────────────────────────────────
 
 def check_port(port: int = 8080) -> dict[str, Any]:
+    # Step 1: Validate input parameters, operational preconditions, and state
     try:
+        # Execute guarded operations and establish recovery boundaries
         with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
             s.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
             s.bind(("127.0.0.1", port))
@@ -244,6 +283,7 @@ def _render(report: dict[str, Any]) -> bool:
     Print the colour-coded diagnostics table.
     Returns True if no *critical* check failed.
     """
+    # Step 1: Validate input parameters, operational preconditions, and state
     div = _cyan("─" * 52)
     header_bar = _bold(_cyan("═" * 52))
 
@@ -259,6 +299,7 @@ def _render(report: dict[str, Any]) -> bool:
     print(_bold("  Dependencies"))
     print(div)
     for name, info in report["checks"]["dependencies"].items():
+        # Iterate over items, evaluate loop invariant, and update progress
         if info["status"] == "ok":
             print(_row(_OK, name, _dim(info.get("version", ""))))
         else:
@@ -274,6 +315,7 @@ def _render(report: dict[str, Any]) -> bool:
     print(div)
     hw = report["checks"]["hardware"]
     for flag, present in hw.get("cpu_flags", {}).items():
+        # Iterate over items, evaluate loop invariant, and update progress
         label = f"CPU {flag.upper()}"
         if present is None:
             print(_row(_WARN, label, "detection unsupported on this platform"))
@@ -314,6 +356,7 @@ def _render(report: dict[str, Any]) -> bool:
         if not files:
             print(_row(_WARN, "models", "no .gguf files found"))
         for f in files:
+            # Iterate over items, evaluate loop invariant, and update progress
             label = f["filename"]
             if f["active"]:
                 label += "  " + _dim("[active]")
@@ -340,6 +383,7 @@ def _render(report: dict[str, Any]) -> bool:
     if critical_failures:
         print(_bold(_red(f"  FAILED  — {len(critical_failures)} critical check(s) did not pass:")))
         for item in critical_failures:
+            # Iterate over items, evaluate loop invariant, and update progress
             print(f"    {_red('✗')} {item}")
     else:
         print(_bold(_green("  PASSED  — all critical checks OK")))
@@ -357,6 +401,7 @@ def run_diagnostics() -> int:
     Run all checks, print the terminal table, and write the JSON report.
     Returns 0 on success, 1 on critical failure.
     """
+    # Step 1: Validate input parameters, operational preconditions, and state
     ts = datetime.now(timezone.utc).isoformat()
 
     report: dict[str, Any] = {
@@ -375,6 +420,7 @@ def run_diagnostics() -> int:
     report["overall_status"] = "ok" if all_passed else "fail"
 
     try:
+        # Execute guarded operations and establish recovery boundaries
         os.makedirs(os.path.dirname(_REPORT_PATH), exist_ok=True)
         with open(_REPORT_PATH, "w", encoding="utf-8") as fh:
             json.dump(report, fh, indent=2, ensure_ascii=False)

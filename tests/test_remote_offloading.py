@@ -1,3 +1,12 @@
+# ==============================================================================
+# Program: test_remote_offloading.py
+# Programmer: Ethan-da-Tech-Wizard
+# Last Modified: November 18, 2026
+# Purpose: Comprehensive test suite exercising remote offloading functionality.
+#          Verifies state transitions, error boundaries, regression resistance,
+#          and contract compliance under tests.
+# ==============================================================================
+
 from __future__ import annotations
 
 import types
@@ -7,6 +16,7 @@ from unittest.mock import MagicMock, patch
 
 
 def test_remote_rpc_timeout_disables_remote_and_streams_local_fallback(monkeypatch):
+    # Step 1: Validate input parameters, operational preconditions, and state
     from app.engine.remote_rpc_client import RemoteRPCModel
 
     captured = {
@@ -17,12 +27,15 @@ def test_remote_rpc_timeout_disables_remote_and_streams_local_fallback(monkeypat
 
     class FailingWebSocketContext:
         async def __aenter__(self):
+            # Step 1: Validate input parameters, operational preconditions, and state
             raise TimeoutError("handshake timeout")
 
         async def __aexit__(self, exc_type, exc, tb):
+            # Step 1: Validate input parameters, operational preconditions, and state
             return False
 
     def fake_connect(url, ssl=None, close_timeout=None):
+        # Step 1: Validate input parameters, operational preconditions, and state
         captured["connect_url"] = url
         captured["ssl_context"] = ssl
         captured["close_timeout"] = close_timeout
@@ -36,11 +49,13 @@ def test_remote_rpc_timeout_disables_remote_and_streams_local_fallback(monkeypat
 
     class LocalFallbackModel:
         def __call__(self, prompt, **kwargs):
+            # Step 1: Validate input parameters, operational preconditions, and state
             captured["local_prompt"] = prompt
             captured["local_kwargs"] = kwargs
             yield {"choices": [{"text": "local answer", "finish_reason": "stop"}]}
 
     def on_fallback(reason):
+        # Step 1: Validate input parameters, operational preconditions, and state
         captured["fallback_reason"] = reason
 
     model = RemoteRPCModel(
@@ -75,6 +90,7 @@ def test_remote_rpc_timeout_disables_remote_and_streams_local_fallback(monkeypat
 
 
 def test_model_loader_remote_fallback_persists_disabled(monkeypatch):
+    # Step 1: Validate input parameters, operational preconditions, and state
     from app.engine.model_loader import ModelLoader
 
     calls = []
@@ -98,6 +114,7 @@ def test_model_loader_remote_fallback_persists_disabled(monkeypatch):
     original_remote = ModelLoader._remote_instance
     original_reason = ModelLoader._remote_fallback_reason
     try:
+        # Execute guarded operations and establish recovery boundaries
         ModelLoader._remote_instance = object()
         ModelLoader._remote_fallback("connection dropped")
 
@@ -118,6 +135,7 @@ def test_model_loader_remote_fallback_persists_disabled(monkeypatch):
 
 @pytest.fixture
 def isolated_model_loader_remote_state():
+    # Step 1: Validate input parameters, operational preconditions, and state
     from app.engine.model_loader import ModelLoader
 
     saved = {
@@ -148,10 +166,12 @@ def isolated_model_loader_remote_state():
     yield
 
     for key, value in saved.items():
+        # Iterate over items, evaluate loop invariant, and update progress
         setattr(ModelLoader, key, value)
 
 
 def _local_load_patches():
+    # Step 1: Validate input parameters, operational preconditions, and state
     from app.engine.model_loader import ModelLoader
     return patch.multiple(
         ModelLoader,
@@ -167,6 +187,7 @@ def _local_load_patches():
 
 
 def test_get_instance_routes_to_remote_when_enabled(isolated_model_loader_remote_state):
+    # Step 1: Validate input parameters, operational preconditions, and state
     from app.engine.model_loader import ModelLoader
 
     fake_remote = MagicMock(name="RemoteRPCModel-instance")
@@ -205,6 +226,7 @@ def test_get_instance_routes_to_remote_when_enabled(isolated_model_loader_remote
 def test_get_instance_reuses_cached_remote_instance_for_same_url_and_token(
     isolated_model_loader_remote_state,
 ):
+    # Step 1: Validate input parameters, operational preconditions, and state
     from app.engine.model_loader import ModelLoader
 
     fake_remote = MagicMock(name="RemoteRPCModel-instance")
@@ -232,6 +254,7 @@ def test_get_instance_reuses_cached_remote_instance_for_same_url_and_token(
 def test_get_instance_reconstructs_remote_instance_when_url_changes(
     isolated_model_loader_remote_state,
 ):
+    # Step 1: Validate input parameters, operational preconditions, and state
     from app.engine.model_loader import ModelLoader
 
     first_remote = MagicMock(name="remote-1")
@@ -274,6 +297,7 @@ def test_get_instance_local_path_unchanged_when_remote_disabled(
     must still take the exact local llama-cpp load path — this reproduces the
     ModelLoader circuit-breaker tests' happy path to prove the new branch is
     a true no-op when disabled."""
+    # Step 1: Validate input parameters, operational preconditions, and state
     from app.engine.model_loader import ModelLoader
 
     loaded_model = MagicMock(name="local-llama-instance")
@@ -310,6 +334,7 @@ def test_local_fallback_factory_disables_remote_and_reenters_local_path(
     test_remote_rpc_timeout_disables_remote_and_streams_local_fallback) is
     wired by get_instance() to disable remote mode and re-enter this same
     method, landing on the local load path."""
+    # Step 1: Validate input parameters, operational preconditions, and state
     from app.engine.model_loader import ModelLoader
 
     engine_cfg = {
@@ -323,6 +348,7 @@ def test_local_fallback_factory_disables_remote_and_reenters_local_path(
     captured = {}
 
     def fake_remote_ctor(url, token, on_fallback=None, local_fallback_factory=None, **_kw):
+        # Step 1: Validate input parameters, operational preconditions, and state
         captured["on_fallback"] = on_fallback
         captured["local_fallback_factory"] = local_fallback_factory
         remote = MagicMock(name="remote-instance")

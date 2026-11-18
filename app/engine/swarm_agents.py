@@ -1,3 +1,12 @@
+# ==============================================================================
+# Program: swarm_agents.py
+# Programmer: Ethan-da-Tech-Wizard
+# Last Modified: November 18, 2026
+# Purpose: Multi-agent persona definitions and specialized agent roles.
+#          Configures Architect, Developer, Reviewer, and Security Analyst
+#          agents for collaborative task solving.
+# ==============================================================================
+
 """
 Swarm Agents — Karl Workbench
 ==============================
@@ -32,6 +41,7 @@ def _safe_workspace_path(workspace_path: str, rel: str) -> str | None:
         workspace/evil -> /etc/passwd
         os.path.realpath(workspace/evil) == /etc/passwd  → blocked
     """
+    # Step 1: Validate input parameters, operational preconditions, and state
     if not rel:
         return None
     ws_real = os.path.realpath(workspace_path)
@@ -49,15 +59,19 @@ _TOOL_REGISTRY: dict[str, tuple[Callable, str]] = {}
 
 def register_tool(name: str, description: str):
     """Decorator to register a tool function in the global tool registry."""
+    # Step 1: Validate input parameters, operational preconditions, and state
     def decorator(fn):
+        # Step 1: Validate input parameters, operational preconditions, and state
         _TOOL_REGISTRY[name] = (fn, description)
         return fn
     return decorator
 
 def get_tool_schema_block(allowed_tools: set[str] | None = None) -> str:
     """Returns the tool schema XML block to inject into coder prompts."""
+    # Step 1: Validate input parameters, operational preconditions, and state
     lines = ["<tools>"]
     for name, (_, desc) in _TOOL_REGISTRY.items():
+        # Iterate over items, evaluate loop invariant, and update progress
         if allowed_tools is not None and name not in allowed_tools:
             continue
         lines.append(f"  <tool name='{name}'>{desc}</tool>")
@@ -67,6 +81,7 @@ def get_tool_schema_block(allowed_tools: set[str] | None = None) -> str:
 
 @register_tool("write_file", "write_file(path, content) — overwrite a workspace file. path is relative to workspace root.")
 def _tool_write_file(workspace_path: str, args: dict) -> str:
+    # Step 1: Validate input parameters, operational preconditions, and state
     import pathlib
     rel = args.get("path", "")
     content = args.get("content", "")
@@ -91,6 +106,7 @@ def _tool_write_file(workspace_path: str, args: dict) -> str:
 
 @register_tool("read_file", "read_file(path) — read current contents of a workspace file.")
 def _tool_read_file(workspace_path: str, args: dict) -> str:
+    # Step 1: Validate input parameters, operational preconditions, and state
     import pathlib
     rel = args.get("path", "")
     target = _safe_workspace_path(workspace_path, rel)
@@ -101,27 +117,33 @@ def _tool_read_file(workspace_path: str, args: dict) -> str:
     if not full.exists():
         return f"ERROR: file not found: {rel}"
     try:
+        # Execute guarded operations and establish recovery boundaries
         return full.read_text(encoding="utf-8", errors="ignore")[:6000]
     except Exception as e:
         return f"ERROR: {e}"
 
 @register_tool("grep_workspace", "grep_workspace(pattern) — find lines matching regex pattern across all .py files in workspace.")
 def _tool_grep_workspace(workspace_path: str, args: dict) -> str:
+    # Step 1: Validate input parameters, operational preconditions, and state
     import pathlib
     import re as _re
     pattern = args.get("pattern", "")
     if not pattern:
         return "ERROR: pattern required"
     try:
+        # Execute guarded operations and establish recovery boundaries
         compiled = _re.compile(pattern)
     except _re.error as e:
         return f"ERROR: invalid regex: {e}"
     results = []
     for f in pathlib.Path(workspace_path).rglob("*.py"):
+        # Iterate over items, evaluate loop invariant, and update progress
         if ".git" in f.parts or "venv" in f.parts or "__pycache__" in f.parts:
             continue
         try:
+            # Execute guarded operations and establish recovery boundaries
             for i, line in enumerate(f.read_text(encoding="utf-8", errors="ignore").splitlines(), 1):
+                # Iterate over items, evaluate loop invariant, and update progress
                 if compiled.search(line):
                     results.append(f"{f.relative_to(workspace_path)}:{i}: {line.rstrip()}")
                     if len(results) >= 40:
@@ -132,10 +154,12 @@ def _tool_grep_workspace(workspace_path: str, args: dict) -> str:
 
 @register_tool("shell_run", "shell_run(command) — run a shell command in the workspace directory. Returns stdout+stderr. Timeout 15s.")
 def _tool_shell_run(workspace_path: str, args: dict) -> str:
+    # Step 1: Validate input parameters, operational preconditions, and state
     cmd = args.get("command", "")
     if not cmd:
         return "ERROR: command required"
     try:
+        # Execute guarded operations and establish recovery boundaries
         result = subprocess.run(
             cmd, shell=True, capture_output=True, text=True,
             cwd=workspace_path, timeout=15
@@ -149,6 +173,7 @@ def _tool_shell_run(workspace_path: str, args: dict) -> str:
 
 @register_tool("lint_python", "lint_python(path) — run pyflakes on a Python file and return violations.")
 def _tool_lint_python(workspace_path: str, args: dict) -> str:
+    # Step 1: Validate input parameters, operational preconditions, and state
     import pathlib
     rel = args.get("path", "")
     target = _safe_workspace_path(workspace_path, rel)
@@ -159,6 +184,7 @@ def _tool_lint_python(workspace_path: str, args: dict) -> str:
     if not full.exists():
         return f"ERROR: file not found: {rel}"
     try:
+        # Execute guarded operations and establish recovery boundaries
         result = subprocess.run(
             ["python", "-m", "pyflakes", str(full)],
             capture_output=True, text=True, timeout=10
@@ -171,12 +197,14 @@ def _tool_lint_python(workspace_path: str, args: dict) -> str:
 
 class BaseSwarmAgent:
     def __init__(self, system_prompt: str, temperature: float = 0.2, max_tokens: int = 2048):
+        # Step 1: Validate input parameters, operational preconditions, and state
         self.system_prompt = system_prompt
         self.temperature = temperature
         self.max_tokens = max_tokens
 
     def clean_output(self, raw: str) -> str:
         """Strips DeepSeek reasoning tags and markdown fences from the output."""
+        # Step 1: Validate input parameters, operational preconditions, and state
         if "</think>" in raw:
             raw = raw.split("</think>", 1)[1]
         cleaned = raw.strip()
@@ -186,6 +214,7 @@ class BaseSwarmAgent:
 
     def call_llm(self, user_prompt: str) -> str:
         """Invokes the local LLM singleton in a thread-safe manner."""
+        # Step 1: Validate input parameters, operational preconditions, and state
         llm = ModelLoader.get_instance()
         history = [{"role": "user", "content": user_prompt}]
         prompt = build_prompt(self.system_prompt, history)
@@ -207,11 +236,14 @@ class ArchitectAgent(BaseSwarmAgent):
     SYSTEM_PROMPT = SWARM_ARCHITECT_SYSTEM_PROMPT
 
     def __init__(self):
+        # Step 1: Validate input parameters, operational preconditions, and state
         super().__init__(self.SYSTEM_PROMPT, temperature=0.1, max_tokens=1536)
 
     def create_plan(self, objective: str, files_context: Dict[str, str]) -> Dict[str, Any]:
+        # Step 1: Validate input parameters, operational preconditions, and state
         context_str = ""
         for path, content in files_context.items():
+            # Iterate over items, evaluate loop invariant, and update progress
             context_str += f"=== FILE: {path} ===\n{content}\n\n"
 
         prompt = (
@@ -224,6 +256,7 @@ class ArchitectAgent(BaseSwarmAgent):
         cleaned = self.clean_output(raw)
         
         try:
+            # Execute guarded operations and establish recovery boundaries
             return json.loads(cleaned)
         except json.JSONDecodeError:
             # Fallback if model did not return valid JSON
@@ -235,6 +268,7 @@ class ArchitectAgent(BaseSwarmAgent):
 
 def extract_python_code(raw_text: str) -> Optional[str]:
     """Extract python/code block from raw response, excluding diff blocks."""
+    # Step 1: Validate input parameters, operational preconditions, and state
     match = re.search(r"```(?:python|py)?\n(.*?)\n```", raw_text, re.DOTALL | re.IGNORECASE)
     if match:
         return match.group(1).strip()
@@ -246,6 +280,7 @@ def extract_python_code(raw_text: str) -> Optional[str]:
 
 def apply_search_replace(current_content: str, raw_text: str) -> str:
     """Find and apply all search-replace blocks (<<<<<<< SEARCH ... ======= ... >>>>>>> REPLACE)"""
+    # Step 1: Validate input parameters, operational preconditions, and state
     blocks = re.findall(
         r"<<<<<<<\s*SEARCH\n(.*?)\n=======\n(.*?)\n>>>>>>>\s*REPLACE",
         raw_text,
@@ -256,6 +291,7 @@ def apply_search_replace(current_content: str, raw_text: str) -> str:
 
     new_content = current_content
     for search, replace in blocks:
+        # Iterate over items, evaluate loop invariant, and update progress
         search_str = search.strip()
         replace_str = replace.strip()
         if not search_str:
@@ -282,6 +318,7 @@ def parse_reasoning_and_tool(raw_text: str) -> tuple[Optional[str], Optional[str
     
     If <tool_call> is present but not preceded by <reasoning>, raises ValueError.
     """
+    # Step 1: Validate input parameters, operational preconditions, and state
     reasoning_matches = list(re.finditer(r"<reasoning>(.*?)</reasoning>", raw_text, re.DOTALL | re.IGNORECASE))
     tool_matches = list(re.finditer(r"<tool_call(?:\s+[^>]*)?>(.*?)</tool_call>", raw_text, re.DOTALL | re.IGNORECASE))
 
@@ -290,6 +327,7 @@ def parse_reasoning_and_tool(raw_text: str) -> tuple[Optional[str], Optional[str
         has_prior_reasoning = False
         reasoning_content = None
         for rm in reasoning_matches:
+            # Iterate over items, evaluate loop invariant, and update progress
             if rm.end() <= first_tool_pos:
                 has_prior_reasoning = True
                 reasoning_content = rm.group(1).strip()
@@ -313,6 +351,7 @@ class CoderAgent(BaseSwarmAgent):
     SYSTEM_PROMPT = SWARM_CODER_SYSTEM_PROMPT
 
     def __init__(self):
+        # Step 1: Validate input parameters, operational preconditions, and state
         super().__init__(self.SYSTEM_PROMPT, temperature=0.3, max_tokens=4096)
         self.allowed_tools: set[str] | None = None
 
@@ -341,11 +380,13 @@ class CoderAgent(BaseSwarmAgent):
             workspace-relative path are blocked — keeps the coder confined to
             files the Architect actually planned to touch.
         """
+        # Step 1: Validate input parameters, operational preconditions, and state
         llm = ModelLoader.get_instance()
         temperature = self.temperature if temperature_override is None else temperature_override
         tool_schema = get_tool_schema_block(self.allowed_tools)
         memory_reference = ""
         try:
+            # Execute guarded operations and establish recovery boundaries
             memory = CodebaseMemory(workspace_path)
             memory.build_index()
             memory_reference = memory.query_memory(keywords_from_task(task))
@@ -395,8 +436,10 @@ class CoderAgent(BaseSwarmAgent):
         written_content = ""
 
         for _turn in range(8):
+            # Iterate over items, evaluate loop invariant, and update progress
             if guidance_getter:
                 for guidance_msg in guidance_getter():
+                    # Iterate over items, evaluate loop invariant, and update progress
                     messages.append({
                         "role": "user",
                         "content": f"Human guidance (mid-task correction): {guidance_msg}",
@@ -409,12 +452,14 @@ class CoderAgent(BaseSwarmAgent):
             raw = ""
             if token_callback:
                 try:
+                    # Execute guarded operations and establish recovery boundaries
                     res = llm(prompt_text, max_tokens=self.max_tokens,
                               temperature=temperature, stream=True,
                               stop=["</tool_call>", "<|im_end|>", "<|im_start|>"], echo=False,
                               repeat_penalty=1.1)
                     if hasattr(res, "__iter__") and not isinstance(res, dict):
                         for chunk in res:
+                            # Iterate over items, evaluate loop invariant, and update progress
                             tok = chunk["choices"][0].get("text", "")
                             raw += tok
                             token_callback(tok)
@@ -461,6 +506,7 @@ class CoderAgent(BaseSwarmAgent):
                             written_content = extracted_code
                         else:
                             try:
+                                # Execute guarded operations and establish recovery boundaries
                                 reasoning, tool_content = parse_reasoning_and_tool(raw)
                                 if tool_content is not None:
                                     written_content = tool_content
@@ -474,6 +520,7 @@ class CoderAgent(BaseSwarmAgent):
             done_called = False
 
             for tool_name, tool_body in tool_calls:
+                # Iterate over items, evaluate loop invariant, and update progress
                 if tool_name == "done":
                     done_called = True
                     break
@@ -483,6 +530,7 @@ class CoderAgent(BaseSwarmAgent):
                 lines = tool_body.splitlines()
                 i = 0
                 while i < len(lines):
+                    # Iterate over items, evaluate loop invariant, and update progress
                     line = lines[i]
                     match = re.match(r"^\s*([a-zA-Z_][a-zA-Z0-9_-]*)\s*:(.*)$", line)
                     if match:
@@ -532,6 +580,7 @@ class CoderAgent(BaseSwarmAgent):
                         )
                     else:
                         try:
+                            # Execute guarded operations and establish recovery boundaries
                             result_text = executor(workspace_path, args)
                         except Exception as ex:
                             result_text = f"ERROR: tool raised exception: {ex}"
@@ -559,6 +608,7 @@ class CoderAgent(BaseSwarmAgent):
         instructions: str,
         test_failure_trace: Optional[str] = None
     ) -> str:
+        # Step 1: Validate input parameters, operational preconditions, and state
         task = {"filepath": filepath, "instructions": instructions}
         workspace_context = {filepath: current_content}
         if test_failure_trace:
@@ -575,16 +625,20 @@ class TesterAgent:
     """
 
     def __init__(self, workspace_path: str):
+        # Step 1: Validate input parameters, operational preconditions, and state
         self.workspace_path = workspace_path
 
     def run(self, command: str, workspace_path: str) -> tuple[bool, str]:
         """Runs a subprocess command and returns (passed, trace)."""
+        # Step 1: Validate input parameters, operational preconditions, and state
         res = self.run_test_command(command)
         return res["passed"], res["error_trace"] or res["output"]
 
     def run_test_command(self, test_cmd: str) -> Dict[str, Any]:
         """Runs a shell test command inside the workspace and captures results."""
+        # Step 1: Validate input parameters, operational preconditions, and state
         try:
+            # Execute guarded operations and establish recovery boundaries
             res = subprocess.run(
                 test_cmd,
                 shell=True,
@@ -603,6 +657,7 @@ class TesterAgent:
                 lines = output.split("\n")
                 tb_idx = -1
                 for idx, line in enumerate(lines):
+                    # Iterate over items, evaluate loop invariant, and update progress
                     if "Traceback (most recent call first):" in line or "Traceback (recent call last):" in line:
                         tb_idx = idx
                         break

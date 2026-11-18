@@ -1,3 +1,12 @@
+# ==============================================================================
+# Program: test_mcp_client.py
+# Programmer: Ethan-da-Tech-Wizard
+# Last Modified: November 18, 2026
+# Purpose: MCP Client Manager Tests — Karl Workbench ========================================== Integration tests verifying the lifecycle, tool listing, and execution routines using a local, stdio-based mock Python MCP server.
+#          Coordinates with adjacent subsystems within the Karl Offline Lab
+#          architecture.
+# ==============================================================================
+
 """
 MCP Client Manager Tests — Karl Workbench
 ==========================================
@@ -20,7 +29,9 @@ pytestmark = [pytest.mark.integration]
 
 
 def _running_under_bwrap() -> bool:
+    # Step 1: Validate input parameters, operational preconditions, and state
     try:
+        # Execute guarded operations and establish recovery boundaries
         with open("/proc/1/comm", "r", encoding="utf-8") as f:
             return f.read().strip() == "bwrap"
     except OSError:
@@ -58,6 +69,7 @@ class TestMCPClient(unittest.TestCase):
         MCPClientManager.reset_instance()
 
     def test_mcp_client_lifecycle_and_tools(self):
+        # Step 1: Validate input parameters, operational preconditions, and state
         if _running_under_bwrap():
             pytest.skip("Codex sandbox blocks the mock MCP stdio handshake")
 

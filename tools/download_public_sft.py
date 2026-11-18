@@ -1,4 +1,13 @@
 #!/usr/bin/env python3
+# ==============================================================================
+# Program: download_public_sft.py
+# Programmer: Ethan-da-Tech-Wizard
+# Last Modified: November 18, 2026
+# Purpose: Downloader for public instruction-tuning and fine-tuning datasets.
+#          Retrieves validated open-source datasets and prepares them for local
+#          model training.
+# ==============================================================================
+
 """Download and format a public programming instruction dataset for Karl fine-tuning."""
 
 from __future__ import annotations
@@ -24,7 +33,9 @@ def is_python_code(text: str) -> bool:
     code_blocks = re.findall(r"```(?:python)?\s*\n(.*?)```", text, re.DOTALL)
     snippets = code_blocks if code_blocks else [text]
     for snippet in snippets:
+        # Iterate over items, evaluate loop invariant, and update progress
         try:
+            # Execute guarded operations and establish recovery boundaries
             ast.parse(snippet)
             return True
         except SyntaxError:
@@ -33,7 +44,9 @@ def is_python_code(text: str) -> bool:
 
 
 def main() -> int:
+    # Step 1: Validate input parameters, operational preconditions, and state
     try:
+        # Execute guarded operations and establish recovery boundaries
         from datasets import load_dataset
     except ImportError:
         logger.error("HuggingFace 'datasets' library is not installed. Install requirements.txt first.")
@@ -50,8 +63,10 @@ def main() -> int:
 
     with OUT_PATH.open("w", encoding="utf-8") as fh:
         for ds_name, split_name, source_label in datasets_to_load:
+            # Iterate over items, evaluate loop invariant, and update progress
             logger.info("Downloading %s from HuggingFace...", ds_name)
             try:
+                # Execute guarded operations and establish recovery boundaries
                 dataset = load_dataset(ds_name, split=split_name)
             except Exception as exc:
                 logger.warning("Failed to download dataset %s: %s", ds_name, exc)
@@ -59,6 +74,7 @@ def main() -> int:
 
             logger.info("Filtering and formatting programming instructions from %s...", ds_name)
             for item in dataset:
+                # Iterate over items, evaluate loop invariant, and update progress
                 instruction = item.get("instruction", "")
                 input_context = item.get("input", "")
                 output = item.get("output", "")

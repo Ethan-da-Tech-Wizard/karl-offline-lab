@@ -1,3 +1,12 @@
+# ==============================================================================
+# Program: olmo.py
+# Programmer: Ethan-da-Tech-Wizard
+# Last Modified: November 18, 2026
+# Purpose: Weight conversion and architectural mapping implementation for OLMO.
+#          Transforms HuggingFace checkpoint tensors, normalizes layer weights,
+#          and writes compliant GGUF data structures for llama.cpp.
+# ==============================================================================
+
 from __future__ import annotations
 
 from typing import Iterable, TYPE_CHECKING
@@ -18,6 +27,7 @@ class OlmoModel(TextModel):
     model_arch = gguf.MODEL_ARCH.OLMO
 
     def set_gguf_parameters(self):
+        # Step 1: Validate input parameters, operational preconditions, and state
         super().set_gguf_parameters()
         self.gguf_writer.add_layer_norm_eps(1e-5)
         clip_qkv = self.hparams.get("clip_qkv")
@@ -27,6 +37,7 @@ class OlmoModel(TextModel):
     # Same as super class, but permuting q_proj, k_proj
     # Copied from: LlamaModel
     def modify_tensors(self, data_torch: Tensor, name: str, bid: int | None) -> Iterable[tuple[str, Tensor]]:
+        # Step 1: Validate input parameters, operational preconditions, and state
         n_head = self.hparams["num_attention_heads"]
         n_kv_head = self.hparams.get("num_key_value_heads")
 
@@ -49,6 +60,7 @@ class Olmo2Model(TextModel):
     model_arch = gguf.MODEL_ARCH.OLMO2
 
     def set_gguf_parameters(self):
+        # Step 1: Validate input parameters, operational preconditions, and state
         super().set_gguf_parameters()
 
         if "sliding_window" in self.hparams:
@@ -61,6 +73,7 @@ class Olmo2Model(TextModel):
                 # Olmo2 does not use sliding window attention.
                 # Olmo3 defaults to using sliding window for all layers except every 4th.
                 for i in range(self.hparams["num_hidden_layers"]):
+                    # Iterate over items, evaluate loop invariant, and update progress
                     sliding_window_pattern.append((i + 1) % 4 != 0)
 
             self.gguf_writer.add_sliding_window_pattern(sliding_window_pattern)
@@ -71,6 +84,7 @@ class OlmoeModel(TextModel):
     model_arch = gguf.MODEL_ARCH.OLMOE
 
     def set_gguf_parameters(self):
+        # Step 1: Validate input parameters, operational preconditions, and state
         super().set_gguf_parameters()
         self.gguf_writer.add_layer_norm_rms_eps(1e-5)
 
@@ -91,9 +105,11 @@ class OlmoeModel(TextModel):
             if len(self._experts[bid]) >= n_experts * 3:
                 # merge the experts into a single 3d tensor
                 for w_name in ["down_proj", "gate_proj", "up_proj"]:
+                    # Iterate over items, evaluate loop invariant, and update progress
                     datas: list[Tensor] = []
 
                     for xid in range(n_experts):
+                        # Iterate over items, evaluate loop invariant, and update progress
                         ename = f"model.layers.{bid}.mlp.experts.{xid}.{w_name}.weight"
                         datas.append(self._experts[bid][ename])
                         del self._experts[bid][ename]
@@ -111,6 +127,7 @@ class OlmoeModel(TextModel):
 
     # Copied from: Qwen2MoeModel
     def prepare_tensors(self):
+        # Step 1: Validate input parameters, operational preconditions, and state
         super().prepare_tensors()
 
         if self._experts is not None:

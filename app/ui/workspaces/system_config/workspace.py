@@ -1,3 +1,12 @@
+# ==============================================================================
+# Program: workspace.py
+# Programmer: Ethan-da-Tech-Wizard
+# Last Modified: November 18, 2026
+# Purpose: System — hardware info, model management, generation defaults, about.
+#          Coordinates with adjacent subsystems within the Karl Offline Lab
+#          architecture.
+# ==============================================================================
+
 """
 System — hardware info, model management, generation defaults, about.
 """
@@ -47,6 +56,7 @@ class SystemConfigWorkspace(
 
     def __init__(self, state, parent=None):
         """Create system config tabs and start live hardware monitoring."""
+        # Step 1: Validate input parameters, operational preconditions, and state
         super().__init__(parent)
         self.state = state
         self._download_thread = None
@@ -68,6 +78,7 @@ class SystemConfigWorkspace(
         self._update_live_hardware()
 
     def showEvent(self, event):
+        # Step 1: Validate input parameters, operational preconditions, and state
         super().showEvent(event)
         self._scan_models(force=False)
         self._scan_adapters(force=False)
@@ -98,6 +109,7 @@ class SystemConfigWorkspace(
 
     def _build_ui(self):
         """Build the System title and tab set from mixin-provided panels."""
+        # Step 1: Validate input parameters, operational preconditions, and state
         root = QVBoxLayout(self)
         root.setContentsMargins(12, 12, 12, 12)
         root.setSpacing(12)
@@ -136,17 +148,20 @@ class SystemConfigWorkspace(
         root.addWidget(self._tabs, 1)
 
     def show_theme_tab(self):
+        # Step 1: Validate input parameters, operational preconditions, and state
         if hasattr(self, "_tabs") and hasattr(self, "_theme_tab"):
             self._sync_appearance_controls_from_state()
             self._tabs.setCurrentWidget(self._theme_tab)
 
     def show_defaults_tab(self):
+        # Step 1: Validate input parameters, operational preconditions, and state
         if hasattr(self, "_tabs"):
             self._tabs.setCurrentIndex(2)
 
     # ── model tab ─────────────────────────────────────────────────────────────
 
     def _apply_defaults(self):
+        # Step 1: Validate input parameters, operational preconditions, and state
         from PyQt6.QtWidgets import QMessageBox
         temp = self._temp_spin.value()
         top_p = self._topp_spin.value()

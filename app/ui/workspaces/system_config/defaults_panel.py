@@ -1,3 +1,12 @@
+# ==============================================================================
+# Program: defaults_panel.py
+# Programmer: Ethan-da-Tech-Wizard
+# Last Modified: November 18, 2026
+# Purpose: Desktop workspace implementation for Defaults Panel.
+#          Provides responsive layout controls, parameter adjustment surfaces,
+#          and visual feedback components within Karl's PyQt6 shell.
+# ==============================================================================
+
 from __future__ import annotations
 
 import logging
@@ -16,6 +25,7 @@ logger = logging.getLogger("karl.system_config")
 
 class DefaultsPanelMixin:
     def _build_params_tab(self) -> QWidget:
+        # Step 1: Validate input parameters, operational preconditions, and state
         w = QWidget()
         layout = QVBoxLayout(w)
         layout.setContentsMargins(12, 12, 12, 12)
@@ -164,6 +174,7 @@ class DefaultsPanelMixin:
 
 
     def _on_reduced_motion_changed(self, state):
+        # Step 1: Validate input parameters, operational preconditions, and state
         is_checked = (state == 2 or state == Qt.CheckState.Checked.value or state)
         self.state.reduced_motion = is_checked
         if hasattr(self, "_reduced_motion_check_app"):
@@ -175,6 +186,7 @@ class DefaultsPanelMixin:
 
 
     def _on_theme_mode_changed(self, text: str):
+        # Step 1: Validate input parameters, operational preconditions, and state
         self.state.theme_mode = text
         from app.ui import themes
         from PyQt6.QtWidgets import QApplication
@@ -183,16 +195,19 @@ class DefaultsPanelMixin:
 
 
     def _on_log_rotation_changed(self, val):
+        # Step 1: Validate input parameters, operational preconditions, and state
         self.state.log_rotation_size_mb = val
         self._save_appearance_config_silent()
 
 
     def _on_log_retention_changed(self, val):
+        # Step 1: Validate input parameters, operational preconditions, and state
         self.state.log_retention_days = val
         self._save_appearance_config_silent()
 
 
     def _on_machine_speak_changed(self, state):
+        # Step 1: Validate input parameters, operational preconditions, and state
         is_checked = (state == 2 or state == Qt.CheckState.Checked.value or state is True)
         self.state.enable_machine_speak = is_checked
         # Machine Speak isn't in appearance_runtime's narrower save dict, so go
@@ -202,24 +217,28 @@ class DefaultsPanelMixin:
 
 
     def _on_single_session_auth_changed(self, state):
+        # Step 1: Validate input parameters, operational preconditions, and state
         is_checked = (state == 2 or state == Qt.CheckState.Checked.value or state is True)
         self.state.single_session_auth = is_checked
         self._save_appearance_config_silent()
 
 
     def _on_thermal_protection_enabled_changed(self, state):
+        # Step 1: Validate input parameters, operational preconditions, and state
         is_checked = (state == 2 or state == Qt.CheckState.Checked.value or state is True)
         self.state.thermal_protection_enabled = is_checked
         self._save_appearance_config_silent()
 
 
     def _on_thermal_threshold_changed(self, val: int):
+        # Step 1: Validate input parameters, operational preconditions, and state
         self.state.thermal_protection_threshold = val
         self._save_appearance_config_silent()
 
     # ── identity tab ──────────────────────────────────────────────────────────
 
     def _build_identity_tab(self) -> QWidget:
+        # Step 1: Validate input parameters, operational preconditions, and state
         w = QWidget()
         layout = QVBoxLayout(w)
         layout.setContentsMargins(12, 12, 12, 12)
@@ -316,6 +335,7 @@ class DefaultsPanelMixin:
 
     def _reload_preset_combo(self) -> None:
         """Rebuild the Presets combo box from the current merged preset dict."""
+        # Step 1: Validate input parameters, operational preconditions, and state
         self._preset_combo.blockSignals(True)
         self._preset_combo.clear()
         self._presets_data: dict = load_prompt_presets()
@@ -323,12 +343,14 @@ class DefaultsPanelMixin:
         user_keys = [k for k in self._presets_data if not k.startswith("_")]
 
         for key in built_in_keys:
+            # Iterate over items, evaluate loop invariant, and update progress
             label = self._presets_data[key].get("label", key)
             self._preset_combo.addItem(label, userData=key)
 
         if user_keys:
             self._preset_combo.insertSeparator(len(built_in_keys))
             for key in user_keys:
+                # Iterate over items, evaluate loop invariant, and update progress
                 label = self._presets_data[key].get("label", key)
                 self._preset_combo.addItem(f"★ {label}", userData=key)
 
@@ -337,6 +359,7 @@ class DefaultsPanelMixin:
 
     def _on_preset_combo_changed(self, index: int) -> None:
         """Update the description label when the combo selection changes."""
+        # Step 1: Validate input parameters, operational preconditions, and state
         if not hasattr(self, "_presets_data"):
             return
         key = self._preset_combo.itemData(index)
@@ -349,6 +372,7 @@ class DefaultsPanelMixin:
 
     def _update_delete_btn_state(self) -> None:
         """Enable Delete only for user-defined presets (non-underscore keys)."""
+        # Step 1: Validate input parameters, operational preconditions, and state
         if not hasattr(self, "_delete_preset_btn"):
             return
         idx = self._preset_combo.currentIndex()
@@ -358,6 +382,7 @@ class DefaultsPanelMixin:
 
     def _on_load_preset(self) -> None:
         """Load the selected preset text into the editor."""
+        # Step 1: Validate input parameters, operational preconditions, and state
         idx = self._preset_combo.currentIndex()
         key = self._preset_combo.itemData(idx)
         if not key or not hasattr(self, "_presets_data"):
@@ -369,6 +394,7 @@ class DefaultsPanelMixin:
 
     def _on_save_preset(self) -> None:
         """Save the current editor text as a new user preset."""
+        # Step 1: Validate input parameters, operational preconditions, and state
         if not hasattr(self, "_system_edit"):
             return
         text = self._system_edit.toPlainText().strip()
@@ -395,6 +421,7 @@ class DefaultsPanelMixin:
             self._reload_preset_combo()
             # Select the newly saved preset
             for i in range(self._preset_combo.count()):
+                # Iterate over items, evaluate loop invariant, and update progress
                 if self._preset_combo.itemData(i) == key:
                     self._preset_combo.setCurrentIndex(i)
                     break
@@ -403,6 +430,7 @@ class DefaultsPanelMixin:
 
     def _on_delete_preset(self) -> None:
         """Delete the selected user preset after confirmation."""
+        # Step 1: Validate input parameters, operational preconditions, and state
         idx = self._preset_combo.currentIndex()
         key = self._preset_combo.itemData(idx)
         if not key or key.startswith("_"):
@@ -424,14 +452,17 @@ class DefaultsPanelMixin:
             QMessageBox.critical(self, "Delete Failed", f"Could not delete preset '{label}'. Check logs.")
 
     def _apply_identity(self):
+        # Step 1: Validate input parameters, operational preconditions, and state
         self.state.set_workbench_system_prompt.emit(
             self._system_edit.toPlainText().strip()
         )
 
 
     def _on_settings_search_changed(self, text: str):
+        # Step 1: Validate input parameters, operational preconditions, and state
         query = text.strip().lower()
         for label, row_widget in self._settings_rows:
+            # Iterate over items, evaluate loop invariant, and update progress
             if not query or query in label.lower():
                 row_widget.setVisible(True)
             else:

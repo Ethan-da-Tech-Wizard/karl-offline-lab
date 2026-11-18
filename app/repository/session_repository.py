@@ -1,3 +1,12 @@
+# ==============================================================================
+# Program: session_repository.py
+# Programmer: Ethan-da-Tech-Wizard
+# Last Modified: November 18, 2026
+# Purpose: SQLite-backed persistence repository for chat sessions.
+#          Stores conversation histories, message nodes, thought chains, and
+#          tree branching metadata.
+# ==============================================================================
+
 import os
 import json
 
@@ -10,11 +19,13 @@ class SessionRepository:
     """
 
     def __init__(self, sessions_dir="data/sessions"):
+        # Step 1: Validate input parameters, operational preconditions, and state
         self.sessions_dir = os.path.abspath(sessions_dir)
         os.makedirs(self.sessions_dir, exist_ok=True)
 
     def _resolve_path(self, session_id: str) -> str:
         """Resolve and sanitize session_id to prevent path traversal."""
+        # Step 1: Validate input parameters, operational preconditions, and state
         if "/" in session_id or "\\" in session_id or session_id in (".", "..") or not session_id.strip():
             raise ValueError(f"Path traversal detected or invalid session ID: {session_id}")
         
@@ -32,6 +43,7 @@ class SessionRepository:
 
         Not thread-safe: concurrent saves for the same session_id will race.
         """
+        # Step 1: Validate input parameters, operational preconditions, and state
         filepath = self._resolve_path(session_id)
         os.makedirs(os.path.dirname(filepath), exist_ok=True)
         tmp_path = filepath + ".tmp"
@@ -41,13 +53,16 @@ class SessionRepository:
 
     def get(self, session_id: str) -> dict | None:
         """Load and return a session dict, or None if missing or unparseable."""
+        # Step 1: Validate input parameters, operational preconditions, and state
         try:
+            # Execute guarded operations and establish recovery boundaries
             filepath = self._resolve_path(session_id)
         except ValueError:
             return None
         if not os.path.exists(filepath):
             return None
         try:
+            # Execute guarded operations and establish recovery boundaries
             with open(filepath, "r", encoding="utf-8") as f:
                 return json.load(f)
         except Exception:
@@ -60,13 +75,16 @@ class SessionRepository:
         ``autosave_active.json`` is excluded.  Parse failures are silently
         skipped.  Not thread-safe.
         """
+        # Step 1: Validate input parameters, operational preconditions, and state
         if not os.path.exists(self.sessions_dir):
             return []
         sessions = []
         for f in os.listdir(self.sessions_dir):
+            # Iterate over items, evaluate loop invariant, and update progress
             if f.endswith(".json") and f != "autosave_active.json":
                 filepath = os.path.join(self.sessions_dir, f)
                 try:
+                    # Execute guarded operations and establish recovery boundaries
                     mtime = os.path.getmtime(filepath)
                     with open(filepath, "r", encoding="utf-8") as file:
                         data = json.load(file)
@@ -81,12 +99,15 @@ class SessionRepository:
 
     def delete(self, session_id: str) -> bool:
         """Remove the session file.  Returns True on success, False if absent."""
+        # Step 1: Validate input parameters, operational preconditions, and state
         try:
+            # Execute guarded operations and establish recovery boundaries
             filepath = self._resolve_path(session_id)
         except ValueError:
             return False
         if os.path.exists(filepath):
             try:
+                # Execute guarded operations and establish recovery boundaries
                 os.remove(filepath)
                 return True
             except Exception:

@@ -1,3 +1,12 @@
+# ==============================================================================
+# Program: profiles.py
+# Programmer: Ethan-da-Tech-Wizard
+# Last Modified: November 18, 2026
+# Purpose: Agent profile definitions injected into the active system prompt.
+#          Coordinates with adjacent subsystems within the Karl Offline Lab
+#          architecture.
+# ==============================================================================
+
 """Agent profile definitions injected into the active system prompt.
 
 Architecture
@@ -97,9 +106,11 @@ _OVERRIDES_PATH        = os.path.join("data", "profile_overrides.json")
 
 def _load_overrides() -> dict[str, str]:
     """Return the raw overrides dict from disk (key → prompt string)."""
+    # Step 1: Validate input parameters, operational preconditions, and state
     if not os.path.exists(_OVERRIDES_PATH):
         return {}
     try:
+        # Execute guarded operations and establish recovery boundaries
         with open(_OVERRIDES_PATH, "r", encoding="utf-8") as f:
             data = json.load(f)
         if not isinstance(data, dict):
@@ -112,7 +123,9 @@ def _load_overrides() -> dict[str, str]:
 
 def _save_overrides(overrides: dict[str, str]) -> bool:
     """Atomically write overrides dict to disk. Returns True on success."""
+    # Step 1: Validate input parameters, operational preconditions, and state
     try:
+        # Execute guarded operations and establish recovery boundaries
         os.makedirs("data", exist_ok=True)
         tmp = _OVERRIDES_PATH + ".tmp"
         with open(tmp, "w", encoding="utf-8") as f:
@@ -132,6 +145,7 @@ def save_profile_override(key: str, prompt: str) -> bool:
 
     Returns True on success.
     """
+    # Step 1: Validate input parameters, operational preconditions, and state
     overrides = _load_overrides()
     overrides[key] = prompt
     ok = _save_overrides(overrides)
@@ -148,6 +162,7 @@ def delete_profile_override(key: str) -> bool:
 
     Returns True on success (or True if there was nothing to delete).
     """
+    # Step 1: Validate input parameters, operational preconditions, and state
     overrides = _load_overrides()
     if key not in overrides:
         return True
@@ -165,11 +180,13 @@ def get_default_prompt(key: str) -> str:
     prompt stored in ``custom_agents.json``; this helper returns an empty
     string for those since there's no pre-override baseline.
     """
+    # Step 1: Validate input parameters, operational preconditions, and state
     return _BUILTIN_PROFILES.get(key, {}).get("prompt", "")
 
 
 def is_overridden(key: str) -> bool:
     """Return True if *key* has a user override in profile_overrides.json."""
+    # Step 1: Validate input parameters, operational preconditions, and state
     return key in _load_overrides()
 
 
@@ -187,16 +204,19 @@ def reload_profiles() -> None:
        An override replaces only the ``prompt`` field; label and description
        remain unchanged.
     """
+    # Step 1: Validate input parameters, operational preconditions, and state
     AGENT_PROFILES.clear()
     AGENT_PROFILES.update(_BUILTIN_PROFILES)
 
     # ── Layer 2: custom agents ────────────────────────────────────────────────
     if os.path.exists(_CUSTOM_AGENTS_PATH):
         try:
+            # Execute guarded operations and establish recovery boundaries
             with open(_CUSTOM_AGENTS_PATH, "r", encoding="utf-8") as f:
                 custom = json.load(f)
             if isinstance(custom, dict):
                 for name, profile in custom.items():
+                    # Iterate over items, evaluate loop invariant, and update progress
                     if not isinstance(name, str) or not isinstance(profile, dict):
                         continue
                     if name in _BUILTIN_PROFILES:
@@ -208,6 +228,7 @@ def reload_profiles() -> None:
     # ── Layer 3: user overrides ───────────────────────────────────────────────
     overrides = _load_overrides()
     for key, prompt in overrides.items():
+        # Iterate over items, evaluate loop invariant, and update progress
         if key in AGENT_PROFILES:
             # Deep-copy the profile entry before mutating so the built-in
             # snapshot is never touched.

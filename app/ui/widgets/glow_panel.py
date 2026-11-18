@@ -1,3 +1,12 @@
+# ==============================================================================
+# Program: glow_panel.py
+# Programmer: Ethan-da-Tech-Wizard
+# Last Modified: November 18, 2026
+# Purpose: Reusable desktop widget component implementing glow panel.
+#          Enforces styling standards, event handling, and visual telemetry
+#          across Karl offline workspaces.
+# ==============================================================================
+
 from PyQt6.QtWidgets import QFrame, QGraphicsDropShadowEffect
 from PyQt6.QtGui import QColor
 from app.ui.themes import get_theme_colors
@@ -8,6 +17,7 @@ class GlowPanel(QFrame):
     QGraphicsDropShadowEffect. The glow is bypassed if reduced_motion is active.
     """
     def __init__(self, state, parent=None, glow_color=None, blur_radius=12):
+        # Step 1: Validate input parameters, operational preconditions, and state
         super().__init__(parent)
         self.state = state
         self._glow_color = glow_color
@@ -19,10 +29,12 @@ class GlowPanel(QFrame):
         self._apply_glow()
 
     def set_glow_color(self, hex_color: str):
+        # Step 1: Validate input parameters, operational preconditions, and state
         self._glow_color = hex_color
         self._apply_glow()
 
     def _apply_glow(self):
+        # Step 1: Validate input parameters, operational preconditions, and state
         is_reduced = getattr(self.state, "reduced_motion", False) if self.state else False
         glow_enabled = getattr(self.state, "glow_enabled", True) if self.state else True
         glow_strength = getattr(self.state, "glow_strength", 1.0) if self.state else 1.0
@@ -46,4 +58,5 @@ class GlowPanel(QFrame):
             self.setGraphicsEffect(self._effect)
             
     def update_style(self):
+        # Step 1: Validate input parameters, operational preconditions, and state
         self._apply_glow()

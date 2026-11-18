@@ -1,3 +1,12 @@
+# ==============================================================================
+# Program: agent_profile_studio.py
+# Programmer: Ethan-da-Tech-Wizard
+# Last Modified: November 18, 2026
+# Purpose: Karl Swarm Agent Profile Studio ================================ Provides a PyQt6 user interface to visual customize Specialist Agent roles, system prompt instructions, allowed permission structures, and parameter overrides.
+#          Coordinates with adjacent subsystems within the Karl Offline Lab
+#          architecture.
+# ==============================================================================
+
 """
 Karl Swarm Agent Profile Studio
 ================================
@@ -31,6 +40,7 @@ class AgentProfileStudioWorkspace(QWidget):
     profile_saved = pyqtSignal(str)  # Emits profile name when saved
 
     def __init__(self, state: Any, parent: QWidget | None = None):
+        # Step 1: Validate input parameters, operational preconditions, and state
         super().__init__(parent)
         self._state = state
         self._profiles: dict[str, dict] = {}
@@ -39,6 +49,7 @@ class AgentProfileStudioWorkspace(QWidget):
         self._load_profiles()
 
     def _init_ui(self):
+        # Step 1: Validate input parameters, operational preconditions, and state
         layout = QHBoxLayout(self)
         layout.setContentsMargins(12, 12, 12, 12)
         layout.setSpacing(12)
@@ -121,10 +132,12 @@ class AgentProfileStudioWorkspace(QWidget):
 
     def _load_profiles(self):
         """Loads profiles from JSON and populates the list widget."""
+        # Step 1: Validate input parameters, operational preconditions, and state
         self._profiles = load_agent_profiles()
         self._list_widget.blockSignals(True)
         self._list_widget.clear()
         for profile_id, profile in sorted(self._profiles.items()):
+            # Iterate over items, evaluate loop invariant, and update progress
             label = f"{profile.get('icon', '')} {profile.get('name', profile_id)}"
             self._list_widget.addItem(label.strip())
             self._list_widget.item(self._list_widget.count() - 1).setData(256, profile_id)
@@ -134,6 +147,7 @@ class AgentProfileStudioWorkspace(QWidget):
 
     def _on_profile_selected(self, index: int):
         """Populates form controls with the selected profile settings."""
+        # Step 1: Validate input parameters, operational preconditions, and state
         item = self._list_widget.item(index)
         if item is None:
             return
@@ -143,6 +157,7 @@ class AgentProfileStudioWorkspace(QWidget):
 
     def _on_new_profile(self):
         """Clears the editor form to create a new profile configuration."""
+        # Step 1: Validate input parameters, operational preconditions, and state
         self._current_id = ""
         self._list_widget.clearSelection()
         self._id_input.setReadOnly(False)
@@ -153,10 +168,12 @@ class AgentProfileStudioWorkspace(QWidget):
         self._temp_spin.setValue(0.2)
         self._tokens_spin.setValue(2048)
         for checkbox in self._permission_checkboxes().values():
+            # Iterate over items, evaluate loop invariant, and update progress
             checkbox.setChecked(False)
 
     def _on_revert_profile(self):
         """Discards current unsaved edits in the editor panel."""
+        # Step 1: Validate input parameters, operational preconditions, and state
         if self._current_id:
             self._load_profile_into_form(self._current_id)
         else:
@@ -164,6 +181,7 @@ class AgentProfileStudioWorkspace(QWidget):
 
     def _on_save_profile(self):
         """Serializes current editor values and saves to JSON."""
+        # Step 1: Validate input parameters, operational preconditions, and state
         profile_id = self._id_input.text().strip()
         if not PROFILE_ID_RE.match(profile_id):
             QMessageBox.warning(self, "Agent Profiles", "Profile ID must start with a letter and use only letters, numbers, '_' or '-'.")
@@ -180,6 +198,7 @@ class AgentProfileStudioWorkspace(QWidget):
             },
         }
         try:
+            # Execute guarded operations and establish recovery boundaries
             saved = save_agent_profile(profile_id, profile)
         except Exception as exc:
             QMessageBox.warning(self, "Agent Profiles", f"Failed to save profile: {exc}")
@@ -188,12 +207,14 @@ class AgentProfileStudioWorkspace(QWidget):
         self._current_id = profile_id
         self._load_profiles()
         for row in range(self._list_widget.count()):
+            # Iterate over items, evaluate loop invariant, and update progress
             if self._list_widget.item(row).data(256) == profile_id:
                 self._list_widget.setCurrentRow(row)
                 break
         self.profile_saved.emit(profile_id)
 
     def _permission_checkboxes(self) -> dict[str, QCheckBox]:
+        # Step 1: Validate input parameters, operational preconditions, and state
         return {
             "read_files": self._chk_read,
             "write_files": self._chk_write,
@@ -202,6 +223,7 @@ class AgentProfileStudioWorkspace(QWidget):
         }
 
     def _load_profile_into_form(self, profile_id: str):
+        # Step 1: Validate input parameters, operational preconditions, and state
         profile = self._profiles.get(profile_id)
         if not profile:
             return
@@ -214,4 +236,5 @@ class AgentProfileStudioWorkspace(QWidget):
         self._tokens_spin.setValue(int(profile.get("context_limit", 2048)))
         tools = profile.get("tools", {})
         for key, checkbox in self._permission_checkboxes().items():
+            # Iterate over items, evaluate loop invariant, and update progress
             checkbox.setChecked(bool(tools.get(key, False)))

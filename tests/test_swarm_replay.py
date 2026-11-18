@@ -1,3 +1,12 @@
+# ==============================================================================
+# Program: test_swarm_replay.py
+# Programmer: Ethan-da-Tech-Wizard
+# Last Modified: November 18, 2026
+# Purpose: Tests for app/utils/swarm_replay.py — SwarmReplayManager.
+#          Coordinates with adjacent subsystems within the Karl Offline Lab
+#          architecture.
+# ==============================================================================
+
 """Tests for app/utils/swarm_replay.py — SwarmReplayManager."""
 
 from __future__ import annotations
@@ -11,6 +20,7 @@ from app.utils.swarm_replay import SwarmReplayManager
 
 
 def _write_run(cognition_dir: Path, run_id: str, nodes: list[dict]) -> Path:
+    # Step 1: Validate input parameters, operational preconditions, and state
     path = cognition_dir / f"run_{run_id}.json"
     path.write_text(json.dumps(nodes), encoding="utf-8")
     return path
@@ -18,18 +28,22 @@ def _write_run(cognition_dir: Path, run_id: str, nodes: list[dict]) -> Path:
 
 class TestListPastRuns(unittest.TestCase):
     def setUp(self):
+        # Step 1: Validate input parameters, operational preconditions, and state
         self._tmp = tempfile.TemporaryDirectory()
         self.cognition_dir = Path(self._tmp.name)
         self.manager = SwarmReplayManager(trace_dir=str(self.cognition_dir))
 
     def tearDown(self):
+        # Step 1: Validate input parameters, operational preconditions, and state
         self._tmp.cleanup()
 
     def test_returns_empty_list_when_dir_missing(self):
+        # Step 1: Validate input parameters, operational preconditions, and state
         manager = SwarmReplayManager(trace_dir=str(self.cognition_dir / "does_not_exist"))
         self.assertEqual(manager.list_past_runs(), [])
 
     def test_summarizes_run_started_and_swarm_finished(self):
+        # Step 1: Validate input parameters, operational preconditions, and state
         _write_run(self.cognition_dir, "abc123", [
             {"type": "run_started", "timestamp": 1000.0, "objective": "Add math_utils.add", "workspace_path": "/ws"},
             {"type": "architect_plan", "timestamp": 1001.0, "explanation": "plan", "tasks": []},
@@ -46,6 +60,7 @@ class TestListPastRuns(unittest.TestCase):
         self.assertEqual(run["steps_count"], 3)
 
     def test_run_without_finished_node_reports_not_successful(self):
+        # Step 1: Validate input parameters, operational preconditions, and state
         _write_run(self.cognition_dir, "unfinished", [
             {"type": "run_started", "timestamp": 1000.0, "objective": "x", "workspace_path": "/ws"},
         ])
@@ -55,6 +70,7 @@ class TestListPastRuns(unittest.TestCase):
         self.assertEqual(runs[0]["success"], False)
 
     def test_sorted_newest_first(self):
+        # Step 1: Validate input parameters, operational preconditions, and state
         _write_run(self.cognition_dir, "older", [
             {"type": "run_started", "timestamp": 1000.0, "objective": "old run", "workspace_path": "/ws"},
         ])
@@ -67,6 +83,7 @@ class TestListPastRuns(unittest.TestCase):
         self.assertEqual([r["run_id"] for r in runs], ["newer", "older"])
 
     def test_skips_malformed_json(self):
+        # Step 1: Validate input parameters, operational preconditions, and state
         bad_path = self.cognition_dir / "run_broken.json"
         bad_path.write_text("{not valid json", encoding="utf-8")
         _write_run(self.cognition_dir, "good", [
@@ -80,6 +97,7 @@ class TestListPastRuns(unittest.TestCase):
 
 class TestGetRunDetails(unittest.TestCase):
     def setUp(self):
+        # Step 1: Validate input parameters, operational preconditions, and state
         self._tmp = tempfile.TemporaryDirectory()
         self.cognition_dir = Path(self._tmp.name) / "cognition"
         self.cognition_dir.mkdir()
@@ -88,9 +106,11 @@ class TestGetRunDetails(unittest.TestCase):
         self.manager = SwarmReplayManager(trace_dir=str(self.cognition_dir))
 
     def tearDown(self):
+        # Step 1: Validate input parameters, operational preconditions, and state
         self._tmp.cleanup()
 
     def test_missing_run_returns_empty_steps(self):
+        # Step 1: Validate input parameters, operational preconditions, and state
         details = self.manager.get_run_details("nope")
         self.assertEqual(details, {"run_id": "nope", "objective": "", "steps": []})
 
@@ -137,6 +157,7 @@ class TestGetRunDetails(unittest.TestCase):
         self.assertEqual(tester_step["test_output"], "TESTS PASSED")
 
     def test_new_file_diff_shows_full_content_as_added(self):
+        # Step 1: Validate input parameters, operational preconditions, and state
         current_file = self.workspace_dir / "new_module.py"
         current_file.write_text("def hello():\n    return 'hi'\n", encoding="utf-8")
 

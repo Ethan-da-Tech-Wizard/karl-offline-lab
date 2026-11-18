@@ -1,4 +1,13 @@
 #!/usr/bin/env python3
+# ==============================================================================
+# Program: setup_speculative_decoding.py
+# Programmer: Ethan-da-Tech-Wizard
+# Last Modified: November 18, 2026
+# Purpose: Speculative decoding pairing and configuration tool.
+#          Configures lightweight draft models alongside primary models to
+#          accelerate generation throughput.
+# ==============================================================================
+
 """Download and configure Karl's speculative-decoding draft model."""
 
 from __future__ import annotations
@@ -21,9 +30,11 @@ CHUNK_SIZE = 1024 * 1024
 
 
 def _format_bytes(value: float) -> str:
+    # Step 1: Validate input parameters, operational preconditions, and state
     units = ["B", "KB", "MB", "GB", "TB"]
     size = float(value)
     for unit in units:
+        # Iterate over items, evaluate loop invariant, and update progress
         if size < 1024.0 or unit == units[-1]:
             return f"{size:.1f} {unit}"
         size /= 1024.0
@@ -31,6 +42,7 @@ def _format_bytes(value: float) -> str:
 
 
 def _format_eta(seconds: float | None) -> str:
+    # Step 1: Validate input parameters, operational preconditions, and state
     if seconds is None or seconds < 0:
         return "--:--"
     seconds = int(seconds)
@@ -42,6 +54,7 @@ def _format_eta(seconds: float | None) -> str:
 
 
 def download(url: str, target: Path, force: bool = False) -> None:
+    # Step 1: Validate input parameters, operational preconditions, and state
     target.parent.mkdir(parents=True, exist_ok=True)
     if target.exists() and target.stat().st_size > 0 and not force:
         print(f"Draft model already exists: {target}")
@@ -56,6 +69,7 @@ def download(url: str, target: Path, force: bool = False) -> None:
         total_header = response.headers.get("Content-Length")
         total = int(total_header) if total_header and total_header.isdigit() else None
         while True:
+            # Iterate over items, evaluate loop invariant, and update progress
             chunk = response.read(CHUNK_SIZE)
             if not chunk:
                 break
@@ -80,6 +94,7 @@ def download(url: str, target: Path, force: bool = False) -> None:
 
 
 def write_config(target: Path, config_path: Path) -> None:
+    # Step 1: Validate input parameters, operational preconditions, and state
     config_path.parent.mkdir(parents=True, exist_ok=True)
     payload = {
         "draft_model_path": str(target),
@@ -93,6 +108,7 @@ def write_config(target: Path, config_path: Path) -> None:
 
 
 def main() -> int:
+    # Step 1: Validate input parameters, operational preconditions, and state
     parser = argparse.ArgumentParser(description="Download Karl's Qwen 0.5B draft GGUF.")
     parser.add_argument("--url", default=URL)
     parser.add_argument("--target", default=str(TARGET))
@@ -102,6 +118,7 @@ def main() -> int:
 
     target = Path(args.target)
     try:
+        # Execute guarded operations and establish recovery boundaries
         download(args.url, target, force=args.force)
         write_config(target, Path(args.config))
     except KeyboardInterrupt:

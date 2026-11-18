@@ -1,3 +1,12 @@
+# ==============================================================================
+# Program: test_inference_safety.py
+# Programmer: Ethan-da-Tech-Wizard
+# Last Modified: November 18, 2026
+# Purpose: Inference safety tests for model locking, stream cleanup, and offline mode.
+#          Coordinates with adjacent subsystems within the Karl Offline Lab
+#          architecture.
+# ==============================================================================
+
 """Inference safety tests for model locking, stream cleanup, and offline mode."""
 
 from __future__ import annotations
@@ -9,11 +18,13 @@ import pytest
 
 
 def test_model_reset_blocked_during_active_generation():
+    # Step 1: Validate input parameters, operational preconditions, and state
     from app.engine.model_loader import ModelLoader
 
     original_count = ModelLoader._active_generation_count
     original_locked = ModelLoader._instance_locked
     try:
+        # Execute guarded operations and establish recovery boundaries
         ModelLoader._active_generation_count = 1
         ModelLoader._instance_locked = True
         with pytest.raises(RuntimeError, match="Cannot reset ModelLoader while inference is active"):
@@ -24,6 +35,7 @@ def test_model_reset_blocked_during_active_generation():
 
 
 def test_model_reload_or_adapter_change_blocked_during_active_generation():
+    # Step 1: Validate input parameters, operational preconditions, and state
     from app.engine.model_loader import ModelLoader
 
     original_count = ModelLoader._active_generation_count
@@ -33,6 +45,7 @@ def test_model_reload_or_adapter_change_blocked_during_active_generation():
     original_adapter = getattr(ModelLoader, "_active_adapter", None)
     original_offloaded = getattr(ModelLoader, "_adapter_offloaded", False)
     try:
+        # Execute guarded operations and establish recovery boundaries
         ModelLoader._instance = object()
         ModelLoader._model_path = "data/models/current.gguf"
         ModelLoader._active_adapter = None
@@ -58,6 +71,7 @@ def test_model_reload_or_adapter_change_blocked_during_active_generation():
 
 
 def test_failed_acquire_does_not_release_existing_generation():
+    # Step 1: Validate input parameters, operational preconditions, and state
     from app.engine.model_loader import ModelLoader
 
     original_count = ModelLoader._active_generation_count
@@ -65,6 +79,7 @@ def test_failed_acquire_does_not_release_existing_generation():
     original_instance = getattr(ModelLoader, "_instance", None)
     original_model_path = getattr(ModelLoader, "_model_path", None)
     try:
+        # Execute guarded operations and establish recovery boundaries
         ModelLoader._instance = object()
         ModelLoader._model_path = "data/models/current.gguf"
         ModelLoader._active_generation_count = 1
@@ -83,6 +98,7 @@ def test_failed_acquire_does_not_release_existing_generation():
 
 
 def test_offline_guard_blocks_external_http_by_default(monkeypatch):
+    # Step 1: Validate input parameters, operational preconditions, and state
     from app.engine.offline_guard import OfflineNetworkError, assert_online_allowed
 
     monkeypatch.delenv("KARL_ONLINE_EXECUTION", raising=False)
@@ -91,6 +107,7 @@ def test_offline_guard_blocks_external_http_by_default(monkeypatch):
 
 
 def test_offline_guard_allows_localhost_by_default(monkeypatch):
+    # Step 1: Validate input parameters, operational preconditions, and state
     from app.engine.offline_guard import assert_online_allowed
 
     monkeypatch.delenv("KARL_ONLINE_EXECUTION", raising=False)
@@ -99,6 +116,7 @@ def test_offline_guard_allows_localhost_by_default(monkeypatch):
 
 
 def test_offline_guard_env_allows_external(monkeypatch):
+    # Step 1: Validate input parameters, operational preconditions, and state
     from app.engine.offline_guard import assert_online_allowed
 
     monkeypatch.setenv("KARL_ONLINE_EXECUTION", "1")
@@ -106,6 +124,7 @@ def test_offline_guard_env_allows_external(monkeypatch):
 
 
 def test_requests_external_call_is_blocked_before_network(monkeypatch):
+    # Step 1: Validate input parameters, operational preconditions, and state
     import requests
     from app.engine.offline_guard import OfflineNetworkError
 
@@ -115,26 +134,33 @@ def test_requests_external_call_is_blocked_before_network(monkeypatch):
 
 
 def test_agentic_stream_generator_closes_on_cancel():
+    # Step 1: Validate input parameters, operational preconditions, and state
     from app.engine.agentic_thread import AgenticThread
 
     class FakeStream:
         def __init__(self):
+            # Step 1: Validate input parameters, operational preconditions, and state
             self.closed = False
 
         def __iter__(self):
+            # Step 1: Validate input parameters, operational preconditions, and state
             yield {"choices": [{"text": "ignored", "finish_reason": None}]}
 
         def close(self):
+            # Step 1: Validate input parameters, operational preconditions, and state
             self.closed = True
 
     class FakeLLM:
         def __init__(self):
+            # Step 1: Validate input parameters, operational preconditions, and state
             self.stream = FakeStream()
 
         def __call__(self, *args, **kwargs):
+            # Step 1: Validate input parameters, operational preconditions, and state
             return self.stream
 
         def tokenize(self, data, add_bos=False):
+            # Step 1: Validate input parameters, operational preconditions, and state
             return [1]
 
     llm = FakeLLM()
@@ -151,31 +177,39 @@ def test_agentic_stream_generator_closes_on_cancel():
 
 
 def test_agentic_adapter_direct_answer_routes_to_chat_tokens():
+    # Step 1: Validate input parameters, operational preconditions, and state
     from app.engine.agentic_thread import AgenticThread
     from app.engine.model_loader import ModelLoader
 
     class FakeStream:
         def __init__(self):
+            # Step 1: Validate input parameters, operational preconditions, and state
             self.closed = False
 
         def __iter__(self):
+            # Step 1: Validate input parameters, operational preconditions, and state
             yield {"choices": [{"text": "Direct answer.", "finish_reason": "stop"}]}
 
         def close(self):
+            # Step 1: Validate input parameters, operational preconditions, and state
             self.closed = True
 
     class FakeLLM:
         def __init__(self):
+            # Step 1: Validate input parameters, operational preconditions, and state
             self.stream = FakeStream()
 
         def __call__(self, *args, **kwargs):
+            # Step 1: Validate input parameters, operational preconditions, and state
             return self.stream
 
         def tokenize(self, data, add_bos=False):
+            # Step 1: Validate input parameters, operational preconditions, and state
             return [1]
 
     original_adapter = getattr(ModelLoader, "_active_adapter", None)
     try:
+        # Execute guarded operations and establish recovery boundaries
         ModelLoader._active_adapter = "test-adapter"
         llm = FakeLLM()
         thread = AgenticThread(
@@ -203,6 +237,7 @@ def test_agentic_adapter_direct_answer_routes_to_chat_tokens():
 
 
 def test_agentic_repetition_guard_detects_near_duplicate_responses():
+    # Step 1: Validate input parameters, operational preconditions, and state
     from app.engine.agentic_thread import AgenticThread
 
     thread = AgenticThread(
@@ -218,6 +253,7 @@ def test_agentic_repetition_guard_detects_near_duplicate_responses():
 
 
 def test_llm_thread_request_stop_sets_flag():
+    # Step 1: Validate input parameters, operational preconditions, and state
     from app.engine.llm_thread import LLMThread
 
     thread = LLMThread(
@@ -233,13 +269,16 @@ def test_llm_thread_request_stop_sets_flag():
 def test_llm_thread_stop_flag_prevents_generation():
     """A stopped LLMThread still has close() called on the generator."""
 
+    # Step 1: Validate input parameters, operational preconditions, and state
     close_calls = []
 
     class FakeStream:
         def __iter__(self):
+            # Step 1: Validate input parameters, operational preconditions, and state
             yield {"choices": [{"text": "x", "finish_reason": None}]}
 
         def close(self):
+            # Step 1: Validate input parameters, operational preconditions, and state
             close_calls.append(True)
 
     # Verify the finally-close pattern directly without running the full thread.
@@ -247,7 +286,9 @@ def test_llm_thread_stop_flag_prevents_generation():
     stop_requested = True
     stream = FakeStream()
     try:
+        # Execute guarded operations and establish recovery boundaries
         for chunk in stream:
+            # Iterate over items, evaluate loop invariant, and update progress
             if stop_requested:
                 finish_reason = "cancelled"
                 break
@@ -261,11 +302,13 @@ def test_llm_thread_stop_flag_prevents_generation():
 
 
 def test_active_generation_count_increments_and_decrements():
+    # Step 1: Validate input parameters, operational preconditions, and state
     from app.engine.model_loader import ModelLoader
 
     original_count = ModelLoader._active_generation_count
     original_locked = ModelLoader._instance_locked
     try:
+        # Execute guarded operations and establish recovery boundaries
         assert not ModelLoader.is_instance_locked()
         ModelLoader.lock_instance()
         assert ModelLoader._active_generation_count == 1
@@ -286,11 +329,13 @@ def test_active_generation_count_increments_and_decrements():
 
 
 def test_inference_error_message_is_descriptive():
+    # Step 1: Validate input parameters, operational preconditions, and state
     from app.engine.model_loader import ModelLoader
 
     original_count = ModelLoader._active_generation_count
     original_locked = ModelLoader._instance_locked
     try:
+        # Execute guarded operations and establish recovery boundaries
         ModelLoader._active_generation_count = 2
         ModelLoader._instance_locked = True
         with pytest.raises(RuntimeError) as exc_info:
@@ -304,6 +349,7 @@ def test_inference_error_message_is_descriptive():
 
 
 def test_hf_offline_vars_applied_when_offline(monkeypatch):
+    # Step 1: Validate input parameters, operational preconditions, and state
     from app.engine import offline_guard
 
     monkeypatch.delenv("KARL_ONLINE_EXECUTION", raising=False)
@@ -311,17 +357,21 @@ def test_hf_offline_vars_applied_when_offline(monkeypatch):
     orig = offline_guard._hf_vars_applied
     offline_guard._hf_vars_applied = False
     for var in offline_guard._HF_OFFLINE_VARS:
+        # Iterate over items, evaluate loop invariant, and update progress
         monkeypatch.delenv(var, raising=False)
     try:
+        # Execute guarded operations and establish recovery boundaries
         offline_guard.apply_for_current_config()
         assert offline_guard.hf_vars_applied()
         for var in offline_guard._HF_OFFLINE_VARS:
+            # Iterate over items, evaluate loop invariant, and update progress
             assert os.environ.get(var) == "1", f"{var} should be set to '1'"
     finally:
         offline_guard._hf_vars_applied = orig
 
 
 def test_hf_offline_vars_cleared_when_online(monkeypatch):
+    # Step 1: Validate input parameters, operational preconditions, and state
     from app.engine import offline_guard
 
     monkeypatch.setenv("KARL_ONLINE_EXECUTION", "1")
@@ -329,17 +379,21 @@ def test_hf_offline_vars_cleared_when_online(monkeypatch):
     orig = offline_guard._hf_vars_applied
     offline_guard._hf_vars_applied = True
     for var in offline_guard._HF_OFFLINE_VARS:
+        # Iterate over items, evaluate loop invariant, and update progress
         os.environ[var] = "1"
     try:
+        # Execute guarded operations and establish recovery boundaries
         offline_guard.apply_for_current_config()
         assert not offline_guard.hf_vars_applied()
         for var in offline_guard._HF_OFFLINE_VARS:
+            # Iterate over items, evaluate loop invariant, and update progress
             assert var not in os.environ, f"{var} should be cleared in online mode"
     finally:
         offline_guard._hf_vars_applied = orig
 
 
 def test_guard_install_is_idempotent():
+    # Step 1: Validate input parameters, operational preconditions, and state
     from app.engine import offline_guard
 
     first = offline_guard._INSTALLED

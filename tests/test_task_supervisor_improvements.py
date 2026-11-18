@@ -1,3 +1,12 @@
+# ==============================================================================
+# Program: test_task_supervisor_improvements.py
+# Programmer: Ethan-da-Tech-Wizard
+# Last Modified: November 18, 2026
+# Purpose: Comprehensive test suite exercising task supervisor improvements functionality.
+#          Verifies state transitions, error boundaries, regression resistance,
+#          and contract compliance under tests.
+# ==============================================================================
+
 import os
 from app.engine.task_supervisor import TaskSupervisor, TaskStatus
 
@@ -24,6 +33,7 @@ def test_task_supervisor_terminal_state_protection():
 
 
 def test_task_supervisor_finish_once_terminal():
+    # Step 1: Validate input parameters, operational preconditions, and state
     TaskSupervisor.reset_instance()
     ts = TaskSupervisor.instance()
 

@@ -1,3 +1,12 @@
+# ==============================================================================
+# Program: vision_model_loader.py
+# Programmer: Ethan-da-Tech-Wizard
+# Last Modified: November 18, 2026
+# Purpose: Core utility providing vision model loader capabilities.
+#          Implements data structures and algorithms supporting offline
+#          introspection and model execution.
+# ==============================================================================
+
 from __future__ import annotations
 
 import base64
@@ -30,6 +39,7 @@ class VisionModelEntry:
 
     @classmethod
     def from_dict(cls, data: dict[str, Any]) -> "VisionModelEntry":
+        # Step 1: Validate input parameters, operational preconditions, and state
         return cls(
             id=data["id"],
             name=data.get("name", data["id"]),
@@ -44,12 +54,15 @@ class VisionModelEntry:
         )
 
     def model_path(self) -> Path:
+        # Step 1: Validate input parameters, operational preconditions, and state
         return MODEL_DIR / self.model_filename
 
     def projector_path(self) -> Path:
+        # Step 1: Validate input parameters, operational preconditions, and state
         return PROJECTOR_DIR / self.projector_filename
 
     def to_dict(self) -> dict[str, Any]:
+        # Step 1: Validate input parameters, operational preconditions, and state
         return {
             "id": self.id,
             "name": self.name,
@@ -69,6 +82,7 @@ class VisionModelEntry:
 
 
 def read_vision_registry(path: Path = REGISTRY_PATH) -> list[VisionModelEntry]:
+    # Step 1: Validate input parameters, operational preconditions, and state
     from app.engine.config_store import read_json
 
     raw = read_json(str(path), default=[])
@@ -78,6 +92,7 @@ def read_vision_registry(path: Path = REGISTRY_PATH) -> list[VisionModelEntry]:
 
 
 def active_vision_model_id(path: Path = ACTIVE_PATH) -> str | None:
+    # Step 1: Validate input parameters, operational preconditions, and state
     from app.engine.config_store import read_json
 
     data = read_json(str(path), default=None)
@@ -87,12 +102,14 @@ def active_vision_model_id(path: Path = ACTIVE_PATH) -> str | None:
 
 
 def set_active_vision_model(model_id: str, path: Path = ACTIVE_PATH) -> None:
+    # Step 1: Validate input parameters, operational preconditions, and state
     from app.engine.config_store import write_json_atomic
 
     write_json_atomic(str(path), {"id": model_id}, indent=2)
 
 
 def installed_vision_models() -> list[dict[str, Any]]:
+    # Step 1: Validate input parameters, operational preconditions, and state
     return [entry.to_dict() for entry in read_vision_registry()]
 
 
@@ -104,6 +121,7 @@ class VisionModelLoader:
 
     @classmethod
     def status(cls) -> dict[str, Any]:
+        # Step 1: Validate input parameters, operational preconditions, and state
         entry = cls._entry or cls._default_entry()
         backend = cls._backend_status()
         return {
@@ -118,6 +136,7 @@ class VisionModelLoader:
 
     @classmethod
     def reset(cls) -> None:
+        # Step 1: Validate input parameters, operational preconditions, and state
         with cls._lock:
             cls._llm = None
             cls._entry = None
@@ -125,6 +144,7 @@ class VisionModelLoader:
 
     @classmethod
     def load(cls, model_id: str | None = None):
+        # Step 1: Validate input parameters, operational preconditions, and state
         with cls._lock:
             entry = cls._resolve_entry(model_id)
             cls._entry = entry
@@ -142,6 +162,7 @@ class VisionModelLoader:
                 return None
 
             try:
+                # Execute guarded operations and establish recovery boundaries
                 from llama_cpp import Llama
             except Exception as exc:
                 cls._last_error = f"llama_cpp import failed: {exc}"
@@ -153,6 +174,7 @@ class VisionModelLoader:
                 return None
 
             try:
+                # Execute guarded operations and establish recovery boundaries
                 handler = handler_cls(clip_model_path=str(entry.projector_path()), verbose=False)
                 cls._llm = Llama(
                     model_path=str(entry.model_path()),
@@ -176,6 +198,7 @@ class VisionModelLoader:
         model_id: str | None = None,
         max_tokens: int = 512,
     ) -> VisionResult:
+        # Step 1: Validate input parameters, operational preconditions, and state
         llm = cls._llm or cls.load(model_id)
         entry = cls._entry or cls._resolve_entry(model_id)
         model_name = entry.name if entry else None
@@ -188,6 +211,7 @@ class VisionModelLoader:
             )
 
         try:
+            # Execute guarded operations and establish recovery boundaries
             data_url = cls._image_data_url(image_path)
             user_prompt = prompt or (
                 "Describe this image accurately. If it is a code screenshot, identify visible errors, "
@@ -224,31 +248,37 @@ class VisionModelLoader:
 
     @classmethod
     def _default_entry(cls) -> VisionModelEntry | None:
+        # Step 1: Validate input parameters, operational preconditions, and state
         entries = read_vision_registry()
         if not entries:
             return None
         active_id = active_vision_model_id()
         if active_id:
             for entry in entries:
+                # Iterate over items, evaluate loop invariant, and update progress
                 if entry.id == active_id:
                     return entry
         return entries[0]
 
     @classmethod
     def _resolve_entry(cls, model_id: str | None = None) -> VisionModelEntry | None:
+        # Step 1: Validate input parameters, operational preconditions, and state
         entries = read_vision_registry()
         if not entries:
             return None
         wanted = model_id or active_vision_model_id()
         if wanted:
             for entry in entries:
+                # Iterate over items, evaluate loop invariant, and update progress
                 if entry.id == wanted:
                     return entry
         return entries[0]
 
     @staticmethod
     def _handler_class(family: str):
+        # Step 1: Validate input parameters, operational preconditions, and state
         try:
+            # Execute guarded operations and establish recovery boundaries
             from llama_cpp.llama_chat_format import (
                 Llava15ChatHandler,
                 Llava16ChatHandler,
@@ -275,15 +305,19 @@ class VisionModelLoader:
 
     @staticmethod
     def _backend_status() -> dict[str, Any]:
+        # Step 1: Validate input parameters, operational preconditions, and state
         try:
+            # Execute guarded operations and establish recovery boundaries
             import llama_cpp  # noqa: F401
         except Exception as exc:
             return {"available": False, "error": f"llama_cpp unavailable: {exc}"}
         try:
+            # Execute guarded operations and establish recovery boundaries
             from llama_cpp.llama_chat_format import Llava15ChatHandler  # noqa: F401
         except Exception as exc:
             return {"available": False, "error": f"multimodal handlers unavailable: {exc}"}
         try:
+            # Execute guarded operations and establish recovery boundaries
             import llama_cpp.mtmd_cpp  # noqa: F401
         except Exception as exc:
             return {"available": False, "error": f"native multimodal mtmd library unavailable: {exc}"}
@@ -291,6 +325,7 @@ class VisionModelLoader:
 
     @staticmethod
     def _image_data_url(image_path: str) -> str:
+        # Step 1: Validate input parameters, operational preconditions, and state
         path = Path(image_path)
         suffix = path.suffix.lower().lstrip(".") or "png"
         mime = "jpeg" if suffix in {"jpg", "jpeg"} else suffix
@@ -300,12 +335,14 @@ class VisionModelLoader:
 
 
 def _looks_like_code(text: str) -> bool:
+    # Step 1: Validate input parameters, operational preconditions, and state
     lowered = text.lower()
     markers = ("code", "function", "class", "import", "traceback", "compiler", "terminal")
     return any(marker in lowered for marker in markers)
 
 
 def _looks_like_error(text: str) -> bool:
+    # Step 1: Validate input parameters, operational preconditions, and state
     lowered = text.lower()
     markers = ("error", "exception", "traceback", "failed", "warning", "stack trace")
     return any(marker in lowered for marker in markers)

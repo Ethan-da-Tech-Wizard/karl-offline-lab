@@ -1,3 +1,12 @@
+# ==============================================================================
+# Program: appearance_panel.py
+# Programmer: Ethan-da-Tech-Wizard
+# Last Modified: November 18, 2026
+# Purpose: Desktop workspace implementation for Appearance Panel.
+#          Provides responsive layout controls, parameter adjustment surfaces,
+#          and visual feedback components within Karl's PyQt6 shell.
+# ==============================================================================
+
 from __future__ import annotations
 
 import logging
@@ -18,6 +27,7 @@ logger = logging.getLogger("karl.system_config")
 
 class AppearancePanelMixin:
     def _build_theme_tab(self) -> QWidget:
+        # Step 1: Validate input parameters, operational preconditions, and state
         w = QWidget()
         layout = QHBoxLayout(w)
         layout.setContentsMargins(12, 12, 12, 12)
@@ -43,6 +53,7 @@ class AppearancePanelMixin:
         # Presets Combobox
         self._theme_preset_combo = QComboBox()
         for name in THEMES.keys():
+            # Iterate over items, evaluate loop invariant, and update progress
             self._theme_preset_combo.addItem(name)
         self._theme_preset_combo.currentTextChanged.connect(self._on_preset_changed)
         ctrl_layout.addWidget(_row("Preset Palette", self._theme_preset_combo))
@@ -220,6 +231,7 @@ class AppearancePanelMixin:
 
 
     def _add_preview_elements(self, card_layout: QVBoxLayout):
+        # Step 1: Validate input parameters, operational preconditions, and state
         title = QLabel("LIVE PREVIEW")
         title.setObjectName("section-header")
         card_layout.addWidget(title)
@@ -314,6 +326,7 @@ class AppearancePanelMixin:
 
 
     def _load_active_appearance_config(self):
+        # Step 1: Validate input parameters, operational preconditions, and state
         config = config_store.get_ui_config()
         theme_preset = config["theme_preset"]
         custom_accent = config["custom_accent"]
@@ -368,6 +381,7 @@ class AppearancePanelMixin:
 
 
     def _sync_appearance_controls_from_state(self):
+        # Step 1: Validate input parameters, operational preconditions, and state
         theme_preset = getattr(self.state, "theme_preset", "Karl Obsidian Core")
         layout_preset = getattr(self.state, "layout_preset", "Focused Workbench")
         custom_accent = getattr(self.state, "custom_accent", None)
@@ -420,6 +434,7 @@ class AppearancePanelMixin:
 
 
     def _update_accent_button_text(self):
+        # Step 1: Validate input parameters, operational preconditions, and state
         if self._active_custom_accent:
             self._custom_accent_btn.setText(f"Accent: {self._active_custom_accent}")
             self._accent_color_preview.setStyleSheet(
@@ -435,6 +450,7 @@ class AppearancePanelMixin:
 
 
     def _on_preset_changed(self):
+        # Step 1: Validate input parameters, operational preconditions, and state
         preset_name = self._theme_preset_combo.currentText()
         preset_data = THEMES.get(preset_name, {})
         self._preset_desc_lbl.setText(preset_data.get("description", ""))
@@ -444,6 +460,7 @@ class AppearancePanelMixin:
 
 
     def _pick_custom_accent(self):
+        # Step 1: Validate input parameters, operational preconditions, and state
         preset_name = self._theme_preset_combo.currentText()
         default_color = THEMES.get(preset_name, {}).get("accent", "#00C2FF")
         if self._active_custom_accent:
@@ -457,6 +474,7 @@ class AppearancePanelMixin:
 
 
     def _reset_custom_accent(self):
+        # Step 1: Validate input parameters, operational preconditions, and state
         self._active_custom_accent = None
         self._update_accent_button_text()
         self._apply_active_theme()

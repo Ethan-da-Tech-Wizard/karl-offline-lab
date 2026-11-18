@@ -1,4 +1,13 @@
 #!/usr/bin/env python3
+# ==============================================================================
+# Program: generate_api_automation_sft.py
+# Programmer: Ethan-da-Tech-Wizard
+# Last Modified: November 18, 2026
+# Purpose: Synthetic dataset generator for API automation and tool use.
+#          Constructs synthetic dialogue samples demonstrating tool calling and
+#          JSON schema responses.
+# ==============================================================================
+
 """
 API & AI Automation SFT Dataset Generator
 =========================================
@@ -182,12 +191,14 @@ AUTOMATION_SCENARIOS = [
 
 
 def main() -> int:
+    # Step 1: Validate input parameters, operational preconditions, and state
     logger.info("Generating API and AI automation synthetic SFT examples...")
     OUT_PATH.parent.mkdir(parents=True, exist_ok=True)
     
     written = 0
     with OUT_PATH.open("w", encoding="utf-8") as fh:
         for scenario in AUTOMATION_SCENARIOS:
+            # Iterate over items, evaluate loop invariant, and update progress
             sft_entry = {
                 "messages": [
                     {"role": "system", "content": SYSTEM_PROMPT},

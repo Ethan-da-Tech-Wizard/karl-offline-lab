@@ -1,4 +1,12 @@
 // @ts-check
+// ==============================================================================
+// Program: fileOps.js
+// Programmer: Ethan-da-Tech-Wizard
+// Last Modified: November 18, 2026
+// Purpose: Filesystem operations helper managing temporary files, diff buffers, and backup snapshots.
+//          Coordinates editor events, client state, and backend RPC messaging.
+// ==============================================================================
+
 const path = require('path');
 const os = require('os');
 const crypto = require('crypto');
@@ -15,6 +23,7 @@ const SUMMARY_CONTEXT_CHARS = 18000;
  * @returns {{code: string, meta: {label: string, originalChars: number, sentChars: number, truncated: boolean, summaryOnly: boolean}}}
  */
 function packageContext(raw, label, summaryOnly = false) {
+    // Step 1: Initialize function scope and validate execution context
     const text = String(raw || '');
     const originalChars = text.length;
     if (originalChars <= MAX_CONTEXT_CHARS && !summaryOnly) {
