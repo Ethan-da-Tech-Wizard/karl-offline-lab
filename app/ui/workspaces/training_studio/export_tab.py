@@ -1,3 +1,8 @@
+# Program: karl-offline-lab - export_tab.py
+# Programmer: Ethan-da-Tech-Wizard (written with Claude, an AI assistant)
+# Last Modified: 2026-11-18
+# Purpose: Qt tab that validates the curated dataset and exports it as Unsloth SFT or DPO JSONL files.
+"""Export tab for the Training Studio."""
 import os
 import json
 
@@ -8,18 +13,22 @@ from PyQt6.QtWidgets import (
 from app.ui.widgets.glow_panel import GlowPanel
 
 def _section(text: str) -> QLabel:
+    """Return a styled section-header label."""
     lbl = QLabel(text)
     lbl.setObjectName("section-header")
     return lbl
 
 
 class ExportTab(QWidget):
+    """Tab offering SFT and DPO dataset export cards."""
     def __init__(self, state, parent=None):
+        """Store the app state and build the UI."""
         super().__init__(parent)
         self.state = state
         self._build_ui()
 
     def _build_ui(self):
+        """Create the SFT and DPO cards and the status label."""
         layout = QVBoxLayout(self)
         layout.setContentsMargins(12, 12, 12, 12)
         layout.setSpacing(16)
@@ -29,6 +38,7 @@ class ExportTab(QWidget):
         cards_layout.setContentsMargins(0, 0, 0, 0)
         cards_layout.setSpacing(16)
 
+        # Card for supervised fine-tuning export.
         # SFT Panel
         sft_box = GlowPanel(self.state)
         sft_l = QVBoxLayout(sft_box)
@@ -50,6 +60,7 @@ class ExportTab(QWidget):
         sft_l.addWidget(sft_btn)
         cards_layout.addWidget(sft_box, 1)
 
+        # Card for preference-pair export.
         # DPO Panel
         dpo_box = GlowPanel(self.state)
         dpo_l = QVBoxLayout(dpo_box)
@@ -78,7 +89,9 @@ class ExportTab(QWidget):
         layout.addWidget(self._export_status)
 
     def _export(self, mode: str):
+        # Refuse to export an empty dataset.
         # Validation preflight
+        """Validate the curated dataset, ask for a destination and export in the given mode (sft or dpo)."""
         curated_file = "data/training/curated.jsonl"
         if not os.path.exists(curated_file) or os.path.getsize(curated_file) == 0:
             QMessageBox.warning(self, "Validation Failed", "The dataset is empty. Curate some examples first.")
@@ -89,6 +102,7 @@ class ExportTab(QWidget):
                 for line_idx, line in enumerate(f):
                     if not line.strip():
                         continue
+                    # Each non-empty line must be JSON containing a messages or prompt key.
                     obj = json.loads(line)
                     if "messages" not in obj and "prompt" not in obj:
                         raise ValueError(f"Line {line_idx+1}: Missing both 'messages' and 'prompt' keys.")
@@ -96,6 +110,7 @@ class ExportTab(QWidget):
             QMessageBox.critical(self, "Dataset Validation Error", f"curated.jsonl format validation failed:\n{e}")
             return
 
+        # Let the user choose where to save.
         path, _ = QFileDialog.getSaveFileName(
             self, "Save export", f"unsloth_{mode}.jsonl", "JSONL (*.jsonl)"
         )
@@ -103,6 +118,7 @@ class ExportTab(QWidget):
             return
         try:
             if mode == "sft":
+                # The curator writes the file; the count shown is the number of lines in it.
                 out_path = self.state.curator.export_unsloth(path)
                 count = sum(1 for line in open(out_path, "r", encoding="utf-8"))
                 self._export_status.setText(f"saved {count} SFT examples: {out_path}")

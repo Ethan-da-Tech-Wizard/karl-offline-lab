@@ -1,3 +1,10 @@
+# Program: karl-offline-lab - test_session_repository.py
+# Programmer: Ethan-da-Tech-Wizard (written with Claude, an AI assistant)
+# Last Modified: 2026-11-18
+# Purpose: Tests the SessionRepository save/load lifecycle and its protection against path traversal.
+
+"""Tests the SessionRepository save/load lifecycle and its protection against path traversal."""
+
 import os
 import sys
 import pytest
@@ -9,6 +16,7 @@ from app.repository.session_repository import SessionRepository
 
 
 def test_session_repository_lifecycle(tmp_path):
+    """Scenario: session repository lifecycle. Expected: the assertions in this test hold."""
     sessions_dir = str(tmp_path / "sessions")
     repo = SessionRepository(sessions_dir=sessions_dir)
 
@@ -81,6 +89,7 @@ def test_session_repository_lifecycle(tmp_path):
 
 
 def test_session_repository_path_traversal(tmp_path):
+    """Scenario: session repository path traversal. Expected: the assertions in this test hold."""
     sessions_dir = str(tmp_path / "sessions")
     repo = SessionRepository(sessions_dir=sessions_dir)
 

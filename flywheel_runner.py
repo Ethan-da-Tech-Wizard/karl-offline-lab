@@ -1,3 +1,8 @@
+# Program: karl-offline-lab - flywheel_runner.py
+# Programmer: Ethan-da-Tech-Wizard (written with Claude, an AI assistant)
+# Last Modified: 2026-11-18
+# Purpose: Background worker that watches the flywheel queue folder, runs each queued task through the local model, and writes the thought and response to an execution log.
+"""Flywheel queue worker."""
 import os
 import time
 import json
@@ -17,6 +22,7 @@ logging.basicConfig(
 )
 logger = logging.getLogger("karl.flywheel_runner")
 
+# Tasks arrive as JSON files in the queue folder; results are written to the execution folder.
 QUEUE_DIR = os.path.join("data", "flywheel", "queue")
 EXECUTION_DIR = os.path.join("data", "flywheel", "execution")
 
@@ -28,6 +34,10 @@ def write_json_atomic(path: str, data: dict):
     os.replace(temp_path, path)
 
 def process_task(task_path: str, llm):
+    """Run one queued task file through the model and save an execution log.
+
+    Unreadable tasks or tasks without a problem statement are deleted from the queue; the task file is also removed after a successful run.
+    """
     task_id_file = os.path.basename(task_path)
     logger.info("Processing task: %s", task_id_file)
     
@@ -88,6 +98,7 @@ def process_task(task_path: str, llm):
         logger.info("Execution log written: %s", exec_filename)
         
         # Delete task from queue
+        # Removing the file marks the task as done so it is not run twice.
         os.remove(task_path)
         logger.info("Task %s removed from queue", task_id_file)
         
@@ -95,6 +106,7 @@ def process_task(task_path: str, llm):
         logger.error("Error processing task %s: %s", task_id_file, e, exc_info=True)
 
 def main():
+    """Poll the queue forever, loading the model lazily on the first task and handling one task at a time."""
     logger.info("Flywheel Runner (Agent 2) started. Watching %s", QUEUE_DIR)
     
     llm = None
@@ -107,6 +119,7 @@ def main():
                 continue
             
             # Ensure model is loaded once
+            # Loading is deferred until there is work, then reused for every later task.
             if llm is None:
                 logger.info("Initializing ModelLoader instance...")
                 llm = ModelLoader.get_instance()
@@ -117,6 +130,7 @@ def main():
             
         except Exception as e:
             logger.error("Main loop error: %s", e)
+            # Back off briefly after an unexpected error so a persistent failure does not spin the CPU.
             time.sleep(5)
 
 if __name__ == "__main__":

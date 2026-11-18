@@ -1,3 +1,8 @@
+# Program: karl-offline-lab - workflows.py
+# Programmer: Ethan-da-Tech-Wizard (written with Claude, an AI assistant)
+# Last Modified: 2026-11-18
+# Purpose: Data-only table of named workflows (template, RAG settings, output schema, grader) plus lookup helpers for the UI and eval harness.
+"""Workflow definitions used by the UI mode selector and the eval harness."""
 # WORKFLOW DEFINITIONS
 # Each workflow is a named mode with a default template, RAG config, output
 # schema, and eval grader. Workflows are the product surface; templates are
@@ -10,6 +15,7 @@
 from typing import Optional
 
 
+# Each key is a workflow name; each value holds label, template, rag_top_k, require_rag, output_schema, eval_grader and description.
 WORKFLOWS: dict[str, dict] = {
 
     # ── General Chat (default) ────────────────────────────────────────────────

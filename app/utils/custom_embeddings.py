@@ -1,3 +1,8 @@
+# Program: karl-offline-lab - custom_embeddings.py
+# Programmer: Ethan-da-Tech-Wizard (written with Claude, an AI assistant)
+# Last Modified: 2026-11-18
+# Purpose: Implements a small TF-IDF text vectorizer with NumPy so documents can be turned into normalized vectors and compared by cosine similarity.
+
 """
 Custom Embeddings Engine — Pure Python & NumPy TF-IDF Vectorizer
 ===============================================================
@@ -12,11 +17,15 @@ Mathematical definitions:
 - Cosine Similarity: A . B / (||A|| * ||B||) which simplifies to A . B when A and B are L2-normalized.
 """
 
+# Only the standard regex module and NumPy are needed.
 import re
 import numpy as np
 
+# ── TF-IDF embedder ──────────────────────────────────────────────────────
 class TfidfEmbedder:
+    """Learns a vocabulary and IDF weights from documents, then converts text to L2-normalized TF-IDF vectors."""
     def __init__(self):
+        """Start with an empty vocabulary and a fixed list of stop words to ignore."""
         self.vocabulary: dict[str, int] = {}  # maps word -> vocab index
         self.idf: np.ndarray = np.array([])    # IDF values indexed by vocab index
         self.doc_count: int = 0
@@ -28,6 +37,7 @@ class TfidfEmbedder:
     def tokenize(self, text: str) -> list[str]:
         """Normalize, lowercase, and tokenize text, filtering short words and stop words."""
         # Convert to lowercase and strip non-alphanumeric chars
+        # Words are runs of 2+ word characters, so single characters are dropped.
         words = re.findall(r"\b\w{2,}\b", text.lower())
         return [w for w in words if w not in self.stop_words]
 
@@ -37,6 +47,7 @@ class TfidfEmbedder:
         documents: List of raw document strings.
         """
         self.doc_count = len(documents)
+        # Empty corpus: reset to an empty model.
         if self.doc_count == 0:
             self.vocabulary = {}
             self.idf = np.array([])
@@ -50,6 +61,7 @@ class TfidfEmbedder:
         self.vocabulary = {word: idx for idx, word in enumerate(unique_words)}
         vocab_size = len(self.vocabulary)
         
+        # Every word was filtered out (for example only stop words), so there is nothing to weight.
         if vocab_size == 0:
             self.idf = np.array([])
             return
@@ -101,6 +113,7 @@ class TfidfEmbedder:
     @staticmethod
     def cosine_similarity(v1: np.ndarray, v2: np.ndarray) -> float:
         """Compute cosine similarity between two vectors. Assumes they are already normalized."""
+        # Empty vectors mean no vocabulary, so similarity is defined as 0.
         if len(v1) == 0 or len(v2) == 0:
             return 0.0
         return float(np.dot(v1, v2))

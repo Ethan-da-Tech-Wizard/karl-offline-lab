@@ -1,3 +1,9 @@
+# Program: karl-offline-lab - defaults_panel.py
+# Programmer: Ethan-da-Tech-Wizard (written with Claude, an AI assistant)
+# Last Modified: 2026-11-18
+# Purpose: Settings mixin that builds the Defaults and Identity tabs and handles their toggles, thresholds, system prompt and settings search.
+"""Settings mixin that builds the Defaults and Identity tabs and handles their toggles, thresholds, system prompt and settings search."""
+
 from __future__ import annotations
 
 import logging
@@ -15,7 +21,9 @@ from core.default_prompts import DEFAULT_SYSTEM_PROMPT, load_prompt_presets, sav
 logger = logging.getLogger("karl.system_config")
 
 class DefaultsPanelMixin:
+    """Mixin that builds the Defaults and Identity tabs and handles their changes."""
     def _build_params_tab(self) -> QWidget:
+        """Build the Defaults tab with generation, logging, safety and display settings."""
         w = QWidget()
         layout = QVBoxLayout(w)
         layout.setContentsMargins(12, 12, 12, 12)
@@ -164,6 +172,7 @@ class DefaultsPanelMixin:
 
 
     def _on_reduced_motion_changed(self, state):
+        """Store the reduced-motion choice, mirror it in the appearance control and save."""
         is_checked = (state == 2 or state == Qt.CheckState.Checked.value or state)
         self.state.reduced_motion = is_checked
         if hasattr(self, "_reduced_motion_check_app"):
@@ -175,6 +184,7 @@ class DefaultsPanelMixin:
 
 
     def _on_theme_mode_changed(self, text: str):
+        """Store the theme mode, re-style the application and save."""
         self.state.theme_mode = text
         from app.ui import themes
         from PyQt6.QtWidgets import QApplication
@@ -183,16 +193,19 @@ class DefaultsPanelMixin:
 
 
     def _on_log_rotation_changed(self, val):
+        """Store the log rotation size (MB) and save."""
         self.state.log_rotation_size_mb = val
         self._save_appearance_config_silent()
 
 
     def _on_log_retention_changed(self, val):
+        """Store the log retention period (days) and save."""
         self.state.log_retention_days = val
         self._save_appearance_config_silent()
 
 
     def _on_machine_speak_changed(self, state):
+        """Store the machine-speak toggle and persist app state to disk."""
         is_checked = (state == 2 or state == Qt.CheckState.Checked.value or state is True)
         self.state.enable_machine_speak = is_checked
         # Machine Speak isn't in appearance_runtime's narrower save dict, so go
@@ -202,24 +215,28 @@ class DefaultsPanelMixin:
 
 
     def _on_single_session_auth_changed(self, state):
+        """Store the single-session auth toggle and save."""
         is_checked = (state == 2 or state == Qt.CheckState.Checked.value or state is True)
         self.state.single_session_auth = is_checked
         self._save_appearance_config_silent()
 
 
     def _on_thermal_protection_enabled_changed(self, state):
+        """Store the thermal protection toggle and save."""
         is_checked = (state == 2 or state == Qt.CheckState.Checked.value or state is True)
         self.state.thermal_protection_enabled = is_checked
         self._save_appearance_config_silent()
 
 
     def _on_thermal_threshold_changed(self, val: int):
+        """Store the thermal protection threshold and save."""
         self.state.thermal_protection_threshold = val
         self._save_appearance_config_silent()
 
     # ── identity tab ──────────────────────────────────────────────────────────
 
     def _build_identity_tab(self) -> QWidget:
+        """Build the Identity tab for editing the workbench system prompt and related settings."""
         w = QWidget()
         layout = QVBoxLayout(w)
         layout.setContentsMargins(12, 12, 12, 12)
@@ -424,12 +441,14 @@ class DefaultsPanelMixin:
             QMessageBox.critical(self, "Delete Failed", f"Could not delete preset '{label}'. Check logs.")
 
     def _apply_identity(self):
+        """Emit the edited system prompt so the workbench uses it."""
         self.state.set_workbench_system_prompt.emit(
             self._system_edit.toPlainText().strip()
         )
 
 
     def _on_settings_search_changed(self, text: str):
+        """Show only settings rows whose label contains the search text."""
         query = text.strip().lower()
         for label, row_widget in self._settings_rows:
             if not query or query in label.lower():

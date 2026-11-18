@@ -1,3 +1,10 @@
+# Program: karl-offline-lab - test_rag_pipeline.py
+# Programmer: Ethan-da-Tech-Wizard (written with Claude, an AI assistant)
+# Last Modified: 2026-11-18
+# Purpose: Tests RAGPipeline chunking, ingestion, retrieval, metadata thresholds, attribution and parallel batch ingestion.
+
+"""Tests RAGPipeline chunking, ingestion, retrieval, metadata thresholds, attribution and parallel batch ingestion."""
+
 import os
 import shutil
 import tempfile
@@ -12,7 +19,9 @@ from app.utils.rag_pipeline import RAGPipeline
 
 
 class _DeterministicEncoder:
+    """Test group or helper class: deterministic encoder."""
     def encode(self, texts, batch_size=32, show_progress_bar=False):
+        """Return deterministic fake embeddings for the given texts."""
         if isinstance(texts, str):
             texts = [texts]
         vectors = []
@@ -28,12 +37,15 @@ class _DeterministicEncoder:
 
 
 class _SlowParseRAG(RAGPipeline):
+    """Test group or helper class: slow parse rag."""
     def __init__(self, *args, delay=0.01, **kwargs):
+        """Initialise this helper object with its starting state."""
         super().__init__(*args, **kwargs)
         self._encoder = _DeterministicEncoder()
         self.delay = delay
 
     def _chunks_from_file(self, filepath: str, chunk_size: int, overlap: int):
+        """Test helper: chunks from file."""
         time.sleep(self.delay)
         with open(filepath, "r", encoding="utf-8") as f:
             return self.chunk_text(f.read(), chunk_size=chunk_size, overlap=overlap)
@@ -204,6 +216,7 @@ def test_rag_pipeline_attribution():
 
 
 def test_parallel_batch_ingestion_benchmark_100_mock_python_files():
+    """Scenario: parallel batch ingestion benchmark 100 mock python files. Expected: the assertions in this test hold."""
     temp_dir = tempfile.mkdtemp()
     seq_dir = tempfile.mkdtemp()
     par_dir = tempfile.mkdtemp()
@@ -240,6 +253,7 @@ def test_parallel_batch_ingestion_benchmark_100_mock_python_files():
 
 
 def test_parallel_batch_ingestion_matches_sequential_index_results():
+    """Scenario: parallel batch ingestion matches sequential index results. Expected: the assertions in this test hold."""
     temp_dir = tempfile.mkdtemp()
     seq_dir = tempfile.mkdtemp()
     par_dir = tempfile.mkdtemp()

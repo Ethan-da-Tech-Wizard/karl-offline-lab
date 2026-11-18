@@ -1,3 +1,10 @@
+# Program: karl-offline-lab - test_log_governance.py
+# Programmer: Ethan-da-Tech-Wizard (written with Claude, an AI assistant)
+# Last Modified: 2026-11-18
+# Purpose: Tests that TraceLogger enforces its log retention policy on a temporary folder of mock logs.
+
+"""Tests that TraceLogger enforces its log retention policy on a temporary folder of mock logs."""
+
 import os
 import sys
 import tempfile
@@ -9,6 +16,7 @@ from app.utils.trace_logger import TraceLogger
 
 def test_log_retention_policy_enforcement():
     # 1. Create a temporary folder for mock logs
+    """Scenario: log retention policy enforcement. Expected: the assertions in this test hold."""
     temp_dir = tempfile.mkdtemp()
     
     # 2. Instantiate TraceLogger pointing to this temp dir

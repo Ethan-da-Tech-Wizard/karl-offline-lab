@@ -1,3 +1,8 @@
+# Program: karl-offline-lab - quantization_panel.py
+# Programmer: Ethan-da-Tech-Wizard (written with Claude, an AI assistant)
+# Last Modified: 2026-11-18
+# Purpose: Mixin for the System Config workspace that drives GGUF quantization: picking a source file, starting, cancelling and reporting errors from the background job.
+"""Quantization panel mixin for the System Config workspace."""
 from __future__ import annotations
 
 import logging
@@ -14,7 +19,9 @@ from app.engine.quantizer_thread import QuantizerThread
 logger = logging.getLogger("karl.system_config")
 
 class QuantizationPanelMixin:
+    """Adds quantization controls and slots to the System Config workspace widget."""
     def _browse_quant_source(self):
+        """Let the user pick a source GGUF and suggest an output file name."""
         path, _ = QFileDialog.getOpenFileName(
             self, "Select source GGUF", "data/models", "GGUF (*.gguf);;All Files (*)"
         )
@@ -29,6 +36,8 @@ class QuantizationPanelMixin:
 
 
     def _start_quantize(self):
+        # Only one quantization job may run at a time.
+        """Validate inputs and launch the quantizer thread, wiring its signals to the UI."""
         if self._quantizer_thread and self._quantizer_thread.isRunning():
             QMessageBox.warning(self, "Quantization Running", "A quantization job is already in progress.")
             return
@@ -53,6 +62,7 @@ class QuantizationPanelMixin:
         else:
             out_path = out_name
 
+        # Switch the UI into the running state.
         self._quant_status_lbl.setText(f"Starting {fmt} quantization…")
         self._quant_progress_bar.setValue(0)
         self._quant_progress_bar.setVisible(True)
@@ -64,11 +74,13 @@ class QuantizationPanelMixin:
             output_path=out_path,
             target_format=fmt,
         )
+        # Track the thread so it stays alive and is released when it finishes.
         self._active_threads.add(self._quantizer_thread)
         self._quantizer_thread.finished.connect(
             lambda t=self._quantizer_thread: self._active_threads.discard(t)
         )
         self._quantizer_thread.finished.connect(self._quantizer_thread.deleteLater)
+        # Connect the worker thread's signals to the UI slots.
         self._quantizer_thread.progress.connect(self._on_quant_progress)
         self._quantizer_thread.done.connect(self._on_quant_done)
         self._quantizer_thread.error.connect(self._on_quant_error)
@@ -77,6 +89,7 @@ class QuantizationPanelMixin:
 
 
     def _cancel_quantize(self):
+        """Ask for confirmation and request cancellation of the running quantization job."""
         if self._quantizer_thread and self._quantizer_thread.isRunning():
             reply = QMessageBox.question(
                 self, "Cancel Quantization",
@@ -90,15 +103,18 @@ class QuantizationPanelMixin:
 
 
     def _on_quant_progress(self, pct: int):
+        """Update the progress bar and status text with the given percent."""
         self._quant_progress_bar.setValue(pct)
         self._quant_status_lbl.setText(f"Quantizing… {pct}%")
 
 
 
     def _on_quant_error(self, msg: str):
+        """Reset the controls and show the error message from a failed job."""
         self._quant_progress_bar.setVisible(False)
         self._quant_btn.setEnabled(True)
         self._quant_cancel_btn.setEnabled(False)
+        # Drop the reference to the failed thread.
         self._quantizer_thread = None
         self._quant_status_lbl.setText(
             f"<span style='color:#FF5C7A;'>Error: {msg[:120]}</span>"

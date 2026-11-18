@@ -1,3 +1,8 @@
+# Program: karl-offline-lab - model_loader.py
+# Programmer: Ethan-da-Tech-Wizard (written with Claude, an AI assistant)
+# Last Modified: 2026-11-18
+# Purpose: Thread-safe singleton that loads and manages the local llama-cpp model (adapters, speculative draft model, KV cache, remote-engine mode), guarded by memory preflight checks and a circuit breaker.
+"""Model loading and lifecycle management for the Karl inference engine."""
 import json
 import logging
 import os
@@ -105,6 +110,7 @@ class ModelCircuitBreaker:
         self.cooldown_expiration = None
 
     def _trip(self) -> None:
+        """Open the breaker and set when the cooldown ends."""
         self.state = self.OPEN
         self.cooldown_expiration = self._clock() + self.cooldown_duration
 
@@ -123,6 +129,7 @@ class _LlamaDraftModelAdapter:
     """Compatibility marker for speculative draft-model integration."""
 
     def __init__(self, draft_model):
+        """Keep a reference to the wrapped draft model."""
         self.draft_model = draft_model
 
 
@@ -138,6 +145,7 @@ class ModelLoader:
     _draft_n_gpu_layers: int | None = None
     _remote_instance = None
     _remote_fallback_reason: str | None = None
+    # Fraction of available RAM/VRAM a model load may use before it is blocked.
     _MEMORY_SAFETY_MARGIN = 0.92
     _instance_locked = False
     _active_generation_count: int = 0   # incremented by lock_instance, decremented by unlock_instance
@@ -165,6 +173,7 @@ class ModelLoader:
 
     @classmethod
     def _registry_entry(cls, filename: str) -> dict:
+        """Return the model registry entry for a filename, or an empty dict."""
         for entry in config_store.get_model_registry():
             if entry.get("filename") == filename:
                 return entry
@@ -172,6 +181,7 @@ class ModelLoader:
 
     @staticmethod
     def _truthy(value) -> bool:
+        """Interpret bools, on-style strings (1, true, yes, on) and other values as a boolean."""
         if isinstance(value, bool):
             return value
         if isinstance(value, str):
@@ -180,6 +190,7 @@ class ModelLoader:
 
     @classmethod
     def _quantized_kv_cache_enabled(cls) -> bool:
+        """Decide whether the quantized KV cache is on, checking the environment first, then the UI config, then the active model file."""
         env_value = os.environ.get("KARL_QUANTIZED_KV_CACHE")
         if env_value is not None:
             return cls._truthy(env_value)
@@ -195,6 +206,7 @@ class ModelLoader:
 
     @staticmethod
     def _ggml_type_q8_0() -> int:
+        """Return the llama-cpp constant for 8-bit quantization, or the number 8 if the constant is unavailable."""
         try:
             from llama_cpp import GGML_TYPE_Q8_0
             return GGML_TYPE_Q8_0
@@ -203,6 +215,7 @@ class ModelLoader:
 
     @classmethod
     def _adapter_path(cls, adapter_name: str | None) -> str | None:
+        """Find the adapter weight file for an adapter name under the adapters folder; return None if none exists."""
         if not adapter_name:
             return None
         possible_paths = [
@@ -220,6 +233,7 @@ class ModelLoader:
 
     @classmethod
     def _resolve_model_path(cls, model_path: str) -> str:
+        """Return the requested model path, or the default fallback model if that is missing; raise FileNotFoundError when neither exists."""
         if os.path.exists(model_path):
             return model_path
         fallback = "data/models/deepseek-r1-1.5b.gguf"
@@ -652,6 +666,7 @@ class ModelLoader:
 
     @classmethod
     def _show_memory_warning_dialog(cls, message: str):
+        """Show a warning message box, but only when called from the Qt GUI thread."""
         try:
             from PyQt6.QtCore import QThread
             from PyQt6.QtWidgets import QApplication, QMessageBox
@@ -712,6 +727,7 @@ class ModelLoader:
     @classmethod
     def _touch_activity(cls) -> None:
         """Refresh the idle timer. Call at every inference entry point."""
+        # Record activity so the idle watcher does not unload the adapter mid-use.
         cls._last_activity_time = time.time()
 
     @classmethod
@@ -722,6 +738,7 @@ class ModelLoader:
         cls._idle_watcher_started = True
 
         def _watcher():
+            """Loop forever: after five idle minutes with no active generation, detach the LoRA adapter to free VRAM."""
             while True:
                 time.sleep(30)
                 try:
@@ -1003,6 +1020,7 @@ class ModelLoader:
                 n_batch = int(_reg_entry.get("n_batch", 512))
 
                 def _attempt_load(ctx_size, ts=None):
+                    # Leave two CPU cores free for the rest of the app.
                     threads = max(1, multiprocessing.cpu_count() - 2)
                     gpu_tag = f", {len(ts)}-GPU split" if ts else ""
                     kwargs = dict(
@@ -1438,6 +1456,7 @@ class ModelLoader:
 
     @classmethod
     def last_remote_fallback_reason(cls) -> str | None:
+        """Return the reason remote inference was last disabled, or None."""
         return cls._remote_fallback_reason
 
     @classmethod

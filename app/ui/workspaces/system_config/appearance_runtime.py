@@ -1,3 +1,9 @@
+# Program: karl-offline-lab - appearance_runtime.py
+# Programmer: Ethan-da-Tech-Wizard (written with Claude, an AI assistant)
+# Last Modified: 2026-11-18
+# Purpose: Settings mixin that applies appearance control changes to the live theme, refreshes swatches and the theme gallery, and saves the choices.
+"""Settings mixin that applies appearance control changes to the live theme, refreshes swatches and the theme gallery, and saves the choices."""
+
 from __future__ import annotations
 
 import logging
@@ -14,8 +20,10 @@ from app.ui.themes import THEMES, get_theme_colors
 logger = logging.getLogger("karl.system_config")
 
 class AppearanceRuntimeMixin:
+    """Mixin that applies appearance control changes to the live theme and persists them."""
     def _on_control_changed(self):
         # Update sliders numeric indicators
+        """Update slider value labels, sync the reduced-motion checkboxes and re-apply the theme."""
         gs = self._glow_strength_slider.value() / 10.0
         ai = self._animation_intensity_slider.value() / 10.0
         self._glow_strength_val_lbl.setText(f"{gs:.1f}x")
@@ -41,6 +49,7 @@ class AppearanceRuntimeMixin:
 
     def _apply_active_theme(self):
         # Read from controls
+        """Read the appearance controls, push them into app state and re-style the application."""
         theme_preset = self._theme_preset_combo.currentText()
         layout_preset = self._layout_preset_combo.currentText()
         glow_enabled = self._glow_enabled_check.isChecked()
@@ -71,6 +80,7 @@ class AppearanceRuntimeMixin:
 
     def _update_swatches(self):
         # Clear existing swatches
+        """Rebuild the colour swatches to match the current theme colours."""
         while self._swatches_layout.count():
             item = self._swatches_layout.takeAt(0)
             if item.widget():
@@ -114,6 +124,7 @@ class AppearanceRuntimeMixin:
 
 
     def _update_theme_gallery(self):
+        """Rebuild the theme preset cards, skipping the work when the selected preset has not changed."""
         if not hasattr(self, "_theme_gallery_layout"):
             return
         # The 20 cards only differ by which one carries the ACTIVE marker;
@@ -192,6 +203,7 @@ class AppearanceRuntimeMixin:
 
 
     def _apply_theme_preset_from_gallery(self, name: str):
+        """Select the named preset in the combo box, which triggers the normal preset-change handling."""
         idx = self._theme_preset_combo.findText(name)
         if idx >= 0:
             self._theme_preset_combo.setCurrentIndex(idx)
@@ -199,6 +211,7 @@ class AppearanceRuntimeMixin:
 
 
     def _save_appearance_config_silent(self):
+        """Persist the current appearance settings without any user feedback."""
         config_store.save_ui_config({
             "theme_preset": self.state.theme_preset,
             "custom_accent": self.state.custom_accent,
@@ -224,6 +237,7 @@ class AppearanceRuntimeMixin:
 
 
     def _save_appearance_config(self):
+        """Persist appearance settings, remove the legacy theme config file if present and confirm to the user."""
         self._save_appearance_config_silent()
         
         # Delete old config if exists to clean up

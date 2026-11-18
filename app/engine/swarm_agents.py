@@ -1,3 +1,7 @@
+# Program: karl-offline-lab - swarm_agents.py
+# Programmer: Ethan-da-Tech-Wizard (written with Claude, an AI assistant)
+# Last Modified: 2026-11-18
+# Purpose: Defines the swarm coding agents (architect planner, coder with a workspace tool loop, and test runner) plus the sandboxed file, search, shell and lint tools they use.
 """
 Swarm Agents — Karl Workbench
 ==============================
@@ -34,8 +38,10 @@ def _safe_workspace_path(workspace_path: str, rel: str) -> str | None:
     """
     if not rel:
         return None
+    # Resolve symlinks first so a link cannot point outside the workspace.
     ws_real = os.path.realpath(workspace_path)
     target = os.path.realpath(os.path.join(ws_real, rel))
+    # Accept only the workspace root itself or paths strictly beneath it.
     if target == ws_real or target.startswith(ws_real + os.sep):
         return target
     return None
@@ -45,11 +51,13 @@ def _safe_workspace_path(workspace_path: str, rel: str) -> str | None:
 # Tools are registered here so both CoderAgent and external callers can extend
 # the dispatch table. Each value is (executor_fn, description_for_prompt).
 
+# Maps tool name to (function, prompt description).
 _TOOL_REGISTRY: dict[str, tuple[Callable, str]] = {}
 
 def register_tool(name: str, description: str):
     """Decorator to register a tool function in the global tool registry."""
     def decorator(fn):
+        """Store the decorated function in the tool registry and return it unchanged."""
         _TOOL_REGISTRY[name] = (fn, description)
         return fn
     return decorator
@@ -67,11 +75,13 @@ def get_tool_schema_block(allowed_tools: set[str] | None = None) -> str:
 
 @register_tool("write_file", "write_file(path, content) — overwrite a workspace file. path is relative to workspace root.")
 def _tool_write_file(workspace_path: str, args: dict) -> str:
+    """Tool: overwrite a file inside the workspace (stripping any markdown fence around the content) and report the line count."""
     import pathlib
     rel = args.get("path", "")
     content = args.get("content", "")
     
     # Strip markdown code blocks if the model wrapped the content in them
+    # Models often wrap file content in a code fence; remove it before saving.
     content = content.strip()
     if content.startswith("```"):
         first_nl = content.find("\n")
@@ -91,6 +101,7 @@ def _tool_write_file(workspace_path: str, args: dict) -> str:
 
 @register_tool("read_file", "read_file(path) — read current contents of a workspace file.")
 def _tool_read_file(workspace_path: str, args: dict) -> str:
+    """Tool: return up to 6000 characters of a workspace file, or an error message."""
     import pathlib
     rel = args.get("path", "")
     target = _safe_workspace_path(workspace_path, rel)
@@ -107,6 +118,7 @@ def _tool_read_file(workspace_path: str, args: dict) -> str:
 
 @register_tool("grep_workspace", "grep_workspace(pattern) — find lines matching regex pattern across all .py files in workspace.")
 def _tool_grep_workspace(workspace_path: str, args: dict) -> str:
+    """Tool: search Python files in the workspace with a regular expression and return up to 40 matching lines."""
     import pathlib
     import re as _re
     pattern = args.get("pattern", "")
@@ -132,6 +144,7 @@ def _tool_grep_workspace(workspace_path: str, args: dict) -> str:
 
 @register_tool("shell_run", "shell_run(command) — run a shell command in the workspace directory. Returns stdout+stderr. Timeout 15s.")
 def _tool_shell_run(workspace_path: str, args: dict) -> str:
+    """Tool: run a shell command in the workspace (15 second limit) and return trimmed combined output."""
     cmd = args.get("command", "")
     if not cmd:
         return "ERROR: command required"
@@ -149,6 +162,7 @@ def _tool_shell_run(workspace_path: str, args: dict) -> str:
 
 @register_tool("lint_python", "lint_python(path) — run pyflakes on a Python file and return violations.")
 def _tool_lint_python(workspace_path: str, args: dict) -> str:
+    """Tool: run pyflakes on a workspace Python file and return its findings."""
     import pathlib
     rel = args.get("path", "")
     target = _safe_workspace_path(workspace_path, rel)
@@ -170,7 +184,9 @@ def _tool_lint_python(workspace_path: str, args: dict) -> str:
 
 
 class BaseSwarmAgent:
+    """Shared base for agents: holds the system prompt and sampling settings and calls the local model."""
     def __init__(self, system_prompt: str, temperature: float = 0.2, max_tokens: int = 2048):
+        """Store the system prompt, temperature and maximum token count."""
         self.system_prompt = system_prompt
         self.temperature = temperature
         self.max_tokens = max_tokens
@@ -204,12 +220,15 @@ class BaseSwarmAgent:
 # ── Architect Agent ───────────────────────────────────────────────────────────
 
 class ArchitectAgent(BaseSwarmAgent):
+    """Agent that turns an objective plus file context into a JSON task plan."""
     SYSTEM_PROMPT = SWARM_ARCHITECT_SYSTEM_PROMPT
 
     def __init__(self):
+        """Create the agent with the architect prompt, a low temperature and a 1536 token limit."""
         super().__init__(self.SYSTEM_PROMPT, temperature=0.1, max_tokens=1536)
 
     def create_plan(self, objective: str, files_context: Dict[str, str]) -> Dict[str, Any]:
+        """Ask the model for a JSON plan for the objective; return a dict with an explanation and no tasks if the reply is not valid JSON."""
         context_str = ""
         for path, content in files_context.items():
             context_str += f"=== FILE: {path} ===\n{content}\n\n"
@@ -310,9 +329,11 @@ def parse_reasoning_and_tool(raw_text: str) -> tuple[Optional[str], Optional[str
 # ── Coder Agent ───────────────────────────────────────────────────────────────
 
 class CoderAgent(BaseSwarmAgent):
+    """Agent that edits files by running a multi-turn loop of model replies and tool calls."""
     SYSTEM_PROMPT = SWARM_CODER_SYSTEM_PROMPT
 
     def __init__(self):
+        """Create the agent with the coder prompt, a moderate temperature and a 4096 token limit; all tools are allowed by default."""
         super().__init__(self.SYSTEM_PROMPT, temperature=0.3, max_tokens=4096)
         self.allowed_tools: set[str] | None = None
 
@@ -394,6 +415,7 @@ class CoderAgent(BaseSwarmAgent):
 
         written_content = ""
 
+        # The loop is capped at eight turns so a confused model cannot run forever.
         for _turn in range(8):
             if guidance_getter:
                 for guidance_msg in guidance_getter():
@@ -406,6 +428,7 @@ class CoderAgent(BaseSwarmAgent):
             from core.interaction_loop import build_prompt
             prompt_text = build_prompt(system, messages[1:])
 
+            # Collect the model reply, streaming it token by token when a callback is given.
             raw = ""
             if token_callback:
                 try:
@@ -444,6 +467,7 @@ class CoderAgent(BaseSwarmAgent):
             messages.append({"role": "assistant", "content": raw})
     
             # Parse tool calls from raw output
+            # Find every tool call tag (name and body) in the model reply.
             tool_calls = re.findall(
                 r"<tool_call name='([^']+)'>(.*?)</tool_call>",
                 raw, re.DOTALL
@@ -559,6 +583,7 @@ class CoderAgent(BaseSwarmAgent):
         instructions: str,
         test_failure_trace: Optional[str] = None
     ) -> str:
+        """Convenience wrapper that builds a task for one file (optionally noting a previous test failure) and runs generate()."""
         task = {"filepath": filepath, "instructions": instructions}
         workspace_context = {filepath: current_content}
         if test_failure_trace:
@@ -575,6 +600,7 @@ class TesterAgent:
     """
 
     def __init__(self, workspace_path: str):
+        """Remember the workspace folder where test commands run."""
         self.workspace_path = workspace_path
 
     def run(self, command: str, workspace_path: str) -> tuple[bool, str]:

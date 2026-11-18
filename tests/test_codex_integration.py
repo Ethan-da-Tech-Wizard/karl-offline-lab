@@ -1,14 +1,23 @@
+# Program: karl-offline-lab - test_codex_integration.py
+# Programmer: Ethan-da-Tech-Wizard (written with Claude, an AI assistant)
+# Last Modified: 2026-11-18
+# Purpose: Tests for HTML stripping, keyword matching and codex reference injection when building prompts.
+"""Tests for core.interaction_loop helpers and codex library prompt injection."""
+
 import os
 import sys
 import unittest
 
+# Make the repository root importable
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from core.interaction_loop import strip_html_tags, matches_keyword, build_prompt
 from core.default_prompts import DEFAULT_SYSTEM_PROMPT
 
 class TestCodexIntegration(unittest.TestCase):
+    """Tests for codex-sheet handling in prompt building."""
     def test_strip_html_tags(self):
+        """Scenario: HTML with headings, paragraphs and a pre block. Expected: plain text with tags removed and blocks separated by blank lines."""
         html_input = """
         <h2 style='color:#00C2FF;'>⚡ FastAPI</h2>
         <p>A fast web framework.</p>
@@ -28,6 +37,7 @@ class TestCodexIntegration(unittest.TestCase):
 
     def test_matches_keyword_word_boundaries(self):
         # Test C++ matching
+        """Scenario: keywords like c++, react and c against varied sentences. Expected: whole-word matches only, and c does not match c++, c# or cat."""
         self.assertTrue(matches_keyword("I write C++ code", "c++"))
         self.assertTrue(matches_keyword("cpp developer needed", "cpp"))
         
@@ -46,6 +56,7 @@ class TestCodexIntegration(unittest.TestCase):
         # or we can mock/write temp files if we want, but since they are seeded,
         # let's just make sure there is a mocked/real file on disk.
         # Let's write a mock file under data/codex_library/TestTopic.html
+        """Scenario: a matching Python sheet exists and the user asks about Python. Expected: the prompt includes the codex context; an unrelated message gets none."""
         os.makedirs("data/codex_library", exist_ok=True)
         mock_file_path = "data/codex_library/Python.html"
         
@@ -87,6 +98,7 @@ class TestCodexIntegration(unittest.TestCase):
 
     def test_build_prompt_limits(self):
         # Verify safety limit is enforced (at most 2 sheets)
+        """Scenario: the user names three languages that all have sheets. Expected: between one and two sheets are injected (safety limit of two)."""
         os.makedirs("data/codex_library", exist_ok=True)
         files_to_seed = ["Python.html", "React.html", "Rust.html"]
         originals = {}
@@ -126,6 +138,7 @@ class TestCodexIntegration(unittest.TestCase):
 
     def test_build_prompt_greetings_and_reasoning(self):
         # 1. Test greeting input: should NOT pre-seed <think> and should use clean system prompt
+        """Scenario: a greeting versus a reasoning question. Expected: the greeting gets no think seed while the question does."""
         greeting_history = [{"role": "user", "content": "hello there"}]
         prompt_greeting = build_prompt(DEFAULT_SYSTEM_PROMPT, greeting_history)
         self.assertNotIn("<think>", prompt_greeting)

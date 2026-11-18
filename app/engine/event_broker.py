@@ -1,3 +1,8 @@
+# Program: karl-offline-lab - event_broker.py
+# Programmer: Ethan-da-Tech-Wizard (written with Claude, an AI assistant)
+# Last Modified: 2026-11-18
+# Purpose: Provides a thread-safe singleton publish/subscribe bus for passing telemetry events between parts of the app in one process.
+"""In-process event broker used to publish and subscribe to telemetry events by topic."""
 import threading
 from typing import Callable, Dict, Set
 
@@ -51,6 +56,7 @@ class EventBroker:
         Subscriber exceptions are suppressed so one failing callback cannot
         break token streaming or telemetry publication.
         """
+        # Copy the subscriber list under the lock so callbacks run outside it and cannot deadlock the registry.
         with self._registry_lock:
             subscribers = list(self._subscribers.get(topic, []))
         for callback in subscribers:

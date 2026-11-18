@@ -1,3 +1,7 @@
+# Program: karl-offline-lab - prompt_lab.py
+# Programmer: Ethan-da-Tech-Wizard (written with Claude, an AI assistant)
+# Last Modified: 2026-11-18
+# Purpose: Prompt Lab workspace: side-by-side prompt A/B runs with a character diff, a tokenizer view, a two-model comparison, and a prompt optimizer.
 """
 Prompt Lab — side-by-side prompt engineering workspace.
 
@@ -33,12 +37,14 @@ logger = logging.getLogger("karl.prompt_lab")
 
 
 def _section(text: str) -> QLabel:
+    """Return a QLabel styled as a section header."""
     lbl = QLabel(text)
     lbl.setObjectName("section-header")
     return lbl
 
 
 def _hline() -> QFrame:
+    """Return a horizontal line frame used as a divider."""
     f = QFrame()
     f.setFrameShape(QFrame.Shape.HLine)
     return f
@@ -66,6 +72,7 @@ def generate_char_diff_html(a: str, b: str) -> str:
     current_chunk = []
     
     def flush():
+        """Append the pending run of characters to the HTML output, coloured by whether it was deleted, inserted or unchanged."""
         nonlocal current_op, current_chunk
         if not current_chunk:
             return
@@ -108,6 +115,7 @@ def generate_char_diff_html(a: str, b: str) -> str:
 # ── single-shot run thread (thin wrapper around ModelLoader) ─────────────────
 
 class _RunThread(QThread):
+    """Worker thread that runs one prompt through the model and streams tokens back."""
     token = pyqtSignal(str)
     done  = pyqtSignal(str, dict)
     live_stats = pyqtSignal(int, float)
@@ -116,6 +124,7 @@ class _RunThread(QThread):
     def __init__(self, system_prompt: str, user_prompt: str, hyperparams: dict,
                  model_name: str | None = None, adapter_name: str | None = None,
                  retrieved_chunks: list[str] | None = None):
+        """Store the prompts, hyperparameters, model, adapter and retrieved context chunks."""
         super().__init__()
         self.system_prompt = system_prompt
         self.user_prompt   = user_prompt
@@ -125,6 +134,7 @@ class _RunThread(QThread):
         self.retrieved_chunks = retrieved_chunks or []
 
     def run(self):
+        """Load the requested model, run the generation (optionally agentic) and emit tokens, stats and the final result."""
         try:
             from app.engine.model_loader import ModelLoader
             import core.interaction_loop
@@ -222,11 +232,13 @@ class _RunThread(QThread):
 # ── single prompt column ──────────────────────────────────────────────────────
 
 class _PromptColumn(QWidget):
+    """One prompt column: system and user editors, model choice, run button and output."""
     run_requested = pyqtSignal(str, str)   # (label, user_text)
     generation_done = pyqtSignal(str, dict)      # response text, diagnostics
     generation_failed = pyqtSignal()
 
     def __init__(self, label: str, state=None, parent=None):
+        """Build the editors, options, run button and output area."""
         super().__init__(parent)
         self.label = label
         self.state = state
@@ -302,33 +314,42 @@ class _PromptColumn(QWidget):
         self._refresh_model_combo()
 
     def _refresh_model_combo(self):
+        """Rescan the available models in the model combo box."""
         self._model_combo.refresh_models()
 
     def select_model_and_adapter(self, model_name: str, adapter_name: str | None):
+        """Select the given model and adapter in the combo box."""
         self._model_combo.select_model(model_name, adapter_name)
 
     def _emit_run(self):
+        """Request a run with the current user text unless one is already running."""
         if self._thread is not None and self._thread.isRunning():
             return
         self.run_requested.emit(self.label, self._user_edit.toPlainText().strip())
 
     def system_text(self) -> str:
+        """Return the system prompt text, trimmed."""
         return self._system_edit.toPlainText().strip()
 
     def user_text(self) -> str:
+        """Return the user prompt text, trimmed."""
         return self._user_edit.toPlainText().strip()
 
     def set_system_text(self, text: str):
+        """Set the system prompt text."""
         self._system_edit.setPlainText(text)
 
     def set_user_text(self, text: str):
+        """Set the user prompt text."""
         self._user_edit.setPlainText(text)
 
     def clear_output(self):
+        """Clear the output and stats label."""
         self._output.clear()
         self._stats_lbl.setText("")
 
     def start_run(self, hyperparams: dict):
+        """Start a generation thread with the current prompts and the given hyperparameters."""
         user = self.user_text()
         if not user:
             return
@@ -413,11 +434,13 @@ class _PromptColumn(QWidget):
         self._thread.start()
 
     def _on_thread_finished(self, thread):
+        """Forget the finished thread and re-enable the run button."""
         if self._thread is thread:
             self._thread = None
         self._run_btn.setEnabled(True)
 
     def _on_token(self, token: str):
+        """Append a streamed token to the output, removing the generating placeholder first."""
         from PyQt6.QtGui import QTextCursor
         curr_text = self._output.toPlainText()
         if curr_text == "generating...":
@@ -431,16 +454,20 @@ class _PromptColumn(QWidget):
         self._output.ensureCursorVisible()
 
     def _on_agentic_iteration(self, index: int, thought: str, response: str, diagnostics: dict):
+        """Remember the latest agentic iteration response and diagnostics."""
         self._last_agentic_response = response
         self._last_agentic_diagnostics = diagnostics
 
     def _on_agentic_loop_finished(self, total_iterations: int):
+        """Report the last agentic response as the final result."""
         self._on_done(self._last_agentic_response, self._last_agentic_diagnostics)
 
     def _on_live_stats(self, count: int, speed: float):
+        """Show the running token count and speed."""
         self._stats_lbl.setText(f"({count} tokens · {speed:.1f} t/s)")
 
     def _on_done(self, response: str, diagnostics: dict):
+        """Append prefill and generation timing to the output and emit the final result."""
         self._stats_lbl.setText("")
         self._output.append(
             f"\n\n[Prefill: {diagnostics.get('prompt_tokens', 0)} tok in {diagnostics.get('prefill_time', 0):.2f}s @ {diagnostics.get('prefill_tps', 0):.1f} t/s | "
@@ -449,6 +476,7 @@ class _PromptColumn(QWidget):
         self.generation_done.emit(response, diagnostics)
 
     def _on_error(self, msg: str):
+        """Show the error in the output and signal failure."""
         self._stats_lbl.setText("")
         self._output.append(f"\n[error: {msg}]")
         self.generation_failed.emit()
@@ -460,6 +488,7 @@ class _TelemetryCard(QFrame):
     """Compact metrics display shown below each model's output panel."""
 
     def __init__(self, label: str, parent=None):
+        """Build the labels that show model, file size, speed, thinking time and context."""
         super().__init__(parent)
         self.setObjectName("panel")
         self.setFrameShape(QFrame.Shape.StyledPanel)
@@ -485,12 +514,14 @@ class _TelemetryCard(QFrame):
 
     @staticmethod
     def _muted_label(text: str) -> QLabel:
+        """Return a small muted-style label with the given text."""
         lbl = QLabel(text)
         lbl.setObjectName("lbl-muted")
         lbl.setStyleSheet("font-size: 8.5pt;")
         return lbl
 
     def reset(self):
+        """Reset all labels to their empty placeholders."""
         self._file_lbl.setText("Model: —")
         self._size_lbl.setText("File size: —")
         self._speed_lbl.setText("Gen speed: —")
@@ -498,6 +529,7 @@ class _TelemetryCard(QFrame):
         self._ctx_lbl.setText("Context: —")
 
     def update_from(self, telemetry: dict):
+        """Fill the labels from a telemetry dictionary, formatting sizes and long names."""
         model_file = telemetry.get("model_file", "—")
         display_name = model_file if len(model_file) <= 34 else "…" + model_file[-31:]
 
@@ -551,6 +583,7 @@ class _ModelCompareThread(QThread):
 
     def __init__(self, model_a_filename: str, model_b_filename: str,
                  system_prompt: str, user_prompt: str, hyperparams: dict):
+        """Store the two model file names, the prompts and the hyperparameters."""
         super().__init__()
         self.model_a_filename = model_a_filename
         self.model_b_filename = model_b_filename
@@ -612,6 +645,7 @@ class _ModelCompareThread(QThread):
         return gen_count, gen_tps, think_sec
 
     def run(self):
+        """Run the same prompt on model A, free its memory, run it on model B, then restore the default model."""
         import os
         from app.engine.model_loader import ModelLoader
         from app.engine import config_store
@@ -701,6 +735,7 @@ class PromptOptimizeThread(QThread):
     error = pyqtSignal(str)
 
     def __init__(self, prompt_key: str, dataset_path: str, iterations: int, model_name: str | None = None):
+        """Store the prompt key, dataset path, iteration count and model name."""
         super().__init__()
         self.prompt_key = prompt_key
         self.dataset_path = dataset_path
@@ -709,9 +744,11 @@ class PromptOptimizeThread(QThread):
         self._stop_requested = False
 
     def request_stop(self):
+        """Ask the optimization to stop after the current iteration."""
         self._stop_requested = True
 
     def run(self):
+        """Run the prompt optimizer loop, emitting progress and the final prompt or an error."""
         from core.prompt_optimizer import PromptOptimizer
         try:
             optimizer = PromptOptimizer(model_name=self.model_name)
@@ -1110,6 +1147,7 @@ class PromptLabWorkspace(QWidget):
         root.addWidget(right_widget, 1)
 
     def _build_left_panel(self) -> QWidget:
+        """Build the saved prompt pairs panel."""
         w = QWidget()
         w.setObjectName("panel")
         w.setFixedWidth(220)
@@ -1163,6 +1201,7 @@ class PromptLabWorkspace(QWidget):
 
 
     def _refresh_pairs(self):
+        """Reload the list of saved prompt pair files."""
         self._pairs_list.clear()
         if not os.path.exists(self._pairs_dir):
             return
@@ -1172,6 +1211,7 @@ class PromptLabWorkspace(QWidget):
             self._pairs_list.addItem(name)
 
     def _on_pair_selected(self, name: str):
+        """Load the selected saved pair into both columns."""
         if not name:
             return
         path = os.path.join(self._pairs_dir, f"{name}.json")
@@ -1213,6 +1253,7 @@ class PromptLabWorkspace(QWidget):
                 logger.warning(f"Error loading pair '{name}': {e}")
 
     def _save_pair(self):
+        """Save both columns as a named prompt pair file after cleaning the name."""
         name = self._pair_name_input.text().strip()
         if not name:
             QMessageBox.warning(self, "Invalid Name", "Please enter a name for the prompt pair.")
@@ -1263,6 +1304,7 @@ class PromptLabWorkspace(QWidget):
             QMessageBox.critical(self, "Save Error", f"Could not save pair: {e}")
 
     def _delete_pair(self):
+        """Delete the selected saved pair after confirmation."""
         item = self._pairs_list.currentItem()
         if not item:
             return
@@ -1286,12 +1328,14 @@ class PromptLabWorkspace(QWidget):
             self._refresh_pairs()
 
     def showEvent(self, event):
+        """Refresh the model lists whenever the workspace is shown."""
         super().showEvent(event)
         self._col_a._refresh_model_combo()
         self._col_b._refresh_model_combo()
         self._refresh_compare_model_combos()
 
     def focus_primary_input(self) -> bool:
+        """Focus the main input of the active tab; return True if one was focused."""
         if self._main_tabs.currentIndex() == 0:
             self._col_a._user_edit.setFocus()
             return True
@@ -1305,6 +1349,7 @@ class PromptLabWorkspace(QWidget):
         return True
 
     def _run_column(self, label: str, _user_text: str):
+        """Run just one column and show a waiting message in the diff view."""
         self._running_both = False
         if label == "A":
             self._output_a = ""
@@ -1316,6 +1361,7 @@ class PromptLabWorkspace(QWidget):
             self._col_b.start_run(self._hyperparams)
 
     def _run_both(self):
+        """Run column A, then column B, one after the other."""
         self._output_a = ""
         self._output_b = ""
         self._diff_view.setHtml("<span style='color:#9090A8;'>Generating outputs A and B (sequentially)...</span>")
@@ -1323,25 +1369,30 @@ class PromptLabWorkspace(QWidget):
         self._col_a.start_run(self._hyperparams)
 
     def _on_col_a_done(self, text: str, diagnostics: dict | None = None):
+        """Store output A, update the diff and start B when running both."""
         self._output_a = text
         self._update_diff()
         if getattr(self, "_running_both", False):
             self._col_b.start_run(self._hyperparams)
 
     def _on_col_b_done(self, text: str, diagnostics: dict | None = None):
+        """Store output B and update the diff."""
         self._output_b = text
         self._update_diff()
         self._running_both = False
 
     def _on_col_a_failed(self):
+        """Stop a paired run and show that column A failed."""
         self._running_both = False
         self._diff_view.setHtml("<span style='color:#FF4A5A;'>Generation failed in Column A. Stopped comparison.</span>")
 
     def _on_col_b_failed(self):
+        """Stop a paired run and show that column B failed."""
         self._running_both = False
         self._diff_view.setHtml("<span style='color:#FF4A5A;'>Generation failed in Column B. Stopped comparison.</span>")
 
     def _update_diff(self):
+        """Show the character diff of outputs A and B once both exist."""
         if not self._output_a or not self._output_b:
             self._diff_view.setHtml(
                 "<span style='color:#505068;'>Waiting for both outputs to complete before rendering diff...</span>"
@@ -1357,6 +1408,7 @@ class PromptLabWorkspace(QWidget):
     # ── tokenizer tab logic ───────────────────────────────────────────────────
 
     def _on_tokenize_text_changed(self):
+        """Tokenize the entered text with the loaded model and show coloured tokens."""
         text = self._tok_input.toPlainText()
         if not text:
             self._tok_output.clear()
@@ -1397,6 +1449,7 @@ class PromptLabWorkspace(QWidget):
             self._tok_output.setHtml(f"<span style='color:#FF4A5A;'>Error tokenizing: {html.escape(str(e))}</span>")
 
     def _format_token_html(self, token_id: int, token_bytes: bytes) -> str:
+        """Return HTML for one token, styled by its category."""
         text = token_bytes.decode('utf-8', errors='replace')
         
         styles = {
@@ -1425,6 +1478,7 @@ class PromptLabWorkspace(QWidget):
         )
 
     def _classify_token(self, token_id: int, token_bytes: bytes) -> str:
+        """Classify a token as special, punctuation, word-start or continuation."""
         text = token_bytes.decode('utf-8', errors='replace')
         if not token_bytes or token_id >= 100000 or text in ("<|im_start|>", "<|im_end|>", "<think>", "</think>"):
             return "special"
@@ -1440,12 +1494,14 @@ class PromptLabWorkspace(QWidget):
         return "continuation"
 
     def _load_output_a_to_tokenizer(self):
+        """Copy output A into the tokenizer input, or tell the user it is empty."""
         if self._output_a:
             self._tok_input.setPlainText(self._output_a)
         else:
             QMessageBox.information(self, "No Output", "Output A is empty. Run prompt A first.")
 
     def _load_output_b_to_tokenizer(self):
+        """Copy output B into the tokenizer input, or tell the user it is empty."""
         if self._output_b:
             self._tok_input.setPlainText(self._output_b)
         else:
@@ -1454,12 +1510,14 @@ class PromptLabWorkspace(QWidget):
     # ── Upgraded Prompt Lab Features ──────────────────────────────────────────
 
     def _filter_pairs(self, text):
+        """Hide saved pairs whose names do not contain the search text."""
         query = text.strip().lower()
         for idx in range(self._pairs_list.count()):
             item = self._pairs_list.item(idx)
             item.setHidden(query not in item.text().lower())
 
     def _clone_a_to_b(self):
+        """Copy column A prompts and options into column B."""
         self._col_b.set_system_text(self._col_a.system_text())
         self._col_b.set_user_text(self._col_a.user_text())
         self._col_b._rag_check.setChecked(self._col_a._rag_check.isChecked())
@@ -1468,6 +1526,7 @@ class PromptLabWorkspace(QWidget):
         self._col_b._model_combo.setCurrentIndex(idx)
 
     def _clone_b_to_a(self):
+        """Copy column B prompts and options into column A."""
         self._col_a.set_system_text(self._col_b.system_text())
         self._col_a.set_user_text(self._col_b.user_text())
         self._col_a._rag_check.setChecked(self._col_b._rag_check.isChecked())
@@ -1476,6 +1535,7 @@ class PromptLabWorkspace(QWidget):
         self._col_a._model_combo.setCurrentIndex(idx)
 
     def _on_lock_sync_toggled(self, checked):
+        """Connect or disconnect live text syncing between the two columns."""
         if checked:
             self._col_b.set_user_text(self._col_a.user_text())
             self._col_b.set_system_text(self._col_a.system_text())
@@ -1493,21 +1553,25 @@ class PromptLabWorkspace(QWidget):
                 pass
 
     def _sync_user_a_to_b(self):
+        """Copy the user prompt from A to B without re-triggering signals."""
         self._col_b._user_edit.blockSignals(True)
         self._col_b.set_user_text(self._col_a.user_text())
         self._col_b._user_edit.blockSignals(False)
 
     def _sync_user_b_to_a(self):
+        """Copy the user prompt from B to A without re-triggering signals."""
         self._col_a._user_edit.blockSignals(True)
         self._col_a.set_user_text(self._col_b.user_text())
         self._col_a._user_edit.blockSignals(False)
 
     def _sync_system_a_to_b(self):
+        """Copy the system prompt from A to B without re-triggering signals."""
         self._col_b._system_edit.blockSignals(True)
         self._col_b.set_system_text(self._col_a.system_text())
         self._col_b._system_edit.blockSignals(False)
 
     def _sync_system_b_to_a(self):
+        """Copy the system prompt from B to A without re-triggering signals."""
         self._col_a._system_edit.blockSignals(True)
         self._col_a.set_system_text(self._col_b.system_text())
         self._col_a._system_edit.blockSignals(False)
@@ -1529,6 +1593,7 @@ class PromptLabWorkspace(QWidget):
             combo.blockSignals(False)
 
     def _run_comparative_lab(self):
+        """Validate the selection and start the two-model comparison thread."""
         model_a = self._cmp_model_a.currentText()
         model_b = self._cmp_model_b.currentText()
         user    = self._cmp_user.toPlainText().strip()
@@ -1577,21 +1642,26 @@ class PromptLabWorkspace(QWidget):
         browser.ensureCursorVisible()
 
     def _on_cmp_model_a_done(self, telemetry: dict):
+        """Show the telemetry for model A."""
         self._cmp_card_a.update_from(telemetry)
 
     def _on_cmp_vram_flushing(self):
+        """Tell the user model A is being released before model B loads."""
         self._cmp_status.setText(
             "VRAM flush — releasing Model A from memory before loading Model B…"
         )
 
     def _on_cmp_model_b_done(self, telemetry: dict):
+        """Show the telemetry for model B."""
         self._cmp_card_b.update_from(telemetry)
 
     def _on_cmp_finished(self):
+        """Re-enable the run button and report completion."""
         self._cmp_run_btn.setEnabled(True)
         self._cmp_status.setText("Comparison complete. Default model restored.")
 
     def _on_cmp_error(self, msg: str):
+        """Re-enable the run button and show and log the error."""
         self._cmp_run_btn.setEnabled(True)
         self._cmp_status.setText(f"Error: {msg}")
         logger.error("[MultiModelComparison] %s", msg)
@@ -1599,12 +1669,14 @@ class PromptLabWorkspace(QWidget):
     # ── Optimize tab ─────────────────────────────────────────────────────────
 
     def _populate_optimize_prompt_combo(self):
+        """Fill the combo box with the registry prompts available to optimize."""
         from core.default_prompts import load_prompt_presets
         self._opt_prompt_combo.clear()
         for key, entry in load_prompt_presets().items():
             self._opt_prompt_combo.addItem(f"{entry.get('label', key)} ({key})", key)
 
     def _browse_optimize_dataset(self):
+        """Let the user pick a JSONL evaluation dataset."""
         path, _ = QFileDialog.getOpenFileName(
             self, "Select Eval Dataset", "eval/datasets", "JSONL Files (*.jsonl);;All Files (*)"
         )
@@ -1612,6 +1684,7 @@ class PromptLabWorkspace(QWidget):
             self._opt_dataset_path.setText(path)
 
     def _start_prompt_optimization(self):
+        """Validate the inputs and start the optimizer thread."""
         prompt_key = self._opt_prompt_combo.currentData()
         dataset_path = self._opt_dataset_path.text().strip()
         iterations = self._opt_iterations_spin.value()
@@ -1638,11 +1711,13 @@ class PromptLabWorkspace(QWidget):
         t.start()
 
     def _stop_prompt_optimization(self):
+        """Ask the optimizer to stop after the current iteration."""
         if self._opt_thread:
             self._opt_thread.request_stop()
             self._opt_status.setText("Stopping after the current iteration…")
 
     def _on_opt_iteration_progress(self, current_iter: int, total_iters: int, score: float, prompt: str):
+        """Update the progress bar, prompt text and log for one iteration."""
         self._opt_progress.setValue(current_iter)
         self._opt_prompt_text.setPlainText(prompt)
         label = "Baseline" if current_iter == 0 else f"Iteration {current_iter}/{total_iters}"
@@ -1650,6 +1725,7 @@ class PromptLabWorkspace(QWidget):
         self._opt_status.setText(f"{label} — best score {score:.3f}")
 
     def _on_opt_finished(self, final_prompt: str):
+        """Show the final optimized prompt and re-enable the controls."""
         self._opt_start_btn.setEnabled(True)
         self._opt_stop_btn.setEnabled(False)
         self._opt_prompt_text.setPlainText(final_prompt)
@@ -1657,6 +1733,7 @@ class PromptLabWorkspace(QWidget):
         self._opt_log.append("Optimization finished.")
 
     def _on_opt_error(self, msg: str):
+        """Show and log the optimizer error and re-enable the controls."""
         self._opt_start_btn.setEnabled(True)
         self._opt_stop_btn.setEnabled(False)
         self._opt_status.setText(f"Error: {msg}")
@@ -1664,6 +1741,7 @@ class PromptLabWorkspace(QWidget):
         logger.error("[PromptOptimizeThread] %s", msg)
 
     def _save_optimized_prompt(self):
+        """Validate the key and text and save the optimized prompt to the registry."""
         key = self._opt_save_key.text().strip()
         prompt_text = self._opt_prompt_text.toPlainText().strip()
         if not key or key.startswith("_"):

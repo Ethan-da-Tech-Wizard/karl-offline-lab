@@ -1,3 +1,7 @@
+# Program: karl-offline-lab - prompt_optimizer.py
+# Programmer: Ethan-da-Tech-Wizard (written with Claude, an AI assistant)
+# Last Modified: 2026-11-18
+# Purpose: Improves a system prompt by hill-climbing: mutate it with the local model against failing eval cases and keep a candidate only if it scores higher.
 """
 Prompt Optimizer Engine — Karl Workbench
 ========================================
@@ -30,6 +34,7 @@ from eval.harness import EvalHarness
 
 logger = logging.getLogger("karl.prompt_optimizer")
 
+# Instruction given to the model when asking it to rewrite a prompt.
 _MUTATION_META_PROMPT = (
     "Analyze the following failed cases where the system prompt led to incorrect "
     "results or errors. Propose a refined system prompt that fixes these failures "
@@ -41,6 +46,7 @@ class PromptOptimizer:
     """Manages prompt optimization cycles using local model mutations and eval checks."""
 
     def __init__(self, model_name: Optional[str] = None):
+        """Remember which model to use (None means the default) and create the eval harness."""
         self.model_name = model_name
         self._harness = EvalHarness()
 
@@ -59,6 +65,7 @@ class PromptOptimizer:
         if not failed_examples:
             return current_prompt
 
+        # Show the model at most 8 failures, each trimmed to 400 characters, to keep the request small.
         cases_block = "\n\n".join(
             f"Failure {i + 1}:\n"
             f"  User message: {ex.get('prompt', '')[:400]}\n"
@@ -137,12 +144,15 @@ class PromptOptimizer:
         if len(cases) < 2:
             raise ValueError(f"Dataset '{dataset_path}' needs at least 2 cases to split into train/val sets.")
 
+        # A fixed seed makes the train/validation split repeatable between runs.
         rng = random.Random(13)
         shuffled = list(cases)
         rng.shuffle(shuffled)
+        # Half the cases drive mutations (mini-train); the rest judge candidates (mini-val).
         split = max(1, len(shuffled) // 2)
         mini_train, mini_val = shuffled[:split], shuffled[split:] or shuffled[:1]
 
+        # Temporary folder for the split datasets; it is removed in the finally block.
         workspace = Path(tempfile.mkdtemp(prefix="karl_prompt_opt_"))
         train_path = workspace / "mini_train.jsonl"
         val_path = workspace / "mini_val.jsonl"
@@ -175,6 +185,7 @@ class PromptOptimizer:
                     i, iterations, candidate_score, best_score,
                 )
 
+                # Hill climbing: accept a candidate only when it strictly beats the best so far.
                 if candidate_score > best_score:
                     best_prompt, best_score = candidate, candidate_score
 
@@ -188,6 +199,7 @@ class PromptOptimizer:
     # ── internals ────────────────────────────────────────────────────────────
 
     def _model_path(self) -> Optional[str]:
+        """Return the model file path under data/models, or None to use the default model."""
         return os.path.join("data", "models", self.model_name) if self.model_name else None
 
     def _evaluate(self, system_prompt: str, dataset_path: Path) -> tuple[float, list[dict]]:
@@ -213,6 +225,7 @@ class PromptOptimizer:
 
     @staticmethod
     def _load_cases(dataset_path: str) -> list[dict]:
+        """Read a JSONL dataset, skipping blank lines, comment lines and lines that are not valid JSON."""
         cases: list[dict] = []
         with open(dataset_path, "r", encoding="utf-8") as fh:
             for line in fh:
@@ -227,12 +240,14 @@ class PromptOptimizer:
 
     @staticmethod
     def _write_cases(path: Path, cases: list[dict]) -> None:
+        """Write cases to path as JSONL, one object per line."""
         with path.open("w", encoding="utf-8") as fh:
             for case in cases:
                 fh.write(json.dumps(case, ensure_ascii=False) + "\n")
 
     @staticmethod
     def _clean_mutation_output(text: str) -> str:
+        """Strip code fences, a leading 'system prompt:' label and surrounding quotes from the model's reply."""
         text = text.strip()
         if text.startswith("```"):
             text = re.sub(r"^```[a-zA-Z]*\n?", "", text)

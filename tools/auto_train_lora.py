@@ -1,4 +1,8 @@
 #!/usr/bin/env python3
+# Program: karl-offline-lab - auto_train_lora.py
+# Programmer: Ethan-da-Tech-Wizard (written with Claude, an AI assistant)
+# Last Modified: 2026-11-18
+# Purpose: Command-line tool that validates a curated SFT dataset and trains a QLoRA (4-bit) code adapter on a local HuggingFace base model, saving the adapter and training history.
 """Train Karl's code LoRA adapter from curated trace datasets."""
 
 from __future__ import annotations
@@ -13,10 +17,12 @@ from pathlib import Path
 from typing import Iterable
 
 
+# Repository root, two levels above this file.
 ROOT = Path(__file__).resolve().parents[1]
 DEFAULT_DATASET = ROOT / "data" / "training" / "code" / "merged_sft.jsonl"
 DEFAULT_ADAPTER_DIR = ROOT / "data" / "adapters" / "karl_code_lora"
 HF_MODELS_DIR = ROOT / "data" / "hf_models"
+# Names of attention and MLP projection layers that LoRA can target.
 PROJECTION_CANDIDATES = (
     "q_proj",
     "k_proj",
@@ -29,14 +35,18 @@ PROJECTION_CANDIDATES = (
 
 
 def missing_packages() -> list[str]:
+    # Core packages needed for training.
+    """Return the names of required training packages that are not installed."""
     required = ["peft", "trl", "transformers", "datasets", "torch"]
     missing = [pkg for pkg in required if importlib.util.find_spec(pkg) is None]
+    # bitsandbytes is checked separately because it provides the 4-bit quantization.
     if importlib.util.find_spec("bitsandbytes") is None:
         missing.append("bitsandbytes")
     return missing
 
 
 def print_install_instructions(missing: list[str]) -> None:
+    """Print which training dependencies are missing and how to install them and where to put base model weights."""
     print("Missing training dependencies:", ", ".join(missing))
     print()
     print("Install the training stack inside Karl's virtualenv, for example:")
@@ -47,12 +57,14 @@ def print_install_instructions(missing: list[str]) -> None:
 
 
 def resolve_base_model(explicit: str | None) -> Path:
+    """Return the base model folder: the explicit path if given (it must exist), otherwise the first folder, sorted, under the local models directory."""
     if explicit:
         path = Path(explicit).expanduser()
         if not path.exists():
             raise FileNotFoundError(f"Base model path does not exist: {path}")
         return path
 
+    # Every subfolder of the models directory is a possible base model.
     candidates = [path for path in HF_MODELS_DIR.iterdir() if path.is_dir()] if HF_MODELS_DIR.exists() else []
     if not candidates:
         raise FileNotFoundError(
@@ -63,11 +75,15 @@ def resolve_base_model(explicit: str | None) -> Path:
 
 
 def validate_dataset(path: Path) -> int:
+    """Check that the dataset file exists and every non-empty line is JSON with a "messages" list of at least two entries.
+    Returns the number of examples and raises FileNotFoundError or ValueError otherwise.
+    """
     if not path.exists():
         raise FileNotFoundError(
             f"Dataset not found: {path}. Run tools/curate_code_datasets.py "
             "(after tools/generate_code_sft_dataset.py) first."
         )
+    # Count valid examples while checking each line.
     count = 0
     with path.open("r", encoding="utf-8") as fh:
         for line_no, line in enumerate(fh, 1):
@@ -93,6 +109,7 @@ def detect_target_modules(model, candidates: Iterable[str] = PROJECTION_CANDIDAT
         if suffix in candidate_set:
             found.add(suffix)
     ordered = [name for name in candidates if name in found]
+    # Fall back to the standard attention query and value projections.
     if not ordered:
         ordered = ["q_proj", "v_proj"]
     return ordered
@@ -148,8 +165,10 @@ def filter_kwargs_for_class(kwargs: dict, cls) -> dict:
         if old in adapted and new in params:
             adapted.setdefault(new, adapted[old])
             del adapted[old]
+    # A **kwargs constructor accepts everything, so no filtering is needed.
     if any(p.kind == inspect.Parameter.VAR_KEYWORD for p in params.values()):
         return adapted  # __init__ accepts **kwargs -- nothing to filter
+    # Keep only the settings the installed library version accepts.
     supported = {k: v for k, v in adapted.items() if k in params}
     dropped = sorted(set(adapted) - set(supported))
     if dropped:
@@ -162,6 +181,9 @@ def filter_kwargs_for_class(kwargs: dict, cls) -> dict:
 
 
 def train(args: argparse.Namespace) -> Path:
+    """Load the dataset and 4-bit base model, attach a LoRA adapter, train with SFTTrainer and save the adapter, tokenizer and history.
+    Returns the adapter directory. Requires a CUDA GPU.
+    """
     import torch
     from datasets import load_dataset
     from peft import LoraConfig, get_peft_model, prepare_model_for_kbit_training
@@ -175,13 +197,16 @@ def train(args: argparse.Namespace) -> Path:
     adapter_dir.mkdir(parents=True, exist_ok=True)
 
     tokenizer = AutoTokenizer.from_pretrained(str(base_model), trust_remote_code=True)
+    # Many models have no padding token, so reuse the end-of-sequence token.
     if tokenizer.pad_token is None:
         tokenizer.pad_token = tokenizer.eos_token
+    # Pad on the right, the usual choice for training.
     tokenizer.padding_side = "right"
 
     raw_dataset = load_dataset("json", data_files=str(dataset_path), split="train")
 
     def format_row(row: dict) -> dict:
+        """Turn one row's chat messages into a single training text, using the tokenizer's chat template when it has one."""
         messages = row["messages"]
         if hasattr(tokenizer, "apply_chat_template") and tokenizer.chat_template:
             text = tokenizer.apply_chat_template(messages, tokenize=False, add_generation_prompt=False)
@@ -189,11 +214,14 @@ def train(args: argparse.Namespace) -> Path:
             text = "\n".join(f"{msg.get('role', 'user')}: {msg.get('content', '')}" for msg in messages)
         return {"text": text}
 
+    # Replace each row with a single formatted "text" field.
     dataset = raw_dataset.map(format_row, remove_columns=raw_dataset.column_names)
 
+    # 4-bit training needs a CUDA GPU, so stop early with a clear message.
     if not torch.cuda.is_available():
         raise RuntimeError("QLoRA NF4 training requires a CUDA GPU with bitsandbytes support.")
 
+    # Load the base model in 4-bit NF4 with double quantization to save memory.
     quant_config = BitsAndBytesConfig(
         load_in_4bit=True,
         bnb_4bit_quant_type="nf4",
@@ -208,8 +236,10 @@ def train(args: argparse.Namespace) -> Path:
         torch_dtype=torch.float16,
         trust_remote_code=True,
     )
+    # Prepare the quantized model for adapter training.
     model = prepare_model_for_kbit_training(model)
 
+    # Detect target layers from the model or use the comma-separated list given.
     if args.target_modules == "auto":
         target_modules = detect_target_modules(model)
     else:
@@ -224,6 +254,7 @@ def train(args: argparse.Namespace) -> Path:
         task_type="CAUSAL_LM",
     )
     model = get_peft_model(model, lora_config)
+    # The cache is not used during training and conflicts with gradient checkpointing.
     model.config.use_cache = False
 
     checkpoint_dir = adapter_dir / "checkpoints"
@@ -238,11 +269,13 @@ def train(args: argparse.Namespace) -> Path:
     )
     trainer.train()
 
+    # Save the trained adapter, the tokenizer and the loss history.
     trainer.model.save_pretrained(str(adapter_dir))
     tokenizer.save_pretrained(str(adapter_dir))
     with (adapter_dir / "train_history.json").open("w", encoding="utf-8") as fh:
         json.dump(trainer.state.log_history, fh, indent=2)
 
+    # Delete intermediate checkpoints unless the user asked to keep them.
     if args.clean_checkpoints and checkpoint_dir.exists():
         shutil.rmtree(checkpoint_dir)
 
@@ -250,6 +283,8 @@ def train(args: argparse.Namespace) -> Path:
 
 
 def main() -> int:
+    # Define command-line options for data, model, output and training hyperparameters.
+    """Parse command-line options, check dependencies and the dataset, print the configuration, run training and return a process exit code."""
     parser = argparse.ArgumentParser(description="Train Karl's curated code QLoRA adapter.")
     parser.add_argument("--dataset", default=str(DEFAULT_DATASET), help="Curated SFT JSONL dataset")
     parser.add_argument("--base-model", default=None, help="HuggingFace base model directory")
@@ -273,6 +308,7 @@ def main() -> int:
     parser.set_defaults(clean_checkpoints=True)
     args = parser.parse_args()
 
+    # Stop early with install instructions if training packages are missing.
     missing = missing_packages()
     if missing:
         print_install_instructions(missing)
@@ -306,5 +342,6 @@ def main() -> int:
     return 0
 
 
+# Run main() and use its return value as the exit code.
 if __name__ == "__main__":
     raise SystemExit(main())

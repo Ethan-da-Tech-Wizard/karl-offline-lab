@@ -1,3 +1,7 @@
+# Program: karl-offline-lab - run_eval.py
+# Programmer: Ethan-da-Tech-Wizard (written with Claude, an AI assistant)
+# Last Modified: 2026-11-18
+# Purpose: Command-line entry point for the eval harness: picks a workflow and dataset, runs or dry-runs the grading, reports results and VRAM changes, and exits with a pass/fail code.
 """
 Karl Eval CLI — run_eval.py
 ============================
@@ -32,6 +36,7 @@ from eval.harness import EvalHarness
 from eval.graders import run_grader
 
 
+# Default dataset path for each workflow when --dataset is not given.
 DEFAULT_DATASETS = {
     "document_extractor": "eval/datasets/document_extractor.jsonl",
     "grounded_answer":    "eval/datasets/grounded_answer.jsonl",
@@ -41,6 +46,7 @@ DEFAULT_DATASETS = {
 
 
 def parse_args():
+    """Define and parse the command-line options."""
     p = argparse.ArgumentParser(
         description="Karl Eval Harness — run structured evals against the local LLM",
         formatter_class=argparse.RawDescriptionHelpFormatter,
@@ -104,6 +110,7 @@ def parse_args():
 
 
 def dry_run_mode(dataset_path: str, workflow_name: str):
+# Returns True when every case passes.
     """
     Grader-only test: reads dataset, uses the 'expected' field as the model
     output, and grades it. Should always pass. Useful for CI or grader testing.
@@ -155,6 +162,10 @@ def dry_run_mode(dataset_path: str, workflow_name: str):
 
 
 def main():
+    """Run the CLI: list workflows/templates, dry-run, or run the full eval and save the report.
+
+    Exit codes: 0 all passed, 1 failures or errors, 2 bad arguments or missing dataset.
+    """
     args = parse_args()
 
     if args.list_workflows:
@@ -171,6 +182,7 @@ def main():
         sys.exit(0)
 
     # Resolve dataset path
+    # An explicit --dataset wins over the per-workflow default.
     dataset = args.dataset or DEFAULT_DATASETS.get(args.workflow)
     if not dataset:
         print(f"ERROR: No dataset path for workflow '{args.workflow}'. Use --dataset.", file=sys.stderr)
@@ -196,6 +208,7 @@ def main():
     # ── VRAM Baseline Monitoring ─────────────────────────────────────────────
     from core.hardware_scout import get_hardware_profile
     def get_vram_usage():
+        """Return {gpu id: used memory in MB} from the hardware profile, or an empty dict if unavailable."""
         try:
             profile = get_hardware_profile()
             gpus = profile.get("gpu_list", [])
@@ -226,6 +239,7 @@ def main():
                       f"did not release on completion (start: {start_mb}MB, end: {end_mb}MB).")
     # ─────────────────────────────────────────────────────────────────────────
 
+    # --no-save turns off the default of saving the report.
     save = args.save and not args.no_save
     if save:
         path = harness.save_report(report)

@@ -1,23 +1,39 @@
+# Program: karl-offline-lab - status_bar.py
+# Programmer: Ethan-da-Tech-Wizard (written with Claude, an AI assistant)
+# Last Modified: 2026-11-18
+# Purpose: Implements the application status bar showing model, adapter, state, context usage, load stats, memory use, thermal warning and VS Code bridge status.
+
+"""Bottom status bar widget for the main window."""
 from PyQt6.QtWidgets import QWidget, QHBoxLayout, QLabel
 from PyQt6.QtCore import QTimer
 import psutil
 import os
 
 
+# ---------------------------------------------------------------------------
+# Label helpers
+# ---------------------------------------------------------------------------
 def _lbl(text: str, parent: QWidget) -> QLabel:
+    """Create a muted-style label so the theme stylesheet colours it."""
     lbl = QLabel(text, parent)
     lbl.setObjectName("lbl-muted")
     return lbl
 
 
 def _sep(parent: QWidget) -> QLabel:
+    """Create the small dot separator label placed between status items."""
     lbl = QLabel("·", parent)
     lbl.setObjectName("lbl-muted")
     return lbl
 
 
+# ---------------------------------------------------------------------------
+# Status bar widget
+# ---------------------------------------------------------------------------
 class StatusBar(QWidget):
+    """Slim bar of status labels; setters update each slot and a timer refreshes live readings."""
     def __init__(self, parent=None):
+        """Build all labels, the thermal warning blink timer and the 4-second poll timer."""
         super().__init__(parent)
         self.setObjectName("status-bar")
         self.setFixedHeight(24)
@@ -26,6 +42,7 @@ class StatusBar(QWidget):
         layout.setContentsMargins(12, 0, 12, 0)
         layout.setSpacing(6)
 
+        # Left side: model, adapter, state, context, speculative decoding and load stats
         self._model_lbl   = _lbl("● no model", self)
         self._adapter_lbl = _lbl("", self)
         self._state_lbl   = _lbl("idle", self)
@@ -34,6 +51,7 @@ class StatusBar(QWidget):
         self._load_stats_lbl = _lbl("", self)   # Load: Xs | VRAM: Y GB/s
         self._ram_lbl     = _lbl("", self)
 
+        # Small coloured dot that reflects the bridge connection state
         self._bridge_dot = QLabel("●")
         self._bridge_dot.setObjectName("lbl-muted")
         self._bridge_dot.setFixedWidth(12)
@@ -60,6 +78,7 @@ class StatusBar(QWidget):
         self._load_stats_sep.setVisible(False)
         self._load_stats_lbl.setVisible(False)
 
+        # Thermal warning label is hidden until a GPU throttling alert is reported
         self._thermal_lbl = QLabel("⚠️ GPU Overheated (Throttling)", self)
         self._thermal_lbl.setStyleSheet(
             "color: #FF3B30; font-weight: bold;"
@@ -67,10 +86,12 @@ class StatusBar(QWidget):
         self._thermal_lbl.setVisible(False)
         self._thermal_blink_on = True
 
+        # Timer that toggles the warning colour so it blinks
         self._thermal_timer = QTimer(self)
         self._thermal_timer.setInterval(600)
         self._thermal_timer.timeout.connect(self._toggle_thermal_visibility)
 
+        # Right side: warning, memory use and bridge indicator pushed right by the stretch
         layout.addStretch()
         layout.addWidget(self._thermal_lbl)
         layout.addWidget(_sep(self))
@@ -79,6 +100,7 @@ class StatusBar(QWidget):
         layout.addWidget(self._bridge_dot)
         layout.addWidget(self._bridge_lbl)
 
+        # Poll live readings every 4 seconds and once immediately
         self._poll_timer = QTimer(self)
         self._poll_timer.timeout.connect(self._tick)
         self._poll_timer.start(4000)
@@ -87,17 +109,21 @@ class StatusBar(QWidget):
     # ── internal ──────────────────────────────────────────────────────────────
 
     def _toggle_thermal_visibility(self):
+        """Flip the warning text between bright and dim red to create a blink."""
         self._thermal_blink_on = not self._thermal_blink_on
         color = "#FF3B30" if self._thermal_blink_on else "#7A1A14"
         self._thermal_lbl.setStyleSheet(f"color: {color}; font-weight: bold;")
 
     def _tick(self):
+        """Refresh memory use, WebSocket bridge state and GPU thermal alert; failures are ignored."""
         try:
+            # Resident memory of this process in MB
             mb = psutil.Process(os.getpid()).memory_info().rss / 1_048_576
             self._ram_lbl.setText(f"{mb:.0f} MB")
         except Exception:
             pass
         try:
+            # Imported lazily to avoid a circular import at module load; reads the bridge singleton
             from app.engine.websocket_server import WebSocketServerManager
 
             manager = WebSocketServerManager._instance
@@ -113,6 +139,7 @@ class StatusBar(QWidget):
             from core.hardware_scout import get_hardware_profile
 
             hw = get_hardware_profile()
+            # Any GPU reporting thermal throttling turns on the warning
             thermal = any(
                 "Thermal Throttling Active" in gpu.get("alerts", [])
                 for gpu in hw.get("gpu_list", [])
@@ -128,6 +155,7 @@ class StatusBar(QWidget):
         self._set_thermal_warning(active)
 
     def _set_thermal_warning(self, active: bool) -> None:
+        """Show the warning and start blinking, or hide it, stop blinking and reset its colour."""
         if active:
             self._thermal_lbl.setVisible(True)
             if not self._thermal_timer.isActive():
@@ -141,21 +169,26 @@ class StatusBar(QWidget):
             self._thermal_lbl.setStyleSheet("color: #FF3B30; font-weight: bold;")
 
     def set_model(self, name: str):
+        """Show the active model name and switch the label to the accent style."""
         self._model_lbl.setText(f"● {name}")
         self._model_lbl.setObjectName("lbl-accent")
+        # Re-polish so the new object name picks up its stylesheet rule
         self._model_lbl.style().unpolish(self._model_lbl)
         self._model_lbl.style().polish(self._model_lbl)
 
     def set_adapter(self, name: str | None):
+        """Show the adapter name with a marker, or clear the label when there is none."""
         self._adapter_lbl.setText(f"⬡ {name}" if name else "")
 
     def set_speculative_active(self, active: bool):
+        """Show or clear the speculative-decoding indicator and restyle the label."""
         self._speculative_lbl.setText("[Speculative Active]" if active else "")
         self._speculative_lbl.setObjectName("lbl-accent" if active else "lbl-muted")
         self._speculative_lbl.style().unpolish(self._speculative_lbl)
         self._speculative_lbl.style().polish(self._speculative_lbl)
 
     def set_state(self, text: str, active: bool = False):
+        """Show the engine state text, highlighted when active."""
         self._state_lbl.setText(text)
         obj = "lbl-accent" if active else "lbl-muted"
         self._state_lbl.setObjectName(obj)
@@ -163,6 +196,7 @@ class StatusBar(QWidget):
         self._state_lbl.style().polish(self._state_lbl)
 
     def set_context_stats(self, total: int, hist: int, rag: int, budget: int):
+        """Show total vs budget tokens; turns warning at 70% and danger at 90%, with a tooltip breakdown."""
         self._ctx_lbl.setText(f"ctx {total:,} / {budget:,}")
         if total > 0.9 * budget:
             self._ctx_lbl.setObjectName("lbl-danger")

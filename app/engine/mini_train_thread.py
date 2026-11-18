@@ -1,3 +1,7 @@
+# Program: karl-offline-lab - mini_train_thread.py
+# Programmer: Ethan-da-Tech-Wizard (written with Claude, an AI assistant)
+# Last Modified: 2026-11-18
+# Purpose: Qt thread that trains the small character-level MiniGPT model on given text, emitting loss, sample text and log signals and saving weights, config and tokenizer.
 """
 MiniGPT Training Thread — Educational Sandbox
 =============================================
@@ -14,6 +18,7 @@ from app.engine.mini_transformer import MiniGPT, CharTokenizer
 
 class MiniTrainThread(QThread):
     # Signals for communicating with UI
+    """Background trainer for the MiniGPT sandbox model."""
     loss = pyqtSignal(int, float)            # step, loss_val
     progress = pyqtSignal(int, int, str)     # step, total_steps, text_sample
     done = pyqtSignal(str)                   # adapter/model folder path
@@ -26,6 +31,7 @@ class MiniTrainThread(QThread):
         config: dict,
         save_dir: str = "data/mini_gpt"
     ):
+        """Store the training text, the hyperparameter dict and the folder where results are saved."""
         super().__init__()
         self.dataset_text = dataset_text
         self.config = config
@@ -33,9 +39,11 @@ class MiniTrainThread(QThread):
         self._stop_requested = False
 
     def stop(self):
+        """Ask the training loop to stop at its next step."""
         self._stop_requested = True
 
     def run(self):
+        """Fit the tokenizer, build the model, run the training loop with periodic evaluation and sampling, then save the results and emit done (or error)."""
         try:
             self.log.emit("Initializing MiniGPT Trainer...")
             
@@ -52,6 +60,7 @@ class MiniTrainThread(QThread):
             sample_interval = self.config.get("sample_interval", 100)
 
             # Device configuration
+            # Use a GPU when available, otherwise train on the CPU.
             device = "cuda" if torch.cuda.is_available() else "cpu"
             self.log.emit(f"Using device: {device.upper()}")
 
@@ -66,6 +75,7 @@ class MiniTrainThread(QThread):
             data = torch.tensor(tokenizer.encode(self.dataset_text), dtype=torch.long)
             
             # Split train / val
+            # Hold out the last 10 percent of the text for validation.
             n = int(0.9 * len(data))
             train_data = data[:n]
             val_data = data[n:]
@@ -93,6 +103,7 @@ class MiniTrainThread(QThread):
             optimizer = torch.optim.AdamW(model.parameters(), lr=learning_rate)
 
             # Batch helper
+            # Pick random windows from the chosen split; targets are the same windows shifted by one character.
             def get_batch(split):
                 split_data = train_data if split == 'train' else val_data
                 ix = torch.randint(len(split_data) - block_size, (batch_size,))
@@ -102,6 +113,7 @@ class MiniTrainThread(QThread):
                 return x, y
 
             # Validation loss helper
+            # Evaluation does not need gradients.
             @torch.no_grad()
             def estimate_loss():
                 out = {}
@@ -128,11 +140,13 @@ class MiniTrainThread(QThread):
                 logits, loss = model(xb, yb)
                 
                 # Backpropagation
+                # Clear old gradients before the backward pass.
                 optimizer.zero_grad(set_to_none=True)
                 loss.backward()
                 optimizer.step()
 
                 # Periodic evaluation
+                # Every eval_interval steps, report train and validation loss.
                 if step % eval_interval == 0:
                     eval_losses = estimate_loss()
                     self.log.emit(f"Step {step}/{max_iters} | Train Loss: {eval_losses['train']:.4f} | Val Loss: {eval_losses['val']:.4f}")

@@ -1,3 +1,10 @@
+# Program: karl-offline-lab - test_self_correction_dataset.py
+# Programmer: Ethan-da-Tech-Wizard (written with Claude, an AI assistant)
+# Last Modified: 2026-11-18
+# Purpose: Tests the self-correction dataset generator helpers: problem normalization, block extraction, diffs and row building.
+
+"""Tests the self-correction dataset generator helpers: problem normalization, block extraction, diffs and row building."""
+
 import json
 import ast
 
@@ -14,6 +21,7 @@ from tools.generate_code_sft_dataset import DefinitionVisitor, build_user_prompt
 
 
 def test_normalize_problem_record_accepts_verifiable_task():
+    """Scenario: normalize problem record accepts verifiable task. Expected: the assertions in this test hold."""
     record = {
         "id": "task-1",
         "problem_statement": "Write solve(x).",
@@ -31,10 +39,12 @@ def test_normalize_problem_record_accepts_verifiable_task():
 
 
 def test_normalize_problem_record_rejects_missing_verifier():
+    """Scenario: normalize problem record rejects missing verifier. Expected: the assertions in this test hold."""
     assert normalize_problem_record({"prompt": "Write code"}) is None
 
 
 def test_extract_code_and_thought_blocks():
+    """Scenario: extract code and thought blocks. Expected: the assertions in this test hold."""
     text = "<think>\nfix off by one\n</think>\n```python\ndef solve():\n    return 1\n```"
 
     assert extract_thought_block(text) == "fix off by one"
@@ -42,6 +52,7 @@ def test_extract_code_and_thought_blocks():
 
 
 def test_code_diff_tracks_correction():
+    """Scenario: code diff tracks correction. Expected: the assertions in this test hold."""
     before = "```python\ndef solve():\n    return 1\n```"
     after = "```python\ndef solve():\n    return 2\n```"
 
@@ -54,6 +65,7 @@ def test_code_diff_tracks_correction():
 
 
 def test_build_self_correction_row_format():
+    """Scenario: build self correction row format. Expected: the assertions in this test hold."""
     problem = CodingProblem(
         problem_id="p1",
         prompt="Return 2.",
@@ -93,6 +105,7 @@ def test_build_self_correction_row_format():
 
 
 def test_build_correction_prompt_includes_traceback():
+    """Scenario: build correction prompt includes traceback. Expected: the assertions in this test hold."""
     problem = CodingProblem("p1", "Write solve().", "def verify(response): return False")
 
     prompt = build_correction_prompt(problem, "bad response", "NameError: solve")
@@ -103,6 +116,7 @@ def test_build_correction_prompt_includes_traceback():
 
 
 def test_code_scrape_docstring_parsing_feeds_prompt_formatting():
+    """Scenario: code scrape docstring parsing feeds prompt formatting. Expected: the assertions in this test hold."""
     source = '''
 def add(a: int, b: int) -> int:
     """Return the sum of two integers."""

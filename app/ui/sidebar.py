@@ -1,3 +1,9 @@
+# Program: karl-offline-lab - sidebar.py
+# Programmer: Ethan-da-Tech-Wizard (written with Claude, an AI assistant)
+# Last Modified: 2026-11-18
+# Purpose: Sidebar widget with navigation buttons that switch between workspaces.
+"""Sidebar navigation for the main window.
+"""
 from PyQt6.QtWidgets import QWidget, QVBoxLayout, QPushButton, QLabel, QSizePolicy
 from PyQt6.QtCore import pyqtSignal, Qt
 from PyQt6.QtGui import QFont
@@ -12,6 +18,7 @@ _MONO_FAMILIES = ["JetBrains Mono", "Fira Code", "Cascadia Code", "Consolas", "C
 
 
 def _mono_font(point_size: float) -> QFont:
+    """Build a QFont using the ordered monospace family fallback list at the given point size."""
     font = QFont()
     font.setFamilies(_MONO_FAMILIES)
     font.setPointSizeF(point_size)
@@ -113,6 +120,7 @@ class Sidebar(QWidget):
         self._select(0)
 
     def _select(self, index: int):
+        """Mark the chosen button active, clear the others, and emit workspace_changed with the index."""
         for btn in self._buttons:
             btn.set_active(btn.index == index)
         self.workspace_changed.emit(index)

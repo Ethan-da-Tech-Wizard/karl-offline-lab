@@ -1,3 +1,8 @@
+# Program: karl-offline-lab - train_tab.py
+# Programmer: Ethan-da-Tech-Wizard (written with Claude, an AI assistant)
+# Last Modified: 2026-11-18
+# Purpose: Qt tab for configuring and launching LoRA/QLoRA adapter training on a local HuggingFace base model, with dependency checks, a VRAM safety guard and a live log.
+"""LoRA training tab for the Training Studio."""
 import os
 import json
 import re
@@ -15,19 +20,24 @@ from app.engine.model_loader import ModelLoader
 from core.hardware_scout import get_hardware_profile
 
 def _section(text: str) -> QLabel:
+    """Return a styled section-header label."""
     lbl = QLabel(text)
     lbl.setObjectName("section-header")
     return lbl
 
 
 def _hline() -> QFrame:
+    """Return a horizontal divider line."""
     f = QFrame()
     f.setFrameShape(QFrame.Shape.HLine)
     return f
 
 
+# ----- Train tab -----
 class TrainTab(QWidget):
+    """Tab with LoRA hyperparameters, base model selection, dependency status and training logs."""
     def __init__(self, state, parent=None):
+        """Store state, set up thread tracking and build the UI."""
         super().__init__(parent)
         self.state = state
         self._active_threads = set()
@@ -35,6 +45,7 @@ class TrainTab(QWidget):
         self._build_ui()
 
     def _build_ui(self):
+        """Lay out the configuration column on the left and the status, hardware guide and logs on the right."""
         layout = QHBoxLayout(self)
         layout.setContentsMargins(8, 8, 8, 8)
         layout.setSpacing(12)
@@ -47,6 +58,7 @@ class TrainTab(QWidget):
 
         left_layout.addWidget(_section("LORA CONFIGURATION"))
 
+        # Hyperparameters sit in a compact grid.
         # We'll use a QGridLayout for hyperparams
         grid = QGridLayout()
         grid.setSpacing(8)
@@ -60,6 +72,7 @@ class TrainTab(QWidget):
         
         self._base_model_combo = QComboBox()
         self._base_model_combo.setToolTip("Select the local HuggingFace base model weights to train")
+        # Changing the base model re-checks whether its weights are available.
         self._base_model_combo.currentIndexChanged.connect(self._check_deps)
         bm_lay.addWidget(self._base_model_combo, 1)
 
@@ -142,6 +155,7 @@ class TrainTab(QWidget):
         left_layout.addWidget(self._export_path_lbl)
 
 
+        # Start the training run.
         # Train Button
         self._train_btn = QPushButton("▶ begin training")
         self._train_btn.setObjectName("btn-primary")
@@ -164,6 +178,7 @@ class TrainTab(QWidget):
         right_layout.setContentsMargins(0, 0, 0, 0)
         right_layout.setSpacing(10)
 
+        # Status of the required packages and base model weights.
         # dependency check card
         dep_box = GlowPanel(self.state)
         dep_lay = QVBoxLayout(dep_box)
@@ -177,6 +192,7 @@ class TrainTab(QWidget):
         dep_lay.addWidget(self._deps_lbl)
         right_layout.addWidget(dep_box)
 
+        # Static guide to the approximate GPU memory needed.
         # VRAM warning info panel
         vram_info = GlowPanel(self.state)
         vram_info.setStyleSheet("background: rgba(240, 176, 48, 0.03); border: 1px solid rgba(240, 176, 48, 0.15); border-radius: 4px;")
@@ -213,9 +229,11 @@ class TrainTab(QWidget):
         self._check_deps()
 
     def refresh(self):
+        """Rescan the available base models."""
         self._refresh_base_models()
 
     def _load_custom_models(self) -> list[dict]:
+        """Read the user-added base models from the saved JSON file, or an empty list."""
         path = "data/custom_train_models.json"
         if os.path.exists(path):
             try:
@@ -226,7 +244,9 @@ class TrainTab(QWidget):
         return []
 
     def _save_custom_model(self, display_name: str, item_data: str, is_path: bool):
+        """Append a user-added base model (path or repository id) to the saved list unless it is already there."""
         custom_models = self._load_custom_models()
+        # Skip entries already saved.
         # Avoid duplicates
         if any(item.get("data") == item_data for item in custom_models):
             return
@@ -243,6 +263,7 @@ class TrainTab(QWidget):
             pass
 
     def _browse_hf_model(self):
+        """Let the user pick a local weights folder, warn if it has no weights, save it and select it."""
         path = QFileDialog.getExistingDirectory(
             self, "Select local HuggingFace model directory", "data/hf_models"
         )
@@ -252,6 +273,7 @@ class TrainTab(QWidget):
         # Check if there are safetensors or bin files in the selected directory
         try:
             files = os.listdir(path)
+            # A usable model folder holds .safetensors or .bin weight files.
             has_weights = any(f.endswith(".safetensors") or f.endswith(".bin") for f in files)
             if not has_weights:
                 QMessageBox.warning(
@@ -273,6 +295,7 @@ class TrainTab(QWidget):
                 break
 
     def _add_hf_repo(self):
+        """Ask for a HuggingFace repository id, save it and select it."""
         repo_id, ok = QInputDialog.getText(
             self, "Add HuggingFace Repository ID",
             "Enter HuggingFace Repository ID (e.g. Qwen/Qwen2.5-Coder-1.5B):"
@@ -291,9 +314,11 @@ class TrainTab(QWidget):
                 break
 
     def _refresh_base_models(self):
+        """Rebuild the base model drop-down from the standard list, scanned folders and saved custom models, marking whether weights exist locally."""
         self._base_model_combo.blockSignals(True)
         self._base_model_combo.clear()
         
+        # Built-in model folder names expected under data/hf_models.
         standard_models = [
             "DeepSeek-R1-Distill-Qwen-1.5B",
             "DeepSeek-R1-Distill-Qwen-7B",
@@ -317,6 +342,7 @@ class TrainTab(QWidget):
             except Exception:
                 pass
                 
+        # Show the standard names first, then any extra folders found.
         all_options = standard_models + sorted(scanned_folders)
         
         for opt in all_options:
@@ -370,6 +396,7 @@ class TrainTab(QWidget):
             self._base_model_combo.addItem(display_name, opt)
             
         # Try to select the one matching the active gguf model
+        # Preselect the base model whose size label matches the active GGUF model.
         active_gguf = ModelLoader.model_name()
         for idx in range(self._base_model_combo.count()):
             opt = self._base_model_combo.itemData(idx)
@@ -387,6 +414,7 @@ class TrainTab(QWidget):
         self._check_deps()
 
     def _get_hf_model_path(self) -> tuple[str | None, str]:
+        """Resolve the selected entry to (local weights folder or None, repository id or name)."""
         idx = self._base_model_combo.currentIndex()
         if idx < 0:
             return None, "unknown"
@@ -394,6 +422,7 @@ class TrainTab(QWidget):
         if not selected_folder:
             return None, "unknown"
             
+        # Resolution order: an absolute folder, then a repository id, then a standard folder name mapped to its repository.
         # 1. Check if absolute path
         if os.path.isabs(selected_folder):
             if os.path.exists(selected_folder):
@@ -436,7 +465,9 @@ class TrainTab(QWidget):
         return None, repo_id
 
     def _check_deps(self):
+        """Check that the training packages and local base weights are available and update the status text and Train button."""
         missing = []
+        # Try importing each required package to find any that are missing.
         for pkg in ("peft", "trl", "transformers", "datasets", "gguf"):
             try:
                 __import__(pkg)
@@ -481,6 +512,7 @@ class TrainTab(QWidget):
             self._train_btn.setEnabled(True)
 
     def _begin_training(self):
+        """Validate name, dataset, example count, weights and VRAM, then start the training thread."""
         adapter_name = self._adapter_name_input.text().strip()
         if not adapter_name:
             self._train_log.append("set an adapter name first.")
@@ -490,6 +522,7 @@ class TrainTab(QWidget):
         adapter_name = re.sub(r'[^a-zA-Z0-9_\-]', '_', adapter_name)
         self._adapter_name_input.setText(adapter_name)
 
+        # The curated file must be non-empty and every line needs a messages key.
         # Preflight dataset validation
         curated_file = "data/training/curated.jsonl"
         if not os.path.exists(curated_file) or os.path.getsize(curated_file) == 0:
@@ -511,6 +544,7 @@ class TrainTab(QWidget):
             return
 
         examples = self.state.curator.get_all_examples()
+        # Require a minimum of 5 examples.
         if len(examples) < 5:
             self._train_log.append(
                 f"need at least 5 examples (have {len(examples)}). "
@@ -524,6 +558,7 @@ class TrainTab(QWidget):
             self._train_log.append(f"Base HuggingFace weights for {repo_id} not found locally.")
             return
 
+        # Block 16-bit training of large models on GPUs under 16 GB.
         # VRAM Safety Guard Check
         hw = get_hardware_profile()
         vram = hw.get("vram_gb", 0.0)
@@ -550,10 +585,12 @@ class TrainTab(QWidget):
         
         self._train_log.clear()
         self._train_log.append("Releasing GPU VRAM from active inference engine...")
+        # Free the inference model's memory for training.
         ModelLoader.reset_instance()
         
         self._train_log.append("Initializing local training pipeline...")
 
+        # Collect the form values for the training thread.
         config = {
             "rank": self._rank_spin.value(),
             "alpha": self._alpha_spin.value(),
@@ -563,6 +600,7 @@ class TrainTab(QWidget):
             "use_qlora": self._qlora_check.isChecked()
         }
 
+        # Run training on a worker thread; signals report logs, loss, progress and completion.
         # Start thread
         self._thread = TrainingThread(hf_base_dir, adapter_name, config)
         self._active_threads.add(self._thread)
@@ -578,17 +616,21 @@ class TrainTab(QWidget):
         self._thread.start()
 
     def _on_train_log(self, text: str):
+        """Append a log line from the training thread."""
         self._train_log.append(text)
         
     def _on_train_loss(self, step: int, value: float, epoch: float):
+        """Log a loss metric line for the current step."""
         self._train_log.append(f"[METRIC] Step {step} | Epoch {epoch:.2f} | Loss: {value:.4f}")
 
     def _on_train_progress(self, current: int, total: int, epoch: float):
+        """Convert step progress to a percentage for the progress bar."""
         if total > 0:
             percentage = int((current / total) * 100)
             self._train_progress.setValue(percentage)
             
     def _on_train_done(self, adapter_path: str):
+        """Re-enable the controls, report success and clear the adapter name."""
         self._train_btn.setEnabled(True)
         self._train_progress.setVisible(False)
         QMessageBox.information(
@@ -599,6 +641,7 @@ class TrainTab(QWidget):
         self._check_deps()
         
     def _on_train_error(self, msg: str):
+        """Re-enable the controls and report the training error."""
         self._train_btn.setEnabled(True)
         self._train_progress.setVisible(False)
         self._train_log.append(f"\n[ERROR] Training failed:\n{msg}")
@@ -606,6 +649,7 @@ class TrainTab(QWidget):
         self._check_deps()
 
     def _update_export_path_preview(self, name):
+        """Show the folder the adapter will be saved to, using the sanitised name."""
         name = name.strip()
         if not name:
             self._export_path_lbl.setText("Export Path: data/adapters/")

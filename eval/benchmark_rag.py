@@ -1,3 +1,7 @@
+# Program: karl-offline-lab - benchmark_rag.py
+# Programmer: Ethan-da-Tech-Wizard (written with Claude, an AI assistant)
+# Last Modified: 2026-11-18
+# Purpose: Benchmarks RAG retrieval (hit rate, MRR) and generation quality (BLEU, ROUGE) on a synthetic corpus or the code-review dataset, comparing dense, sparse and hybrid retrieval.
 """
 RAG Retrieval Benchmark — Karl Workbench
 ==========================================
@@ -20,6 +24,7 @@ import collections
 from dataclasses import dataclass
 import numpy as np
 
+# Allow imports from the repository root when run directly.
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from app.utils.rag_pipeline import RAGPipeline
@@ -96,6 +101,7 @@ def compute_bleu(reference, hypothesis, n_max=2):
     return 0.0
 
 def compute_rouge_1(reference, hypothesis):
+# Returns a dict with precision, recall and f1.
     """
     ROUGE-1: Precision, Recall, and F1 based on unigrams.
     """
@@ -121,6 +127,7 @@ def compute_rouge_1(reference, hypothesis):
     return {"precision": precision, "recall": recall, "f1": f1}
 
 def compute_rouge_l(reference, hypothesis, beta=1.0):
+# The longest common subsequence is found with dynamic programming.
     """
     ROUGE-L: Longest Common Subsequence.
     Strictly follows provided mathematical specifications.
@@ -160,6 +167,7 @@ def compute_rouge_l(reference, hypothesis, beta=1.0):
 
 # ── Synthetic benchmark corpus ────────────────────────────────────────────────
 
+# Each entry is (source document label, text chunk).
 CORPUS = [
     ("doc_a", "The quarterly revenue for Q3 2025 was $42 million, up 18% from Q3 2024."),
     ("doc_a", "Operating expenses for Q3 2025 totaled $28 million including $5M in R&D."),
@@ -175,6 +183,7 @@ CORPUS = [
     ("doc_d", "Patient was discharged April 5 with follow-up scheduled in two weeks."),
 ]
 
+# Each entry is (question, indexes into CORPUS of the chunks that answer it).
 BENCHMARK_QUERIES = [
     ("What was Q3 2025 revenue?",                  [0, 1]),
     ("What is the return window for electronics?",  [4]),
@@ -189,6 +198,7 @@ BENCHMARK_QUERIES = [
 
 @dataclass
 class QueryResult:
+    """Retrieval metrics and latency for one benchmark query."""
     query: str
     hit_at_1: bool
     hit_at_3: bool
@@ -198,6 +208,7 @@ class QueryResult:
 
 
 def run_benchmark(top_k: int = 3, contextual_headers: bool = False) -> list[QueryResult]:
+    """Index the synthetic corpus in a fresh in-memory index and score retrieval for every benchmark query."""
     print(f"\n{'─'*60}")
     print(f"  Karl RAG Retrieval Benchmark")
     print(f"  top_k={top_k} | contextual_headers={contextual_headers}")
@@ -239,6 +250,7 @@ def run_benchmark(top_k: int = 3, contextual_headers: bool = False) -> list[Quer
 
 
 def print_results(results: list[QueryResult], top_k: int):
+    """Print a per-query table and aggregate metrics; return the aggregate hit rates and MRR as a dict."""
     bar = "─" * 60
     print(f"\n  Per-query results (top_k={top_k}):\n")
     print(f"  {'Query':<42} H@1  H@3  H@k   MRR   ms")
@@ -274,6 +286,7 @@ def print_results(results: list[QueryResult], top_k: int):
 
 
 def calculate_metrics(retrieved_ids: list[int], expected_ids: list[int], top_k: int) -> dict:
+    """Compute hit@1, hit@3, hit@k and reciprocal rank for one query given retrieved and expected chunk ids."""
     expected_set = set(expected_ids)
     hit_at_1 = bool(retrieved_ids[:1] and retrieved_ids[0] in expected_set)
     hit_at_3 = bool(any(cid in expected_set for cid in retrieved_ids[:3]))
@@ -294,6 +307,7 @@ def calculate_metrics(retrieved_ids: list[int], expected_ids: list[int], top_k: 
 
 
 def run_code_review_benchmark(top_k: int = 3, output_path: str = "data/rag_benchmark_results.json"):
+    """Benchmark dense, sparse and hybrid retrieval on the code-review dataset, generate an answer for each query with the local model, score it against the reference, and save summary and detailed JSON results."""
     dataset_path = "eval/datasets/code_review.jsonl"
     if not os.path.exists(dataset_path):
         print(f"Error: Dataset not found at {dataset_path}")
@@ -344,12 +358,14 @@ def run_code_review_benchmark(top_k: int = 3, output_path: str = "data/rag_bench
         
     print(f"  Index size: {rag.index.ntotal} vectors\n")
     
+    # Retrieval strategies to compare.
     modes = ["dense", "sparse", "hybrid"]
     results_by_mode = {mode: [] for mode in modes}
     query_details = []
     
     for i, case in enumerate(cases):
         query_text = case["prompt"]
+        # Each case's own context was indexed at position i, so that is the chunk that should be retrieved.
         expected_ids = [i]
         reference_answer = str(case.get("expected", ""))
         
@@ -383,6 +399,7 @@ def run_code_review_benchmark(top_k: int = 3, output_path: str = "data/rag_bench
             )
             
             # Inference (Temperature 0.0 for deterministic benchmark results)
+            # The model's think block is removed before scoring.
             res = llm(prompt, max_tokens=256, temperature=0.0, stop=["<|im_end|>", "User:"])
             raw_text = res["choices"][0]["text"]
             _, final_response = parse_thought_stream(raw_text)
@@ -462,6 +479,7 @@ def run_code_review_benchmark(top_k: int = 3, output_path: str = "data/rag_bench
 
 
 def main():
+    """Parse options and run the synthetic, compare or code-review benchmark."""
     import argparse
     p = argparse.ArgumentParser(description="Karl RAG retrieval benchmark")
     p.add_argument("--top-k", type=int, default=3, help="Retrieval cutoff (default: 3)")

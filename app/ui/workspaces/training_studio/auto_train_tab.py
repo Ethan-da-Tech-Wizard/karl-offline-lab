@@ -1,3 +1,8 @@
+# Program: karl-offline-lab - auto_train_tab.py
+# Programmer: Ethan-da-Tech-Wizard (written with Claude, an AI assistant)
+# Last Modified: 2026-11-18
+# Purpose: Qt tab that configures and launches the one-click Auto-Train flywheel (generate, verify, correct, train a LoRA adapter) and streams its logs.
+"""Auto-Train tab for the Training Studio."""
 import re
 
 from PyQt6.QtWidgets import (
@@ -11,19 +16,24 @@ from app.ui.workspaces.training_studio.threads import AutoTrainThread
 from app.engine.model_loader import ModelLoader
 
 def _section(text: str) -> QLabel:
+    """Return a styled section-header label."""
     lbl = QLabel(text)
     lbl.setObjectName("section-header")
     return lbl
 
 
 def _hline() -> QFrame:
+    """Return a horizontal divider line."""
     f = QFrame()
     f.setFrameShape(QFrame.Shape.HLine)
     return f
 
 
+# ----- Auto-Train tab -----
 class AutoTrainTab(QWidget):
+    """Tab with the Auto-Train configuration form, explanatory guide and live log."""
     def __init__(self, state, parent=None):
+        """Store the app state, set up thread tracking and build the UI."""
         super().__init__(parent)
         self.state = state
         self._active_threads = set()
@@ -31,6 +41,7 @@ class AutoTrainTab(QWidget):
         self._build_ui()
 
     def _build_ui(self):
+        """Lay out the configuration column on the left and the guide and logs on the right."""
         layout = QHBoxLayout(self)
         layout.setContentsMargins(8, 8, 8, 8)
         layout.setSpacing(12)
@@ -43,6 +54,7 @@ class AutoTrainTab(QWidget):
 
         left_layout.addWidget(_section("FLYWHEEL AUTO-TRAIN CONFIG"))
 
+        # Topic and adapter name inputs.
         # Form layout-like structure
         left_layout.addWidget(QLabel("Target Behavior / Topic:"))
         self._auto_topic_input = QLineEdit()
@@ -56,6 +68,7 @@ class AutoTrainTab(QWidget):
         self._auto_adapter_input.setToolTip("Save folder name under data/adapters/")
         left_layout.addWidget(self._auto_adapter_input)
 
+        # Numeric training hyperparameters in a compact grid.
         grid = QGridLayout()
         grid.setSpacing(8)
         grid.setContentsMargins(0, 4, 0, 4)
@@ -163,6 +176,7 @@ class AutoTrainTab(QWidget):
         layout.addWidget(right_col, 1)
 
     def _begin_auto_training(self):
+        """Validate the inputs, free VRAM and start the background auto-training thread."""
         topic = self._auto_topic_input.text().strip()
         adapter_name = self._auto_adapter_input.text().strip()
         if not topic:
@@ -172,10 +186,12 @@ class AutoTrainTab(QWidget):
             self._auto_log.append("Please specify an adapter save name.")
             return
 
+        # Replace anything other than letters, digits, underscore and hyphen so the name is safe as a folder name.
         # Sanitize adapter name for file path
         adapter_name = re.sub(r'[^a-zA-Z0-9_\-]', '_', adapter_name)
         self._auto_adapter_input.setText(adapter_name)
 
+        # Unload the loaded model so training has the GPU memory.
         # Release VRAM first
         ModelLoader.reset_instance()
 
@@ -185,6 +201,7 @@ class AutoTrainTab(QWidget):
         self._auto_log.clear()
         self._auto_log.append("Starting automated flywheel training pipeline...")
 
+        # Collect the form values into the config handed to the worker.
         config = {
             "count": self._auto_count_spin.value(),
             "epochs": self._auto_epochs_spin.value(),
@@ -194,6 +211,7 @@ class AutoTrainTab(QWidget):
             "use_qlora": self._auto_qlora_check.isChecked()
         }
 
+        # Run the pipeline on a worker thread; its signals report logs, completion and errors.
         self._auto_thread = AutoTrainThread(topic, adapter_name, config)
         self._active_threads.add(self._auto_thread)
         self._auto_thread.finished.connect(
@@ -206,9 +224,11 @@ class AutoTrainTab(QWidget):
         self._auto_thread.start()
 
     def _on_auto_log(self, text: str):
+        """Append a log line from the worker to the log view."""
         self._auto_log.append(text)
 
     def _on_auto_done(self, adapter_name: str):
+        """Re-enable the form, report success and clear the inputs."""
         self._auto_train_btn.setEnabled(True)
         self._auto_progress.setVisible(False)
         QMessageBox.information(
@@ -219,6 +239,7 @@ class AutoTrainTab(QWidget):
         self._auto_adapter_input.clear()
 
     def _on_auto_error(self, msg: str):
+        """Re-enable the form and report the failure in the log and a dialog."""
         self._auto_train_btn.setEnabled(True)
         self._auto_progress.setVisible(False)
         self._auto_log.append(f"\n[ERROR] Auto-training failed: {msg}")

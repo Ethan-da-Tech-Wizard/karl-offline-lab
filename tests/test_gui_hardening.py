@@ -1,3 +1,9 @@
+# Program: karl-offline-lab - test_gui_hardening.py
+# Programmer: Ethan-da-Tech-Wizard (written with Claude, an AI assistant)
+# Last Modified: 2026-11-18
+# Purpose: Tests for GUI robustness: command palette actions, prompt lab behaviour, public workspace wrappers and the main window close path with running threads.
+"""GUI hardening tests using fake windows and threads so no real workloads run."""
+
 import tests.qt_test_helper  # noqa: F401
 
 from PyQt6.QtWidgets import QApplication, QWidget
@@ -5,42 +11,55 @@ from PyQt6.QtCore import Qt
 
 
 class _FakeMainWindow:
+    """Stand-in main window that records which action methods are called."""
     def __init__(self):
+        """Start with an empty call log."""
         self.calls = []
 
     def switch_workspace(self, index):
+        """Record a workspace switch."""
         self.calls.append(("switch_workspace", index))
 
     def start_new_workbench_session(self):
+        """Record starting a new workbench session."""
         self.calls.append(("start_new_workbench_session",))
 
     def save_workbench_session(self):
+        """Record saving the workbench session."""
         self.calls.append(("save_workbench_session",))
 
     def toggle_workbench_rag(self):
+        """Record toggling retrieval."""
         self.calls.append(("toggle_workbench_rag",))
 
     def toggle_workbench_agentic_loop(self):
+        """Record toggling the agentic loop."""
         self.calls.append(("toggle_workbench_agentic_loop",))
 
     def open_knowledge_ingest(self):
+        """Record opening the ingest dialog."""
         self.calls.append(("open_knowledge_ingest",))
 
     def rebuild_knowledge_index(self):
+        """Record rebuilding the knowledge index."""
         self.calls.append(("rebuild_knowledge_index",))
 
     def run_eval_suite(self):
+        """Record running the evaluation suite."""
         self.calls.append(("run_eval_suite",))
 
     def open_system_defaults(self):
+        """Record opening the system defaults tab."""
         self.calls.append(("open_system_defaults",))
 
 
 def test_command_palette_uses_public_actions():
+    """Scenario: search the palette for "Run Benchmarks" and execute the result. Expected: the host public run_eval_suite action is called and the old settings-tab command is gone."""
     from app.ui.widgets.command_palette import CommandPalette
 
     fake = _FakeMainWindow()
     host = QWidget()
+    # Build the palette around the fake host window
     palette = CommandPalette(fake, parent=host)
 
     titles = [title for title, _action in palette._commands]
@@ -58,10 +77,13 @@ def test_command_palette_uses_public_actions():
 
 
 def test_prompt_column_ignores_run_when_thread_active():
+    """Scenario: request a run while a thread is still running. Expected: no run request is emitted."""
     from app.ui.workspaces.prompt_lab import _PromptColumn
 
     class FakeThread:
+        """Thread stand-in that always reports it is running."""
         def isRunning(self):
+            """Always report running."""
             return True
 
     column = _PromptColumn("A")
@@ -76,6 +98,7 @@ def test_prompt_column_ignores_run_when_thread_active():
 
 
 def test_prompt_lab_focus_primary_input_targets_active_editor():
+    """Scenario: ask the prompt lab to focus its primary input. Expected: it reports success and the first column editor has focus."""
     from app.state import AppState
     from app.ui.workspaces.prompt_lab import PromptLabWorkspace
 
@@ -89,6 +112,7 @@ def test_prompt_lab_focus_primary_input_targets_active_editor():
 
 
 def test_log_decrypt_thread_unauthorized_without_entries():
+    """Scenario: run the log decrypt thread with no entries. Expected: it emits the unauthorized signal."""
     from app.ui.workspaces.flywheel_studio import _LogDecryptThread
 
     signals = []
@@ -101,6 +125,7 @@ def test_log_decrypt_thread_unauthorized_without_entries():
 
 
 def test_workspace_public_action_wrappers_exist():
+    """Scenario: build the main workspaces. Expected: each exposes the public action methods the command palette relies on."""
     from app.state import AppState
     from app.ui.workspaces.eval_suite import EvalSuiteWorkspace
     from app.ui.workspaces.knowledge_base import KnowledgeBaseWorkspace
@@ -150,22 +175,28 @@ class _FakeQThread:
     thread, so this test is deterministic and fast."""
 
     def __init__(self, running: bool = True):
+        """Store the running state and whether wait was called."""
         self._running = running
         self.wait_called = False
 
     def isRunning(self):
+        """Return whether the fake thread is still running."""
         return self._running
 
     def wait(self):
+        """Record the wait and mark the thread as finished."""
         self.wait_called = True
         self._running = False
 
 
 class _FakeCloseEvent:
+    """Stand-in close event that records acceptance."""
     def __init__(self):
+        """Start not accepted."""
         self.accepted = False
 
     def accept(self):
+        """Mark the event as accepted."""
         self.accepted = True
 
 
@@ -177,6 +208,7 @@ def _stub_close_teardown(monkeypatch):
     from app.utils.ipc_helper import SharedMemoryManager
     import app.utils.keychain_manager as keychain_manager
 
+    # Stub shutdown side effects so only the thread logic is tested
     monkeypatch.setattr(WebSocketServerManager, "reset_instance", classmethod(lambda cls: None))
     monkeypatch.setattr(keychain_manager, "revoke_tokens", lambda: None)
     monkeypatch.setattr(
@@ -186,6 +218,7 @@ def _stub_close_teardown(monkeypatch):
 
 
 def test_close_event_waits_for_model_init_thread(monkeypatch):
+    """Scenario: close with the model init thread running. Expected: closeEvent waits for it and accepts the event."""
     from app.ui.main_window import MainWindow
 
     _stub_close_teardown(monkeypatch)
@@ -246,10 +279,12 @@ def test_close_event_survives_active_kb_and_flywheel_threads(monkeypatch):
         finished_signal = pyqtSignal()
 
         def __init__(self):
+            """Create the release event that lets the test end the thread."""
             super().__init__()
             self.release_event = _threading.Event()
 
         def run(self):
+            """Block until the release event is set or five seconds pass."""
             self.release_event.wait(timeout=5.0)
 
     # Replace every workspace except the two under test with a cheap stub,
@@ -259,6 +294,7 @@ def test_close_event_survives_active_kb_and_flywheel_threads(monkeypatch):
         # Union of signals _connect_signals() wires up from _workbench and
         # _system -- both get replaced by this same stub class here, so it
         # needs to satisfy both call sites.
+        """Cheap workspace stub with the union of signals the window connects."""
         status_changed = pyqtSignal(str, bool)
         model_changed = pyqtSignal(str)
         adapter_changed = pyqtSignal(str)
@@ -267,6 +303,7 @@ def test_close_event_survives_active_kb_and_flywheel_threads(monkeypatch):
         appearance_changed = pyqtSignal()
 
         def __init__(self, *args, **kwargs):
+            """Ignore all arguments and build an empty widget."""
             super().__init__()
 
         def on_close(self):
@@ -286,6 +323,7 @@ def test_close_event_survives_active_kb_and_flywheel_threads(monkeypatch):
     monkeypatch.setattr(main_window_mod.QTimer, "singleShot", lambda *a, **kw: None)
     _stub_close_teardown(monkeypatch)
 
+    # Build the real window; heavy workspaces are stubs from above
     window = main_window_mod.MainWindow()
 
     kb_thread = _BlockingThread()

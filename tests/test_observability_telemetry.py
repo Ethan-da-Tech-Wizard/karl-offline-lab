@@ -1,3 +1,10 @@
+# Program: karl-offline-lab - test_observability_telemetry.py
+# Programmer: Ethan-da-Tech-Wizard (written with Claude, an AI assistant)
+# Last Modified: 2026-11-18
+# Purpose: Tests the metric calculations of the observability tab in the system configuration workspace.
+
+"""Tests the metric calculations of the observability tab in the system configuration workspace."""
+
 import os
 import sys
 import tempfile
@@ -9,9 +16,11 @@ import tests.qt_test_helper  # noqa: F401  # Ensures global QApplication runs he
 from app.ui.workspaces.system_config.observability_tab import ObservabilityTab
 
 class MockState:
+    """Test group or helper class: mock state."""
     pass
 
 def test_telemetry_metrics_calculation():
+    """Scenario: telemetry metrics calculation. Expected: the assertions in this test hold."""
     state = MockState()
     
     # 1. Create a dummy performance telemetry file

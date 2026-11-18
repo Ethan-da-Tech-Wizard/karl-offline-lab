@@ -1,4 +1,8 @@
 #!/usr/bin/env python3
+# Program: karl-offline-lab - evaluate_adapters.py
+# Programmer: Ethan-da-Tech-Wizard (written with Claude, an AI assistant)
+# Last Modified: 2026-11-18
+# Purpose: Command-line benchmark that runs the local model with and without a LoRA adapter on coding tasks, comparing syntax accuracy and generation speed and writing a JSON report.
 """
 LoRA Adapter Evaluation & Performance Benchmark
 ===============================================
@@ -22,6 +26,7 @@ from typing import Any, Optional
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s")
 logger = logging.getLogger("karl.evaluate_adapters")
 
+# Repository root, added to the import path so app modules load when run as a script.
 ROOT = Path(__file__).resolve().parents[1]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
@@ -78,6 +83,7 @@ def evaluate_model_performance(
     else:
         tasks = FALLBACK_TASKS
         
+    # Only evaluate the requested number of tasks.
     tasks = tasks[:limit]
     
     eval_cases = 0
@@ -90,6 +96,7 @@ def evaluate_model_performance(
             continue
             
         eval_cases += 1
+        # Chat-format prompt that opens a thinking section for the assistant reply.
         prompt = f"<|im_start|>user\n{instruction}<|im_end|>\n<|im_start|>assistant\n<think>\n"
         
         start_time = time.perf_counter()
@@ -107,6 +114,7 @@ def evaluate_model_performance(
             if "choices" in chunk and chunk["choices"]:
                 chunks.append(chunk["choices"][0].get("text", ""))
         
+        # Total generation time for this task.
         elapsed = time.perf_counter() - start_time
         raw_output = "".join(chunks)
         
@@ -117,6 +125,7 @@ def evaluate_model_performance(
         except Exception:
             token_count = len(raw_output.split())
             
+        # Tokens per second, guarding against a zero elapsed time.
         tps = token_count / max(elapsed, 0.001)
         total_tps += tps
         
@@ -132,12 +141,14 @@ def evaluate_model_performance(
     ModelLoader.reset_instance()
     
     # Estimate memory footprint
+    # Use the adapter file size as a rough measure of its extra memory footprint.
     vram_mb = 0.0
     if adapter_name:
         adapter_path = ModelLoader._adapter_path(adapter_name)
         if adapter_path and os.path.exists(adapter_path):
             vram_mb = os.path.getsize(adapter_path) / (1024 * 1024)
             
+    # Average speed and syntax accuracy (percent) across the evaluated tasks.
     avg_tps = total_tps / max(eval_cases, 1)
     syntax_accuracy = (syntax_passed / max(eval_cases, 1)) * 100.0
     
@@ -151,6 +162,7 @@ def evaluate_model_performance(
 
 
 def main() -> int:
+    """Evaluate the baseline model and the chosen adapter, compute speed and accuracy changes, save the report under the adapters folder, print it and return 0."""
     parser = argparse.ArgumentParser(description="Evaluate code accuracy and inference speed delta for adapters.")
     parser.add_argument("--adapter", required=True, help="Directory name of the target adapter inside data/adapters/")
     parser.add_argument("--dataset", default=None, help="Evaluation dataset JSONL path")
@@ -163,6 +175,7 @@ def main() -> int:
     logger.info("Evaluating adapter performance for '%s'...", args.adapter)
     adapter_stats = evaluate_model_performance(adapter_name=args.adapter, dataset_path=args.dataset, limit=args.limit)
     
+    # Compare adapter and baseline: speed change in percent and accuracy change in points.
     report = {
         "adapter_name": args.adapter,
         "baseline": baseline_stats,
@@ -189,5 +202,6 @@ def main() -> int:
     return 0
 
 
+# Run main() and use its return value as the exit code.
 if __name__ == "__main__":
     raise SystemExit(main())

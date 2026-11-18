@@ -1,3 +1,8 @@
+# Program: karl-offline-lab - dataset_merger.py
+# Programmer: Ethan-da-Tech-Wizard (written with Claude, an AI assistant)
+# Last Modified: 2026-11-18
+# Purpose: Merges a teammate's curated JSONL training file into the local one, dropping duplicates and anomalous records and resolving same-prompt conflicts by newest timestamp.
+
 """
 Dataset Merger — Multi-User Trace Import
 =========================================
@@ -15,6 +20,7 @@ Key guarantees:
 """
 from __future__ import annotations
 
+# Standard-library imports for hashing, JSON, logging, file access and timestamps.
 import hashlib
 import json
 import logging
@@ -22,11 +28,13 @@ import os
 from datetime import datetime, timezone
 from typing import Any
 
+# Logger for merge progress and skipped lines.
 logger = logging.getLogger("karl.dataset_merger")
 
 
 # ── Anomaly detection helpers ──────────────────────────────────────────────────
 
+# Text fragments that suggest a response is just an error dump rather than a real answer.
 _TRACEBACK_SIGNALS = (
     "Traceback (most recent call last):",
     "SyntaxError:",
@@ -135,6 +143,7 @@ def _load_jsonl(path: str) -> list[dict[str, Any]]:
 def _write_jsonl_atomic(path: str, records: list[dict[str, Any]]) -> None:
     """Write records to *path* atomically via a sibling temp file."""
     os.makedirs(os.path.dirname(os.path.abspath(path)), exist_ok=True)
+    # Build the new file next to the target, then swap it in; on failure the temp file is removed.
     tmp = path + ".merge_tmp"
     try:
         with open(tmp, "w", encoding="utf-8") as fh:
@@ -175,6 +184,7 @@ class DatasetMerger:
             duplicates_skipped — exact matches or older conflicts already in primary
             errors             — records filtered for being anomalous / malformed
         """
+        # Counters reported back to the caller.
         stats: dict[str, int] = {
             "added": 0,
             "duplicates_skipped": 0,
@@ -204,6 +214,7 @@ class DatasetMerger:
         # 4. Process each incoming record.
         additions: list[dict[str, Any]] = []
 
+        # Each incoming record is either filtered, skipped as a duplicate, replaces an older conflicting record, or is added as new.
         for record in incoming_raw:
             # Filter anomalies first.
             if _is_anomalous(record):
@@ -255,6 +266,7 @@ class DatasetMerger:
                 stats["added"] += 1
 
         # 5. Combine and write atomically.
+        # Local records come first, then the newly added ones.
         final_records = primary_clean + additions
         _write_jsonl_atomic(primary_path, final_records)
 

@@ -1,3 +1,10 @@
+# Program: karl-offline-lab - test_model_circuit_breaker.py
+# Programmer: Ethan-da-Tech-Wizard (written with Claude, an AI assistant)
+# Last Modified: 2026-11-18
+# Purpose: Tests ModelCircuitBreaker tripping after repeated load failures and recovering through the half-open state, with a fake clock.
+
+"""Tests ModelCircuitBreaker tripping after repeated load failures and recovering through the half-open state, with a fake clock."""
+
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -10,18 +17,23 @@ from app.engine.model_loader import (
 
 
 class FakeClock:
+    """Test group or helper class: fake clock."""
     def __init__(self):
+        """Initialise this helper object with its starting state."""
         self.now = 0.0
 
     def __call__(self):
+        """Make the object callable."""
         return self.now
 
     def advance(self, seconds: float):
+        """Move the fake clock forward by the given number of seconds."""
         self.now += seconds
 
 
 @pytest.fixture
 def isolated_model_loader():
+    """Pytest fixture: isolated model loader."""
     original_breaker = ModelLoader._circuit_breaker
     original_instance = ModelLoader._instance
     original_model_path = ModelLoader._model_path
@@ -64,6 +76,7 @@ def isolated_model_loader():
 
 
 def _loader_patches():
+    """Test helper: loader patches."""
     return patch.multiple(
         ModelLoader,
         _resolve_model_path=MagicMock(return_value="data/models/mock.gguf"),
@@ -78,6 +91,7 @@ def _loader_patches():
 
 
 def test_model_circuit_breaker_trips_after_three_terminal_load_failures(isolated_model_loader):
+    """Scenario: model circuit breaker trips after three terminal load failures. Expected: the assertions in this test hold."""
     with _loader_patches(), patch(
         "app.engine.model_loader.get_hardware_profile",
         return_value={"gpu_list": []},
@@ -105,6 +119,7 @@ def test_model_circuit_breaker_trips_after_three_terminal_load_failures(isolated
 
 
 def test_model_circuit_breaker_half_open_success_resets_to_closed(isolated_model_loader):
+    """Scenario: model circuit breaker half open success resets to closed. Expected: the assertions in this test hold."""
     clock = isolated_model_loader
     loaded_model = MagicMock()
 

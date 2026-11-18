@@ -1,3 +1,7 @@
+# Program: karl-offline-lab - websocket_server.py
+# Programmer: Ethan-da-Tech-Wizard (written with Claude, an AI assistant)
+# Last Modified: 2026-11-18
+# Purpose: Local JSON-RPC 2.0 WebSocket bridge that lets editor extensions drive Karl: chat, swarm runs, models, knowledge base, training, plus token auth, rate limits and a metrics endpoint.
 """
 WebSocket Server Manager — Karl Workbench
 ==========================================
@@ -48,6 +52,7 @@ _SAFE_ADAPTER_NAME_RE = re.compile(r"^[A-Za-z0-9_\-]{1,64}$")
 class TokenBucket:
     """Thread-safe Token Bucket rate limiter."""
     def __init__(self, capacity: float, fill_rate: float):
+        """Set the bucket capacity, refill rate per second, start full, and create its lock."""
         self.capacity = capacity
         self.fill_rate = fill_rate
         self.tokens = capacity
@@ -55,6 +60,7 @@ class TokenBucket:
         self._lock = threading.Lock()
 
     def consume(self, amount: float = 1.0) -> bool:
+        """Refill by elapsed time, then take `amount` tokens if available; return True when allowed, False when rate limited."""
         with self._lock:
             now = time.time()
             elapsed = now - self.last_update
@@ -351,6 +357,7 @@ class WebSocketServerManager:
         ).start()
 
     def _generate_token(self) -> str:
+        """Return a new random 32-character hexadecimal token."""
         return uuid.uuid4().hex
 
     def _rotate_token(self) -> None:
@@ -445,6 +452,7 @@ class WebSocketServerManager:
         return True
 
     def _seed_codex(self):
+        """Write the default codex library pages to disk when the stored version differs or no pages exist, then record the version."""
         library_dir = "data/codex_library"
         os.makedirs(library_dir, exist_ok=True)
         version_filepath = os.path.join(library_dir, ".version")
@@ -475,12 +483,15 @@ class WebSocketServerManager:
                 logger.warning("could not write codex version file %s: %s", version_filepath, exc)
 
     def _active_model_config(self) -> dict:
+        """Return the active model configuration from the config store."""
         return config_store.get_active_model()
 
     def _read_model_registry(self) -> list[dict]:
+        """Return the model registry entries from the config store."""
         return config_store.get_model_registry()
 
     def _list_models(self) -> dict:
+        """Build the list of model files in the models folder, merged with registry data and marked active or not."""
         models_dir = os.path.join("data", "models")
         active = self._active_model_config()
         registry = self._read_model_registry()
@@ -547,6 +558,7 @@ class WebSocketServerManager:
         }
 
     def _list_adapters(self) -> dict:
+        """List adapter folders found in the adapters directory."""
         adapters_dir = os.path.join("data", "adapters")
         adapters = []
         if os.path.exists(adapters_dir):
@@ -560,6 +572,7 @@ class WebSocketServerManager:
         return {"adapters": adapters}
 
     def _set_active_model(self, filename: str, adapter: str | None = None) -> dict:
+        """Validate the model filename (no path parts, file must exist), then store it and an optional adapter as the active model."""
         safe_filename = os.path.basename(filename or "")
         if not safe_filename or safe_filename != filename:
             raise ValueError("Invalid model filename.")
@@ -586,20 +599,24 @@ class WebSocketServerManager:
         }
 
     def _prompt_pairs_dir(self) -> str:
+        """Return the prompt-pairs directory, creating it if needed."""
         path = os.path.join("data", "prompt_pairs")
         os.makedirs(path, exist_ok=True)
         return path
 
     def _safe_prompt_pair_name(self, name: str) -> str:
+        """Sanitize a prompt-pair name to letters, digits, underscore and dash; raise ValueError if empty."""
         safe_name = re.sub(r"[^a-zA-Z0-9_\-]", "_", (name or "").strip())
         if not safe_name:
             raise ValueError("Prompt pair name is required.")
         return safe_name
 
     def _prompt_pair_path(self, name: str) -> str:
+        """Return the JSON file path for a prompt pair name."""
         return os.path.join(self._prompt_pairs_dir(), f"{self._safe_prompt_pair_name(name)}.json")
 
     def _list_prompt_pairs(self) -> dict:
+        """Read every saved prompt pair file and return them as a list."""
         pairs = []
         for filename in sorted(os.listdir(self._prompt_pairs_dir())):
             if not filename.endswith(".json"):
@@ -624,6 +641,7 @@ class WebSocketServerManager:
         return {"pairs": pairs}
 
     def _get_prompt_pair(self, name: str) -> dict:
+        """Load one prompt pair by name; raise FileNotFoundError if it does not exist."""
         safe_name = self._safe_prompt_pair_name(name)
         path = self._prompt_pair_path(safe_name)
         if not os.path.exists(path):
@@ -634,6 +652,7 @@ class WebSocketServerManager:
         return data
 
     def _save_prompt_pair(self, params: dict) -> dict:
+        """Write a prompt pair (system and user text for sides A and B) to its JSON file and return it."""
         name = self._safe_prompt_pair_name(params.get("name", ""))
         data = {
             "name": name,
@@ -659,6 +678,7 @@ class WebSocketServerManager:
         return {"name": name, "saved": True}
 
     def _delete_prompt_pair(self, name: str) -> dict:
+        """Delete a prompt pair file if present and return its name with a deleted flag."""
         safe_name = self._safe_prompt_pair_name(name)
         path = self._prompt_pair_path(safe_name)
         if os.path.exists(path):
@@ -666,9 +686,11 @@ class WebSocketServerManager:
         return {"name": safe_name, "deleted": True}
 
     def _kb_supported_extensions(self) -> set[str]:
+        """Return the file extensions the knowledge base can ingest."""
         return {".pdf", ".docx", ".txt", ".md", ".py", ".csv"}
 
     def _kb_snapshot(self) -> dict:
+        """Load the RAG index and return per-source chunk counts and ingestion times."""
         self.rag._load_index()
         sources = []
         counts = {}
@@ -695,6 +717,7 @@ class WebSocketServerManager:
         }
 
     def _collect_kb_files(self, path: str, recursive: bool) -> list[str]:
+        """Resolve a file or folder path into the list of supported files to ingest, raising ValueError if the path is invalid."""
         if not path:
             raise ValueError("Path is required.")
 
@@ -726,6 +749,7 @@ class WebSocketServerManager:
         return sorted(files)
 
     def _start_kb_ingest(self, params: dict) -> dict:
+        """Validate ingest settings and start a background thread that ingests the files, sending progress notifications; returns the task id."""
         if self.kb_ingest_thread and self.kb_ingest_thread.is_alive():
             raise RuntimeError("Knowledge Base ingestion is already running.")
 
@@ -745,9 +769,11 @@ class WebSocketServerManager:
         task_id = str(uuid.uuid4())
 
         def worker():
+            """Background thread body: ingest each file with progress notifications and send a finished notification."""
             total = len(files)
 
             def progress_cb(current: int, total_files: int, event: dict):
+                """Forward one ingestion progress event to clients as a kb_ingest_progress notification."""
                 self._send_notification("kb_ingest_progress", {
                     "task_id": task_id,
                     "current": current,
@@ -819,6 +845,7 @@ class WebSocketServerManager:
         }
 
     def _search_kb(self, params: dict) -> dict:
+        """Run a knowledge-base query with top_k, threshold and optional source filter, and return the matches."""
         query = (params.get("query") or "").strip()
         if not query:
             raise ValueError("query is required.")
@@ -858,6 +885,7 @@ class WebSocketServerManager:
         }
 
     def _runtime_status(self) -> dict:
+        """Collect the model, adapter, context size, running-task flags and metrics into one status dictionary."""
         active_model = self._active_model_config()
         loaded = ModelLoader.is_loaded()
         model_name = ModelLoader.model_name() if loaded else active_model["filename"]
@@ -905,6 +933,7 @@ class WebSocketServerManager:
         message: str | None = None,
         data: Any = None,
     ) -> dict:
+        """Build a JSON-RPC error response with the given code, using the standard message for the code when none is supplied."""
         error = {
             "code": code,
             "message": message or self._RPC_ERROR_MESSAGES.get(code, "Error"),
@@ -918,6 +947,7 @@ class WebSocketServerManager:
         }
 
     def _rpc_result_response(self, req_id: Any, result: Any) -> dict:
+        """Build a JSON-RPC success response for the request id."""
         return {
             "jsonrpc": self._JSONRPC_VERSION,
             "id": req_id,
@@ -932,12 +962,18 @@ class WebSocketServerManager:
         message: str | None = None,
         data: Any = None,
     ) -> None:
+        """Send a JSON-RPC error response over the websocket."""
         await websocket.send(json.dumps(self._rpc_error_response(code, req_id, message, data)))
 
     async def _send_rpc_result(self, websocket, req_id: Any, result: Any) -> None:
+        """Send a JSON-RPC success response over the websocket."""
         await websocket.send(json.dumps(self._rpc_result_response(req_id, result)))
 
     def _parse_json_rpc_request(self, message: str) -> tuple[dict | None, dict | None]:
+        """Parse a raw message into a JSON-RPC request.
+
+        Returns (request, None) when valid or (None, error_response) when not.
+        """
         try:
             data = json.loads(message)
         except json.JSONDecodeError as exc:
@@ -971,7 +1007,9 @@ class WebSocketServerManager:
         return data, None
 
     def _validate_rpc_params(self, method: str, params: dict) -> str | None:
+        """Check the parameters required by a method; return an error string, or None when they are valid."""
         def require_string(name: str) -> str | None:
+            """Return an error message when the named parameter is missing or not a non-empty string, else None."""
             value = params.get(name)
             if not isinstance(value, str) or not value.strip():
                 return f"{name} is required and must be a string."
@@ -1041,6 +1079,7 @@ class WebSocketServerManager:
         return None
 
     def _record_generation_metrics(self, diagnostics: dict | None) -> None:
+        """Store the latest generation diagnostics (prefill time, speed, memory, cache hit rate) for the metrics endpoint."""
         diagnostics = diagnostics or {}
         prefill = diagnostics.get("prefill_duration_sec", diagnostics.get("prefill_time", 0.0))
         tps = diagnostics.get("tokens_per_second", diagnostics.get("generation_tps", 0.0))
@@ -1064,6 +1103,7 @@ class WebSocketServerManager:
         }
 
     def _metric_float(self, value: Any) -> float:
+        """Convert a value to float, treating None or invalid values as 0.0."""
         try:
             if value is None:
                 return 0.0
@@ -1072,6 +1112,7 @@ class WebSocketServerManager:
             return 0.0
 
     def _process_rss_bytes(self) -> int:
+        """Return this process's resident memory in bytes, or 0 if it cannot be read."""
         try:
             import psutil
             return int(psutil.Process(os.getpid()).memory_info().rss)
@@ -1079,6 +1120,7 @@ class WebSocketServerManager:
             return 0
 
     def _prometheus_metrics(self) -> str:
+        """Render the current metrics in Prometheus text format."""
         metrics = {
             "karl_active_connections": len(self.clients),
             "karl_system_memory_usage_bytes": self._process_rss_bytes(),
@@ -1110,6 +1152,7 @@ class WebSocketServerManager:
         return "\n".join(lines) + "\n"
 
     def _http_response(self, status_code: int, reason: str, content_type: str, body: str) -> Response:
+        """Build an HTTP response with the given status, content type and body."""
         return Response(
             status_code,
             reason,
@@ -1121,6 +1164,7 @@ class WebSocketServerManager:
         )
 
     def _is_websocket_upgrade(self, request) -> bool:
+        """Return True if the HTTP request asks to upgrade to a websocket."""
         headers = getattr(request, "headers", {}) or {}
         try:
             upgrade = headers.get("Upgrade", "")
@@ -1130,6 +1174,7 @@ class WebSocketServerManager:
         return upgrade.lower() == "websocket" or "upgrade" in connection.lower()
 
     def _process_http_request(self, connection, request) -> Response | None:
+        """Handle plain HTTP requests: serve the metrics path, let websocket upgrades through (None), and answer 404 otherwise."""
         path = getattr(request, "path", "") or ""
         parsed = urlparse(path)
         if parsed.path == "/metrics":
@@ -1216,6 +1261,7 @@ class WebSocketServerManager:
         self.loop_thread.start()
 
     def _run_loop(self):
+        """Run the server on the background loop: start it, schedule the lease audit, and run until stopped."""
         asyncio.set_event_loop(self.loop)
         self.loop.run_until_complete(self._start_server())
         if self.server is not None:
@@ -1248,6 +1294,7 @@ class WebSocketServerManager:
         raise RuntimeError("SSL context required for WSS enforcement.")
 
     async def _start_server(self):
+        """Start the WebSocket server on the configured host and port; a failure is logged."""
         try:
             host = os.environ.get("KARL_WS_HOST", "localhost")
             ssl_context = None
@@ -1355,6 +1402,7 @@ class WebSocketServerManager:
         self.clients.clear()
 
     async def _stop_server(self):
+        """Cancel the lease audit task and shut down the server and its connections."""
         audit_task = getattr(self, "_lease_audit_task", None)
         if audit_task is not None:
             audit_task.cancel()
@@ -1381,6 +1429,7 @@ class WebSocketServerManager:
 
     async def _handler(self, websocket, path=None):
         # ── Connection-stage token authentication ─────────────────────────────
+        """Serve one client connection: authenticate by token, register the client, then read, rate limit, validate and dispatch each JSON-RPC request until the client disconnects."""
         raw_path = path or ""
         if not raw_path:
             try:
@@ -1408,6 +1457,7 @@ class WebSocketServerManager:
             return
         # ─────────────────────────────────────────────────────────────────────
 
+        # Register the authenticated client with its own scopes and rate-limit buckets.
         client_id = str(uuid.uuid4())[:8]
         ip = "unknown"
         try:
@@ -1430,6 +1480,7 @@ class WebSocketServerManager:
             self.client_histories[websocket] = []
         logger.info(f"Client connected: {websocket.remote_address} (ID: {client_id})")
         try:
+            # Main receive loop: one iteration per incoming JSON-RPC frame.
             async for message in websocket:
                 # Rate Limiting DoS Protection (checked first before parsing to prevent parser exhaustion)
                 with self._clients_lock:
@@ -1465,6 +1516,7 @@ class WebSocketServerManager:
                 req_id = data.get("id")
                 token = params.get("token")
 
+                # Expensive methods draw from a smaller, slower-refilling bucket than ordinary calls.
                 # Heavy Method Rate Limiting
                 if client_meta:
                     heavy_limiter = client_meta.get("rate_limit_heavy")
@@ -1488,6 +1540,7 @@ class WebSocketServerManager:
                     f"ws:{client_id}:{req_id if req_id is not None else new_correlation_id()}"
                 )
 
+                # Reject malformed parameters before dispatching to a handler.
                 params_error = self._validate_rpc_params(method, params)
                 if params_error:
                     await self._send_rpc_error(websocket, -32602, req_id, data=params_error)
@@ -1496,6 +1549,7 @@ class WebSocketServerManager:
                 with self._clients_lock:
                     client_meta = self.client_metadata.get(websocket, {})
 
+                # RPC method authenticate: Legacy handshake call; connections are already authenticated by the token in the URL.
                 if method == "authenticate":
                     # This method is now redundant for clients who passed handshake
                     is_valid = self._validate_token(token)
@@ -1514,6 +1568,7 @@ class WebSocketServerManager:
                         }))
                     continue
 
+                # RPC method refresh_token: Extend the connection's session lease and issue a fresh token.
                 if method == "refresh_token":
                     client_token = params.get("token", "")
                     # Accept if the supplied token is current OR the connection is
@@ -1563,6 +1618,7 @@ class WebSocketServerManager:
                         continue
 
                 try:
+                    # RPC method get_runtime_status: Report which model, adapter and background tasks are currently active.
                     if method == "get_runtime_status":
                         await websocket.send(json.dumps({
                             "jsonrpc": "2.0",
@@ -1570,6 +1626,7 @@ class WebSocketServerManager:
                             "result": self._runtime_status()
                         }))
 
+                    # RPC method list_models: List installed model files and which one is active.
                     elif method == "list_models":
                         await websocket.send(json.dumps({
                             "jsonrpc": "2.0",
@@ -1577,6 +1634,7 @@ class WebSocketServerManager:
                             "result": self._list_models()
                         }))
 
+                    # RPC method list_adapters: List the available LoRA adapters.
                     elif method == "list_adapters":
                         await websocket.send(json.dumps({
                             "jsonrpc": "2.0",
@@ -1584,6 +1642,7 @@ class WebSocketServerManager:
                             "result": self._list_adapters()
                         }))
 
+                    # RPC method set_active_model: Validate and select the active model (and optional adapter).
                     elif method == "set_active_model":
                         filename = params.get("filename")
                         adapter = params.get("adapter")
@@ -1593,6 +1652,7 @@ class WebSocketServerManager:
                             "result": self._set_active_model(filename, adapter)
                         }))
 
+                    # RPC method list_prompt_pairs: List saved A/B prompt pairs.
                     elif method == "list_prompt_pairs":
                         await websocket.send(json.dumps({
                             "jsonrpc": "2.0",
@@ -1600,6 +1660,7 @@ class WebSocketServerManager:
                             "result": self._list_prompt_pairs()
                         }))
 
+                    # RPC method get_prompt_pair: Return one saved prompt pair by name.
                     elif method == "get_prompt_pair":
                         await websocket.send(json.dumps({
                             "jsonrpc": "2.0",
@@ -1607,6 +1668,7 @@ class WebSocketServerManager:
                             "result": self._get_prompt_pair(params.get("name", ""))
                         }))
 
+                    # RPC method save_prompt_pair: Create or overwrite a saved prompt pair.
                     elif method == "save_prompt_pair":
                         await websocket.send(json.dumps({
                             "jsonrpc": "2.0",
@@ -1614,6 +1676,7 @@ class WebSocketServerManager:
                             "result": self._save_prompt_pair(params)
                         }))
 
+                    # RPC method delete_prompt_pair: Delete a saved prompt pair.
                     elif method == "delete_prompt_pair":
                         await websocket.send(json.dumps({
                             "jsonrpc": "2.0",
@@ -1621,6 +1684,7 @@ class WebSocketServerManager:
                             "result": self._delete_prompt_pair(params.get("name", ""))
                         }))
 
+                    # RPC method list_kb_sources: Summarize the documents currently in the knowledge base.
                     elif method == "list_kb_sources":
                         await websocket.send(json.dumps({
                             "jsonrpc": "2.0",
@@ -1628,6 +1692,7 @@ class WebSocketServerManager:
                             "result": self._kb_snapshot()
                         }))
 
+                    # RPC method ingest_path: Start a background ingestion of a file or folder into the knowledge base.
                     elif method == "ingest_path":
                         path = params.get("path", "")
                         if not self._is_safe_path(path):
@@ -1646,6 +1711,7 @@ class WebSocketServerManager:
                             "result": self._start_kb_ingest(params)
                         }))
 
+                    # RPC method search_kb: Search the knowledge base for chunks matching a query.
                     elif method == "search_kb":
                         await websocket.send(json.dumps({
                             "jsonrpc": "2.0",
@@ -1653,6 +1719,7 @@ class WebSocketServerManager:
                             "result": self._search_kb(params)
                         }))
 
+                    # RPC method get_agent_profiles: Return the stored agent profiles.
                     elif method == "get_agent_profiles":
                         await websocket.send(json.dumps({
                             "jsonrpc": "2.0",
@@ -1660,6 +1727,7 @@ class WebSocketServerManager:
                             "result": load_agent_profiles()
                         }))
 
+                    # RPC method save_agent_profile: Validate and store an agent profile.
                     elif method == "save_agent_profile":
                         profile_dict = params.get("profile") if isinstance(params, dict) else None
                         if not isinstance(profile_dict, dict):
@@ -1690,6 +1758,7 @@ class WebSocketServerManager:
                             "profiles": load_agent_profiles()
                         })
 
+                    # RPC method submit_task: Start a swarm run for an objective in a workspace.
                     elif method == "submit_task":
                         objective = params.get("objective")
                         workspace_path = params.get("workspace_path")
@@ -1843,6 +1912,7 @@ class WebSocketServerManager:
                             "result": {"status": "started"}
                         }))
 
+                    # RPC method rollback_swarm_run: Restore workspace files from a swarm run's backups.
                     elif method == "rollback_swarm_run":
                         workspace_path = params.get("workspace_path")
                         run_id = params.get("run_id") or None
@@ -1863,6 +1933,7 @@ class WebSocketServerManager:
                             "result": result
                         }))
 
+                    # RPC method swarm_commit_edits: Pass the user's approved file selection to the waiting swarm layer.
                     elif method == "swarm_commit_edits":
                         selected = params.get("selected_filepaths", [])
                         with self._threads_lock:
@@ -1883,6 +1954,7 @@ class WebSocketServerManager:
                                     }
                                 }))
 
+                    # RPC method swarm_inject_guidance: Queue steering guidance for a file the swarm is working on.
                     elif method == "swarm_inject_guidance":
                         filepath = params.get("filepath")
                         message = params.get("message")
@@ -1931,6 +2003,7 @@ class WebSocketServerManager:
                                     self._rpc_result_response(req_id, {"status": status})
                                 ))
 
+                    # RPC method swarm_override_task: Replace the instructions of the swarm's active task.
                     elif method == "swarm_override_task":
                         run_id = params.get("run_id")
                         filepath = params.get("filepath")
@@ -1952,6 +2025,7 @@ class WebSocketServerManager:
                                     self._rpc_result_response(req_id, {"status": "override_queued"})
                                 ))
 
+                    # RPC method swarm_get_history: Return the recorded history of swarm runs.
                     elif method == "swarm_get_history":
                         run_id = params.get("run_id")
                         from app.utils.swarm_replay import SwarmReplayManager
@@ -1962,6 +2036,7 @@ class WebSocketServerManager:
                             result = {"runs": replay.list_past_runs()}
                         await websocket.send(json.dumps(self._rpc_result_response(req_id, result)))
 
+                    # RPC method submit_chat: Start a streamed chat generation and report progress by notifications.
                     elif method == "submit_chat":
                         message = params.get("message")
                         workspace_path = params.get("workspace_path")
@@ -2033,6 +2108,7 @@ class WebSocketServerManager:
                         def _on_chat_finished(
                             thought: str, response: str, diagnostics: dict
                         ) -> None:
+                            """Record the generation metrics, add the reply to the chat history and notify clients that the chat finished."""
                             self._record_generation_metrics(diagnostics)
                             if response:
                                 _history_ref.append(
@@ -2041,6 +2117,7 @@ class WebSocketServerManager:
                             self._send_notification("chat_finished", {})
 
                         def _on_chat_error(err: str) -> None:
+                            """Notify clients of the error as a status update and a chat_finished notification carrying the error."""
                             message_text = str(err)
                             self._send_notification(
                                 "status_update",
@@ -2089,6 +2166,7 @@ class WebSocketServerManager:
                             "result": {"status": "started"}
                         }))
 
+                    # RPC method create_custom_agent: Validate the lowercase name, label and prompt, then create a custom agent.
                     elif method == "create_custom_agent":
                         # Validate params
                         name = params.get("name", "")
@@ -2177,6 +2255,7 @@ class WebSocketServerManager:
                             "name": name, "profile": new_profile
                         })
 
+                    # RPC method list_custom_agents: List the custom agents that exist.
                     elif method == "list_custom_agents":
                         from app.ui.workspaces.workbench.profiles import (
                             AGENT_PROFILES, DEFAULT_PROFILES
@@ -2190,6 +2269,7 @@ class WebSocketServerManager:
                             "result": custom_only
                         }))
 
+                    # RPC method list_codex_topics: List the topics in the codex library.
                     elif method == "list_codex_topics":
                         library_dir = "data/codex_library"
                         topics = []
@@ -2201,6 +2281,7 @@ class WebSocketServerManager:
                             "result": {"topics": topics}
                         }))
 
+                    # RPC method get_codex_content: Return the content of one codex topic.
                     elif method == "get_codex_content":
                         topic = params.get("topic", "")
                         content = ""
@@ -2222,6 +2303,7 @@ class WebSocketServerManager:
                             "result": {"content": content}
                         }))
 
+                    # RPC method compute_diff: Return an HTML character-level diff of text_a and text_b.
                     elif method == "compute_diff":
                         text_a = params.get("text_a", "")
                         text_b = params.get("text_b", "")
@@ -2232,6 +2314,7 @@ class WebSocketServerManager:
                             "result": {"diff_html": diff_html}
                         }))
 
+                    # RPC method start_auto_train: Launch the auto-training script for an adapter and stream its log lines.
                     elif method == "start_auto_train":
                         topic = params.get("topic")
                         adapter_name = params.get("adapter_name")
@@ -2265,6 +2348,7 @@ class WebSocketServerManager:
                         import sys
 
                         def run_auto_train():
+                            """Run the auto-training script as a subprocess, stream its output lines as notifications and report success by exit code."""
                             cmd = [
                                 sys.executable,
                                 "auto_train.py",
@@ -2308,6 +2392,7 @@ class WebSocketServerManager:
                             "result": {"status": "started"}
                         }))
 
+                    # RPC method fit_vectorizer: Handle the supplied non-empty list of documents for vectorizer fitting.
                     elif method == "fit_vectorizer":
                         documents = params.get("documents", [])
                         if not documents:
@@ -2341,6 +2426,7 @@ class WebSocketServerManager:
                             }
                         }))
 
+                    # RPC method start_mini_train: Start training the small built-in model with the supplied hyperparameters.
                     elif method == "start_mini_train":
                         lr = float(params.get("lr", 0.001))
                         max_iters = int(params.get("max_iters", 100))
@@ -2448,6 +2534,7 @@ class WebSocketServerManager:
                             }
                         }))
 
+                    # RPC method stop_task: Request a stop of the running swarm or chat task.
                     elif method == "stop_task":
                         with self._threads_lock:
                             status = "idle"
@@ -2478,6 +2565,7 @@ class WebSocketServerManager:
                     logger.exception("Error handling WebSocket RPC method %r", method)
                     await self._send_rpc_error(websocket, -32603, req_id, data=str(inner_e))
 
+        # A normal client disconnect is not an error.
         except websockets.exceptions.ConnectionClosed:
             pass
         finally:
@@ -2536,6 +2624,7 @@ class WebSocketServerManager:
             return len(self.clients)
 
     async def _broadcast_notification(self, method: str, params: dict):
+        """Send a JSON-RPC notification to every connected client."""
         payload = json.dumps({
             "jsonrpc": "2.0",
             "method": method,

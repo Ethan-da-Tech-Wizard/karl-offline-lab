@@ -1,3 +1,11 @@
+# Program: karl-offline-lab - keychain_manager.py
+# Programmer: Ethan-da-Tech-Wizard (written with Claude, an AI assistant)
+# Last Modified: 2026-11-18
+# Purpose: Caches and revokes the bridge access token in the Linux kernel keyring or the OS keychain, and manages scoped tokens in an owner-only JSON file.
+
+"""Token storage helpers: kernel keyring and OS keychain caching, scoped on-disk tokens and low-level keyctl wrappers."""
+
+# Standard-library imports; ctypes is used to call the Linux keyutils library.
 import logging
 import json
 import os
@@ -5,9 +13,11 @@ import time
 import ctypes
 import sys
 
+# Module logger.
 logger = logging.getLogger("karl.keychain")
 
 try:
+    # Decide whether the optional keyring package may be used: it can be switched off by an environment setting, or when no desktop message bus exists on Linux.
     if os.environ.get("KARL_NO_KEYRING") == "1":
         keyring = None
     elif sys.platform == "linux" and not os.environ.get("DBUS_SESSION_BUS_ADDRESS"):
@@ -43,12 +53,15 @@ _KEYCTL_SET_TIMEOUT = ctypes.c_long(15)  # keyctl subcommand: set expiry
 
 # ─────────────────────────────────────────────────────────────────────────────
 
+# ── Token store settings ─────────────────────────────────────────────────
+# Names under which the token is stored in the OS keychain, the on-disk token file, and token lifetime in seconds.
 SERVICE_NAME = "KarlBridge"
 USER_NAME = "BridgeToken"
 TOKEN_PATH = "data/bridge_token.json"
 TOKEN_LIFETIME = 43200  # 12 hours
 
 
+# ── OS keychain helpers ──────────────────────────────────────────────────
 def _os_keychain_locked() -> bool:
     """
     Best-effort, fast, non-blocking check for whether the OS keychain is in
@@ -81,6 +94,7 @@ def _os_keychain_locked() -> bool:
     except Exception:
         return False  # inconclusive -- let the normal timeout-guarded call decide
 
+# ── Access scopes ────────────────────────────────────────────────────────
 # Canonical scope set — ordered from least to most privileged.
 FULL_SCOPES: list[str] = [
     "read:telemetry",
@@ -98,6 +112,7 @@ ROLE_SCOPES: dict[str, list[str]] = {
 }
 
 
+# ── Token cache (save, load, revoke) ─────────────────────────────────────
 def save_cached_token(token: str):
     """Stores the bridge token securely in the Kernel Keyring (Linux) or OS keychain."""
 
@@ -238,6 +253,7 @@ def revoke_tokens():
     _clear_keyring()
 
 
+# ── On-disk scoped token store ───────────────────────────────────────────
 def get_token_scopes(token: str, token_path: str = TOKEN_PATH) -> list[str] | None:
     """Return the scope list for *token* from the on-disk store, or None if invalid/expired."""
     if not token or not os.path.exists(token_path):
@@ -249,6 +265,7 @@ def get_token_scopes(token: str, token_path: str = TOKEN_PATH) -> list[str] | No
             scopes = data["tokens"].get(token)
             created_at = float(data.get("created_at", 0))
         else:
+            # (old files hold one token with full access)
             # Legacy single-token format
             scopes = FULL_SCOPES if token == data.get("token") else None
             created_at = float(data.get("created_at", 0))
@@ -284,6 +301,7 @@ def add_scoped_token(token: str, scopes: list[str], token_path: str = TOKEN_PATH
             "tokens": {old_tok: list(FULL_SCOPES)} if old_tok else {},
             "created_at": data.get("created_at", time.time()),
         }
+    # Record the new token with its scopes (a copy, so later changes do not alter it).
     data["tokens"][token] = list(scopes)
     # Bearer tokens (including admin:execute-scoped ones) are stored here in
     # plaintext, so restrict the file to the owner before any content is
@@ -536,6 +554,7 @@ def _keyctl_revoke_key(key_id: int) -> None:
 
 # ── Public API ────────────────────────────────────────────────────────────────
 
+    # (these two functions are the direct kernel-keyring interface; they raise on failure instead of logging)
 def store_session_token(token: str, timeout_seconds: int = 43200) -> int:
     """
     Store *token* in the Linux Kernel Session Keyring and arm an auto-expiry.

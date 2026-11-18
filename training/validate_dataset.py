@@ -1,3 +1,7 @@
+# Program: karl-offline-lab - validate_dataset.py
+# Programmer: Ethan-da-Tech-Wizard (written with Claude, an AI assistant)
+# Last Modified: 2026-11-18
+# Purpose: Command-line tool that validates SFT, DPO and chat-format JSONL training datasets (JSON syntax, schema, empty fields, token length), can repair them in place with a backup, and can install a pre-commit hook that runs the validation.
 """
 Dataset Validator — Karl Workbench
 ====================================
@@ -33,6 +37,7 @@ from collections import defaultdict
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
+# Default dataset path and default token block size.
 CURATED_PATH = "data/training/curated.jsonl"
 DEFAULT_BLOCK_SIZE = 2048
 CHARS_PER_TOKEN = 4  # Heuristic fallback: 1 token ≈ 4 characters
@@ -57,6 +62,7 @@ def _build_token_estimator(block_size_override: int | None) -> tuple:
                 block_size = ModelLoader.context_limit() or DEFAULT_BLOCK_SIZE
 
             def _model_estimate(text: str) -> int:
+                """Count tokens with the loaded model's tokenizer, falling back to the character heuristic if tokenizing fails."""
                 try:
                     return len(llm.tokenize(text.encode("utf-8", errors="replace")))
                 except Exception:
@@ -67,6 +73,7 @@ def _build_token_estimator(block_size_override: int | None) -> tuple:
         pass
 
     def _heuristic_estimate(text: str) -> int:
+        """Estimate tokens as the text length divided by the characters-per-token constant, with a minimum of 1."""
         return max(1, len(text) // CHARS_PER_TOKEN)
 
     return _heuristic_estimate, block_size, False
@@ -161,15 +168,19 @@ def _validate_chat(rec: dict, lineno: int) -> tuple[list[str], list[str]]:
 # ── Formatting helpers ────────────────────────────────────────────────────────
 
 def _pass(msg: str):
+    """Print a passing check line."""
     print(f"  ✓  {msg}")
 
 def _fail(msg: str):
+    """Print a failing check line."""
     print(f"  ✗  FAIL: {msg}")
 
 def _info(msg: str):
+    """Print an informational line."""
     print(f"  ·  {msg}")
 
 def _indent(lines: list[str], limit: int = 10):
+    """Print up to limit lines indented under a report item, followed by a count of any omitted lines."""
     for line in lines[:limit]:
         print(f"         {line}")
     if len(lines) > limit:
@@ -201,6 +212,7 @@ def _sanitize_record(rec: dict) -> tuple[dict, bool]:
     changed = False
 
     def _walk(obj):
+        """Return a copy of the value with every string sanitized and note in the outer flag whether anything changed."""
         nonlocal changed
         if isinstance(obj, str):
             cleaned = _sanitize_text(obj)
@@ -363,6 +375,7 @@ def _repair_schema(rec: dict, fmt: str) -> tuple[dict, bool]:
 # ── Main validator ────────────────────────────────────────────────────────────
 
 def validate(path: str, block_size_override: int | None = None) -> bool:
+    """Run the read-only checks (file exists, JSON parses, schema, empty fields, token length), print a report and return True only when no problems were found."""
     bar = "─" * 62
     print(f"\n{bar}")
     print(f"  Karl DPO/SFT Dataset Validator")
@@ -376,6 +389,7 @@ def validate(path: str, block_size_override: int | None = None) -> bool:
     _pass("File exists")
 
     # ── Token estimator setup ─────────────────────────────────────────────────
+    # Pick the best available way to count tokens and the block size limit.
     estimate_tokens, block_size, using_model = _build_token_estimator(
         block_size_override
     )
@@ -385,6 +399,7 @@ def validate(path: str, block_size_override: int | None = None) -> bool:
     print()
 
     # ── 2. JSON parse pass ────────────────────────────────────────────────────
+    # Parse every non-empty line, remembering its line number and any JSON errors.
     records: list[tuple[int, dict]] = []
     json_errors: list[str] = []
     with open(path, "r", encoding="utf-8") as fh:
@@ -421,6 +436,7 @@ def validate(path: str, block_size_override: int | None = None) -> bool:
         fmt = _detect_format(rec)
         format_counts[fmt] += 1
 
+        # Choose the schema check that matches the detected format.
         if fmt == "sft":
             s_errs, e_errs = _validate_sft(rec, lineno)
         elif fmt == "dpo":
@@ -478,6 +494,7 @@ def validate(path: str, block_size_override: int | None = None) -> bool:
     _info(f"Format breakdown: {fmt_parts}")
 
     # ── 5. Summary report ─────────────────────────────────────────────────────
+    # Every kind of problem counts toward the failure total.
     invalid_count = (
         len(json_errors)
         + len(schema_failures)
@@ -501,6 +518,7 @@ def _print_report(
     avg_tokens: float,
     block_size: int,
 ):
+    """Print the evaluation summary with the counts of each kind of problem, the average token length and an overall pass or fail status."""
     bar = "─" * 62
     invalid_total = json_errors + schema_failures + empty_failures + length_overflows
     print(f"\n{bar}")
@@ -536,6 +554,7 @@ def repair(path: str, block_size_override: int | None = None) -> None:
         return
 
     # ── Backup ────────────────────────────────────────────────────────────────
+    # Keep a copy of the original file before changing anything.
     bak_path = path + ".bak"
     shutil.copy2(path, bak_path)
     _pass(f"Backup created  : {bak_path}")
@@ -545,6 +564,7 @@ def repair(path: str, block_size_override: int | None = None) -> None:
     # Character budget is always heuristic-based for truncation: 1 tok ≈ 4 chars.
     # This guarantees the heuristic estimator sees ≤ block_size tokens after repair,
     # and is a safe under-approximation for real tokenizers.
+    # Convert the token limit to a character limit for truncation.
     char_budget = block_size * CHARS_PER_TOKEN
     tokenizer_label = "model tokenizer" if using_model else f"heuristic (1 tok ≈ {CHARS_PER_TOKEN} chars)"
     _info(f"Token estimator : {tokenizer_label}")
@@ -595,6 +615,7 @@ def repair(path: str, block_size_override: int | None = None) -> None:
         output_records.append(rec)
 
     # ── Write back ────────────────────────────────────────────────────────────
+    # Overwrite the dataset with the repaired records.
     with open(path, "w", encoding="utf-8") as fh:
         for rec in output_records:
             fh.write(json.dumps(rec, ensure_ascii=False) + "\n")
@@ -620,6 +641,7 @@ def repair(path: str, block_size_override: int | None = None) -> None:
 
 def install_git_hook():
     """Programmatically install a Git pre-commit hook that validates datasets."""
+    # Find the repository's git folder, in the current folder or its parent.
     git_dir = ".git"
     if not os.path.isdir(git_dir):
         # Check parent if we're in training/
@@ -629,6 +651,7 @@ def install_git_hook():
             _fail("Git repository not found. Please run this from the repo root.")
             return False
 
+    # Create the hooks folder if needed and decide where the pre-commit script goes.
     hooks_dir = os.path.join(git_dir, "hooks")
     os.makedirs(hooks_dir, exist_ok=True)
     hook_path = os.path.join(hooks_dir, "pre-commit")
@@ -686,6 +709,7 @@ exit 0
 # ── CLI ───────────────────────────────────────────────────────────────────────
 
 def main():
+    """Parse command-line options, then install the hook, repair the file, or validate it, and exit with status 0 on success and 1 on failure."""
     parser = argparse.ArgumentParser(
         description="Karl DPO/SFT training dataset pre-flight validator"
     )
@@ -721,12 +745,14 @@ def main():
     )
     args = parser.parse_args()
 
+    # Hook installation is a separate mode that exits right away.
     if args.install_hook:
         if install_git_hook():
             sys.exit(0)
         else:
             sys.exit(1)
 
+    # Repair first, then fall through to validate the cleaned file.
     if args.repair:
         repair(args.path, block_size_override=args.block_size)
 
@@ -734,5 +760,6 @@ def main():
     sys.exit(0 if ok else 1)
 
 
+# Run the command-line interface when executed as a script.
 if __name__ == "__main__":
     main()

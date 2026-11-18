@@ -1,3 +1,7 @@
+# Program: karl-offline-lab - test_context_overflow_clamp.py
+# Programmer: Ethan-da-Tech-Wizard (written with Claude, an AI assistant)
+# Last Modified: 2026-11-18
+# Purpose: Regression tests for clamping requested max tokens to the remaining context window in the generation threads.
 """Regression test for the continuation-loop context-overflow bug.
 
 Background: app/engine/llm_thread.py's and app/engine/agentic_thread.py's
@@ -17,6 +21,7 @@ import sys
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
+# Needed to read function source in the call-site tests below
 import inspect
 
 from app.engine.llm_thread import _clamp_max_tokens_to_context as llm_clamp
@@ -25,6 +30,7 @@ from app.engine.agentic_thread import _clamp_max_tokens_to_context as agentic_cl
 
 def test_clamp_returns_configured_value_when_plenty_of_room():
     # 4096-token context, prompt only used 500 -- configured 1024 fits fine.
+    """Scenario: ample context remains. Expected: the configured value is returned."""
     assert llm_clamp(1024, 500, 4096) == 1024
     assert agentic_clamp(1024, 500, 4096) == 1024
 
@@ -34,6 +40,7 @@ def test_clamp_shrinks_to_remaining_budget_near_the_edge():
     # where the prompt has already grown to consume most of the context.
     # 4096 budget, 3200 already used, 8-token safety margin -> 888 left,
     # well under the configured 1024.
+    """Scenario: the prompt uses most of the context. Expected: the result is the remaining room minus the safety margin."""
     assert llm_clamp(1024, 3200, 4096) == 888
     assert agentic_clamp(1024, 3200, 4096) == 888
 
@@ -42,6 +49,7 @@ def test_clamp_never_goes_negative_when_prompt_already_exceeds_budget():
     # Defensive: even if current_prompt_tokens somehow exceeds the budget
     # (tokenizer counting quirks, off-by-a-few), never return a negative
     # max_tokens -- llama.cpp would reject that outright.
+    """Scenario: the prompt already exceeds the budget. Expected: zero, never negative."""
     assert llm_clamp(1024, 4200, 4096) == 0
     assert agentic_clamp(1024, 4200, 4096) == 0
 
@@ -49,6 +57,7 @@ def test_clamp_never_goes_negative_when_prompt_already_exceeds_budget():
 def test_clamp_respects_configured_value_as_a_ceiling():
     # Plenty of room, but the user only asked for 64 tokens -- never hand
     # back more than what was actually configured.
+    """Scenario: a small configured value with plenty of room. Expected: never more than configured."""
     assert llm_clamp(64, 100, 4096) == 64
     assert agentic_clamp(64, 100, 4096) == 64
 
@@ -62,6 +71,7 @@ def test_clamp_does_not_shrink_a_deliberately_small_configured_value():
     # the request was always going to be small. Plenty of room available
     # here (4096 budget, 4 tokens used) -- the clamp must return exactly
     # what was configured, unreduced.
+    """Scenario: a tiny configured value with plenty of room. Expected: returned unchanged."""
     assert llm_clamp(8, 4, 4096) == 8
     assert agentic_clamp(8, 4, 4096) == 8
 
@@ -82,6 +92,7 @@ def test_llm_thread_continuation_loop_uses_the_clamp():
 
 
 def test_agentic_thread_continuation_loop_uses_the_clamp():
+    """Scenario: read the agentic thread generation source. Expected: it uses the clamp and the early-stop rule."""
     # The continuation loop lives in _run_single_generation(), called from
     # run() once per agentic iteration -- not in run() itself.
     import app.engine.agentic_thread as agentic_thread_module

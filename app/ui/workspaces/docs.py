@@ -1,3 +1,9 @@
+# Program: karl-offline-lab - docs.py
+# Programmer: Ethan-da-Tech-Wizard (written with Claude, an AI assistant)
+# Last Modified: 2026-11-18
+# Purpose: Implements the Codex documentation workspace: seeds a local help library, lists and searches topics, shows them with a table of contents and can send a topic to the Workbench.
+
+"""Codex (in-app documentation) workspace."""
 import logging
 import os
 import re
@@ -10,21 +16,32 @@ from PyQt6.QtCore import Qt
 from app.ui.themes import MONO, get_theme_colors
 from app.ui.workspaces.docs_data import DEFAULT_LIBRARY
 
+# Module logger
 logger = logging.getLogger("karl.codex")
 
 
+# ---------------------------------------------------------------------------
+# Small UI helpers
+# ---------------------------------------------------------------------------
 def _section(text: str) -> QLabel:
+    """Create a section-header styled label."""
     lbl = QLabel(text)
     lbl.setObjectName("section-header")
     return lbl
 
 def _hline() -> QFrame:
+    """Create a horizontal divider line."""
     f = QFrame()
     f.setFrameShape(QFrame.Shape.HLine)
     return f
 
+# ---------------------------------------------------------------------------
+# Docs workspace
+# ---------------------------------------------------------------------------
 class DocsWorkspace(QWidget):
+    """Reader for the bundled documentation library with search, hierarchy and send-to-Workbench."""
     def __init__(self, state, parent=None):
+        """Store state, load the documentation library and build the interface."""
         super().__init__(parent)
         self.state = state
         self.setObjectName("workspace-root")
@@ -32,6 +49,8 @@ class DocsWorkspace(QWidget):
         self._build_ui()
 
     def _init_library(self):
+        """Seed or upgrade the on-disk library when its version marker is old, then cache every topic file."""
+        # Library lives in a local data folder and is created if missing
         self._library_dir = "data/codex_library"
         os.makedirs(self._library_dir, exist_ok=True)
         
@@ -39,6 +58,7 @@ class DocsWorkspace(QWidget):
         current_version = "7.0"
         
         # Determine if we need to seed or upgrade
+        # (a missing or different version marker means the defaults are rewritten)
         needs_upgrade = True
         if os.path.exists(version_filepath):
             try:
@@ -56,6 +76,7 @@ class DocsWorkspace(QWidget):
             
         if needs_upgrade:
             # Seed or overwrite default files in DEFAULT_LIBRARY
+            # (topic names are reduced to filesystem-safe characters)
             for topic, content in DEFAULT_LIBRARY.items():
                 safe_name = "".join(c for c in topic if c.isalnum() or c in (" ", "_", "-")).strip()
                 filepath = os.path.join(self._library_dir, f"{safe_name}.html")
@@ -72,7 +93,7 @@ class DocsWorkspace(QWidget):
             except Exception as e:
                 logger.warning(f"Error writing version: {e}")
             
-        # Re-scan to build cache
+        # Re-scan to build cache: topic name -> file path and content
         self._cache = {}
         for f in sorted(os.listdir(self._library_dir)):
             if f.endswith((".html", ".md")):
@@ -89,6 +110,7 @@ class DocsWorkspace(QWidget):
                     logger.warning(f"Error reading {f}: {e}")
 
         # Auto-ingest Codex files into codex_rag index if it is empty.
+        # (stops at the first failure so one bad file does not repeat errors)
         if hasattr(self.state, "codex_rag") and self.state.codex_rag.total_chunks == 0:
             for topic_name, item in self._cache.items():
                 try:
@@ -98,6 +120,7 @@ class DocsWorkspace(QWidget):
                     break
 
     def _build_ui(self):
+        """Create the splitter layout: topic list, search box and hierarchy on the left; reader on the right."""
         root = QVBoxLayout(self)
         root.setContentsMargins(12, 12, 12, 12)
         root.setSpacing(10)
@@ -181,6 +204,7 @@ class DocsWorkspace(QWidget):
             self._topics_list.setCurrentRow(0)
 
     def _filter_topics(self, text: str):
+        """Filter the topic list by the query, preferring ranked search results and falling back to keyword matching."""
         query = text.strip()
         if not query:
             # Show all topics and restore default order
@@ -213,6 +237,7 @@ class DocsWorkspace(QWidget):
             return
 
         # Sort topics by relevance
+        # Disconnect the selection signal while hiding/showing items so the reader does not flicker
         self._topics_list.currentTextChanged.disconnect(self._on_topic_selected)
         items = []
         for idx in range(self._topics_list.count()):
@@ -243,6 +268,7 @@ class DocsWorkspace(QWidget):
             )
 
     def _on_topic_selected(self, text: str):
+        """Show the chosen topic in the reader, rebuild its table of contents and apply theme colours."""
         if not text:
             self._browser.clear()
             self._toc_list.clear()
@@ -284,6 +310,7 @@ class DocsWorkspace(QWidget):
         self._browser.setHtml(styled_html)
 
     def _generate_toc(self, content: str):
+        """Fill the hierarchy list with the h2 and h4 headings found in the HTML."""
         self._toc_list.clear()
         # Find all h2 and h4 headers
         headers = re.findall(r"<(h[24])[^>]*>(.*?)</\1>", content, re.IGNORECASE)
@@ -294,8 +321,10 @@ class DocsWorkspace(QWidget):
             self._toc_list.addItem(f"{indent}{clean_text}")
 
     def _add_anchors(self, content: str) -> str:
+        """Return the HTML with an id added to each h2/h4 heading so the hierarchy list can jump to it."""
         # Replace headers with anchored versions
         def replacer(match):
+            """Rewrite one matched heading to include an anchor id built from its text."""
             h_tag = match.group(1)
             h_attrs = match.group(2)
             h_text = match.group(3)
@@ -306,11 +335,13 @@ class DocsWorkspace(QWidget):
         return re.sub(r"<(h[24])([^>]*)>(.*?)</\1>", replacer, content, flags=re.IGNORECASE)
 
     def _jump_to_anchor(self, text: str):
+        """Scroll the reader to the heading selected in the hierarchy list."""
         if not text:
             return
         anchor_id = text.strip().replace(" ", "_").lower()
         self._browser.scrollToAnchor(anchor_id)
     def _send_to_workbench(self):
+        """Strip HTML from the selected topic and append it to the Workbench input with a confirmation dialog."""
         current_item = self._topics_list.currentItem()
         if not current_item:
             return

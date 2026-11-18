@@ -1,3 +1,8 @@
+# Program: karl-offline-lab - dataset_tab.py
+# Programmer: Ethan-da-Tech-Wizard (written with Claude, an AI assistant)
+# Last Modified: 2026-11-18
+# Purpose: Qt tab for browsing curated training examples with a preview pane, deleting examples and merging another curated dataset file in on a background thread.
+"""Dataset tab for the Training Studio."""
 import html
 
 from PyQt6.QtWidgets import (
@@ -9,14 +14,19 @@ from PyQt6.QtCore import Qt, QThread, pyqtSignal, QAbstractListModel, QModelInde
 
 
 class DatasetListModel(QAbstractListModel):
+    """Simple list model that shows pre-formatted text rows for the dataset list view."""
     def __init__(self, dataset_list=None):
+        """Store the initial list of display rows."""
         super().__init__()
+        # Rows are plain strings built by DatasetTab.refresh.
         self._dataset = dataset_list or []
 
     def rowCount(self, parent=QModelIndex()):
+        """Return the number of rows in the model."""
         return len(self._dataset)
 
     def data(self, index, role=Qt.ItemDataRole.DisplayRole):
+        """Return the display text for a row; other roles give nothing."""
         if not index.isValid():
             return None
         row = index.row()
@@ -26,17 +36,21 @@ class DatasetListModel(QAbstractListModel):
         return None
 
     def get_item(self, row):
+        """Return the row at the given index, or None when it is out of range."""
         if 0 <= row < len(self._dataset):
             return self._dataset[row]
         return None
 
     def update_data(self, new_dataset):
+        # Bracket the data swap so views redraw correctly.
+        """Replace all rows and notify attached views with a model reset."""
         self.beginResetModel()
         self._dataset = new_dataset
         self.endResetModel()
 
 
 def _section(text: str) -> QLabel:
+    """Return a styled section-header label."""
     lbl = QLabel(text)
     lbl.setObjectName("section-header")
     return lbl
@@ -46,15 +60,18 @@ def _section(text: str) -> QLabel:
 
 class _MergeThread(QThread):
     """Runs DatasetMerger.merge_files() off the UI thread."""
+    # Note: this signal name shadows QThread's built-in finished signal.
     finished = pyqtSignal(dict)   # stats dict on success
     error = pyqtSignal(str)       # error message on failure
 
     def __init__(self, primary: str, incoming: str, parent=None):
+        """Remember the local (primary) and incoming dataset file paths."""
         super().__init__(parent)
         self._primary = primary
         self._incoming = incoming
 
     def run(self):
+        """Merge the files and emit stats on success or the error message on failure."""
         try:
             from app.utils.dataset_merger import DatasetMerger
             stats = DatasetMerger.merge_files(self._primary, self._incoming)
@@ -66,9 +83,11 @@ class _MergeThread(QThread):
 # ── Dataset Tab ────────────────────────────────────────────────────────────────
 
 class DatasetTab(QWidget):
+    """Tab with the curated example list, a preview pane and import/delete actions."""
     dataset_changed = pyqtSignal()
 
     def __init__(self, state, parent=None):
+        """Set up state, merge thread and dialog handles and build the UI."""
         super().__init__(parent)
         self.state = state
         self._merge_thread: _MergeThread | None = None
@@ -76,6 +95,7 @@ class DatasetTab(QWidget):
         self._build_ui()
 
     def _build_ui(self):
+        """Lay out the example list with actions on the left and the preview on the right."""
         layout = QHBoxLayout(self)
         layout.setContentsMargins(8, 8, 8, 8)
         layout.setSpacing(10)
@@ -90,6 +110,7 @@ class DatasetTab(QWidget):
         self._example_list = QListView()
         self._list_model = DatasetListModel()
         self._example_list.setModel(self._list_model)
+        # Selecting a row shows its preview.
         self._example_list.selectionModel().currentRowChanged.connect(self._on_row_changed)
         self._example_list.setToolTip("Double-click or select a curated example to preview")
         ll.addWidget(self._example_list, 1)
@@ -126,17 +147,20 @@ class DatasetTab(QWidget):
         layout.addWidget(right, 2)
 
     def _on_row_changed(self, current, previous):
+        """Show the preview for the newly selected row."""
         row = current.row()
         self._on_example_selected(row)
 
     # ── Refresh ────────────────────────────────────────────────────────────────
 
     def refresh(self):
+        """Reload all curated examples into the list, labelled by source with a short user-prompt preview."""
         self._detail_view.clear()
         formatted_list = []
         for ex in self.state.curator.get_all_examples():
             source = ex.get("source", "unknown")
             if source == "thumbs_up":
+                # Label each example by how it was curated.
                 tag = "✓ positive"
             elif source == "corrected":
                 tag = "✎ corrected"
@@ -147,6 +171,7 @@ class DatasetTab(QWidget):
 
             messages = ex.get("messages", [])
             user_text = ""
+            # Use the first user message as the row preview, cut to 60 characters.
             for m in messages:
                 if m.get("role") == "user":
                     user_text = m.get("content", "")
@@ -158,9 +183,11 @@ class DatasetTab(QWidget):
     # ── Preview ────────────────────────────────────────────────────────────────
 
     def _on_example_selected(self, row: int):
+        """Render the selected example's messages as colour-coded, HTML-escaped blocks."""
         if row < 0:
             return
         examples = self.state.curator.get_all_examples()
+        # Ignore stale selections after the dataset changed.
         if row >= len(examples):
             return
         ex = examples[row]
@@ -180,6 +207,7 @@ class DatasetTab(QWidget):
             role = msg.get("role", "user").upper()
             content = msg.get("content", "")
 
+            # Pick colours per role (system, assistant, user).
             color = "#00C2FF" if role == "SYSTEM" else ("#2DD4A0" if role == "ASSISTANT" else "#E4E4F0")
             bg = "#14141F" if role == "SYSTEM" else ("#0D0D16" if role == "ASSISTANT" else "#1C1C2A")
             border = "#252535" if role == "SYSTEM" else ("#1A1A25" if role == "ASSISTANT" else "#383850")
@@ -190,6 +218,7 @@ class DatasetTab(QWidget):
                 f"margin-bottom:3px;letter-spacing:1px;'>{role}</div>"
                 f"<div style='background:{bg};border:1px solid {border};border-radius:4px;"
                 f"padding:8px 12px;color:{color};font-size:9.5pt;white-space:pre-wrap;'>"
+                # Escape the content so message text cannot inject markup.
                 f"{html.escape(content)}</div>"
                 f"</div>"
             )
@@ -199,6 +228,7 @@ class DatasetTab(QWidget):
     # ── Delete ─────────────────────────────────────────────────────────────────
 
     def _delete_selected(self):
+        """Delete the selected example after confirmation and notify listeners."""
         row = self._example_list.currentIndex().row()
         if row < 0:
             return
@@ -207,6 +237,7 @@ class DatasetTab(QWidget):
             QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
         )
         if reply == QMessageBox.StandardButton.Yes:
+            # The row index matches the curator's example order.
             self.state.curator.delete_example(row)
             self.refresh()
             self.dataset_changed.emit()
@@ -232,6 +263,7 @@ class DatasetTab(QWidget):
             return
 
         # Resolve the primary (local) dataset path.
+        # The local curated dataset is the merge target.
         from app.utils.training_curator import CURATED_PATH
         primary_path = CURATED_PATH
 
@@ -249,6 +281,7 @@ class DatasetTab(QWidget):
                 return
 
         # Show indeterminate progress dialog while the thread runs.
+        # A busy dialog with no cancel button keeps the user from interacting during the merge.
         self._progress_dialog = QProgressDialog(
             "Merging team traces…", None, 0, 0, self
         )

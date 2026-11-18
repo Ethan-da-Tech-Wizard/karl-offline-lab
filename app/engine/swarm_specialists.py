@@ -1,3 +1,7 @@
+# Program: karl-offline-lab - swarm_specialists.py
+# Programmer: Ethan-da-Tech-Wizard (written with Claude, an AI assistant)
+# Last Modified: 2026-11-18
+# Purpose: Static-analysis reviewer agents (security, performance, quality) that inspect candidate code without calling a model.
 """
 Swarm Specialists — adaptive, LLM-free static-analysis reviewers.
 
@@ -67,6 +71,7 @@ class SecurityAuditorAgent:
     """Regex-based scan for common insecure patterns. LLM-free, instant."""
 
     def review(self, filepath: str, content: str) -> dict[str, Any]:
+        """Scan content for dangerous patterns and return a verdict ('revise' at risk >= 0.5, else 'approve') with concerns."""
         concerns = []
         risk = 0.0
         for pattern, message, weight in _DANGEROUS_PATTERNS:
@@ -89,6 +94,7 @@ class PerformanceAuditorAgent:
     """AST-based scan for common performance smells. Advisory only."""
 
     def review(self, filepath: str, content: str) -> dict[str, Any]:
+        """Parse Python content and report performance concerns found by _scan; non-Python or unparsable input yields none."""
         concerns: list[str] = []
         if filepath.endswith(".py"):
             try:
@@ -106,6 +112,7 @@ class PerformanceAuditorAgent:
         }
 
     def _scan(self, tree: ast.AST) -> list[str]:
+        """Walk the syntax tree and return performance concerns (such as deeply nested loops)."""
         concerns = []
         for node in ast.walk(tree):
             if isinstance(node, (ast.For, ast.While)):
@@ -135,6 +142,7 @@ class CriticAgent:
     _MAX_FUNCTION_LINES = 120
 
     def review(self, filepath: str, content: str) -> dict[str, Any]:
+        """Report quality concerns: leftover TODO-style markers plus issues found by _scan in Python files."""
         concerns: list[str] = []
         if "TODO" in content or "FIXME" in content or "XXX" in content:
             concerns.append("Contains TODO/FIXME/XXX markers left in committed code")
@@ -156,6 +164,7 @@ class CriticAgent:
         }
 
     def _scan(self, tree: ast.AST) -> list[str]:
+        """Walk the syntax tree and return quality concerns (such as bare except handlers that only pass)."""
         concerns = []
         for node in ast.walk(tree):
             if isinstance(node, ast.ExceptHandler):

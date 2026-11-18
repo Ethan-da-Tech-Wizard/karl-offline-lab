@@ -1,3 +1,8 @@
+# Program: karl-offline-lab - flywheel_studio.py
+# Programmer: Ethan-da-Tech-Wizard (written with Claude, an AI assistant)
+# Last Modified: 2026-11-18
+# Purpose: Implements the Flywheel Studio workspace: a dashboard of trace, curation and evaluation metrics, loss and quantization charts, failure-pair review, dataset export, an eval leaderboard and an encrypted-log inspector.
+
 """
 Flywheel Studio — Model self-improvement and optimization dashboard.
 
@@ -24,16 +29,22 @@ from app.ui.themes import MONO
 from app.ui.widgets.glow_panel import GlowPanel
 from app.utils.keychain_manager import save_cached_token, load_cached_token
 
+# Module logger
 logger = logging.getLogger("karl.flywheel_studio")
 
 
+# ---------------------------------------------------------------------------
+# Small UI helpers
+# ---------------------------------------------------------------------------
 def _section(text: str) -> QLabel:
+    """Create a section-header styled label."""
     lbl = QLabel(text)
     lbl.setObjectName("section-header")
     return lbl
 
 
 def _label(text: str, obj: str = "") -> QLabel:
+    """Create a label, optionally tagged with a stylesheet object name."""
     lbl = QLabel(text)
     if obj:
         lbl.setObjectName(obj)
@@ -43,7 +54,9 @@ def _label(text: str, obj: str = "") -> QLabel:
 # ── Custom Interactive Line Chart Widget ──────────────────────────────────────
 
 class CustomLineChart(QWidget):
+    """Custom-painted line chart with a smooth curve, gradient fill, axis labels and a hover tooltip."""
     def __init__(self, title: str, x_label: str, y_label: str, parent=None, accent_hex: str = "#00C2FF"):
+        """Store the chart title, axis labels and accent colour, and enable mouse tracking for hover."""
         super().__init__(parent)
         self.title = title
         self.x_label = x_label
@@ -56,20 +69,24 @@ class CustomLineChart(QWidget):
         self.hover_pos = None
 
     def set_data(self, points: list[tuple[float, float]], labels: list[str] = None):
+        """Replace the plotted points (x, y) and optional x labels, then repaint."""
         self.points = points
         self.labels = labels or []
         self.hovered_idx = -1
         self.update()
 
     def set_metric(self, title: str, y_label: str):
+        """Change the chart title and y-axis label (used when the metric shown changes) and repaint."""
         self.title = title
         self.y_label = y_label
         self.update()
 
     def mouseMoveEvent(self, event):
+        """Find the data point within 25 pixels of the cursor and repaint when the hovered point changes."""
         if not self.points:
             return
         
+        # Plot area is the widget minus fixed margins for axis labels
         w, h = self.width(), self.height()
         margin_left = 70
         margin_right = 30
@@ -82,6 +99,7 @@ class CustomLineChart(QWidget):
         if len(self.points) < 1:
             return
 
+        # Scale the data to the plot area; a flat series gets a small padding so it still draws
         min_x = min(p[0] for p in self.points) if len(self.points) > 1 else 0
         max_x = max(p[0] for p in self.points) if len(self.points) > 1 else 1
         min_y = min(p[1] for p in self.points)
@@ -95,6 +113,7 @@ class CustomLineChart(QWidget):
             min_y -= y_range * 0.1
             max_y += y_range * 0.1
             
+        # Convert each data point to widget pixel coordinates (y grows downward)
         screen_points = []
         for x, y in self.points:
             if max_x == min_x:
@@ -123,10 +142,12 @@ class CustomLineChart(QWidget):
             self.update()
 
     def leaveEvent(self, event):
+        """Clear the hover highlight when the mouse leaves the chart."""
         self.hovered_idx = -1
         self.update()
 
     def paintEvent(self, event):
+        """Draw the background, title, axes, grid, curve and, if hovering, the tooltip."""
         painter = QPainter(self)
         painter.setRenderHint(QPainter.RenderHint.Antialiasing)
         
@@ -139,6 +160,7 @@ class CustomLineChart(QWidget):
         plot_w = w - margin_left - margin_right
         plot_h = h - margin_top - margin_bottom
         
+        # Fixed dark palette for the chart; the line uses the accent colour
         bg_color = QColor(13, 13, 27)
         grid_color = QColor(31, 31, 61)
         text_color = QColor(144, 144, 168)
@@ -305,9 +327,11 @@ class CustomLineChart(QWidget):
 # ── Stats Loader Background Thread ───────────────────────────────────────────
 
 class _FlywheelDashboardLoader(QThread):
+    """Background thread that gathers dashboard metrics (traces, curated data, eval history, training history) from local files."""
     loaded = pyqtSignal(dict, list, list, dict) # stats, failure_pairs, training_history, quant_data
 
     def run(self):
+        """Read the local data files and emit the stats, failure pairs, training history and quantization data; any error is returned in stats."""
         stats = {}
         failure_pairs = []
         training_history = []
@@ -442,15 +466,18 @@ class _FlywheelDashboardLoader(QThread):
 
 
 class _LogDecryptThread(QThread):
+    """Background thread that decrypts encrypted trace archives in memory with a user-supplied token."""
     loaded = pyqtSignal(list)
     unauthorized = pyqtSignal()
 
     def __init__(self, token_text: str, archive_paths: list[str]):
+        """Store the token text and a copy of the archive path list."""
         super().__init__()
         self.token_text = token_text
         self.archive_paths = list(archive_paths)
 
     def run(self):
+        """Decrypt every archive; emit unauthorized on a bad token, otherwise emit all decrypted entries."""
         from app.utils.trace_logger import TraceLogger
 
         all_entries: list[dict] = []
@@ -489,6 +516,7 @@ class _TokenLookupThread(QThread):
     not_found = pyqtSignal()
 
     def run(self):
+        """Fetch the cached token and emit found or not_found."""
         try:
             token = load_cached_token()
         except Exception as e:
@@ -503,7 +531,9 @@ class _TokenLookupThread(QThread):
 # ── Flywheel Studio Workspace Widget ─────────────────────────────────────────
 
 class FlywheelStudioWorkspace(QWidget):
+    """Main Flywheel Studio screen: telemetry cards, charts, failure review, leaderboard and log inspector."""
     def __init__(self, state, parent=None):
+        """Create state holders, build the UI, load the dashboard and queue the automatic log authorization."""
         super().__init__(parent)
         self.state = state
         self.setObjectName("workspace-root")
@@ -521,6 +551,7 @@ class FlywheelStudioWorkspace(QWidget):
         QTimer.singleShot(0, self._auto_authorize_logs)
 
     def _build_ui(self):
+        """Build the left column of telemetry cards and actions and the right column of tabbed views."""
         root = QHBoxLayout(self)
         root.setContentsMargins(12, 12, 12, 12)
         root.setSpacing(12)
@@ -716,10 +747,12 @@ class FlywheelStudioWorkspace(QWidget):
         root.addWidget(right_col, 1)
 
     def showEvent(self, event):
+        """Reload the dashboard data whenever the workspace is shown."""
         super().showEvent(event)
         self.reload_dashboard()
 
     def reload_dashboard(self):
+        """Start the background loader unless one is already running."""
         if self._active_loader and self._active_loader.isRunning():
             return
         
@@ -728,6 +761,7 @@ class FlywheelStudioWorkspace(QWidget):
         self._active_loader.start()
 
     def _on_dashboard_loaded(self, stats: dict, failure_pairs: list[dict], training_history: list[dict], quant_data: dict):
+        """Receive the loaded data and update the metric labels, charts and failure list."""
         self._active_loader = None
         self._stats_data = stats
         self._failure_pairs = failure_pairs
@@ -794,6 +828,7 @@ class FlywheelStudioWorkspace(QWidget):
         self._on_quant_metric_changed()
 
     def _on_quant_metric_changed(self):
+        """Plot the quantization metric chosen in the dropdown (perplexity, VRAM or token speed) for each benchmarked format."""
         if not self._quant_data:
             self._quant_chart.set_data([], [])
             return
@@ -822,6 +857,7 @@ class FlywheelStudioWorkspace(QWidget):
         self._quant_chart.set_data(points, labels)
 
     def _on_failure_selected(self, idx: int):
+        """Show the chosen and rejected responses for the selected failure pair, or reset the view when nothing is selected."""
         if idx < 0 or idx >= len(self._failure_pairs):
             self._lbl_fail_prompt.setText("Prompt: Select a failure case")
             self._chosen_txt.clear()
@@ -835,6 +871,7 @@ class FlywheelStudioWorkspace(QWidget):
         self._rejected_txt.setPlainText(pair.get("rejected", ""))
 
     def _build_leaderboard_tab(self) -> QWidget:
+        """Build the Evaluation Leaderboard tab: results table, refresh button and DPO export row."""
         w = QWidget()
         layout = QVBoxLayout(w)
         layout.setContentsMargins(12, 12, 12, 12)
@@ -879,6 +916,7 @@ class FlywheelStudioWorkspace(QWidget):
         return w
 
     def _refresh_leaderboard(self):
+        """Reload saved evaluation results into the table and update the count of DPO pairs ready."""
         from app.utils.training_curator import list_eval_results, get_all_examples
         results = list_eval_results()
         self._leaderboard_table.setRowCount(0)
@@ -902,11 +940,13 @@ class FlywheelStudioWorkspace(QWidget):
         )
 
     def _export_dpo_from_evals(self):
+        """Export the DPO dataset from evaluation results and show where it was saved."""
         from app.utils.training_curator import export_dpo
         path = export_dpo()
         QMessageBox.information(self, "DPO Export", f"Exported DPO dataset to:\n{path}")
 
     def _open_leaderboard_item(self, item):
+        """Open the saved report for a double-clicked leaderboard row and show the start of its JSON."""
         path = self._leaderboard_table.item(item.row(), 0).data(Qt.ItemDataRole.UserRole)
         if not path:
             return
@@ -919,6 +959,7 @@ class FlywheelStudioWorkspace(QWidget):
             QMessageBox.warning(self, "Error", str(e))
 
     def _export_sft(self):
+        """Export the curated data as an SFT dataset in Unsloth format and report the result."""
         try:
             path = self.state.curator.export_unsloth()
             QMessageBox.information(
@@ -929,6 +970,7 @@ class FlywheelStudioWorkspace(QWidget):
             QMessageBox.critical(self, "Export Error", f"Export encountered an error:\n{e}")
 
     def _export_dpo(self):
+        """Export the curated data as a DPO dataset in Unsloth format and report the result."""
         try:
             path = self.state.curator.export_dpo()
             QMessageBox.information(
@@ -941,6 +983,7 @@ class FlywheelStudioWorkspace(QWidget):
     # ── Log Inspector Tab ─────────────────────────────────────────────────────
 
     def _build_log_inspector_tab(self) -> QWidget:
+        """Build the Log Inspector tab: a token prompt page and a page with the trace list and four charts."""
         w = QWidget()
         lay = QVBoxLayout(w)
         lay.setContentsMargins(0, 0, 0, 0)
@@ -1071,10 +1114,12 @@ class FlywheelStudioWorkspace(QWidget):
         thread = _TokenLookupThread()
 
         def on_found(token: str):
+            """Authorize with the cached token once it is found."""
             logger.info("Auto-authorizing log access with cached token.")
             self._do_authorize_with_token(token)
 
         def on_finished():
+            """Forget the finished lookup thread."""
             if self._token_lookup_thread is thread:
                 self._token_lookup_thread = None
 
@@ -1085,6 +1130,7 @@ class FlywheelStudioWorkspace(QWidget):
         thread.start()
 
     def _on_authorize_logs(self) -> None:
+        """Authorize with the token typed in by the user; an empty token shows an error."""
         token_text = self._log_token_input.text().strip()
         if not token_text:
             self._log_auth_error.setText("Please enter a security token.")
@@ -1094,6 +1140,7 @@ class FlywheelStudioWorkspace(QWidget):
         self._do_authorize_with_token(token_text, manual=True)
 
     def _do_authorize_with_token(self, token_text: str, manual: bool = False) -> None:
+        """Decrypt the newest-first archives with the token on a background thread and show the log dashboard on success."""
         if self._log_decrypt_thread is not None and self._log_decrypt_thread.isRunning():
             return
 
@@ -1120,6 +1167,7 @@ class FlywheelStudioWorkspace(QWidget):
         thread = _LogDecryptThread(token_text, enc_files)
 
         def on_loaded(entries: list):
+            """Save the token when entered manually, then show the decrypted logs."""
             if manual:
                 save_cached_token(token_text)
             self._log_auth_error.setVisible(False)
@@ -1127,6 +1175,7 @@ class FlywheelStudioWorkspace(QWidget):
             self._log_inspector_stack.setCurrentIndex(1)
 
         def on_unauthorized():
+            """Show an error for a rejected token when the user entered it manually."""
             if manual:
                 self._log_auth_error.setText("Authorization Failed: Invalid token.")
                 self._log_auth_error.setVisible(True)
@@ -1134,6 +1183,7 @@ class FlywheelStudioWorkspace(QWidget):
                 self._log_auth_error.setVisible(False)
 
         def on_finished():
+            """Re-enable the token controls and forget the finished thread."""
             self._log_token_input.setEnabled(True)
             self._log_auth_btn.setEnabled(True)
             if self._log_decrypt_thread is thread:
@@ -1147,6 +1197,7 @@ class FlywheelStudioWorkspace(QWidget):
         thread.start()
 
     def _on_lock_logs(self) -> None:
+        """Clear the log views and return to the token prompt page."""
         self._log_trace_list.clear()
         self._log_speed_chart.set_data([], [])
         self._log_time_chart.set_data([], [])
@@ -1157,6 +1208,7 @@ class FlywheelStudioWorkspace(QWidget):
         self._log_inspector_stack.setCurrentIndex(0)
 
     def _populate_log_dashboard(self, logs: list[dict]) -> None:
+        """Fill the trace list and the speed, time, accuracy and temperature charts from decrypted log entries."""
         self._log_trace_list.clear()
 
         speed_pts: list[tuple[float, float]] = []

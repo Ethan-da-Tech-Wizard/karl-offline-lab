@@ -1,9 +1,15 @@
+# Program: karl-offline-lab - cognitive_parser.py
+# Programmer: Ethan-da-Tech-Wizard (written with Claude, an AI assistant)
+# Last Modified: 2026-11-18
+# Purpose: Splits raw model output into its think-block reasoning and its final response text.
+"""Parser for think-tag reasoning blocks in raw model output."""
 # THE HACKABLE LAYER — modify to change how thoughts are parsed from raw LLM output.
 #
 # This module is used for BATCH POST-PROCESSING only (e.g. engine_test.py).
 # The live streaming threads (LLMThread, AgenticThread) contain their own
 # inline state machines that route tokens in real time without calling this function.
 
+# Tag strings that mark the start and end of reasoning text.
 _OPEN  = "<think>"
 _CLOSE = "</think>"
 
@@ -35,6 +41,7 @@ def parse_thought_stream(raw_text: str, start_in_thought: bool = False) -> tuple
         A ``(thought_text, response_text)`` tuple. Both parts are stripped of
         leading/trailing whitespace. Either may be an empty string.
     """
+    # Collect the text pieces in order, then join them at the end.
     thought_parts: list[str] = []
     response_parts: list[str] = []
     in_thought = start_in_thought
@@ -49,6 +56,7 @@ def parse_thought_stream(raw_text: str, start_in_thought: bool = False) -> tuple
     if close_idx != -1 and (open_idx == -1 or close_idx < open_idx):
         in_thought = True
 
+    # Walk through the text, switching between response mode and thought mode at each tag.
     pos = 0
     while pos < len(raw_text):
         if not in_thought:
@@ -68,6 +76,7 @@ def parse_thought_stream(raw_text: str, start_in_thought: bool = False) -> tuple
             in_thought = False
             pos = close_idx + len(_CLOSE)
 
+    # Imported here because only this function needs it.
     import re
     thought = "".join(thought_parts).strip()
     response = "".join(response_parts).strip()

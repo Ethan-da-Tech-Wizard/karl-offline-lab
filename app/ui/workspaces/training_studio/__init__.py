@@ -1,3 +1,8 @@
+# Program: karl-offline-lab - __init__.py
+# Programmer: Ethan-da-Tech-Wizard (written with Claude, an AI assistant)
+# Last Modified: 2026-11-18
+# Purpose: Defines the AI Lab (Training Studio) workspace that hosts the Flywheel, Dataset, Export, Train, Auto-Train and Mini-GPT tabs.
+"""Training Studio workspace package."""
 from PyQt6.QtWidgets import QWidget, QVBoxLayout, QHBoxLayout, QLabel, QTabWidget
 
 from app.ui.workspaces.training_studio.flywheel_tab import FlywheelTab
@@ -51,6 +56,7 @@ class TrainingStudioWorkspace(QWidget):
         desc.setStyleSheet("font-size: 8.5pt; margin-bottom: 6px; padding-left: 2px;")
         root.addWidget(desc)
 
+        # Create each tab around the shared app state.
         self.flywheel_tab = FlywheelTab(self.state)
         self.dataset_tab = DatasetTab(self.state)
         self.export_tab = ExportTab(self.state)
@@ -61,6 +67,7 @@ class TrainingStudioWorkspace(QWidget):
         # Wire communication signals
         self.dataset_tab.dataset_changed.connect(self._refresh)
 
+        # Assemble the tabs in the order the training workflow is used.
         tabs = QTabWidget()
         tabs.addTab(self.flywheel_tab, "Flywheel")
         tabs.addTab(self.dataset_tab, "Dataset")
@@ -75,14 +82,19 @@ class TrainingStudioWorkspace(QWidget):
         self._refresh()
 
     def _on_tab_changed(self, idx: int):
+        # Index 0 is the Flywheel tab.
+        """Reload the flywheel statistics whenever the Flywheel tab is selected."""
         if idx == 0:  # Flywheel tab
             self.flywheel_tab.load_stats()
 
     def showEvent(self, event):
+        """Refresh the stats and tab data each time the workspace becomes visible."""
         super().showEvent(event)
         self._refresh()
 
     def _refresh(self):
+        # Summarise the curated dataset: total, thumbs-up and corrected examples.
+        """Update the example-count summary and refresh the dataset and train tabs."""
         stats = self.state.curator.get_stats()
         self._stats_lbl.setText(
             f"<b>{stats['total']}</b> examples  &middot;  "

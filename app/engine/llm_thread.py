@@ -1,3 +1,8 @@
+# Program: karl-offline-lab - llm_thread.py
+# Programmer: Ethan-da-Tech-Wizard (written with Claude, an AI assistant)
+# Last Modified: 2026-11-18
+# Purpose: Qt thread for a single streamed generation: builds a context-budgeted prompt, streams tokens through the thought parser, handles continuations, tools, thermal limits and a stall watchdog, and logs the result.
+"""Single-shot inference worker thread that streams raw, thought and answer tokens to the UI."""
 import json
 import logging
 import os
@@ -113,6 +118,7 @@ def _get_gpu_temp() -> float | None:
 
 
 def _json_object_complete(text: str) -> bool:
+    """Return True once the text starts with a "{" and its braces balance (ignoring braces inside strings)."""
     depth = 0
     in_string = False
     escaped = False
@@ -154,6 +160,7 @@ def _salvage_compact_trace_fields(buffer: str) -> tuple[str, str]:
     doesn't leak raw JSON scaffolding to the user as the chat response."""
 
     def _extract(key: str) -> str:
+        """Regex out one quoted JSON string value for the key, decoding escapes when possible."""
         match = re.search(rf'"{re.escape(key)}"\s*:\s*"((?:\\.|[^"\\])*)"', buffer)
         if not match:
             return ""
@@ -169,6 +176,7 @@ def _salvage_compact_trace_fields(buffer: str) -> tuple[str, str]:
 
 
 def _emit_compacted_generation(buffer: str, parser: StreamingThoughtParser) -> bool:
+    """Decode a compact trace buffer and emit its thought and response through the parser; return False when it should be treated as plain text."""
     stripped = buffer.strip()
     try:
         trace = decompact_trace(stripped)
@@ -277,15 +285,18 @@ class LLMThread(QThread):
         self._watchdog_stop.set()
 
     def _mark_token_activity(self):
+        """Record the current time as the last moment a token arrived (used by the watchdog)."""
         self.last_token_timestamp = time.time()
 
     def _emit_watchdog_timeout(self):
+        """Emit the watchdog error signal at most once per run."""
         if self._watchdog_error_emitted:
             return
         self._watchdog_error_emitted = True
         self.error_occurred.emit(_WATCHDOG_ERROR)
 
     def _cleanup_after_watchdog_timeout(self, llm=None):
+        """Flag the stop, report the failure to the task supervisor and close the active generator and model state so generation ends."""
         self._stop_requested = True
         self._watchdog_timed_out = True
         self._emit_watchdog_timeout()
@@ -309,12 +320,14 @@ class LLMThread(QThread):
                 pass
 
     def _start_watchdog(self, llm=None) -> threading.Thread:
+        """Start a daemon thread that triggers cleanup when no token has arrived within the timeout; return that thread."""
         self._watchdog_stop.clear()
         self._watchdog_timed_out = False
         self._watchdog_error_emitted = False
         self._mark_token_activity()
 
         def _monitor():
+            """Check every quarter second whether token output has stalled past the timeout."""
             while not self._watchdog_stop.wait(0.25):
                 if self._stop_requested:
                     return
@@ -327,11 +340,13 @@ class LLMThread(QThread):
         return thread
 
     def _stop_watchdog(self, thread: threading.Thread | None):
+        """Signal the watchdog to stop and wait briefly for it to exit."""
         self._watchdog_stop.set()
         if thread and thread.is_alive():
             thread.join(timeout=1.0)
 
     def _token_count(self, llm, text: str) -> int:
+        """Count tokens with the model tokenizer, falling back to a rough character estimate (about three characters per token)."""
         if not text:
             return 0
         try:
@@ -343,6 +358,7 @@ class LLMThread(QThread):
             return max(1, len(text) // 3)
 
     def _message_token_count(self, llm, msg) -> int:
+        """Token count of one chat message including its role wrapper."""
         role = msg.get("role", "")
         content = msg.get("content", "")
         # Include light ChatML-style overhead so trimming tracks the built prompt
@@ -395,6 +411,7 @@ class LLMThread(QThread):
         history_token_limit = max(256, context_budget - _RESPONSE_RESERVE - system_tokens)
 
         def _cap(msg):
+            """Shorten one message that is longer than the per-message character limit, keeping its tail."""
             content = msg.get("content", "")
             if len(content) > _MAX_MSG_CHARS:
                 content = "[...truncated...] " + content[-_MAX_MSG_CHARS:]
@@ -420,6 +437,7 @@ class LLMThread(QThread):
         return kept
 
     def _response_reserve(self) -> int:
+        """Tokens to keep free for the reply: the configured max_tokens, kept between 128 and the default reserve."""
         try:
             max_tokens = int(self.hyperparams.get("max_tokens", _RESPONSE_RESERVE))
         except Exception:
@@ -441,6 +459,7 @@ class LLMThread(QThread):
         changed = False
 
         def _compile():
+            """Build the prompt text from the working system prompt and history and measure its tokens."""
             core.interaction_loop.ACTIVE_HYPERPARAMS = self.hyperparams
             prompt_text = core.interaction_loop.build_prompt(working_system, working_history)
             return prompt_text, self._token_count(llm, prompt_text)
@@ -497,6 +516,7 @@ class LLMThread(QThread):
             import os
             import psutil
             if hasattr(os, "sched_getaffinity") and hasattr(os, "sched_setaffinity"):
+                # Remember the CPU set so it can be restored when the run ends.
                 original_affinity = os.sched_getaffinity(0)
                 p_count = psutil.cpu_count(logical=False)
                 if p_count:
@@ -558,6 +578,7 @@ class LLMThread(QThread):
                 system_prompt = system_prompt.replace("{rag_context}", context_str)
             elif self.retrieved_chunks:
                 system_prompt += "\n\nRetrieved Context:\n" + context_str
+            # Make the history fit the context window before the prompt is built.
             trimmed_history = self._trim_history(self.chat_history, llm, system_prompt)
             prompt, trimmed_history, system_prompt, prompt_tokens, _prompt_budget = (
                 self._build_prompt_with_context_budget(llm, system_prompt, trimmed_history)
@@ -614,7 +635,9 @@ class LLMThread(QThread):
             max_compression_resets = 2
             state_transitioned = False
 
+            # Every streamed token is also written to a raw log file.
             with open(raw_log_path, "w", encoding="utf-8") as raw_file:
+                # Generate in passes: if the model stops because of the length limit, continue from where it ended (up to five extra passes).
                 while continuation_count <= max_continuations:
                     # Stage 3 emergency check at each continuation boundary
                     if thermal_enabled:
@@ -1005,6 +1028,7 @@ class LLMThread(QThread):
                 cooling_duration_sec=cooling_duration,
             )
 
+            # Tell the UI the generation is complete.
             self.generation_finished.emit(parser.parsed_thought, parser.parsed_response, truncated, ended_in_thought, diagnostics)
             EventBroker.get_instance().publish("generation:finished", {
                 "thought": parser.parsed_thought,
@@ -1022,6 +1046,7 @@ class LLMThread(QThread):
             self.error_occurred.emit(f"Error: {str(e)}")
             supervisor.fail(self.task_id, str(e))
         finally:
+            # Always release the model lock, even after an error.
             ModelLoader.unlock_instance()
             # Restore original CPU affinity
             if original_affinity:

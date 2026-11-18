@@ -1,9 +1,16 @@
+# Program: karl-offline-lab - agentic_loop.py
+# Programmer: Ethan-da-Tech-Wizard (written with Claude, an AI assistant)
+# Last Modified: 2026-11-18
+# Purpose: Hot-reloadable rules for the agentic loop: when to stop iterating and what follow-up prompt to send next.
+"""Stop condition and follow-up prompts for Karl's agentic loop."""
 # THE HACKABLE AGENTIC LAYER
 # Modify this file to control how Karl loops autonomously.
 # This script is hot-reloaded on every agentic iteration -- no restart needed.
 
+# Hard upper bound on loop iterations.
 MAX_ITERATIONS = 20  # Generous cap -- loop runs until the model signals completion
 
+# Phrases that, when found in a response, tell the loop the model is finished.
 COMPLETION_SIGNALS = [
     "FINAL ANSWER:",
     "[DONE]",
@@ -24,6 +31,7 @@ def should_continue(iteration: int, last_response: str) -> bool:
     For long-context questions, the model will keep refining until
     it produces a final answer.
     """
+    # Safety cap reached.
     if iteration >= MAX_ITERATIONS:
         return False
 
@@ -49,6 +57,7 @@ def build_next_prompt(last_response: str, iteration: int) -> str:
     On early iterations: ask it to continue and deepen.
     On later iterations: push it toward a final conclusion.
     """
+    # The prompt escalates with the iteration number: deepen first, then converge on a final answer.
     if iteration == 0:
         return (
             "Good start. Continue your reasoning -- go deeper into the details "

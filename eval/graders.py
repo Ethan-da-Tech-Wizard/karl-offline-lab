@@ -1,3 +1,7 @@
+# Program: karl-offline-lab - graders.py
+# Programmer: Ethan-da-Tech-Wizard (written with Claude, an AI assistant)
+# Last Modified: 2026-11-18
+# Purpose: Pure scoring functions (exact match, valid JSON, keywords, groundedness, refusal) and a registry to run a grader by name.
 """
 Eval Graders — Karl Workbench
 ==============================
@@ -146,6 +150,7 @@ def groundedness(output: str, context_chunks: list[str], min_overlap_words: int 
         passed: True if >= 60% of sentences are grounded OR refusal detected.
         score:  Fraction of sentences that are grounded.
     """
+    # A correct refusal counts as grounded; otherwise compare words against the context.
     NOT_IN_CONTEXT_MARKER = "NOT IN CONTEXT"
 
     if NOT_IN_CONTEXT_MARKER in output.upper():
@@ -168,6 +173,7 @@ def groundedness(output: str, context_chunks: list[str], min_overlap_words: int 
         ctx_words.update(re.findall(r"\b\w+\b", chunk.lower()))
 
     # Split output into sentences (rough split on . ! ?)
+    # Each sentence is scored on how many of its words also appear in the context.
     sentences = [s.strip() for s in re.split(r"[.!?]", output) if s.strip()]
     if not sentences:
         return {"passed": False, "score": 0.0, "detail": "groundedness: FAIL — empty output"}
@@ -213,6 +219,7 @@ def not_in_context(output: str) -> dict:
 
 # ── Registry ──────────────────────────────────────────────────────────────────
 
+# Maps grader names (used in datasets and workflows) to their functions.
 GRADER_REGISTRY: dict[str, callable] = {
     "exact_match": exact_match,
     "json_valid": json_valid,

@@ -1,3 +1,8 @@
+# Program: karl-offline-lab - flywheel_tab.py
+# Programmer: Ethan-da-Tech-Wizard (written with Claude, an AI assistant)
+# Last Modified: 2026-11-18
+# Purpose: Qt tab that shows self-improvement flywheel statistics (interactions, feedback, training data, eval) and offers SFT/DPO export and a training-folder shortcut.
+"""Flywheel dashboard tab for the Training Studio."""
 import os
 import json
 
@@ -11,25 +16,30 @@ from PyQt6.QtGui import QFont
 from app.ui.workspaces.training_studio.threads import _FlywheelStatsThread
 
 def _section(text: str) -> QLabel:
+    """Return a styled section-header label."""
     lbl = QLabel(text)
     lbl.setObjectName("section-header")
     return lbl
 
 
 def _hline() -> QFrame:
+    """Return a horizontal divider line."""
     f = QFrame()
     f.setFrameShape(QFrame.Shape.HLine)
     return f
 
 
 class FlywheelTab(QWidget):
+    """Dashboard tab of stat cards plus export and preview controls."""
     def __init__(self, state, parent=None):
+        """Store state, set up thread tracking and build the UI."""
         super().__init__(parent)
         self.state = state
         self._active_threads = set()
         self._build_ui()
 
     def _build_ui(self):
+        """Create the header, pipeline caption, stat cards and export/preview card."""
         layout = QVBoxLayout(self)
         layout.setContentsMargins(12, 12, 12, 12)
         layout.setSpacing(12)
@@ -54,12 +64,14 @@ class FlywheelTab(QWidget):
         pipeline_lbl.setAlignment(Qt.AlignmentFlag.AlignCenter)
         layout.addWidget(pipeline_lbl)
 
+        # Row of stat cards, wrapped in a horizontal scroll area further below.
         # Cards row
         cards = QWidget()
         cl = QHBoxLayout(cards)
         cl.setContentsMargins(0, 0, 0, 0)
         cl.setSpacing(10)
 
+        # Each card lists the stat fields it displays.
         self._fw_interactions = self._flywheel_card(
             "Interactions", ["traces_total", "sessions_saved", "last_session"]
         )
@@ -69,6 +81,7 @@ class FlywheelTab(QWidget):
         self._fw_data = self._flywheel_card(
             "Training Data", ["sft_examples", "dpo_pairs", "last_export"]
         )
+        # Insert before the trailing stretch so the buttons sit under the fields.
         # Add SFT and DPO export buttons directly inside the Training Data card
         btn_lay_data = QHBoxLayout()
         btn_lay_data.setSpacing(6)
@@ -147,6 +160,7 @@ class FlywheelTab(QWidget):
         layout.addStretch()
 
     def _flywheel_card(self, title: str, field_ids: list) -> QWidget:
+        """Build a titled card with one label row per field id and register the value labels in _fw_fields."""
         card = QFrame()
         card.setObjectName("panel")
         cl = QVBoxLayout(card)
@@ -158,12 +172,14 @@ class FlywheelTab(QWidget):
         cl.addWidget(title_lbl)
         cl.addWidget(_hline())
 
+        # Create the shared field registry on first use.
         self._fw_fields = getattr(self, "_fw_fields", {})
         for fid in field_ids:
             row = QWidget()
             rl = QHBoxLayout(row)
             rl.setContentsMargins(0, 0, 0, 0)
             rl.setSpacing(4)
+            # Turn a field id such as thumbs_up into a readable label.
             name_lbl = QLabel(fid.replace("_", " ").title() + ":")
             name_lbl.setObjectName("lbl-muted")
             name_lbl.setFixedWidth(100)
@@ -178,17 +194,21 @@ class FlywheelTab(QWidget):
         return card
 
     def load_stats(self):
+        """Gather statistics on a background thread and show them when ready."""
         self._fw_status_lbl.setText("Loading stats...")
         self._flywheel_refresh_btn.setEnabled(False)
+        # Compute stats off the UI thread; disable Refresh until it finishes.
         t = _FlywheelStatsThread()
         t.stats_ready.connect(self._apply_flywheel_stats)
         t.finished.connect(lambda: self._flywheel_refresh_btn.setEnabled(True))
         t.finished.connect(t.deleteLater)
+        # Keep a reference so the thread is not garbage collected while running.
         self._active_threads.add(t)
         t.finished.connect(lambda: self._active_threads.discard(t))
         t.start()
 
     def _apply_flywheel_stats(self, stats: dict):
+        """Fill the value labels and the export preview from a stats dict."""
         fields = getattr(self, "_fw_fields", {})
         for fid, val in stats.items():
             if fid in fields:
@@ -201,14 +221,17 @@ class FlywheelTab(QWidget):
         self._fw_status_lbl.setText("Stats loaded.")
 
     def _flywheel_export_sft(self):
+        """Export SFT data, then refresh the stats."""
         self._export("sft")
         self.load_stats()
 
     def _flywheel_export_dpo(self):
+        """Export DPO data, then refresh the stats."""
         self._export("dpo")
         self.load_stats()
 
     def _open_training_folder(self):
+        """Open the training data folder in the system file manager (via the xdg-open command)."""
         import subprocess
         try:
             path = os.path.abspath("data/training")
@@ -218,14 +241,18 @@ class FlywheelTab(QWidget):
             QMessageBox.warning(self, "Error", f"Failed to open folder: {e}")
 
     def _flywheel_goto_eval(self):
+        """Ask the main window sidebar to select the evaluation page."""
         try:
             main_win = self.window()
             if hasattr(main_win, "_sidebar"):
+                # Index 5 is the evaluation page in the sidebar; failures are ignored.
                 main_win._sidebar.select(5)
         except Exception:
             pass
 
     def _export(self, mode: str):
+        # Refuse to export an empty dataset, then check each line has a messages or prompt key.
+        """Validate the curated dataset, ask for a destination and export in the given mode (sft or dpo)."""
         curated_file = "data/training/curated.jsonl"
         if not os.path.exists(curated_file) or os.path.getsize(curated_file) == 0:
             QMessageBox.warning(self, "Validation Failed", "The dataset is empty. Curate some examples first.")
@@ -251,6 +278,7 @@ class FlywheelTab(QWidget):
         try:
             if mode == "sft":
                 out_path = self.state.curator.export_unsloth(path)
+                # The count reported is the number of lines in the exported file.
                 count = sum(1 for line in open(out_path, "r", encoding="utf-8"))
                 QMessageBox.information(self, "Export Successful", f"Saved {count} SFT examples to:\n{out_path}")
             else:

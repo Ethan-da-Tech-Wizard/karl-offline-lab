@@ -1,10 +1,18 @@
 # -*- coding: utf-8 -*-
+# Program: karl-offline-lab - docs_data.py
+# Programmer: Ethan-da-Tech-Wizard (written with Claude, an AI assistant)
+# Last Modified: 2026-11-18
+# Purpose: Holds the static HTML text of the Codex help topics (DEFAULT_LIBRARY) and the inline style tokens used to format them.
+
 """
 Exhaustive reference guides for Karl's Codex workspace.
 Provides complete, self-contained documentation of grammar, compilers, runtime loops,
 APIs, and optimization tactics for offline code generation.
 """
 
+# ---------------------------------------------------------------------------
+# Styling tokens: inline CSS strings reused inside every topic's HTML
+# ---------------------------------------------------------------------------
 # Heavenscape Styling Tokens
 STYLE_H2 = "color:#00C2FF; margin-top:0; border-bottom: 1px solid #1F1F3D; padding-bottom: 4px;"
 STYLE_H4 = "color:#E4E4F0; margin-bottom:4px; margin-top:16px;"
@@ -16,7 +24,12 @@ STYLE_TABLE = "width:100%; border-collapse:collapse; margin:10px 0;"
 STYLE_TH = "text-align:left; color:#00C2FF; border-bottom:1px solid #1F1F3D; padding:8px;"
 STYLE_TD = "padding:8px; border-bottom:1px solid #10101C; color:#9090A8;"
 
+# ---------------------------------------------------------------------------
+# Library content: maps a topic title to its HTML body (f-string, so doubled
+# braces appear where a literal brace is needed)
+# ---------------------------------------------------------------------------
 DEFAULT_LIBRARY = {
+    # Workbench: chat space, HUD panels, shortcuts and generation settings
     "Workbench": f"""
         <h2 style='{STYLE_H2}'>◈ Workbench: Primary Interaction Space</h2>
         <p style='{STYLE_P}'>The Workbench is Karl's central nervous system, providing a high-bandwidth interface for local LLM introspection and generation.</p>
@@ -48,6 +61,7 @@ DEFAULT_LIBRARY = {
           <li style='{STYLE_LI}'><b>Feedback Curation:</b> Use the 👍/👎/✎ buttons to rate responses. Thumbs up saves to SFT curator; Thumbs down for DPO; Correct (✎) saves the user's manual fix as the new ground truth.</li>
         </ul>
     """,
+    # Swarm Studio: multi-agent code generation
     "Swarm Studio": f"""
         <h2 style='{STYLE_H2}'>☄ Swarm Studio: Multi-Agent Codegen</h2>
         <p style='{STYLE_P}'>Karl's Swarm Studio orchestrates multiple specialized agents (Architect, Coder, Tester) to solve complex coding objectives autonomously.</p>
@@ -63,6 +77,7 @@ DEFAULT_LIBRARY = {
         <h4 style='{STYLE_H4}'>Task Lifecycle</h4>
         <pre style='{STYLE_PRE}'>PENDING ➔ IN_PROGRESS ➔ VERIFYING ➔ [ COMPLETED | FAILED ]</pre>
     """,
+    # Training Studio: LoRA/QLoRA fine-tuning
     "Training Studio": f"""
         <h2 style='{STYLE_H2}'>⬡ Training Studio: Local Fine-Tuning</h2>
         <p style='{STYLE_P}'>Perform hardware-accelerated LoRA and QLoRA fine-tuning on your curated datasets without leaving Karl.</p>
@@ -91,6 +106,7 @@ def get_examples():
         {{"instruction": "Extract date", "output": "{{\\"date\\": \\"2026-06-13\\"}}"}}
     ]</pre>
     """,
+    # Knowledge Base: retrieval-augmented generation
     "Knowledge Base": f"""
         <h2 style='{STYLE_H2}'>⊞ Knowledge Base: RAG Mechanics</h2>
         <p style='{STYLE_P}'>Manage and optimize the local Retrieval-Augmented Generation (RAG) pipeline for grounding LLM responses in your own data.</p>
@@ -108,6 +124,7 @@ def get_examples():
           <li style='{STYLE_LI}'><b>Top-K:</b> The maximum number of chunks to inject into the prompt. High K provides more breadth but consumes more context budget.</li>
         </ul>
     """,
+    # Codex Search: how documentation search works
     "Codex Search": f"""
         <h2 style='{STYLE_H2}'>🔍 Codex: Semantic Information Discovery</h2>
         <p style='{STYLE_P}'>Karl uses a hybrid search strategy to locate relevant documentation in real-time.</p>
@@ -118,6 +135,7 @@ def get_examples():
         <h4 style='{STYLE_H4}'>2. Keyword & Regex Fallback</h4>
         <p style='{STYLE_P}'>If the vector engine is offline, Karl falls back to high-speed alphanumeric pattern matching to find specific IDs or technical terms.</p>
     """,
+    # AI Steering: adapter control
     "AI Steering": f"""
         <h2 style='{STYLE_H2}'>◈ AI Steering & Adapter Control</h2>
         <p style='{STYLE_P}'>Steering refers to the fine-grained control of model behavior using lightweight adapters (LoRA/QLoRA).</p>
@@ -126,18 +144,22 @@ def get_examples():
           <li style='{STYLE_LI}'><b>Dynamic Scheduling:</b> Karl automatically adjusts entropy based on the generation state (Thinking vs. Answering).</li>
         </ul>
     """,
+    # Python: development guide
     "Python": f"""
         <h2 style='{STYLE_H2}'>Python Development Guide</h2>
         <p style='{STYLE_P}'>Best practices for writing Python code with Karl's local assistance.</p>
     """,
+    # Docker: sandboxing guide
     "Docker": f"""
         <h2 style='{STYLE_H2}'>Docker & Sandboxing</h2>
         <p style='{STYLE_P}'>Guidelines for using Docker containers to safely verify model-generated code.</p>
     """,
+    # FastAPI: API reference
     "FastAPI": f"""
         <h2 style='{STYLE_H2}'>FastAPI Implementation</h2>
         <p style='{STYLE_P}'>Reference for building robust APIs using FastAPI and Pydantic.</p>
     """,
+    # Mathematical Introspection: formulas behind the model
     "Mathematical Introspection": f"""
         <h2 style='{STYLE_H2}'>◈ Mathematical Introspection</h2>
         <p style='{STYLE_P}'>This reference guide details the mathematical foundations underlying Karl's vector space search retrieval and deep learning transformer self-attention mechanisms.</p>

@@ -1,3 +1,7 @@
+# Program: karl-offline-lab - profiles.py
+# Programmer: Ethan-da-Tech-Wizard (written with Claude, an AI assistant)
+# Last Modified: 2026-11-18
+# Purpose: Defines the built-in agent profiles and merges custom agents and saved prompt overrides into the live AGENT_PROFILES registry.
 """Agent profile definitions injected into the active system prompt.
 
 Architecture

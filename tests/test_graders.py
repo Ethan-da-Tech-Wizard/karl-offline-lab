@@ -1,8 +1,15 @@
+# Program: karl-offline-lab - test_graders.py
+# Programmer: Ethan-da-Tech-Wizard (written with Claude, an AI assistant)
+# Last Modified: 2026-11-18
+# Purpose: Tests for the evaluation graders (exact match, JSON validity, keyword hit, groundedness, refusal detection) and the grader dispatcher.
+"""Tests for eval.graders."""
+
 import os
 import sys
 import pytest
 
 # Ensure parent directory is in path
+# Make the repository root importable
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from eval.graders import run_grader, exact_match, json_valid, keyword_hit, groundedness, not_in_context
@@ -12,6 +19,7 @@ from eval.graders import run_grader, exact_match, json_valid, keyword_hit, groun
 
 def test_exact_match_grader():
     # Basic pass case
+    """Scenario: compare outputs with matching, differently spaced or cased, and different text. Expected: pass for equal text ignoring case and whitespace, fail otherwise."""
     res = exact_match("Yes", "yes")
     assert res["passed"] is True
     assert res["score"] == 1.0
@@ -31,6 +39,7 @@ def test_exact_match_grader():
 
 def test_json_valid_grader():
     # Pass case: basic parseable JSON
+    """Scenario: valid, fenced, keyed, list, empty, malformed, wrong-type and missing-key JSON. Expected: pass when parseable with required keys; partial score when keys are missing."""
     res = json_valid('{"valid": true}')
     assert res["passed"] is True
     assert res["score"] == 1.0
@@ -71,6 +80,7 @@ def test_json_valid_grader():
 
 def test_keyword_hit_grader():
     # Pass case: require_all=True (all keywords present)
+    """Scenario: keyword lists with require_all on and off. Expected: score is the fraction of keywords found; pass needs all (or any) accordingly."""
     res = keyword_hit("Karl is an analytical assistant.", keywords=["Karl", "analytical"], require_all=True)
     assert res["passed"] is True
     assert res["score"] == 1.0
@@ -94,6 +104,7 @@ def test_keyword_hit_grader():
 # ── 4. groundedness ───────────────────────────────────────────────────────────
 
 def test_groundedness_grader():
+    """Scenario: outputs checked against context chunks. Expected: refusals and well-overlapping answers pass; empty context, unrelated or empty output fail."""
     context = [
         "The standard return policy for electronic items is 15 days.",
         "Meridian Technologies CEO is Sandra Holt."
@@ -129,6 +140,7 @@ def test_groundedness_grader():
 
 def test_not_in_context_grader():
     # Pass case: contains refusal marker
+    """Scenario: a refusal reply and a made-up answer. Expected: the refusal passes and the answer fails."""
     res = not_in_context("I cannot answer because it is not in context.")
     assert res["passed"] is True
     assert res["score"] == 1.0
@@ -143,6 +155,7 @@ def test_not_in_context_grader():
 
 def test_grader_dispatch_and_routing():
     # Test valid dispatch
+    """Scenario: dispatch a known and an unknown grader name. Expected: the known one runs; the unknown raises KeyError."""
     res = run_grader("exact_match", "yes", expected="yes")
     assert res["passed"] is True
 

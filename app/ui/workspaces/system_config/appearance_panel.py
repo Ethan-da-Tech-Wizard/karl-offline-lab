@@ -1,3 +1,9 @@
+# Program: karl-offline-lab - appearance_panel.py
+# Programmer: Ethan-da-Tech-Wizard (written with Claude, an AI assistant)
+# Last Modified: 2026-11-18
+# Purpose: Settings mixin that builds the Appearance tab (theme, layout, accent, glow, motion controls and live preview) and syncs it with saved state.
+"""Settings mixin that builds the Appearance tab (theme, layout, accent, glow, motion controls and live preview) and syncs it with saved state."""
+
 from __future__ import annotations
 
 import logging
@@ -17,7 +23,9 @@ from .common import _hline, _row, _section
 logger = logging.getLogger("karl.system_config")
 
 class AppearancePanelMixin:
+    """Mixin that builds the Appearance tab and keeps its controls in sync with saved state."""
     def _build_theme_tab(self) -> QWidget:
+        """Build the Appearance tab: controls on the left, gallery and live preview on the right."""
         w = QWidget()
         layout = QHBoxLayout(w)
         layout.setContentsMargins(12, 12, 12, 12)
@@ -220,6 +228,7 @@ class AppearancePanelMixin:
 
 
     def _add_preview_elements(self, card_layout: QVBoxLayout):
+        """Add the mock-up widgets of the live preview card to the given layout."""
         title = QLabel("LIVE PREVIEW")
         title.setObjectName("section-header")
         card_layout.addWidget(title)
@@ -314,6 +323,7 @@ class AppearancePanelMixin:
 
 
     def _load_active_appearance_config(self):
+        """Load saved UI config into app state and controls, then apply the theme."""
         config = config_store.get_ui_config()
         theme_preset = config["theme_preset"]
         custom_accent = config["custom_accent"]
@@ -368,6 +378,7 @@ class AppearancePanelMixin:
 
 
     def _sync_appearance_controls_from_state(self):
+        """Set every appearance control from the current app state without re-triggering handlers."""
         theme_preset = getattr(self.state, "theme_preset", "Karl Obsidian Core")
         layout_preset = getattr(self.state, "layout_preset", "Focused Workbench")
         custom_accent = getattr(self.state, "custom_accent", None)
@@ -420,6 +431,7 @@ class AppearancePanelMixin:
 
 
     def _update_accent_button_text(self):
+        """Update the accent button text and colour preview for the custom or preset accent."""
         if self._active_custom_accent:
             self._custom_accent_btn.setText(f"Accent: {self._active_custom_accent}")
             self._accent_color_preview.setStyleSheet(
@@ -435,6 +447,7 @@ class AppearancePanelMixin:
 
 
     def _on_preset_changed(self):
+        """Show the new preset description and re-apply the theme and gallery."""
         preset_name = self._theme_preset_combo.currentText()
         preset_data = THEMES.get(preset_name, {})
         self._preset_desc_lbl.setText(preset_data.get("description", ""))
@@ -444,6 +457,7 @@ class AppearancePanelMixin:
 
 
     def _pick_custom_accent(self):
+        """Open a colour dialog and store the chosen accent as the custom accent."""
         preset_name = self._theme_preset_combo.currentText()
         default_color = THEMES.get(preset_name, {}).get("accent", "#00C2FF")
         if self._active_custom_accent:
@@ -457,6 +471,7 @@ class AppearancePanelMixin:
 
 
     def _reset_custom_accent(self):
+        """Clear the custom accent so the preset accent is used again."""
         self._active_custom_accent = None
         self._update_accent_button_text()
         self._apply_active_theme()

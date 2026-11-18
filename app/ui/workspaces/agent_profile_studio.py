@@ -1,3 +1,8 @@
+# Program: karl-offline-lab - agent_profile_studio.py
+# Programmer: Ethan-da-Tech-Wizard (written with Claude, an AI assistant)
+# Last Modified: 2026-11-18
+# Purpose: Provides the Agent Profile Studio workspace for listing, editing, saving and reverting swarm specialist agent profiles (prompt, temperature, token limit, tool permissions).
+
 """
 Karl Swarm Agent Profile Studio
 ================================
@@ -22,15 +27,21 @@ from app.utils.swarm_agent_profiles import (
     save_agent_profile,
 )
 
+# Module logger
 logger = logging.getLogger("karl.agent_profile_studio")
 
 
+# ---------------------------------------------------------------------------
+# Workspace widget
+# ---------------------------------------------------------------------------
 class AgentProfileStudioWorkspace(QWidget):
     """Visual workspace for managing and synchronizing swarm agent profiles."""
 
     profile_saved = pyqtSignal(str)  # Emits profile name when saved
 
     def __init__(self, state: Any, parent: QWidget | None = None):
+        """Store app state, build the UI and load saved profiles into the list."""
+        # _profiles maps profile id to its settings; _current_id is the one being edited ("" for a new profile)
         super().__init__(parent)
         self._state = state
         self._profiles: dict[str, dict] = {}
@@ -39,6 +50,7 @@ class AgentProfileStudioWorkspace(QWidget):
         self._load_profiles()
 
     def _init_ui(self):
+        """Build the two-column layout: profile list on the left, editor form on the right."""
         layout = QHBoxLayout(self)
         layout.setContentsMargins(12, 12, 12, 12)
         layout.setSpacing(12)
@@ -59,7 +71,7 @@ class AgentProfileStudioWorkspace(QWidget):
         
         layout.addWidget(left_panel, 1)
 
-        # Right panel: Profile Editor
+        # Right panel: Profile Editor (identity, prompt, sampling limits, permissions, buttons)
         self._editor_panel = QGroupBox("Profile Editor")
         editor_layout = QVBoxLayout(self._editor_panel)
         form_layout = QFormLayout()
@@ -78,12 +90,14 @@ class AgentProfileStudioWorkspace(QWidget):
         self._prompt_input.setPlaceholderText("Instructions for the model guiding this role...")
         form_layout.addRow("System Instructions:", self._prompt_input)
 
+        # Temperature range 0.0 to 2.0 in 0.1 steps
         self._temp_spin = QDoubleSpinBox()
         self._temp_spin.setRange(0.0, 2.0)
         self._temp_spin.setSingleStep(0.1)
         self._temp_spin.setValue(0.7)
         form_layout.addRow("Temperature:", self._temp_spin)
 
+        # Token limit from 256 to 8192 in steps of 256
         self._tokens_spin = QSpinBox()
         self._tokens_spin.setRange(256, 8192)
         self._tokens_spin.setSingleStep(256)
@@ -119,6 +133,7 @@ class AgentProfileStudioWorkspace(QWidget):
         editor_layout.addLayout(btn_layout)
         layout.addWidget(self._editor_panel, 2)
 
+        # Reload from disk and rebuild the list; signals are blocked so refilling does not trigger selection handlers
     def _load_profiles(self):
         """Loads profiles from JSON and populates the list widget."""
         self._profiles = load_agent_profiles()
@@ -127,6 +142,7 @@ class AgentProfileStudioWorkspace(QWidget):
         for profile_id, profile in sorted(self._profiles.items()):
             label = f"{profile.get('icon', '')} {profile.get('name', profile_id)}"
             self._list_widget.addItem(label.strip())
+        # Role 256 (Qt UserRole) stores the profile id on each list row
             self._list_widget.item(self._list_widget.count() - 1).setData(256, profile_id)
         self._list_widget.blockSignals(False)
         if self._list_widget.count() > 0:
@@ -165,9 +181,11 @@ class AgentProfileStudioWorkspace(QWidget):
     def _on_save_profile(self):
         """Serializes current editor values and saves to JSON."""
         profile_id = self._id_input.text().strip()
+        # Profile ID must pass the shared pattern before anything is saved
         if not PROFILE_ID_RE.match(profile_id):
             QMessageBox.warning(self, "Agent Profiles", "Profile ID must start with a letter and use only letters, numbers, '_' or '-'.")
             return
+        # Collect the form values into the profile structure expected by the storage layer
         profile = {
             "name": self._name_input.text().strip() or profile_id,
             "icon": self._icon_input.text().strip() or profile_id[:1].upper(),
@@ -179,6 +197,7 @@ class AgentProfileStudioWorkspace(QWidget):
                 for key, checkbox in self._permission_checkboxes().items()
             },
         }
+        # Saving can fail (disk, validation), so report it to the user instead of raising
         try:
             saved = save_agent_profile(profile_id, profile)
         except Exception as exc:
@@ -187,6 +206,7 @@ class AgentProfileStudioWorkspace(QWidget):
         self._profiles[profile_id] = saved
         self._current_id = profile_id
         self._load_profiles()
+        # Reselect the saved profile in the refreshed list, then notify listeners
         for row in range(self._list_widget.count()):
             if self._list_widget.item(row).data(256) == profile_id:
                 self._list_widget.setCurrentRow(row)
@@ -194,6 +214,7 @@ class AgentProfileStudioWorkspace(QWidget):
         self.profile_saved.emit(profile_id)
 
     def _permission_checkboxes(self) -> dict[str, QCheckBox]:
+        """Map each stored permission key to the checkbox that controls it."""
         return {
             "read_files": self._chk_read,
             "write_files": self._chk_write,
@@ -202,10 +223,12 @@ class AgentProfileStudioWorkspace(QWidget):
         }
 
     def _load_profile_into_form(self, profile_id: str):
+        """Fill every editor control from the stored profile with the given id; unknown ids are ignored."""
         profile = self._profiles.get(profile_id)
         if not profile:
             return
         self._id_input.setText(profile_id)
+        # Built-in profiles keep a fixed id, so the id field becomes read-only
         self._id_input.setReadOnly(profile.get("builtin", False))
         self._name_input.setText(profile.get("name", profile_id))
         self._icon_input.setText(profile.get("icon", ""))

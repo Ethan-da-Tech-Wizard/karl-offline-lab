@@ -1,3 +1,8 @@
+# Program: karl-offline-lab - observability_tab.py
+# Programmer: Ethan-da-Tech-Wizard (written with Claude, an AI assistant)
+# Last Modified: 2026-11-18
+# Purpose: Qt tab that shows average latency, throughput, cache-hit and VRAM stats from the telemetry log and lets the user set log retention limits.
+"""Observability tab: performance metrics and log retention policy controls."""
 import os
 import json
 import logging
@@ -10,16 +15,20 @@ from app.engine import config_store
 
 logger = logging.getLogger("karl.system_config.observability_tab")
 
+# One JSON object per line, appended for each inference.
 TELEMETRY_LOG_PATH = "data/logs/performance_telemetry.jsonl"
 
 
 class ObservabilityTab(QWidget):
+    """Tab widget showing inference performance statistics and log retention settings."""
     def __init__(self, state, parent=None):
+        """Store the shared app state and build the UI."""
         super().__init__(parent)
         self.state = state
         self._build_ui()
 
     def _build_ui(self):
+        """Create the metric pills, retention spin boxes and action buttons."""
         layout = QVBoxLayout(self)
         layout.setContentsMargins(12, 12, 12, 12)
         layout.setSpacing(12)
@@ -32,6 +41,7 @@ class ObservabilityTab(QWidget):
         sl.setContentsMargins(0, 0, 0, 0)
         sl.setSpacing(16)
 
+        # TTFT = time to first token.
         self.ttft_pill = self._create_pill("Avg TTFT", "0.0 ms")
         self.tps_pill = self._create_pill("Avg TPS", "0.0 t/s")
         self.cache_pill = self._create_pill("Cache Hit Rate", "0.0%")
@@ -48,6 +58,7 @@ class ObservabilityTab(QWidget):
         layout.addWidget(_section("LOG RETENTION & GOVERNANCE POLICY"))
 
         # Policy configs
+        # Load saved UI settings to pre-fill the policy controls.
         cfg = config_store.get_ui_config()
 
         self._retention_spin = QSpinBox()
@@ -86,6 +97,7 @@ class ObservabilityTab(QWidget):
         self.refresh_metrics()
 
     def _create_pill(self, label: str, val: str) -> QFrame:
+        """Build one small stat card; the value label is kept as val_lbl so it can be updated later."""
         f = QFrame()
         f.setObjectName("observability-pill")
         f.setStyleSheet("""
@@ -114,6 +126,7 @@ class ObservabilityTab(QWidget):
         return f
 
     def refresh_metrics(self):
+        """Read the last 100 telemetry entries and update the averaged stat pills (or show N/A)."""
         log_path = TELEMETRY_LOG_PATH
         if not os.path.exists(log_path):
             self.ttft_pill.val_lbl.setText("N/A")
@@ -130,6 +143,7 @@ class ObservabilityTab(QWidget):
 
         try:
             with open(log_path, "r", encoding="utf-8") as f:
+                # Only the most recent 100 entries count toward the averages.
                 lines = f.readlines()[-100:]
                 for line in lines:
                     if not line.strip():
@@ -137,9 +151,11 @@ class ObservabilityTab(QWidget):
                     entry = json.loads(line)
                     
                     prefill_sec = entry.get("prefill_duration_sec", 0.0)
+                    # Convert prefill seconds to milliseconds.
                     ttfts.append(prefill_sec * 1000)
                     
                     tps = entry.get("tokens_per_second", 0.0)
+                    # Ignore zero throughput entries so they do not drag the average down.
                     if tps > 0:
                         tps_list.append(tps)
                         
@@ -147,6 +163,7 @@ class ObservabilityTab(QWidget):
                     cache_hits = entry.get("kv_cache_hits", 0)
                     if prefill_count > 0:
                         total_prefill += prefill_count
+                        # Cache hit rate = total cache hits divided by total prefill tokens.
                         hits += cache_hits
                         
                     vram = entry.get("vram_usage_mb_delta")
@@ -158,6 +175,7 @@ class ObservabilityTab(QWidget):
         total_runs = len(ttfts)
         avg_ttft = sum(ttfts) / total_runs if total_runs > 0 else 0.0
         avg_tps = sum(tps_list) / len(tps_list) if tps_list else 0.0
+        # Guard every average against dividing by zero.
         kv_hit_rate = (hits / total_prefill * 100) if total_prefill > 0 else 0.0
         avg_vram_delta = sum(vram_deltas) / len(vram_deltas) if vram_deltas else 0.0
 
@@ -173,10 +191,12 @@ class ObservabilityTab(QWidget):
             self.vram_pill.val_lbl.setText("N/A")
 
     def _apply_policy_and_clean(self):
+        """Save the retention settings, run the log cleanup sweep, refresh stats and confirm to the user."""
         retention = self._retention_spin.value()
         disk_size = self._disk_size_spin.value()
 
         cfg = config_store.get_ui_config()
+        # Persist the chosen policy before running the cleanup.
         cfg["log_retention_days"] = retention
         cfg["max_log_disk_size_mb"] = disk_size
         config_store.save_ui_config(cfg)
@@ -184,6 +204,7 @@ class ObservabilityTab(QWidget):
         from app.utils.trace_logger import TraceLogger
         try:
             logger_inst = TraceLogger()
+            # Delete logs that exceed the age or disk-size limits.
             logger_inst.enforce_retention_policy()
         except Exception as e:
             logger.warning(f"Enforce retention policy failed in UI thread: {e}")

@@ -1,3 +1,7 @@
+# Program: karl-offline-lab - swarm_judge.py
+# Programmer: Ethan-da-Tech-Wizard (written with Claude, an AI assistant)
+# Last Modified: 2026-11-18
+# Purpose: Scores competing code candidates with LLM-free signals (syntax, lint count, diff size, call-name alignment) and picks the best one.
 """
 SwarmJudge — heuristic multi-signal scoring for "Multiverse" candidate selection.
 
@@ -36,6 +40,7 @@ from typing import Any
 
 logger = logging.getLogger("karl.swarm_judge")
 
+# Scoring weights: a syntax failure dominates, the rest are small nudges.
 _WEIGHT_SYNTAX_FAIL = -1000.0
 _WEIGHT_LINT = -4.0
 _WEIGHT_DIFF = -0.02
@@ -44,6 +49,10 @@ _WEIGHT_LENGTH_FLOOR = -50.0  # penalize suspiciously tiny/empty output
 
 
 def _check_syntax(filepath: str, content: str) -> tuple[bool, str]:
+    """Check that content parses for its file type (Python via ast, JSON via json).
+
+    Returns (ok, error_message); other file types are always accepted.
+    """
     if filepath.endswith(".py"):
         try:
             ast.parse(content)
@@ -60,6 +69,7 @@ def _check_syntax(filepath: str, content: str) -> tuple[bool, str]:
 
 
 def _lint_violation_count(filepath: str, content: str) -> int:
+    """Count pyflakes violations in the given Python source (0 for non-Python or empty content)."""
     if not filepath.endswith(".py") or not content.strip():
         return 0
     try:
@@ -83,6 +93,7 @@ def _lint_violation_count(filepath: str, content: str) -> int:
 
 
 def _diff_size(original: str, candidate: str) -> int:
+    """Return the number of added or removed lines between the original and candidate text."""
     if not original:
         return 0
     a = original.splitlines()

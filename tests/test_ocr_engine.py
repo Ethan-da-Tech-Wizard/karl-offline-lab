@@ -1,3 +1,10 @@
+# Program: karl-offline-lab - test_ocr_engine.py
+# Programmer: Ethan-da-Tech-Wizard (written with Claude, an AI assistant)
+# Last Modified: 2026-11-18
+# Purpose: Tests TesseractOcrEngine TSV parsing and its structured error when Tesseract is unavailable.
+
+"""Tests TesseractOcrEngine TSV parsing and its structured error when Tesseract is unavailable."""
+
 import os
 import sys
 
@@ -7,6 +14,7 @@ from app.vision.ocr_engine import TesseractOcrEngine
 
 
 def test_parse_tsv_extracts_text_confidence_and_boxes():
+    """Scenario: parse tsv extracts text confidence and boxes. Expected: the assertions in this test hold."""
     raw = "\n".join([
         "level\tpage_num\tblock_num\tpar_num\tline_num\tword_num\tleft\ttop\twidth\theight\tconf\ttext",
         "5\t1\t1\t1\t1\t1\t10\t20\t30\t12\t90.0\tError",
@@ -23,6 +31,7 @@ def test_parse_tsv_extracts_text_confidence_and_boxes():
 
 
 def test_unavailable_tesseract_returns_structured_error(tmp_path):
+    """Scenario: unavailable tesseract returns structured error. Expected: the assertions in this test hold."""
     image_path = tmp_path / "missing.png"
     engine = TesseractOcrEngine(executable="definitely-not-installed-tesseract")
     result = engine.analyze(str(image_path))

@@ -1,3 +1,9 @@
+# Program: karl-offline-lab - test_ai_lab.py
+# Programmer: Ethan-da-Tech-Wizard (written with Claude, an AI assistant)
+# Last Modified: 2026-11-18
+# Purpose: Tests for the AI Lab workspace: layout, sparse retrieval pipeline math and publishing a custom agent.
+"""Widget tests for app.ui.workspaces.ai_lab.AILabWorkspace."""
+
 import os
 import json
 import unittest
@@ -11,7 +17,9 @@ from app.ui.workspaces.ai_lab import AILabWorkspace
 from app.utils.rag_pipeline import RAGPipeline
 
 class TestAILabWorkspace(unittest.TestCase):
+    """Tests for the AI Lab workspace using a temporary retrieval index and a backed-up agents file."""
     def setUp(self):
+        """Create app state with a temporary retrieval index and back up any existing custom agents file."""
         self.state = AppState()
         self.temp_dir = tempfile.mkdtemp()
         self.state.rag = RAGPipeline(index_path=self.temp_dir, namespace="test")
@@ -25,6 +33,7 @@ class TestAILabWorkspace(unittest.TestCase):
                 
     def tearDown(self):
         # Clean up temp DB
+        """Delete the temporary index and restore the original custom agents file."""
         shutil.rmtree(self.temp_dir, ignore_errors=True)
         
         # Restore backup or remove custom_agents.json
@@ -39,6 +48,7 @@ class TestAILabWorkspace(unittest.TestCase):
                 f.write(self.backup_content)
 
     def test_construction_and_layout(self):
+        """Scenario: build the workspace. Expected: two tabs with the right titles and all pipeline and composer widgets exist."""
         workspace = AILabWorkspace(self.state)
         self.assertIsNotNone(workspace)
         self.assertTrue(isinstance(workspace._tabs, QTabWidget))
@@ -70,10 +80,12 @@ class TestAILabWorkspace(unittest.TestCase):
         self.assertTrue(hasattr(workspace, "_publish_btn"))
 
     def test_sparse_pipeline_math(self):
+        """Scenario: run the TF-IDF pipeline on three sentences and then a query. Expected: vocabulary and matrix tables are filled and results show cosine similarity, dot product and norm."""
         workspace = AILabWorkspace(self.state)
         
         # Set text to sandbox docs
         workspace._sentences_input.setPlainText("hello world\nhello neural agent\nworld search")
+        # Index 0 selects the TF-IDF vectorizer
         workspace._vectorizer_combo.setCurrentIndex(0) # TF-IDF
         workspace._run_pipeline()
         
@@ -95,6 +107,7 @@ class TestAILabWorkspace(unittest.TestCase):
         self.assertIn("Norm", results_html)
 
     def test_custom_agent_publishing(self):
+        """Scenario: fill in the composer form and publish. Expected: the signal fires, the agent is saved to the agents file with its settings, and the form is cleared."""
         workspace = AILabWorkspace(self.state)
         
         # Mock values
@@ -109,6 +122,7 @@ class TestAILabWorkspace(unittest.TestCase):
         from PyQt6.QtWidgets import QMessageBox
         original_info = QMessageBox.information
         original_warning = QMessageBox.warning
+        # Replace dialogs with no-op stand-ins so the test cannot block
         QMessageBox.information = lambda *args, **kwargs: QMessageBox.StandardButton.Ok
         QMessageBox.warning = lambda *args, **kwargs: QMessageBox.StandardButton.Ok
         
@@ -119,6 +133,7 @@ class TestAILabWorkspace(unittest.TestCase):
         try:
             workspace._publish_agent()
         finally:
+            # Always restore the real dialog functions
             QMessageBox.information = original_info
             QMessageBox.warning = original_warning
             

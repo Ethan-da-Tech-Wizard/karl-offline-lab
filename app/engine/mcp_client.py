@@ -1,3 +1,7 @@
+# Program: karl-offline-lab - mcp_client.py
+# Programmer: Ethan-da-Tech-Wizard (written with Claude, an AI assistant)
+# Last Modified: 2026-11-18
+# Purpose: Manages stdio-based MCP tool servers from a JSON config on a background asyncio loop, with synchronous wrappers to list and call their tools from ordinary threads.
 """
 MCP Client Manager — Karl Workbench
 ====================================
@@ -28,11 +32,13 @@ _tools_cache_dirty: bool = True
 
 
 class MCPClientManager:
+    """Singleton that starts MCP servers, keeps their sessions and exposes tool listing and tool calls."""
     _instance = None
     _lock = threading.Lock()
 
     @classmethod
     def get_instance(cls, config_path: str = "data/mcp_config.json") -> "MCPClientManager":
+        """Return the shared manager, creating it and auto-starting its servers on first use (skipped when KARL_NO_MCP is 1)."""
         with cls._lock:
             if cls._instance is None:
                 cls._instance = cls(config_path)
@@ -71,10 +77,12 @@ class MCPClientManager:
 
     @classmethod
     def invalidate_cache(cls):
+        """Mark the cached tool list stale so the next get_tool_schemas() call refreshes it."""
         global _tools_cache_dirty
         _tools_cache_dirty = True
 
     def __init__(self, config_path: str = "data/mcp_config.json"):
+        """Store the config path, prepare an empty server table and start the background event loop thread."""
         self.config_path = config_path
         self.servers: Dict[str, Dict[str, Any]] = {}
         self.loop: Optional[asyncio.AbstractEventLoop] = None
@@ -88,12 +96,15 @@ class MCPClientManager:
         self.loop_thread.start()
 
     def _run_event_loop(self):
+        """Thread target that runs the asyncio loop until it is stopped."""
+        # Bind the loop to this worker thread before running it.
         asyncio.set_event_loop(self.loop)
         self.loop.run_forever()
 
     # ── Synchronous Entrypoints ───────────────────────────────────────────────
 
     def _await_future(self, future):
+        """Wait for a coroutine result from the loop thread, cancelling it and re-raising on timeout."""
         try:
             return future.result(timeout=_SYNC_TIMEOUT_SECONDS)
         except FutureTimeoutError:
@@ -106,6 +117,7 @@ class MCPClientManager:
             return
         if not self.loop:
             raise RuntimeError("Event loop not initialized.")
+        # Hand the coroutine to the loop thread and block here until it finishes.
         future = asyncio.run_coroutine_threadsafe(self.async_start(), self.loop)
         return self._await_future(future)
 
@@ -195,6 +207,7 @@ class MCPClientManager:
                 if exc:
                     raise exc
                 raise RuntimeError("Server lifecycle task exited before registering.")
+            # Poll briefly until the server registers itself.
             await asyncio.sleep(0.01)
 
     async def _run_server_lifecycle(self, name: str, command: str, args: List[str], env: Optional[Dict[str, str]]):
@@ -224,6 +237,7 @@ class MCPClientManager:
                     logger.info(f"Successfully connected to server: {name}")
                     
                     # Yield execution until stop is explicitly requested
+                    # Keep the connection (and its context managers) open until async_stop() sets the event.
                     await stop_event.wait()
         except Exception as e:
             logger.warning(f"Server '{name}' lifecycle terminated: {e}")

@@ -1,3 +1,9 @@
+# Program: karl-offline-lab - download_threads.py
+# Programmer: Ethan-da-Tech-Wizard (written with Claude, an AI assistant)
+# Last Modified: 2026-11-18
+# Purpose: Background QThread workers and a dialog for model downloads and (simulated) quantization in the system config workspace.
+"""Background QThread workers and a dialog for model downloads and (simulated) quantization in the system config workspace."""
+
 from __future__ import annotations
 
 import os
@@ -11,18 +17,21 @@ from PyQt6.QtWidgets import (
 # ── quantization thread ───────────────────────────────────────────────────────
 
 class QuantizationThread(QThread):
+    """Worker thread that reports progress for a (simulated) quantization job."""
     progress = pyqtSignal(int)
     done = pyqtSignal(str)
     error = pyqtSignal(str)
     log = pyqtSignal(str)
 
     def __init__(self, input_path: str, output_path: str, quant_format: str):
+        """Store the input path, output path and quantization format for the job."""
         super().__init__()
         self.input_path = input_path
         self.output_path = output_path
         self.quant_format = quant_format
 
     def run(self):
+        """Run the simulated quantization loop, emitting log lines and progress, then done or error."""
         try:
             self.log.emit(f"Starting quantization to {self.quant_format}...")
             # Simulation of quantization heavy-lift
@@ -40,7 +49,9 @@ class QuantizationThread(QThread):
 # ── quantization dialog ───────────────────────────────────────────────────────
 
 class QuantizationDialog(QDialog):
+    """Dialog that lets the user pick a quantization format for a model."""
     def __init__(self, model_name: str, parent=None):
+        """Build the dialog with a format combo box and OK/Cancel buttons."""
         super().__init__(parent)
         self.setWindowTitle(f"Quantize {model_name}")
         self.setMinimumWidth(380)
@@ -73,11 +84,13 @@ class QuantizationDialog(QDialog):
         layout.addWidget(buttons)
 
     def selected_format(self) -> str:
+        """Return the quantization format currently chosen in the combo box."""
         return self.format_combo.currentText()
 
 # ── download thread ───────────────────────────────────────────────────────────
 
 class DownloadThread(QThread):
+    """Worker thread that downloads a model file to disk, reporting progress and speed."""
     progress = pyqtSignal(int)
     speed = pyqtSignal(str)
     done = pyqtSignal()
@@ -85,18 +98,22 @@ class DownloadThread(QThread):
     log = pyqtSignal(str)
 
     def __init__(self, url: str, target_path: str):
+        """Store the download URL and target path and clear the cancel flag."""
         super().__init__()
         self.url = url
         self.target_path = target_path
         self._is_cancelled = False
 
     def cancel(self):
+        """Flag the download to stop at the next chunk."""
         self._is_cancelled = True
 
     def request_stop(self):
+        """Stop request hook used by the task supervisor; forwards to cancel()."""
         self.cancel()
 
     def run(self):
+        """Register with the task supervisor, then stream the file to disk emitting progress, speed, done or error."""
         from app.engine.task_supervisor import TaskSupervisor
         task_id = TaskSupervisor.instance().register(
             name=f"Download Model: {os.path.basename(self.target_path)}",

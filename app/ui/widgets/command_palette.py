@@ -1,14 +1,28 @@
+# Program: karl-offline-lab - command_palette.py
+# Programmer: Ethan-da-Tech-Wizard (written with Claude, an AI assistant)
+# Last Modified: 2026-11-18
+# Purpose: Defines the modal command palette dialog that filters and runs workspace-switch and action commands.
+
+"""Keyboard-driven command palette dialog for jumping between workspaces and running actions."""
 from PyQt6.QtWidgets import QDialog, QLineEdit, QListWidget, QListWidgetItem, QVBoxLayout
 from PyQt6.QtCore import Qt, QSize
 from PyQt6.QtGui import QKeyEvent
 
+# ---------------------------------------------------------------------------
+# Command palette dialog
+# ---------------------------------------------------------------------------
 class CommandPalette(QDialog):
+    """Frameless modal dialog with a search box and a filterable list of commands."""
     def __init__(self, main_window, parent=None):
+        """Build the search box, the result list and the command table for the given main window."""
+        # Parent defaults to the main window so the dialog centres over it
         super().__init__(parent or main_window)
         self.main_window = main_window
+        # Frameless, modal, translucent window so it looks like a floating overlay
         self.setWindowFlags(Qt.WindowType.FramelessWindowHint | Qt.WindowType.Dialog)
         self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground)
         self.setModal(True)
+        # Fixed size keeps the palette compact and predictable
         self.setFixedSize(QSize(500, 320))
 
         # Build UI
@@ -42,6 +56,8 @@ class CommandPalette(QDialog):
         self.list_widget.itemDoubleClicked.connect(self._execute_selected)
         layout.addWidget(self.list_widget)
 
+        # Each command is a (display title, callable) pair; the numbers passed to
+        # switch_workspace are the workspace tab indexes in the main window.
         self._commands = [
             ("Switch to Workbench (Chat Space)", lambda: self.main_window.switch_workspace(0)),
             ("Switch to Prompt Lab (Playground)", lambda: self.main_window.switch_workspace(1)),
@@ -63,18 +79,24 @@ class CommandPalette(QDialog):
             ("System Config: Open Defaults Tab", self.main_window.open_system_defaults),
         ]
 
+        # Show every command initially and put the cursor in the search box
         self._populate_list()
         self.input_edit.setFocus()
 
     def _populate_list(self):
+        """Rebuild the list widget with every available command and select the first row."""
+        # Start from an empty list so repeated calls do not duplicate rows
         self.list_widget.clear()
         for title, action in self._commands:
             item = QListWidgetItem(title)
+            # Store the callable on the item so it can be run on selection
             item.setData(Qt.ItemDataRole.UserRole, action)
             self.list_widget.addItem(item)
         self.list_widget.setCurrentRow(0)
 
     def _filter_commands(self, text):
+        """Show only commands whose title contains the typed text (case-insensitive)."""
+        # Normalise the query so matching ignores case and surrounding spaces
         query = text.strip().lower()
         self.list_widget.clear()
         for title, action in self._commands:
@@ -85,6 +107,7 @@ class CommandPalette(QDialog):
         self.list_widget.setCurrentRow(0)
 
     def keyPressEvent(self, event: QKeyEvent):
+        """Handle keys: Esc closes, Up/Down move the selection, Enter runs the command."""
         if event.key() == Qt.Key.Key_Escape:
             self.reject()
         elif event.key() == Qt.Key.Key_Up:
@@ -104,6 +127,7 @@ class CommandPalette(QDialog):
             super().keyPressEvent(event)
 
     def _execute_selected(self):
+        """Close the palette and run the command attached to the currently selected row."""
         curr_item = self.list_widget.currentItem()
         if not curr_item:
             return
@@ -119,10 +143,12 @@ class CommandPalette(QDialog):
                     break
         
         self.accept()
+        # Close first so the action runs against the main window, not the dialog
         if action:
             action()
 
     def showEvent(self, event):
+        """Centre the palette horizontally near the top of the parent window when shown."""
         super().showEvent(event)
         # Position command palette at top center of main window
         if self.parentWidget():

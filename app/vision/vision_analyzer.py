@@ -1,3 +1,8 @@
+# Program: karl-offline-lab - vision_analyzer.py
+# Programmer: Ethan-da-Tech-Wizard (written with Claude, an AI assistant)
+# Last Modified: 2026-11-18
+# Purpose: Classifies images from their OCR text (error, code, document, UI) and combines that with a vision model caption to analyze a stored image.
+"""Heuristic image classification and vision analysis."""
 from __future__ import annotations
 
 import re
@@ -7,6 +12,8 @@ from app.vision.schemas import ImageRecord, OcrResult, VisionResult
 from app.vision.vision_model_loader import VisionModelLoader
 
 
+# === Keyword and regex lists used to guess what an image shows ===
+# Lower-case words that suggest the text is an error message or traceback.
 ERROR_PATTERNS = (
     "traceback",
     "exception",
@@ -25,6 +32,7 @@ ERROR_PATTERNS = (
     "stack trace",
 )
 
+# Regular expressions that suggest source code.
 CODE_PATTERNS = (
     r"\bdef\s+\w+",
     r"\bclass\s+\w+",
@@ -39,6 +47,7 @@ CODE_PATTERNS = (
     r"\bline\s+\d+",
 )
 
+# Words that suggest a scanned or photographed document.
 DOCUMENT_PATTERNS = (
     "invoice",
     "receipt",
@@ -49,6 +58,7 @@ DOCUMENT_PATTERNS = (
     "signature",
 )
 
+# Words that suggest a user-interface screenshot.
 UI_PATTERNS = (
     "button",
     "menu",
@@ -62,6 +72,7 @@ UI_PATTERNS = (
 
 @dataclass(frozen=True)
 class AnalysisSuggestion:
+    """Heuristic result: suggested kind, tags, code/error flags and a layout hint."""
     kind: str
     tags: list[str]
     detected_code: bool
@@ -70,7 +81,9 @@ class AnalysisSuggestion:
 
 
 class VisionAnalyzer:
+    """Runs the vision model (or an OCR-only heuristic) for an image record."""
     def __init__(self, vision_loader=VisionModelLoader):
+        """Use vision_loader (class or object with describe_image) to describe images."""
         self.vision_loader = vision_loader
 
     def analyze_record(
@@ -80,9 +93,15 @@ class VisionAnalyzer:
         mode: str = "ocr_vision",
         prompt: str | None = None,
     ) -> tuple[VisionResult, AnalysisSuggestion]:
+        """Analyze one image record.
+
+        mode 'ocr_only' skips the vision model and builds a caption from heuristics; any other mode calls the vision loader and fills gaps (layout, flags, caption) from the heuristics.
+        Returns the vision result and the classification suggestion.
+        """
         effective_ocr = ocr or record.ocr
         suggestion = classify_image(record, effective_ocr.text)
 
+        # OCR-only mode never loads a model.
         if mode == "ocr_only":
             vision = VisionResult(
                 engine="ocr-heuristic",
@@ -100,6 +119,7 @@ class VisionAnalyzer:
         )
         if not vision.layout:
             vision.layout = suggestion.layout
+        # Keep a detection the model made, and add the heuristic's detection.
         vision.detected_code = vision.detected_code or suggestion.detected_code
         vision.detected_error = vision.detected_error or suggestion.detected_error
         if not vision.caption:
@@ -108,6 +128,7 @@ class VisionAnalyzer:
 
     @staticmethod
     def _heuristic_caption(record: ImageRecord, ocr: OcrResult, suggestion: AnalysisSuggestion) -> str:
+        """Build a plain-text caption from size, kind and OCR state when no model caption is available."""
         ocr_state = "OCR text detected" if ocr.text.strip() else "No OCR text detected"
         details = [
             f"{record.width}x{record.height} image classified as {suggestion.kind}.",
@@ -122,8 +143,13 @@ class VisionAnalyzer:
 
 
 def classify_image(record: ImageRecord, text: str) -> AnalysisSuggestion:
+    """Guess the image kind and tags from OCR text using keyword rules.
+
+    Rules are checked in priority order: error, code, document, UI.
+    """
     lowered = text.lower()
     detected_error = any(marker in lowered for marker in ERROR_PATTERNS)
+    # An error screenshot is also treated as code-like text.
     detected_code = detected_error or any(re.search(pattern, text, re.IGNORECASE | re.DOTALL) for pattern in CODE_PATTERNS)
 
     tags: list[str] = []
@@ -158,6 +184,7 @@ def classify_image(record: ImageRecord, text: str) -> AnalysisSuggestion:
 
 
 def _layout_hint(record: ImageRecord, text: str) -> str:
+    """Describe the frame shape (from aspect ratio) and how dense the OCR text is."""
     aspect = record.width / record.height if record.height else 1.0
     lines = [line for line in text.splitlines() if line.strip()]
     if aspect > 1.6:
@@ -174,6 +201,7 @@ def _layout_hint(record: ImageRecord, text: str) -> str:
 
 
 def _dedupe(values: list[str]) -> list[str]:
+    """Lower-case and strip values, dropping blanks and duplicates while keeping first-seen order."""
     seen = set()
     out = []
     for value in values:

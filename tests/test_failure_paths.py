@@ -1,3 +1,7 @@
+# Program: karl-offline-lab - test_failure_paths.py
+# Programmer: Ethan-da-Tech-Wizard (written with Claude, an AI assistant)
+# Last Modified: 2026-11-18
+# Purpose: Tests for error and edge-case paths: missing or corrupt model files, thread crash cleanup, malformed thought tags, task cancellation timeout and corrupt trace logs.
 """Unit tests for Karl's error, failure, and edge case paths."""
 
 from __future__ import annotations
@@ -21,6 +25,7 @@ def test_model_loader_missing_file(monkeypatch):
     # We will mock os.path.exists to return False specifically for GGUF files
     orig_exists = os.path.exists
     def mock_exists(path):
+        """Report .gguf files as missing and defer to the real check otherwise."""
         if str(path).endswith(".gguf"):
             return False
         return orig_exists(path)
@@ -40,6 +45,7 @@ def test_model_loader_corrupted_file(tmp_path, monkeypatch):
     # Mock llama_cpp.Llama constructor to simulate C-level load failure
     import llama_cpp
     def mock_llama(*args, **kwargs):
+        """Raise a load error for the corrupted file path to mimic a native loader failure."""
         if kwargs.get("model_path") == str(corrupted_file):
             raise ValueError("Failed to load model: invalid GGUF signature")
         return None
@@ -57,6 +63,7 @@ def test_llm_thread_crash_recovery():
     from app.engine.llm_thread import LLMThread
     
     # Mock acquire/unlock and force an exception mid-run
+    # Patch model acquisition and unlock, and force a crash inside the thread
     with patch("app.engine.model_loader.ModelLoader.acquire_instance") as mock_acquire, \
          patch("app.engine.model_loader.ModelLoader.unlock_instance") as mock_unlock, \
          patch.object(LLMThread, "_trim_history", side_effect=RuntimeError("Simulated trim crash")):
@@ -121,8 +128,10 @@ def test_task_supervisor_cancel_timeout():
     supervisor = TaskSupervisor.instance()
     
     class SlowCancellable:
+        """Cancellable stand-in that accepts a stop request but never finishes."""
         def request_stop(self):
             # Simulate a thread that takes some time to stop or ignores cancel
+            """Accept the stop request and do nothing."""
             pass
             
     task_id = supervisor.register("slow_task", cancellable=SlowCancellable())
@@ -136,6 +145,7 @@ def test_task_supervisor_cancel_timeout():
     start_wait = time.perf_counter()
     timeout_occurred = False
     
+    # Mimic the window-close wait loop, which must give up after a timeout
     while supervisor.active_tasks():
         if time.perf_counter() - start_wait >= 0.1: # Short timeout for test
             timeout_occurred = True

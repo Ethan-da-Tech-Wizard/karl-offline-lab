@@ -1,3 +1,7 @@
+# Program: karl-offline-lab - mini_transformer.py
+# Programmer: Ethan-da-Tech-Wizard (written with Claude, an AI assistant)
+# Last Modified: 2026-11-18
+# Purpose: Defines a small character-level GPT-style transformer (tokenizer, attention, feed-forward, blocks and the MiniGPT model with sampling) in PyTorch.
 """
 Educational Decoder-Only Transformer (Mini-GPT) in PyTorch
 ==========================================================
@@ -21,12 +25,14 @@ from torch.nn import functional as F
 class CharTokenizer:
     """A simple character-level tokenizer that maps characters to integers and back."""
     def __init__(self):
+        """Start with an empty vocabulary."""
         self.chars = []
         self.vocab_size = 0
         self.stoi = {}
         self.itos = {}
 
     def fit(self, text: str):
+        """Build the vocabulary from the sorted unique characters of the text."""
         self.chars = sorted(list(set(text)))
         # Ensure at least some characters are present
         if not self.chars:
@@ -36,15 +42,18 @@ class CharTokenizer:
         self.itos = {i: ch for i, ch in enumerate(self.chars)}
 
     def encode(self, s: str) -> list[int]:
+        """Convert a string to character ids; unknown characters map to id 0."""
         return [self.stoi.get(c, 0) for c in s]  # Fallback to index 0 for unknown characters
 
     def decode(self, tokens: list[int]) -> str:
+        """Convert character ids back to a string, skipping unknown ids."""
         return "".join([self.itos.get(i, "") for i in tokens])
 
 
 class Head(nn.Module):
     """One head of self-attention."""
     def __init__(self, n_embd: int, head_size: int, block_size: int, dropout: float = 0.1):
+        """Create key, query and value projections and the causal mask for one attention head."""
         super().__init__()
         self.key = nn.Linear(n_embd, head_size, bias=False)
         self.query = nn.Linear(n_embd, head_size, bias=False)
@@ -54,6 +63,7 @@ class Head(nn.Module):
         self.proj_dropout = nn.Dropout(dropout)
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
+        """Compute masked self-attention for input of shape (batch, time, channels) and return the weighted values."""
         B, T, C = x.shape
         k = self.key(x)    # (B, T, head_size)
         q = self.query(x)  # (B, T, head_size)
@@ -61,6 +71,7 @@ class Head(nn.Module):
         # Compute attention scores ("affinities")
         wei = q @ k.transpose(-2, -1) * (C ** -0.5)  # (B, T, head_size) @ (B, head_size, T) -> (B, T, T)
         # Apply causal masking (prevent looking into the future)
+        # Blocked (future) positions get minus infinity so softmax gives them zero weight.
         wei = wei.masked_fill(self.tril[:T, :T] == 0, float("-inf"))
         wei = F.softmax(wei, dim=-1)
         wei = self.attn_dropout(wei)
@@ -74,6 +85,7 @@ class Head(nn.Module):
 class MultiHeadAttention(nn.Module):
     """Multiple heads of self-attention in parallel."""
     def __init__(self, n_heads: int, n_embd: int, head_size: int, block_size: int, dropout: float = 0.1):
+        """Create the parallel heads and the output projection."""
         super().__init__()
         self.heads = nn.ModuleList([Head(n_embd, head_size, block_size, dropout) for _ in range(n_heads)])
         self.proj = nn.Linear(n_heads * head_size, n_embd)
@@ -81,6 +93,7 @@ class MultiHeadAttention(nn.Module):
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         # Concatenate outputs from all attention heads
+        """Run every head, concatenate the results, then project and apply dropout."""
         out = torch.cat([h(x) for h in self.heads], dim=-1)
         # Apply projection layer and dropout
         out = self.proj(out)
@@ -91,6 +104,7 @@ class MultiHeadAttention(nn.Module):
 class FeedForward(nn.Module):
     """A simple linear layer followed by non-linearity and projection."""
     def __init__(self, n_embd: int, dropout: float = 0.1):
+        """Build the two-layer perceptron with a 4x hidden width."""
         super().__init__()
         self.net = nn.Sequential(
             nn.Linear(n_embd, 4 * n_embd),
@@ -100,12 +114,14 @@ class FeedForward(nn.Module):
         )
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
+        """Apply the perceptron to each position independently."""
         return self.net(x)
 
 
 class Block(nn.Module):
     """Transformer block: self-attention followed by feed-forward, with residual links."""
     def __init__(self, n_embd: int, n_heads: int, block_size: int, dropout: float = 0.1):
+        """Create attention, feed-forward and two layer norms; head size is the embedding size divided by the head count."""
         super().__init__()
         head_size = n_embd // n_heads
         self.sa = MultiHeadAttention(n_heads, n_embd, head_size, block_size, dropout)
@@ -115,6 +131,7 @@ class Block(nn.Module):
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         # Pre-LayerNorm formulation (standard in modern architectures)
+        """Apply attention then feed-forward, each with layer norm first and a residual connection."""
         x = x + self.sa(self.ln1(x))
         x = x + self.ffwd(self.ln2(x))
         return x
@@ -123,6 +140,7 @@ class Block(nn.Module):
 class MiniGPT(nn.Module):
     """The main Decoder-Only GPT-style Language Model."""
     def __init__(self, vocab_size: int, n_embd: int = 128, n_heads: int = 4, n_layers: int = 4, block_size: int = 128, dropout: float = 0.1):
+        """Create token and position embeddings, the stack of blocks, a final layer norm and the output head."""
         super().__init__()
         self.block_size = block_size
         
@@ -141,6 +159,7 @@ class MiniGPT(nn.Module):
         self.lm_head = nn.Linear(n_embd, vocab_size)
 
     def forward(self, idx: torch.Tensor, targets: torch.Tensor | None = None) -> tuple[torch.Tensor, torch.Tensor | None]:
+        """Return logits for each position and, when targets are given, the cross-entropy loss."""
         B, T = idx.shape
 
         # idx and targets are both (B, T) tensors of integers
@@ -157,6 +176,7 @@ class MiniGPT(nn.Module):
             B, T, C = logits.shape
             logits_flat = logits.view(B * T, C)
             targets_flat = targets.view(B * T)
+            # Flatten batch and time so each position is one classification example.
             loss = F.cross_entropy(logits_flat, targets_flat)
 
         return logits, loss
@@ -185,12 +205,14 @@ class MiniGPT(nn.Module):
             # Optional top-k filtering
             if top_k is not None and top_k > 0:
                 v, _ = torch.topk(logits, min(top_k, logits.size(-1)))
+                # Drop every candidate below the k-th best score.
                 logits[logits < v[:, [-1]]] = float("-inf")
             
             # Apply softmax to get probabilities
             probs = F.softmax(logits, dim=-1)  # (B, vocab_size)
             
             # Sample from the distribution
+            # Sample the next id at random according to the probabilities.
             idx_next = torch.multinomial(probs, num_samples=1)  # (B, 1)
             
             # Append sampled index to the running sequence

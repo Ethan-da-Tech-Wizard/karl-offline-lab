@@ -1,3 +1,7 @@
+# Program: karl-offline-lab - chat_view.py
+# Programmer: Ethan-da-Tech-Wizard (written with Claude, an AI assistant)
+# Last Modified: 2026-11-18
+# Purpose: ChatView widget that renders the conversation as themed HTML, streams assistant tokens live and shows diagnostics, RAG sources and system notes.
 """Scrollable conversation display with streaming support."""
 
 from __future__ import annotations
@@ -10,6 +14,7 @@ from PyQt6.QtGui import QTextCursor
 
 
 def _escape(text: str) -> str:
+    """Escape HTML special characters and convert newlines to line breaks."""
     return (
         text.replace("&", "&amp;")
             .replace("<", "&lt;")
@@ -19,6 +24,7 @@ def _escape(text: str) -> str:
 
 
 def _escape_pre(text: str) -> str:
+    """Escape HTML special characters without touching newlines (for preformatted text)."""
     return (
         text.replace("&", "&amp;")
             .replace("<", "&lt;")
@@ -30,6 +36,7 @@ class ChatView(QTextBrowser):
     """Scrollable conversation display with streaming support."""
 
     def __init__(self, parent=None):
+        """Configure the read-only browser, empty message list, streaming state and fallback theme colours."""
         super().__init__(parent)
         self.setOpenLinks(False)
         self.setReadOnly(True)
@@ -37,10 +44,12 @@ class ChatView(QTextBrowser):
         self.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
         self.setVerticalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAsNeeded)
         self.document().setDocumentMargin(0)
+        # Stored as (role, text, node_id, attachments); older 3-item tuples are still accepted when rendering.
         self._messages: list[tuple[str, str, str]] = []   # (role, text, node_id)
         self._streaming_buf = ""
         self._streaming = False
         self._streaming_node_id = ""
+        # Used until the workspace supplies the active theme.
         # Default fallback theme colors
         self.theme_colors = {
             "text_lo": "#505068",
@@ -54,17 +63,20 @@ class ChatView(QTextBrowser):
         }
 
     def set_theme(self, theme_colors: dict):
+        """Apply new theme colours and re-render every message."""
         self.theme_colors = theme_colors
         self._render_all()
 
     # public API ──────────────────────────────────────────────────────────────
 
     def push_user(self, text: str, node_id: str, attachments: list[dict] | None = None):
+        """Add a user message with optional image attachments and re-render."""
         self._finalize_stream()
         self._messages.append(("user", text, node_id, attachments or []))
         self._render_all()
 
     def _get_karl_hdr(self, node_id: str) -> str:
+        """Return the opening HTML (header row and bubble start) for an assistant message."""
         text_lo = self.theme_colors.get("text_lo", "#505068")
         accent = self.theme_colors.get("accent", "#00C2FF")
         bg_surface = self.theme_colors.get("bg_surface", "#14141F")
@@ -80,11 +92,13 @@ class ChatView(QTextBrowser):
         )
 
     def _get_user_html(self, text: str, node_id: str, attachments: list[dict] | None = None) -> str:
+        """Return the HTML for a right-aligned user bubble, including attachments."""
         text_lo = self.theme_colors.get("text_lo", "#505068")
         accent = self.theme_colors.get("accent", "#00C2FF")
         bg_raised = self.theme_colors.get("bg_raised", "#1C1C2A")
         border_hi = self.theme_colors.get("border_hi", "#383850")
         text_hi = self.theme_colors.get("text_hi", "#E4E4F0")
+        # Escape user text so it cannot inject markup.
         safe_text = _escape(text)
         # Qt's rich-text engine doesn't size `display:inline-block` to its
         # content (it always rendered full-width, turning this into a flat
@@ -105,6 +119,7 @@ class ChatView(QTextBrowser):
         )
 
     def _attachments_html(self, attachments: list[dict]) -> str:
+        """Return HTML blocks for image attachments, using a local file URL for the thumbnail when available."""
         if not attachments:
             return ""
         accent = self.theme_colors.get("accent", "#00C2FF")
@@ -135,15 +150,18 @@ class ChatView(QTextBrowser):
 
 
     def begin_stream(self, node_id: str = ""):
+        """Start a streamed assistant reply by inserting its header at the end of the document."""
         self._streaming = True
         self._streaming_buf = ""
         self._streaming_node_id = node_id
+        # Streaming inserts text at the end of the document.
         cursor = self.textCursor()
         cursor.movePosition(QTextCursor.MoveOperation.End)
         self.setTextCursor(cursor)
         self.insertHtml(self._get_karl_hdr(node_id))
 
     def append_token(self, token: str):
+        """Append one streamed token to the open reply and scroll down."""
         if not self._streaming:
             return
         self._streaming_buf += token
@@ -154,9 +172,11 @@ class ChatView(QTextBrowser):
         self._scroll_to_bottom()
 
     def finalize_stream(self, node_id: str = ""):
+        """Close the streamed reply, store it as a message and re-render."""
         if not self._streaming:
             return
         final_node_id = node_id or self._streaming_node_id
+        # Store the finished reply, then re-render it as a normal message.
         self._messages.append(("assistant", self._streaming_buf, final_node_id, []))
         self._streaming_buf = ""
         self._streaming = False
@@ -167,17 +187,20 @@ class ChatView(QTextBrowser):
         self._render_all()
 
     def clear_display(self):
+        """Remove all messages and reset streaming state."""
         self._messages.clear()
         self._streaming_buf = ""
         self._streaming = False
         self.clear()
 
     def replace_last_assistant(self, text: str):
+        """Replace the text of the most recent assistant message and re-render."""
         if self._messages and self._messages[-1][0] == "assistant":
             self._messages[-1] = ("assistant", text, self._messages[-1][2], self._messages[-1][3] if len(self._messages[-1]) > 3 else [])
             self._render_all()
 
     def append_system_note(self, text: str):
+        """Add a small centred system note at the end of the conversation."""
         self._finalize_stream()
         safe = _escape(text)
         text_lo = self.theme_colors.get("text_lo", "#505068")
@@ -191,6 +214,7 @@ class ChatView(QTextBrowser):
         self._scroll_to_bottom()
 
     def append_diagnostics(self, model: str, n_ctx: int, diag: dict):
+        """Add a block showing model, context size, token counts and timing for the last generation."""
         self._finalize_stream()
         bg_raised = self.theme_colors.get("bg_raised", "#1C1C2A")
         border = self.theme_colors.get("border", "#252535")
@@ -224,6 +248,7 @@ class ChatView(QTextBrowser):
         self._scroll_to_bottom()
 
     def append_rag_sources(self, results: list[dict]):
+        """Add a block listing the retrieved context chunks that were injected into the prompt."""
         self._finalize_stream()
         if not results:
             return
@@ -257,12 +282,15 @@ class ChatView(QTextBrowser):
     # internals ───────────────────────────────────────────────────────────────
 
     def _finalize_stream(self):
+        """Finish the current stream if one is open."""
         if self._streaming:
             self.finalize_stream()
 
     def _render_all(self):
+        """Rebuild the whole document from the stored messages."""
         parts = []
         for raw in self._messages:
+            # Support the older 3-item message tuples without attachments.
             if len(raw) == 3:
                 role, text, node_id = raw
                 attachments = []
@@ -282,5 +310,6 @@ class ChatView(QTextBrowser):
         self._scroll_to_bottom()
 
     def _scroll_to_bottom(self):
+        """Scroll the view to the newest content."""
         bar = self.verticalScrollBar()
         bar.setValue(bar.maximum())

@@ -1,4 +1,8 @@
 #!/usr/bin/env python3
+# Program: karl-offline-lab - setup_karl.py
+# Programmer: Ethan-da-Tech-Wizard (written with Claude, an AI assistant)
+# Last Modified: 2026-11-18
+# Purpose: Cross-platform bootstrapper that detects the OS and GPU, creates a virtual environment, builds llama-cpp-python with matching flags, and launches the app.
 """
 setup_karl.py — Cross-platform bootstrapper for Karl.
 
@@ -75,6 +79,7 @@ _CYAN   = "\033[96m" if _COLOR else ""
 _DIM    = "\033[2m"  if _COLOR else ""
 
 
+# One-line print helpers for status output: ok, info, warning, error (to stderr), separator and heading.
 def _ok(msg: str)   -> None: print(f"{_GREEN}  ✓  {msg}{_RESET}")
 def _info(msg: str) -> None: print(f"{_CYAN}  ·  {msg}{_RESET}")
 def _warn(msg: str) -> None: print(f"{_YELLOW}  ⚠  {msg}{_RESET}")
@@ -86,6 +91,7 @@ def _head(msg: str) -> None: print(f"\n{_BOLD}{_CYAN}{msg}{_RESET}")
 # ── Detection ─────────────────────────────────────────────────────────────────
 
 class SystemInfo(NamedTuple):
+    """Facts about the host machine gathered by detect_system()."""
     os_name:     str        # "Windows" | "Darwin" | "Linux"
     arch:        str        # e.g. "arm64", "x86_64"
     gpu_type:    str        # "cuda" | "metal" | "cpu"
@@ -96,6 +102,7 @@ class SystemInfo(NamedTuple):
 
 
 def detect_system() -> SystemInfo:
+    """Inspect the OS, CPU architecture, GPU type, Python version and any existing venv."""
     os_name = platform.system()        # "Windows", "Darwin", "Linux"
     arch    = platform.machine()       # "arm64", "x86_64", "AMD64", …
 
@@ -118,6 +125,7 @@ def detect_system() -> SystemInfo:
         # Fall through to cpu.
 
     # ── Venv detection ────────────────────────────────────────────────────────
+    # Treat a venv or conda environment as active when any of these signals is present.
     in_venv = (
         sys.prefix != sys.base_prefix
         or os.environ.get("VIRTUAL_ENV") is not None
@@ -406,6 +414,7 @@ def maybe_download_model(python: Path) -> None:
 # ── Full install flow ─────────────────────────────────────────────────────────
 
 def cmd_install(args: argparse.Namespace, info: SystemInfo) -> None:
+    """Run the full install: print system info, choose build flags, create the venv, install dependencies and llama-cpp-python, create data folders and offer the model download."""
     _head("Karl Setup — Install")
     _sep()
 
@@ -413,6 +422,7 @@ def cmd_install(args: argparse.Namespace, info: SystemInfo) -> None:
     _sep()
 
     # Build cmake args (CLI override takes precedence over auto-detection).
+    # A CLI flag (cpu, cuda or metal) overrides automatic GPU detection.
     gpu_override: str | None = None
     if args.cpu:
         gpu_override = "cpu"
@@ -491,6 +501,7 @@ def cmd_run(args: argparse.Namespace, info: SystemInfo) -> None:
     # Replace the current process image on Unix for zero-overhead hand-off.
     # On Windows, os.execv is available but the semantics differ; fall back to
     # subprocess so the bootstrapper process waits and propagates the exit code.
+    # Unix replaces this process with the app; Windows waits for it and returns its exit code.
     if platform.system() != "Windows":
         os.chdir(REPO_ROOT)
         os.execv(str(python), launch_cmd)
@@ -503,6 +514,7 @@ def cmd_run(args: argparse.Namespace, info: SystemInfo) -> None:
 # ── Info command ──────────────────────────────────────────────────────────────
 
 def cmd_info(info: SystemInfo) -> None:
+    """Print the detected system information and the build flags that would be used."""
     _head("Karl System Information")
     _sep()
     _print_info(info)
@@ -512,6 +524,7 @@ def cmd_info(info: SystemInfo) -> None:
 
 
 def _print_info(info: SystemInfo) -> None:
+    """Print the OS, Python, GPU and venv lines of a SystemInfo."""
     os_pretty = {
         "Darwin":  f"macOS ({info.arch})",
         "Windows": f"Windows ({info.arch})",
@@ -531,6 +544,7 @@ def _print_info(info: SystemInfo) -> None:
 # ── Python version guard ──────────────────────────────────────────────────────
 
 def _check_python_version() -> None:
+    """Exit with an error if the running Python is older than MIN_PYTHON."""
     if sys.version_info < MIN_PYTHON:
         _err(
             f"Karl requires Python {'.'.join(map(str, MIN_PYTHON))}+. "
@@ -542,6 +556,7 @@ def _check_python_version() -> None:
 # ── CLI ───────────────────────────────────────────────────────────────────────
 
 def _build_parser() -> argparse.ArgumentParser:
+# Exactly one mode (install, run or info) is required; the other options modify an install.
     parser = argparse.ArgumentParser(
         prog="setup_karl.py",
         description="Karl cross-platform bootstrapper",
@@ -571,6 +586,7 @@ def _build_parser() -> argparse.ArgumentParser:
 
 
 def main() -> None:
+    """Parse the command line and dispatch to the install, run or info command."""
     _check_python_version()
 
     parser = _build_parser()

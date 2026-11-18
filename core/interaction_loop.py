@@ -1,3 +1,8 @@
+# Program: karl-offline-lab - interaction_loop.py
+# Programmer: Ethan-da-Tech-Wizard (written with Claude, an AI assistant)
+# Last Modified: 2026-11-18
+# Purpose: Builds the final model prompt (system text, chat history, Codex reference, think pre-seed) in the chat format of the loaded model family.
+"""Prompt construction for Karl's interaction loop."""
 # THE HACKABLE LAYER
 # Modify this file to change how the application interacts with the LLM.
 # Hot-reloaded before every generation -- save and click Generate, no restart needed.
@@ -20,8 +25,10 @@ from core.default_prompts import (
 logger = logging.getLogger("karl.codex_injector")
 
 
+# Runtime settings pushed in by the app (for example the machine-speak switch).
 ACTIVE_HYPERPARAMS: dict = {}
 
+# Fixed prompt pieces: the minimal prompt for adapters, the base prompt, and the rule appended for compressed history.
 _ADAPTER_SYSTEM_PROMPT = "Always respond in English."
 _BASE_SYSTEM_PROMPT = DEFAULT_SYSTEM_PROMPT
 _MACHINE_SPEAK_RULE = (
@@ -34,6 +41,7 @@ _MACHINE_SPEAK_RULE = (
     "than writing full files."
 )
 
+# Maps keywords found in the latest user message to reference pages in the local codex library.
 _CODEX_KEYWORD_MAP = {
     "python": "Python.html",
     "c++": "C++.html",
@@ -70,6 +78,7 @@ _CODEX_KEYWORD_MAP = {
 }
 
 def strip_html_tags(html: str) -> str:
+    """Convert an HTML page to readable plain text: drop scripts/styles, turn block tags into line breaks, decode common entities and collapse blank lines."""
     # Remove script and style elements first
     text = re.sub(r'<(script|style)\b[^>]*>([\s\S]*?)</\1>', '', html)
     # Replace block-level element tags with newlines or spaces to preserve spacing
@@ -92,6 +101,10 @@ def strip_html_tags(html: str) -> str:
     return '\n'.join(cleaned).strip()
 
 def matches_keyword(text: str, keyword: str) -> bool:
+    """Return True if keyword appears in text as a whole word (case-insensitive).
+
+    The keyword 'c' is special-cased so it does not match inside C++ or C#.
+    """
     if keyword == "c":
         # Match 'c' but not 'c++' or 'c#'
         pattern = r'\bc\b(?![+#])'
@@ -108,6 +121,10 @@ def matches_keyword(text: str, keyword: str) -> bool:
     return bool(re.search(full_pattern, text, re.IGNORECASE))
 
 def _get_codex_context(chat_history):
+    """Return reference text for up to two codex pages matching the latest user message, or an empty string.
+
+    Files come from data/codex_library; unreadable files are logged and skipped.
+    """
     last_user_msg = ""
     for msg in reversed(chat_history):
         if msg.get("role") == "user":
@@ -172,6 +189,7 @@ def _apply_vocab_leak_bypass(text: str) -> str:
 
 
 def _truthy(value) -> bool:
+    """Interpret a bool, string such as 'true' or 'on', or other value as a boolean."""
     if isinstance(value, bool):
         return value
     if isinstance(value, str):
@@ -180,6 +198,10 @@ def _truthy(value) -> bool:
 
 
 def _machine_speak_enabled() -> bool:
+    """Return whether compressed 'machine speak' history is on.
+
+    Runtime hyperparameters win over the saved UI config; any config error means off.
+    """
     if "machine_speak_enabled" in ACTIVE_HYPERPARAMS:
         return _truthy(ACTIVE_HYPERPARAMS.get("machine_speak_enabled"))
     if "enable_machine_speak" in ACTIVE_HYPERPARAMS:
@@ -191,6 +213,7 @@ def _machine_speak_enabled() -> bool:
 
 
 def _machine_speak_history(system_prompt: str, chat_history: list[dict]) -> list[dict]:
+    """Return a copy of the history with each message body replaced by its compact trace form."""
     compressed: list[dict] = []
     for index, msg in enumerate(chat_history):
         role = msg.get("role", "user")
@@ -203,6 +226,7 @@ def _machine_speak_history(system_prompt: str, chat_history: list[dict]) -> list
     return compressed
 
 
+# === Main entry point: assemble the prompt string ===
 def build_prompt(system_prompt, chat_history):
     """
     Builds the native prompt for distilled models based on loaded architecture.
@@ -227,6 +251,7 @@ def build_prompt(system_prompt, chat_history):
     # Otherwise, we use the custom system prompt to let it affect the model.
     # We also always preserve any RAG context.
     
+    # Split off any retrieved-context block so the rest can be compared with the known default prompts.
     rag_context = ""
     clean_sys = system_prompt
     if "\n\nRetrieved Context:\n" in system_prompt:
@@ -237,12 +262,14 @@ def build_prompt(system_prompt, chat_history):
     default_sys_prompts = LEGACY_DEFAULT_SYSTEM_PROMPTS | {DEFAULT_SYSTEM_PROMPT}
 
     clean_sys_stripped = " ".join(clean_sys.strip().split())
+    # Compare with whitespace normalized so spacing differences do not matter.
     is_default = any(
         clean_sys_stripped == " ".join(p.strip().split()) 
         for p in default_sys_prompts
     )
 
     def is_greeting(text: str) -> bool:
+        """Return True for short greetings such as hello, or a greeting followed by at most three more words."""
         t = text.strip().lower().rstrip(".,!?")
         if not t:
             return False
@@ -281,9 +308,11 @@ def build_prompt(system_prompt, chat_history):
         else:
             effective_system = clean_sys + rag_context + codex_context
 
+    # Make sure the 'latest message is the active request' instruction is present exactly once.
     if _RECENCY_INSTRUCTION not in effective_system:
         effective_system = (effective_system + "\n" if effective_system else "") + _RECENCY_INSTRUCTION
 
+    # Swarm agent prompts need exact output formats, so they never get machine-speak compression.
     is_swarm = False
     if isinstance(system_prompt, str):
         if "You are an expert software engineer" in system_prompt or "Coder Agent" in system_prompt or "Architect Agent" in system_prompt:
@@ -303,6 +332,7 @@ def build_prompt(system_prompt, chat_history):
         effective_system = _apply_vocab_leak_bypass(effective_system)
     # ─────────────────────────────────────────────────────────────────────────
 
+    # Decide whether to start the reply inside an open think block (skipped for greetings or when the tag is unusable).
     preseed_think = True
     if is_user_greeting:
         preseed_think = False
@@ -314,6 +344,7 @@ def build_prompt(system_prompt, chat_history):
             active_adapter,
         )
 
+    # Pick the chat template by model family: Llama 3, ChatML (Qwen-based) or the DeepSeek format as fallback.
     model_name = ModelLoader.model_name().lower()
 
     if "llama" in model_name:

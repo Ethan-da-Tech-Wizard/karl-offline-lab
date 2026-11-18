@@ -1,3 +1,8 @@
+# Program: karl-offline-lab - test_mcp_client.py
+# Programmer: Ethan-da-Tech-Wizard (written with Claude, an AI assistant)
+# Last Modified: 2026-11-18
+# Purpose: Integration test of the MCP client manager lifecycle, tool listing and tool execution against a local stdio mock server.
+
 """
 MCP Client Manager Tests — Karl Workbench
 ==========================================
@@ -20,6 +25,7 @@ pytestmark = [pytest.mark.integration]
 
 
 def _running_under_bwrap() -> bool:
+    """Test helper: running under bwrap."""
     try:
         with open("/proc/1/comm", "r", encoding="utf-8") as f:
             return f.read().strip() == "bwrap"
@@ -28,8 +34,10 @@ def _running_under_bwrap() -> bool:
 
 
 class TestMCPClient(unittest.TestCase):
+    """Test group or helper class: test mcpclient."""
     def setUp(self):
         # Create a temporary config file pointing to mock_mcp_server.py
+        """Prepare the fixtures needed by each test in this class."""
         self.temp_dir = tempfile.TemporaryDirectory()
         self.config_path = os.path.join(self.temp_dir.name, "mcp_config.json")
         
@@ -53,11 +61,13 @@ class TestMCPClient(unittest.TestCase):
 
     def tearDown(self):
         # Clean up temporary files
+        """Clean up whatever setUp created after each test."""
         self.temp_dir.cleanup()
         # Ensure any active client manager instance is stopped and cleared
         MCPClientManager.reset_instance()
 
     def test_mcp_client_lifecycle_and_tools(self):
+        """Scenario: mcp client lifecycle and tools. Expected: the assertions in this test hold."""
         if _running_under_bwrap():
             pytest.skip("Codex sandbox blocks the mock MCP stdio handshake")
 

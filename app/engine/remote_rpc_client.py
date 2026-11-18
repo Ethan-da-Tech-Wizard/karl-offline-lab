@@ -1,3 +1,8 @@
+# Program: karl-offline-lab - remote_rpc_client.py
+# Programmer: Ethan-da-Tech-Wizard (written with Claude, an AI assistant)
+# Last Modified: 2026-11-18
+# Purpose: Presents a remote Karl inference server (reached over a WebSocket JSON-RPC bridge) as a llama-cpp-style callable that streams text, with optional local fallback on failure.
+"""Remote RPC model wrapper for streaming generation through a websocket bridge."""
 from __future__ import annotations
 
 import asyncio
@@ -19,6 +24,7 @@ class RemoteRPCError(RuntimeError):
 
 
 def _is_private_host(hostname: str | None) -> bool:
+    """Return True when the host is a private-network address or a local host name."""
     if not hostname:
         return False
     try:
@@ -28,6 +34,7 @@ def _is_private_host(hostname: str | None) -> bool:
 
 
 def _ssl_context_for_url(url: str) -> ssl.SSLContext | None:
+    """Return None for non-secure URLs; for secure WebSocket URLs return a TLS context (certificate checks are relaxed only for private hosts)."""
     parsed = urlparse(url)
     if parsed.scheme != "wss":
         return None
@@ -40,6 +47,7 @@ def _ssl_context_for_url(url: str) -> ssl.SSLContext | None:
 
 
 def _with_token_query(url: str, token: str) -> str:
+    """Return the URL with the auth token added to (or replacing) its query string."""
     parsed = urlparse(url)
     query = dict(parse_qsl(parsed.query, keep_blank_values=True))
     if token:
@@ -65,6 +73,7 @@ class RemoteRPCModel:
         local_fallback_factory=None,
         handshake_timeout: float = 5.0,
     ):
+        """Store the server URL, token, fallback hooks and handshake timeout; fail if no URL is configured."""
         self.server_url = server_url.strip()
         self.auth_token = auth_token
         self.on_fallback = on_fallback
@@ -74,18 +83,21 @@ class RemoteRPCModel:
             raise RemoteRPCError("Remote engine mode is enabled but no server URL is configured.")
 
     def tokenize(self, data: bytes | str, add_bos: bool = False) -> list[int]:
+        """Return a rough placeholder token list (about one per three characters) used only for size estimates in remote mode."""
         if isinstance(data, bytes):
             text = data.decode("utf-8", errors="ignore")
         else:
             text = data
         # Conservative estimate used only for context HUD and trim heuristics in
         # remote mode. It deliberately avoids touching local llama-cpp.
+        # Rough estimate: about three characters per token.
         count = max(1, len(text) // 3) if text else 0
         if add_bos and count:
             count += 1
         return list(range(count))
 
     def __call__(self, prompt: str, **kwargs) -> Iterator[dict[str, Any]]:
+        """Generate for a prompt: return the stream when stream is requested, otherwise join it into one completion dict."""
         if not kwargs.get("stream", False):
             text = "".join(
                 chunk["choices"][0].get("text", "")
@@ -95,6 +107,7 @@ class RemoteRPCModel:
         return self._stream(prompt, kwargs)
 
     def _stream(self, prompt: str, kwargs: dict[str, Any]) -> Iterator[dict[str, Any]]:
+        """Run the websocket request on a worker thread and yield its chunks; on an error call the fallback hook and local model if provided, else raise."""
         queue: Queue[dict[str, Any] | None] = Queue()
         thread = Thread(
             target=lambda: asyncio.run(self._run_stream(prompt, kwargs, queue)),
@@ -116,6 +129,7 @@ class RemoteRPCModel:
                 message = item["error"]
                 if self.on_fallback:
                     self.on_fallback(message)
+                # On remote failure, optionally answer from a local model instead.
                 if self.local_fallback_factory:
                     local_llm = self.local_fallback_factory()
                     local_stream = local_llm(
@@ -142,6 +156,7 @@ class RemoteRPCModel:
         kwargs: dict[str, Any],
         queue: Queue[dict[str, Any] | None],
     ) -> None:
+        """Connect, send the chat request and translate thought/response notifications into completion-style chunks on the queue."""
         try:
             try:
                 from websockets.asyncio.client import connect as ws_connect
@@ -179,6 +194,7 @@ class RemoteRPCModel:
                     "params": params,
                 }))
 
+                # The remote stream begins with thought tokens; a closing think tag is injected when the answer starts.
                 in_thought = True
                 started = False
                 async for raw in websocket:
@@ -205,6 +221,7 @@ class RemoteRPCModel:
                         if in_thought:
                             queue.put({"choices": [{"text": "</think>", "finish_reason": None}]})
                         queue.put({"choices": [{"text": "", "finish_reason": "stop"}]})
+                        # None tells the consuming generator the stream is complete.
                         queue.put(None)
                         return
                     elif method == "status_update":

@@ -1,3 +1,8 @@
+# Program: karl-offline-lab - ai_lab.py
+# Programmer: Ethan-da-Tech-Wizard (written with Claude, an AI assistant)
+# Last Modified: 2026-11-18
+# Purpose: Implements the AI Lab workspace, which visualizes TF-IDF or neural embedding retrieval math on sandbox sentences and lets the user compose and publish custom agent profiles.
+
 """
 AI Lab Workspace — Interactive pipeline visualizer and agent composer.
 """
@@ -25,7 +30,11 @@ from app.utils.custom_embeddings import TfidfEmbedder
 from app.ui.themes import get_theme_colors, MONO
 
 
+# ---------------------------------------------------------------------------
+# Small UI helpers
+# ---------------------------------------------------------------------------
 def _hline() -> QFrame:
+    """Create a horizontal divider line."""
     f = QFrame()
     f.setFrameShape(QFrame.Shape.HLine)
     f.setObjectName("line")
@@ -33,6 +42,7 @@ def _hline() -> QFrame:
 
 
 def _section(text: str) -> QLabel:
+    """Create a bold section-header label."""
     lbl = QLabel(text)
     lbl.setObjectName("section-header")
     lbl.setStyleSheet("font-weight: bold; letter-spacing: 1.5px;")
@@ -40,6 +50,7 @@ def _section(text: str) -> QLabel:
 
 
 def _label(text: str, obj: str = "") -> QLabel:
+    """Create a label, optionally tagged with a stylesheet object name."""
     lbl = QLabel(text)
     if obj:
         lbl.setObjectName(obj)
@@ -47,6 +58,7 @@ def _label(text: str, obj: str = "") -> QLabel:
 
 
 def _row(label_text: str, widget: QWidget) -> QWidget:
+    """Wrap a fixed-width caption and a widget into one form row."""
     w = QWidget()
     lo = QHBoxLayout(w)
     lo.setContentsMargins(0, 2, 0, 2)
@@ -60,13 +72,19 @@ def _row(label_text: str, widget: QWidget) -> QWidget:
     return w
 
 
+# ---------------------------------------------------------------------------
+# Execution trace flowchart widget
+# ---------------------------------------------------------------------------
 class ExecutionTraceFlowchart(QWidget):
+    """Custom-painted flowchart of the five retrieval steps, from query input to context synthesis."""
     def __init__(self, parent=None):
+        """Set the minimum height and the default (sparse TF-IDF) list of step titles and descriptions."""
         super().__init__(parent)
         self.setMinimumHeight(440)
         self.state = None
         self._is_sparse = True
         
+        # Each step is a (title, description) pair drawn as one box
         self.steps = [
             ("1. USER QUERY INPUT", "Captures raw query string from the user input."),
             ("2. QUERY VECTORIZATION (TF-IDF)", "Converts query into a normalized vector."),
@@ -76,19 +94,21 @@ class ExecutionTraceFlowchart(QWidget):
         ]
 
     def set_mode(self, is_sparse: bool):
+        """Switch step 2 between TF-IDF and SentenceTransformer wording and repaint."""
         self._is_sparse = is_sparse
         mode_str = "TF-IDF" if is_sparse else "SentenceTransformer"
         self.steps[1] = (f"2. QUERY VECTORIZATION ({mode_str})", f"Converts query into a normalized vector using {mode_str}.")
         self.update()
 
     def paintEvent(self, event):
+        """Draw the card, one box per step and a downward arrow between consecutive boxes."""
         painter = QPainter(self)
         painter.setRenderHint(QPainter.RenderHint.Antialiasing)
         
         w = self.width()
         h = self.height()
         
-        # Get theme colors
+        # Get theme colors (dark defaults are used until state is attached)
         p = {
             "bg_deep": "#020205",
             "bg_surface": "#0D0D1B",
@@ -105,6 +125,7 @@ class ExecutionTraceFlowchart(QWidget):
         painter.setPen(QPen(QColor(p["border"]), 1))
         painter.drawRoundedRect(0, 0, w, h, 8.0, 8.0)
         
+        # Box geometry: fixed width and height with a gap for the arrow, centred horizontally
         box_w = 420
         box_h = 56
         gap = 20
@@ -149,13 +170,20 @@ class ExecutionTraceFlowchart(QWidget):
                 painter.drawPath(arrowhead)
 
 
+# ---------------------------------------------------------------------------
+# AI Lab workspace
+# ---------------------------------------------------------------------------
 class AILabWorkspace(QWidget):
+    """Workspace with a Pipeline Visualizer tab and an Agent Composer tab."""
+    # Emitted with the agent name after a custom agent is saved
     agent_published = pyqtSignal(str)
 
     def __init__(self, state: AppState, parent=None):
+        """Create the two tabs and subscribe to state changes for the model and adapter labels."""
         super().__init__(parent)
         self.setObjectName("workspace-root")
         self.state = state
+        # TF-IDF embedder and cached sentences/vectors from the last pipeline run
         self._tfidf = TfidfEmbedder()
         self._cached_embeddings = []
         self._cached_sentences = []
@@ -183,6 +211,7 @@ class AILabWorkspace(QWidget):
     # ── TAB A: Pipeline Visualizer ──────────────────────────────────────────
 
     def _build_pipeline_tab(self):
+        """Build the Pipeline Visualizer tab: configuration drawer on the left, inspector tabs on the right."""
         self._pipeline_tab_w = QWidget()
         main_lay = QHBoxLayout(self._pipeline_tab_w)
         main_lay.setContentsMargins(0, 8, 0, 0)
@@ -279,6 +308,7 @@ class AILabWorkspace(QWidget):
     # ── TAB A - SUBTABS ──────────────────────────────────────────────────────
 
     def _build_vector_math_subtab(self):
+        """Build the Vector Math sub-tab with a stacked sparse (TF-IDF) page and dense (neural) page."""
         self._vector_math_tab = QWidget()
         layout = QVBoxLayout(self._vector_math_tab)
         layout.setContentsMargins(0, 8, 0, 0)
@@ -330,6 +360,7 @@ class AILabWorkspace(QWidget):
         layout.addWidget(self._math_stack)
 
     def _build_rag_playground_subtab(self):
+        """Build the RAG Playground sub-tab: a query box and a results browser."""
         self._rag_playground_tab = QWidget()
         layout = QVBoxLayout(self._rag_playground_tab)
         layout.setContentsMargins(0, 8, 0, 0)
@@ -359,6 +390,7 @@ class AILabWorkspace(QWidget):
         layout.addWidget(self._rag_results_browser, 1)
 
     def _build_projection_subtab(self):
+        """Build the 2D Projection sub-tab holding the vector projection widget."""
         self._projection_tab = QWidget()
         layout = QVBoxLayout(self._projection_tab)
         layout.setContentsMargins(0, 8, 0, 0)
@@ -369,6 +401,7 @@ class AILabWorkspace(QWidget):
         layout.addWidget(self._projection_widget, 1)
 
     def _build_execution_trace_subtab(self):
+        """Build the Execution Trace sub-tab holding the flowchart widget."""
         self._execution_trace_tab = QWidget()
         layout = QVBoxLayout(self._execution_trace_tab)
         layout.setContentsMargins(0, 8, 0, 0)
@@ -382,6 +415,7 @@ class AILabWorkspace(QWidget):
     # ── TAB B: Agent Composer ────────────────────────────────────────────────
 
     def _build_composer_tab(self):
+        """Build the Agent Composer tab: a scrollable form for naming, prompting and configuring a custom agent."""
         self._composer_tab_w = QWidget()
         
         # We wrap in a scroll area to guarantee readability in small layouts
@@ -459,18 +493,21 @@ class AILabWorkspace(QWidget):
     # ── Pipeline / Visualizer Logic ──────────────────────────────────────────
 
     def _on_state_changed(self, name: str, value: object):
+        """Update the model and adapter labels when those state values change."""
         if name == "model_name":
             self._active_model_lbl.setText(f"Active Model: {value}")
         elif name == "adapter_name":
             self._active_adapter_lbl.setText(f"Adapter State: {value or 'None'}")
 
     def _on_vectorizer_changed(self):
+        """Switch the math view and flowchart to the chosen vectorizer mode and rerun the pipeline."""
         is_sparse = (self._vectorizer_combo.currentIndex() == 0)
         self._math_stack.setCurrentIndex(0 if is_sparse else 1)
         self._flowchart_widget.set_mode(is_sparse)
         self._run_pipeline()
 
     def _run_pipeline(self):
+        """Embed the sandbox sentences with the chosen vectorizer, fill the math tables and refresh query results."""
         text = self._sentences_input.toPlainText().strip()
         if not text:
             return
@@ -483,7 +520,7 @@ class AILabWorkspace(QWidget):
         is_sparse = (self._vectorizer_combo.currentIndex() == 0)
 
         if is_sparse:
-            # Fit TF-IDF embedder
+            # Fit TF-IDF embedder on the sandbox documents, then vectorize each one
             self._tfidf.fit(sentences)
             self._cached_embeddings = [self._tfidf.transform(s) for s in sentences]
             self._populate_sparse_math_tables(sentences)
@@ -496,11 +533,13 @@ class AILabWorkspace(QWidget):
             self._neural_dim_lbl.setText("Loading neural encoder...")
             self.update()
             
+            # Encoding failures are shown in the label instead of raising
             try:
                 # Retrieve dense embeddings
                 embeddings = []
                 for s in sentences:
                     emb = self.state.rag.encoder.encode([s])[0]
+                    # L2 normalise so dot products equal cosine similarity
                     # L2 normalized
                     norm = np.linalg.norm(emb)
                     if norm > 0.0:
@@ -518,10 +557,12 @@ class AILabWorkspace(QWidget):
         self._run_query()
 
     def _populate_sparse_math_tables(self, sentences: list[str]):
+        """Fill the vocabulary table (word, document frequency, IDF) and the document-term matrix."""
         # Populate Vocab Table
         vocab = self._tfidf.vocabulary
         self._vocab_table.setRowCount(len(vocab))
         
+        # Calculate DF (number of sentences containing each word) for each vocab word
         # Calculate DF for each vocab word
         df_counts = {}
         for s in sentences:
@@ -553,6 +594,7 @@ class AILabWorkspace(QWidget):
                 self._matrix_table.setItem(s_idx, w_idx + 1, QTableWidgetItem(f"{val:.4f}"))
 
     def _populate_dense_math_table(self):
+        """Show the first 20 values of the first sentence's neural embedding."""
         if not self._cached_embeddings:
             self._neural_table.setRowCount(0)
             return
@@ -568,6 +610,7 @@ class AILabWorkspace(QWidget):
             self._neural_table.setItem(i, 1, QTableWidgetItem(f"{val:.6f}"))
 
     def _run_query(self):
+        """Score every sandbox document against the query, render the cosine similarity workings and update the projection."""
         query = self._query_input.text().strip()
         if not query or not self._cached_sentences:
             return
@@ -680,6 +723,7 @@ class AILabWorkspace(QWidget):
         self._projection_widget.set_documents(doc_points_to_set)
 
     def _project_pca_docs_and_query(self, doc_embeddings: list[np.ndarray], query_embedding: np.ndarray) -> tuple[list[tuple[float, float]], tuple[float, float]]:
+        """Project the document and query embeddings onto the top two principal components, scaled into the 0.15-0.85 range."""
         all_embeds = np.vstack(doc_embeddings + [query_embedding])
         
         # Center components
@@ -705,12 +749,14 @@ class AILabWorkspace(QWidget):
     # ── Composer / Form Logic ───────────────────────────────────────────────
 
     def showEvent(self, event):
+        """Refresh the dropdowns and run the visualizer each time the workspace is shown."""
         super().showEvent(event)
         self._refresh_combos()
         # Automatically run visualizer on display if it hasn't run yet
         self._run_pipeline()
 
     def _refresh_combos(self):
+        """Reload the base-model and adapter dropdowns from the local models and adapters folders."""
         # Scan data/models/ for .gguf files
         self._base_model_combo.clear()
         models_dir = "data/models"
@@ -739,6 +785,7 @@ class AILabWorkspace(QWidget):
                 pass
 
     def _publish_agent(self):
+        """Validate the form, save the agent into the custom agents JSON file, notify the user and reset the form."""
         name = self._agent_name_input.text().strip()
         label = self._agent_label_input.text().strip()
         desc = self._agent_desc_input.text().strip()
@@ -762,7 +809,7 @@ class AILabWorkspace(QWidget):
             QMessageBox.warning(self, "Validation Error", "System Prompt is required.")
             return
 
-        # Prepare adapter value
+        # Prepare adapter value ("none" means no adapter)
         adapter_val = None if adapter == "none" else adapter
 
         profile = {

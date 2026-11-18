@@ -1,3 +1,7 @@
+# Program: karl-offline-lab - test_feature_flags.py
+# Programmer: Ethan-da-Tech-Wizard (written with Claude, an AI assistant)
+# Last Modified: 2026-11-18
+# Purpose: Tests for the feature flag store and the crash-detecting boot guard, all isolated to temporary files.
 """
 Feature Flag Registry and Boot Guard tests.
 
@@ -34,28 +38,33 @@ def _reset_safe_mode():
 
 @pytest.fixture
 def flags_path(tmp_path) -> str:
+    """Path of a feature flag file inside the temporary folder."""
     return str(tmp_path / "feature_flags.json")
 
 
 @pytest.fixture
 def lock_path(tmp_path) -> str:
+    """Path of a boot lock file inside the temporary folder."""
     return str(tmp_path / "boot_in_progress.lock")
 
 
 @pytest.fixture
 def store(flags_path) -> FeatureFlagStore:
+    """A feature flag store backed by the temporary file."""
     return FeatureFlagStore(path=flags_path)
 
 
 # ── Default flag state ────────────────────────────────────────────────────────
 
 def test_default_flags_match_spec(store):
+    """Scenario: fresh store. Expected: experimental flags off and the swarming loop flag on."""
     assert store.is_enabled("experimental_speculative_decoding") is False
     assert store.is_enabled("multimodal_vision_ocr") is False
     assert store.is_enabled("agentic_swarming_loops") is True
 
 
 def test_unknown_flag_returns_false(store):
+    """Scenario: ask about a flag that does not exist. Expected: False."""
     assert store.is_enabled("nonexistent_flag") is False
 
 
@@ -72,11 +81,13 @@ def test_defaults_are_persisted_on_first_load(flags_path):
 # ── set_flag ──────────────────────────────────────────────────────────────────
 
 def test_set_flag_updates_in_memory(store):
+    """Scenario: enable a flag. Expected: the store reports it enabled."""
     store.set_flag("experimental_speculative_decoding", True)
     assert store.is_enabled("experimental_speculative_decoding") is True
 
 
 def test_set_flag_persists_to_disk(flags_path, store):
+    """Scenario: enable a flag then reload from disk. Expected: still enabled."""
     store.set_flag("multimodal_vision_ocr", True)
     # Reload from disk to verify persistence
     reloaded = FeatureFlagStore(path=flags_path)
@@ -84,11 +95,13 @@ def test_set_flag_persists_to_disk(flags_path, store):
 
 
 def test_set_flag_raises_for_unknown_flag(store):
+    """Scenario: set a flag that does not exist. Expected: KeyError."""
     with pytest.raises(KeyError):
         store.set_flag("not_a_real_flag", True)
 
 
 def test_set_flag_persists_false(flags_path, store):
+    """Scenario: turn a default-on flag off then reload. Expected: still off."""
     store.set_flag("agentic_swarming_loops", False)
     reloaded = FeatureFlagStore(path=flags_path)
     assert reloaded.is_enabled("agentic_swarming_loops") is False
@@ -97,6 +110,7 @@ def test_set_flag_persists_false(flags_path, store):
 # ── enter_safe_mode ───────────────────────────────────────────────────────────
 
 def test_safe_mode_disables_experimental_flags(store):
+    """Scenario: enable experimental flags then enter safe mode. Expected: they are all disabled."""
     store.set_flag("experimental_speculative_decoding", True)
     store.set_flag("multimodal_vision_ocr", True)
     store.enter_safe_mode()
@@ -111,12 +125,14 @@ def test_safe_mode_preserves_non_experimental_flags(store):
 
 
 def test_safe_mode_sets_class_flag(store):
+    """Scenario: enter safe mode. Expected: the class-level safe_mode_active flag becomes True."""
     assert FeatureFlagStore.safe_mode_active is False
     store.enter_safe_mode()
     assert FeatureFlagStore.safe_mode_active is True
 
 
 def test_safe_mode_persists_experimental_flags_as_false(flags_path, store):
+    """Scenario: enter safe mode then reload from disk. Expected: experimental flags stay off."""
     store.set_flag("experimental_speculative_decoding", True)
     store.enter_safe_mode()
     reloaded = FeatureFlagStore(path=flags_path)
@@ -126,16 +142,19 @@ def test_safe_mode_persists_experimental_flags_as_false(flags_path, store):
 # ── Boot Guard — individual helpers ──────────────────────────────────────────
 
 def test_check_boot_lock_false_when_absent(lock_path):
+    """Scenario: no lock file. Expected: check reports False."""
     assert check_boot_lock(lock_path) is False
 
 
 def test_create_and_check_boot_lock(lock_path):
+    """Scenario: create the lock. Expected: check reports True and the file exists."""
     create_boot_lock(lock_path)
     assert check_boot_lock(lock_path) is True
     assert os.path.exists(lock_path)
 
 
 def test_boot_lock_contains_timestamp(lock_path):
+    """Scenario: create the lock. Expected: the file holds a time value between before and after creation."""
     before = time.time()
     create_boot_lock(lock_path)
     after = time.time()
@@ -146,6 +165,7 @@ def test_boot_lock_contains_timestamp(lock_path):
 
 
 def test_release_boot_lock_removes_file(lock_path):
+    """Scenario: create then release the lock. Expected: the file is gone."""
     create_boot_lock(lock_path)
     release_boot_lock(lock_path)
     assert not os.path.exists(lock_path)
@@ -169,6 +189,7 @@ def test_boot_guard_creates_lock_on_clean_boot(flags_path, lock_path):
 def test_boot_guard_returns_false_and_does_not_activate_safe_mode_on_clean_boot(
     flags_path, lock_path
 ):
+    """Scenario: run the guard with no lock. Expected: returns False, safe mode stays off and defaults are kept."""
     store = FeatureFlagStore(path=flags_path)
     crashed = run_boot_guard(store, lock_path)
     assert crashed is False
@@ -250,11 +271,13 @@ def test_boot_guard_does_not_remove_lock_on_crash_detection(flags_path, lock_pat
 # ── all_flags helper ──────────────────────────────────────────────────────────
 
 def test_all_flags_returns_complete_dict(store):
+    """Scenario: list all flags. Expected: exactly the default flag names."""
     flags = store.all_flags()
     assert set(flags.keys()) == set(FeatureFlagStore.DEFAULTS.keys())
 
 
 def test_all_flags_returns_copy(store):
+    """Scenario: change the returned dict. Expected: the store itself is not changed."""
     flags = store.all_flags()
     flags["agentic_swarming_loops"] = False
     # Original must not be mutated

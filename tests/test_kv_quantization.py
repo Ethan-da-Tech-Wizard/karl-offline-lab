@@ -1,7 +1,15 @@
+# Program: karl-offline-lab - test_kv_quantization.py
+# Programmer: Ethan-da-Tech-Wizard (written with Claude, an AI assistant)
+# Last Modified: 2026-11-18
+# Purpose: Tests that ModelLoader requests quantized (q8) KV-cache types from llama and falls back when overrides are unsupported.
+
+"""Tests that ModelLoader requests quantized (q8) KV-cache types from llama and falls back when overrides are unsupported."""
+
 from unittest.mock import MagicMock, patch
 
 
 def _reset_model_loader_state(ModelLoader):
+    """Test helper: reset model loader state."""
     ModelLoader._instance = None
     ModelLoader._instance_locked = False
     ModelLoader._active_generation_count = 0
@@ -13,6 +21,7 @@ def _reset_model_loader_state(ModelLoader):
 
 
 def _run_loader_with_patches(fake_llama):
+    """Test helper: run loader with patches."""
     from app.engine.model_loader import ModelLoader
 
     orig = {
@@ -57,9 +66,11 @@ def _run_loader_with_patches(fake_llama):
 
 
 def test_quantized_kv_cache_passes_q8_type_overrides_to_llama():
+    """Scenario: quantized kv cache passes q8 type overrides to llama. Expected: the assertions in this test hold."""
     captured_kwargs = []
 
     def fake_llama(**kwargs):
+        """Test helper: fake llama."""
         captured_kwargs.append(kwargs)
         raise RuntimeError("stop after constructor capture")
 
@@ -71,10 +82,12 @@ def test_quantized_kv_cache_passes_q8_type_overrides_to_llama():
 
 
 def test_quantized_kv_cache_falls_back_when_type_overrides_are_unsupported():
+    """Scenario: quantized kv cache falls back when type overrides are unsupported. Expected: the assertions in this test hold."""
     captured_kwargs = []
     loaded = MagicMock()
 
     def fake_llama(**kwargs):
+        """Test helper: fake llama."""
         captured_kwargs.append(dict(kwargs))
         if "type_k" in kwargs or "type_v" in kwargs:
             raise TypeError("unexpected keyword argument 'type_k'")

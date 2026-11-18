@@ -1,3 +1,11 @@
+# Program: karl-offline-lab - trace_logger.py
+# Programmer: Ethan-da-Tech-Wizard (written with Claude, an AI assistant)
+# Last Modified: 2026-11-18
+# Purpose: Writes each model generation to rotating JSONL trace logs (plus a compact copy), archives old logs encrypted, and provides decryption and retention cleanup.
+
+"""Trace logging for model generations: JSONL files with rotation, encrypted archival, retention limits and in-memory decryption."""
+
+# Standard-library imports plus the compactor used to write the compact copy of each entry.
 import logging
 import os
 import json
@@ -14,9 +22,11 @@ from contextlib import contextmanager
 
 from app.utils import compactor
 
+# Module logger.
 logger = logging.getLogger("karl.trace_logger")
 
 
+# Rotation threshold constant (the 10 MB value from the UI config is used instead when this is left at its default).
 _MAX_BYTES = 50 * 1024 * 1024  # 50 MB per file before rotation
 
 # PBKDF2-HMAC-SHA256 iteration counts for the archive encryption key.
@@ -34,20 +44,27 @@ if sys.platform != "win32":
     except Exception:
         _libc = None
 
+# Flag values for mlockall: lock current pages and any pages mapped later.
 _MCL_CURRENT = 1
 _MCL_FUTURE  = 2
 
 
+# ── Trace logger ─────────────────────────────────────────────────────────
 class TraceLogger:
+    """Appends generation records to dated JSONL files, rotates and encrypts full files, and trims old logs."""
     def __init__(self, log_dir: str = "data/logs/traces", archive_dir: str = "data/logs/archive"):
+        """Create the log and archive folders, start a new session id, pick the current log file and start the retention cleanup in the background."""
         self.log_dir = log_dir
         self.archive_dir = archive_dir
         os.makedirs(self.log_dir, exist_ok=True)
         os.makedirs(self.archive_dir, exist_ok=True)
+        # Random id stamped on every entry written by this logger instance.
         self._session_id = str(uuid.uuid4())
         self._log_file: str | None = None
+        # Lock protecting file path selection and writes across threads.
         self._lock = threading.Lock()
         self._refresh_path()
+        # Run the retention cleanup in a background thread so startup is not delayed.
         threading.Thread(target=self.enforce_retention_policy, daemon=True).start()
 
     @staticmethod
@@ -88,6 +105,7 @@ class TraceLogger:
                 _libc.munlockall()
 
     def _get_max_bytes(self) -> int:
+        """Return the size at which a log file rotates: the module setting if changed, else the UI setting, else 10 MB."""
         global _MAX_BYTES
         if _MAX_BYTES != 50 * 1024 * 1024:
             return _MAX_BYTES
@@ -179,6 +197,7 @@ class TraceLogger:
 
         reclaimed_bytes = 0
 
+        # (only recognised log file types are touched)
         # Step 1: Remove aged logs
         if retention_days and retention_days > 0:
             now = datetime.now(timezone.utc)
@@ -307,6 +326,7 @@ class TraceLogger:
             logger.error(f"Plaintext fallback archival failed: {e}")
 
     def _refresh_path(self):
+        """Choose the log file to write to: today's file, or a numbered one if that is full (full files are archived)."""
         with self._lock:
             date_str = datetime.now(timezone.utc).strftime("%Y-%m-%d")
             base = os.path.join(self.log_dir, f"trace_{date_str}.jsonl")
@@ -339,9 +359,11 @@ class TraceLogger:
 
     @staticmethod
     def _compact_log_path(jsonl_path: str) -> str:
+        """Return the path of the compact copy that sits beside a JSONL log file."""
         return f"{jsonl_path}.compact"
 
     def _append_compact_entry(self, jsonl_path: str, entry: dict) -> None:
+        """Append one entry, in compact form, to the compact copy of a log file."""
         compact_path = self._compact_log_path(jsonl_path)
         try:
             with open(compact_path, "a", encoding="utf-8") as f:
@@ -350,6 +372,7 @@ class TraceLogger:
             logger.warning(f"Failed to write compact trace log {compact_path}: {e}")
 
     def _rewrite_compact_file(self, jsonl_path: str, entries: list[dict]) -> None:
+        """Rebuild the whole compact copy of a log file from the given entries."""
         compact_path = self._compact_log_path(jsonl_path)
         try:
             with open(compact_path, "w", encoding="utf-8") as f:
@@ -383,11 +406,13 @@ class TraceLogger:
 
         The JSONL schema is compatible with Unsloth SFT and DPO export.
         """
+        # Apply retention limits before writing (this call also repeats the cleanup on every log).
         self.prune_logs()
         
         # _refresh_path handles locking internally
         self._refresh_path()
 
+        # Timing section; extra figures are added when the model supplied diagnostics.
         timing = {
             "total_seconds": round(execution_time, 3),
         }
@@ -422,6 +447,7 @@ class TraceLogger:
             logger.debug(f"Could not perform thermal warning check: {e}")
         # ────────────────────────────────────────────────────────────────────
 
+        # Build the record; field names match the compactor's key map.
         entry = {
             "id": str(uuid.uuid4()),
             "session_id": self._session_id,
@@ -444,10 +470,12 @@ class TraceLogger:
             "feedback": feedback,          # none | thumbs_up | thumbs_down | corrected
             "corrected_response": corrected_response,
         }
+        # Attach the throttle warning only when one was raised.
         if warning:
             entry["warning"] = warning
 
         with self._lock:
+        # Append the full record, then its compact copy, under the lock so writes do not interleave.
             with open(self._log_file, "a", encoding="utf-8") as f:
                 f.write(json.dumps(entry, ensure_ascii=False) + "\n")
             self._append_compact_entry(self._log_file, entry)
@@ -544,6 +572,7 @@ class TraceLogger:
             else:
                 locked = True
 
+        # Plaintext is held in a bytearray so it can be wiped in the finally block.
         plaintext_ba: bytearray | None = None
         try:
             plaintext_ba = TraceLogger.decrypt_archive_with_token(token, file_path)
@@ -593,6 +622,7 @@ class TraceLogger:
                 if corrected_response is not None:
                     entry["corrected_response"] = corrected_response
 
+                # Only the last record is changed; every other line is written back as it was.
                 lines[-1] = json.dumps(entry, ensure_ascii=False) + "\n"
 
                 with open(self._log_file, "w", encoding="utf-8") as f:
@@ -609,6 +639,7 @@ class TraceLogger:
                         continue
                     if isinstance(parsed, dict):
                         entries.append(parsed)
+                # Rebuild the compact copy so it matches the edited log.
                 self._rewrite_compact_file(self._log_file, entries)
             except Exception as e:
                 logger.warning(f"Error updating feedback: {e}")

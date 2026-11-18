@@ -1,3 +1,8 @@
+# Program: karl-offline-lab - test_speculative_decoding.py
+# Programmer: Ethan-da-Tech-Wizard (written with Claude, an AI assistant)
+# Last Modified: 2026-11-18
+# Purpose: Tests speculative decoding configuration: draft model discovery, persisted settings and UI indicator wiring.
+
 """Speculative decoding configuration and integration guards."""
 
 from __future__ import annotations
@@ -6,6 +11,7 @@ from pathlib import Path
 
 
 def test_registry_companion_draft_is_discoverable(tmp_path, monkeypatch):
+    """Scenario: registry companion draft is discoverable. Expected: the assertions in this test hold."""
     from app.engine import config_store
 
     monkeypatch.chdir(tmp_path)
@@ -32,6 +38,7 @@ def test_registry_companion_draft_is_discoverable(tmp_path, monkeypatch):
 
 
 def test_active_draft_model_persists_enabled_flag(tmp_path, monkeypatch):
+    """Scenario: active draft model persists enabled flag. Expected: the assertions in this test hold."""
     from app.engine import config_store
 
     monkeypatch.chdir(tmp_path)
@@ -48,6 +55,7 @@ def test_active_draft_model_persists_enabled_flag(tmp_path, monkeypatch):
 
 
 def test_model_loader_uses_persisted_draft_setting():
+    """Scenario: model loader uses persisted draft setting. Expected: the assertions in this test hold."""
     source = Path("app/engine/model_loader.py").read_text(encoding="utf-8")
 
     assert "config_store.get_active_draft_model()" in source
@@ -58,6 +66,7 @@ def test_model_loader_uses_persisted_draft_setting():
 
 
 def test_status_bar_exposes_speculative_indicator():
+    """Scenario: status bar exposes speculative indicator. Expected: the assertions in this test hold."""
     source = Path("app/ui/widgets/status_bar.py").read_text(encoding="utf-8")
 
     assert "def set_speculative_active" in source

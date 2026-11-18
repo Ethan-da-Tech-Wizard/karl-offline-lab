@@ -1,9 +1,15 @@
+# Program: karl-offline-lab - hardware_scout.py
+# Programmer: Ethan-da-Tech-Wizard (written with Claude, an AI assistant)
+# Last Modified: 2026-11-18
+# Purpose: Detects available RAM, VRAM, free disk space, GPU temperature, CPU instruction flags and a stable hardware id for this machine.
+"""Hardware detection helpers used to decide which models can run."""
 import os
 import shutil
 import platform
 import subprocess
 
 def get_cpu_flags() -> list[str]:
+# Linux reads /proc/cpuinfo; macOS parses sysctl output; any failure just yields fewer flags.
     """Returns a list of CPU instruction flags (avx, avx2, etc.)."""
     flags = []
     try:
@@ -39,6 +45,7 @@ def get_cpu_flags() -> list[str]:
     return sorted(list(set(flags)))
 
 def get_hardware_uuid() -> str:
+# Order of preference: platform hardware id, then a hash of network address and CPU info, then a constant string.
     """Retrieves physical motherboard UUID or a stable hardware-bound fallback."""
     system = platform.system()
     if system == "Linux":
@@ -87,6 +94,7 @@ def get_hardware_uuid() -> str:
         return "karl-static-hardware-fallback"
 
 def get_hardware_profile():
+# Optional libraries (pynvml, GPUtil) are imported lazily so missing GPUs or drivers are not errors.
     """
     Returns a dict of available hardware resources including CPU flags.
     GPUtil is optional — if no discrete GPU is found, vram_gb = 0.0.
@@ -151,6 +159,7 @@ def get_hardware_profile():
         pass  # No discrete GPU or GPUtil not available
 
     # Storage free on the drive where Karl lives
+    # Measure free space on the drive that holds this code.
     karl_dir = os.path.dirname(os.path.abspath(__file__))
     total, used, free = shutil.disk_usage(karl_dir)
     storage_gb = free / (1024 ** 3)
@@ -174,6 +183,7 @@ def get_hardware_profile():
     }
 
 
+# Running this file directly prints a quick resource summary.
 if __name__ == "__main__":
     profile = get_hardware_profile()
     print(f"RAM available:     {profile['ram_gb']:.1f} GB")

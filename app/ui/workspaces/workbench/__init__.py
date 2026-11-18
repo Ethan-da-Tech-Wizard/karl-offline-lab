@@ -1,3 +1,7 @@
+# Program: karl-offline-lab - __init__.py
+# Programmer: Ethan-da-Tech-Wizard (written with Claude, an AI assistant)
+# Last Modified: 2026-11-18
+# Purpose: Package entry point for the Workbench workspace that re-exports ChatView, AGENT_PROFILES and WorkbenchWorkspace.
 """Workbench package — primary interaction space.
 
 Split into focused modules:

@@ -1,3 +1,7 @@
+# Program: karl-offline-lab - training_curator.py
+# Programmer: Ethan-da-Tech-Wizard (written with Claude, an AI assistant)
+# Last Modified: 2026-11-18
+# Purpose: Saves accepted/corrected model responses as fine-tuning examples and exports them as balanced SFT or DPO JSONL files, plus stores eval reports.
 """
 Training Data Curator — M11
 
@@ -11,11 +15,13 @@ import os
 import json
 from datetime import datetime, timezone
 
+# === File locations ===
 CURATED_PATH = "data/training/curated.jsonl"
 EVAL_RESULTS_DIR = "data/eval_results"
 
 
 def _ensure_dir():
+    """Create the folder that holds the curated dataset if it is missing."""
     os.makedirs(os.path.dirname(CURATED_PATH), exist_ok=True)
 
 
@@ -77,6 +83,7 @@ def _is_degraded(record: dict) -> bool:
 
 
 def _classify_example(prompt: str) -> str:
+    """Bucket a prompt as coding, symbolic or arithmetic using keyword checks (arithmetic is the default)."""
     prompt_lower = prompt.lower()
     if "python" in prompt_lower or "code block" in prompt_lower or "def solve" in prompt_lower:
         return "coding"
@@ -98,6 +105,7 @@ def export_unsloth(output_path: str = "data/training/export_unsloth.jsonl"):
     skipped = len(raw) - len(examples)
     print(f"Curation Curation: Exported {len(examples)} examples. Filtered out {skipped} degraded examples.")
 
+    # Examples with fewer than two messages have no user turn and are skipped.
     # Classify all examples
     categorized = {}
     for ex in examples:
@@ -234,6 +242,7 @@ def save_eval_result(report: dict) -> str:
     adapter = (report.get("adapter_name") or "base").replace("/", "_")[:20]
     path = os.path.join(EVAL_RESULTS_DIR, f"{ts}_{model}_{adapter}.json")
 
+    # Write to a temp file then rename, so a crash never leaves a half-written report.
     tmp = path + ".tmp"
     with open(tmp, "w", encoding="utf-8") as f:
         json.dump(report, f, indent=2, ensure_ascii=False)
@@ -250,6 +259,7 @@ def save_eval_result(report: dict) -> str:
         if not user_msg or not model_response:
             continue
 
+        # Passing answers become 'chosen' examples; failing ones become 'rejected', with the expected answer (when known) added as 'chosen'.
         if passed:
             save_example(system_prompt, user_msg, model_response, source="eval_chosen")
         else:
@@ -290,6 +300,7 @@ def list_eval_results() -> list[dict]:
     return results
 
 
+# === Class wrapper used by the app state ===
 class TrainingCurator:
     """
     Class wrapper around the module-level curator functions.
@@ -302,22 +313,29 @@ class TrainingCurator:
         save_example(system_prompt, prompt, response, source)
 
     def get_all_examples(self):
+        """Return all curated examples (see module-level get_all_examples)."""
         return get_all_examples()
 
     def get_stats(self):
+        """Return counts of curated examples (see module-level get_stats)."""
         return get_stats()
 
     def export_unsloth(self, output_path: str = "data/training/export_unsloth.jsonl"):
+        """Export balanced SFT data and return the output path."""
         return export_unsloth(output_path)
 
     def export_dpo(self, output_path: str = "data/training/export_unsloth_dpo.jsonl"):
+        """Export DPO preference pairs and return the output path."""
         return export_dpo(output_path)
 
     def delete_example(self, index: int):
+        """Delete the example at the given 0-based index."""
         return delete_example(index)
 
     def save_eval_result(self, report: dict) -> str:
+        """Save an eval report and return its file path."""
         return save_eval_result(report)
 
     def list_eval_results(self) -> list[dict]:
+        """List saved eval results, newest first."""
         return list_eval_results()

@@ -1,3 +1,7 @@
+# Program: karl-offline-lab - perplexity_bench.py
+# Programmer: Ethan-da-Tech-Wizard (written with Claude, an AI assistant)
+# Last Modified: 2026-11-18
+# Purpose: Benchmarks every GGUF model in a folder for perplexity, generation speed and VRAM use, prints a comparison grid and saves a JSON report.
 """
 Perplexity & Throughput Benchmarking Engine — Karl Workbench
 =============================================================
@@ -41,6 +45,7 @@ import logging
 
 import numpy as np
 
+# Allow imports from the repository root when run directly.
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from llama_cpp import Llama
@@ -50,6 +55,7 @@ from core.hardware_scout import get_hardware_profile
 logging.basicConfig(level=logging.WARNING)
 logger = logging.getLogger("karl.perplexity_bench")
 
+# Default locations and sizes for the benchmark run.
 MODELS_DIR   = "data/models"
 REPORT_PATH  = "data/quantization_comparison.json"
 N_CTX        = 2048   # context window allocated for every benchmark model
@@ -61,6 +67,7 @@ DEFAULT_GEN_TOKENS  = 200
 # Fixed ~2 000-word technical text (no external download required).
 # Held constant across all models so perplexity scores are directly comparable.
 
+# Fixed technical text used for the perplexity measurement, so results are comparable between models.
 EVAL_TEXT = """\
 The transformer architecture has fundamentally reshaped natural language processing.
 At its core, the self-attention mechanism allows each token in a sequence to attend
@@ -245,6 +252,7 @@ def compute_perplexity(llm: Llama, eval_text: str, max_eval_tokens: int) -> floa
     nlls: list[float] = []
     for i, target_id in enumerate(targets):
         start = i * n_vocab
+        # Each position's logits are a block of n_vocab values; convert them to probabilities.
         probs = _softmax(all_logits[start : start + n_vocab])
 
         if target_id < 0 or target_id >= n_vocab:
@@ -263,6 +271,7 @@ def compute_perplexity(llm: Llama, eval_text: str, max_eval_tokens: int) -> floa
 
 # ── Throughput measurement ────────────────────────────────────────────────────
 
+# Fixed starting prompt for the speed test.
 _THROUGHPUT_SEED = (
     "The following is a detailed technical explanation of how transformer-based "
     "language models perform autoregressive text generation:"
@@ -326,6 +335,7 @@ def benchmark_model(
     """
     filename = os.path.basename(model_path)
     file_gb  = round(os.path.getsize(model_path) / (1024 ** 3), 3)
+    # Leave two CPU cores free for the rest of the system.
     threads  = max(1, multiprocessing.cpu_count() - 2)
 
     result: dict = {
@@ -345,6 +355,7 @@ def benchmark_model(
         llm = Llama(
             model_path=model_path,
             n_ctx=N_CTX,
+            # -1 offloads all layers to the GPU when one is available.
             n_gpu_layers=-1,
             logits_all=True,   # required: populates llm.logits for all positions
             n_threads=threads,
@@ -389,10 +400,12 @@ def benchmark_model(
 # ── ASCII grid printer ────────────────────────────────────────────────────────
 
 def _fmt(value, spec: str, missing: str = "—") -> str:
+    """Format value with the format spec, or return the placeholder when it is None."""
     return missing if value is None else format(value, spec)
 
 
 def print_ascii_grid(results: list[dict]) -> None:
+    """Print the benchmark results as a text table, with any per-model error on its own line."""
     bar = "═" * 82
     thin = "─" * 82
     print(f"\n{bar}")
@@ -489,6 +502,7 @@ def run_benchmark(
 # ── CLI ───────────────────────────────────────────────────────────────────────
 
 def main() -> None:
+    """Parse command-line options, run the benchmark, and exit 0 if any results were produced, otherwise 1."""
     parser = argparse.ArgumentParser(
         description="Karl GGUF Quantization Perplexity & Throughput Benchmark",
         formatter_class=argparse.RawDescriptionHelpFormatter,

@@ -1,3 +1,9 @@
+# Program: karl-offline-lab - correlation_logger.py
+# Programmer: Ethan-da-Tech-Wizard (written with Claude, an AI assistant)
+# Last Modified: 2026-11-18
+# Purpose: Tracks a per-task correlation ID in a context variable and exposes a logging filter that stamps it onto every log record.
+
+
 """
 Correlation ID context tracking and structured logging filter.
 
@@ -5,6 +11,7 @@ Each asyncio Task and Python thread gets its own copy of the ContextVar,
 so correlation IDs are naturally isolated across concurrent operations.
 """
 
+# Postpone evaluation of type annotations (must stay the first statement after the docstring).
 from __future__ import annotations
 
 import contextvars
@@ -12,6 +19,7 @@ import logging
 import uuid
 
 # Module-level ContextVar — default "system" when no ID has been assigned.
+
 correlation_id: contextvars.ContextVar[str] = contextvars.ContextVar(
     "correlation_id", default="system"
 )
@@ -45,5 +53,7 @@ class CorrelationFilter(logging.Filter):
     """
 
     def filter(self, record: logging.LogRecord) -> bool:
+        """Attach the correlation id to the record and let it through."""
+        # Stamp the record so log format strings can use the correlation_id field.
         record.correlation_id = get_correlation_id()  # type: ignore[attr-defined]
         return True
