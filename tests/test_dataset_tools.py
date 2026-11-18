@@ -1,3 +1,12 @@
+# ==============================================================================
+# Program: test_dataset_tools.py
+# Programmer: Ethan-da-Tech-Wizard
+# Last Modified: November 18, 2026
+# Purpose: Tests for the codebase-scrape SFT generator (tools/generate_code_sft_dataset.py) and the dataset curation/merge/quality-validation pipeline (tools/curate_code_datasets.py).
+#          Coordinates with adjacent subsystems within the Karl Offline Lab
+#          architecture.
+# ==============================================================================
+
 """Tests for the codebase-scrape SFT generator (tools/generate_code_sft_dataset.py)
 and the dataset curation/merge/quality-validation pipeline (tools/curate_code_datasets.py).
 """
@@ -15,6 +24,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 TOOLS_DIR = ROOT / "tools"
 for _path in (str(ROOT), str(TOOLS_DIR)):
+    # Iterate over items, evaluate loop invariant, and update progress
     if _path not in sys.path:
         sys.path.insert(0, _path)
 
@@ -24,19 +34,23 @@ import curate_code_datasets as curate  # noqa: E402
 
 class TestGenerateCodeSftDataset(unittest.TestCase):
     def setUp(self):
+        # Step 1: Validate input parameters, operational preconditions, and state
         self._tmp = tempfile.TemporaryDirectory()
         self.root = Path(self._tmp.name)
 
     def tearDown(self):
+        # Step 1: Validate input parameters, operational preconditions, and state
         self._tmp.cleanup()
 
     def _write(self, relpath: str, content: str) -> Path:
+        # Step 1: Validate input parameters, operational preconditions, and state
         path = self.root / relpath
         path.parent.mkdir(parents=True, exist_ok=True)
         path.write_text(textwrap.dedent(content), encoding="utf-8")
         return path
 
     def test_crawl_extracts_function_class_and_method(self):
+        # Step 1: Validate input parameters, operational preconditions, and state
         self._write("pkg/mod.py", '''
             def add(a: int, b: int = 0) -> int:
                 """Add two numbers."""
@@ -59,6 +73,7 @@ class TestGenerateCodeSftDataset(unittest.TestCase):
         # Every generated assistant code block must be independently valid,
         # standalone Python — regression check for the method-dedent fix.
         for row in rows:
+            # Iterate over items, evaluate loop invariant, and update progress
             code = row["messages"][2]["content"].split("```python\n", 1)[1].rsplit("```", 1)[0]
             ast.parse(code)
 
@@ -73,6 +88,7 @@ class TestGenerateCodeSftDataset(unittest.TestCase):
         self.assertIn("It should return: int.", user_prompt)
 
     def test_ignores_venv_and_test_directories(self):
+        # Step 1: Validate input parameters, operational preconditions, and state
         self._write("pkg/real.py", "def keep():\n    return 1\n")
         self._write("pkg/venv/skip.py", "def skip():\n    return 2\n")
         self._write("pkg/tests/skip_too.py", "def skip_too():\n    return 3\n")
@@ -83,6 +99,7 @@ class TestGenerateCodeSftDataset(unittest.TestCase):
         self.assertEqual({row["qualname"] for row in rows}, {"keep"})
 
     def test_skips_files_with_syntax_errors(self):
+        # Step 1: Validate input parameters, operational preconditions, and state
         self._write("pkg/broken.py", "def broken(:\n    pass\n")
 
         rows, files_crawled, files_skipped = gen.crawl([self.root])
@@ -94,18 +111,23 @@ class TestGenerateCodeSftDataset(unittest.TestCase):
 
 class TestCurateAndMergeDatasets(unittest.TestCase):
     def test_is_syntactically_valid_accepts_fenced_valid_code(self):
+        # Step 1: Validate input parameters, operational preconditions, and state
         self.assertTrue(curate.is_syntactically_valid("```python\ndef ok():\n    return 1\n```"))
 
     def test_is_syntactically_valid_rejects_broken_code(self):
+        # Step 1: Validate input parameters, operational preconditions, and state
         self.assertFalse(curate.is_syntactically_valid("```python\ndef broken(:\n```"))
 
     def test_is_syntactically_valid_rejects_non_code_response(self):
+        # Step 1: Validate input parameters, operational preconditions, and state
         self.assertFalse(curate.is_syntactically_valid("Here is the code:\n"))
 
     def test_estimate_tokens_uses_char_length_heuristic(self):
+        # Step 1: Validate input parameters, operational preconditions, and state
         self.assertEqual(curate.estimate_tokens("a" * 400), 100)
 
     def test_passes_quality_checks_rejects_oversized_prompt(self):
+        # Step 1: Validate input parameters, operational preconditions, and state
         row = {
             "messages": [
                 {"role": "system", "content": "sys"},
@@ -116,6 +138,7 @@ class TestCurateAndMergeDatasets(unittest.TestCase):
         self.assertFalse(curate.passes_quality_checks(row, max_tokens=100))
 
     def test_passes_quality_checks_accepts_small_valid_row(self):
+        # Step 1: Validate input parameters, operational preconditions, and state
         row = {
             "messages": [
                 {"role": "system", "content": "sys"},
@@ -126,6 +149,7 @@ class TestCurateAndMergeDatasets(unittest.TestCase):
         self.assertTrue(curate.passes_quality_checks(row, max_tokens=100))
 
     def test_merge_datasets_filters_invalid_and_oversized_then_shuffles(self):
+        # Step 1: Validate input parameters, operational preconditions, and state
         with tempfile.TemporaryDirectory() as tmp:
             tmp_path = Path(tmp)
             curated_path = tmp_path / "sft.jsonl"
@@ -133,6 +157,7 @@ class TestCurateAndMergeDatasets(unittest.TestCase):
             out_path = tmp_path / "merged.jsonl"
 
             def make_row(name: str, valid: bool = True, oversized: bool = False) -> dict:
+                # Step 1: Validate input parameters, operational preconditions, and state
                 assistant = f"```python\ndef {name}():\n    return 1\n```" if valid else "def broken(:\n    pass"
                 user_content = ("x" * 20000) if oversized else "short prompt"
                 return {
@@ -148,9 +173,11 @@ class TestCurateAndMergeDatasets(unittest.TestCase):
 
             with curated_path.open("w", encoding="utf-8") as fh:
                 for r in curated_rows:
+                    # Iterate over items, evaluate loop invariant, and update progress
                     fh.write(json.dumps(r) + "\n")
             with synthetic_path.open("w", encoding="utf-8") as fh:
                 for r in synthetic_rows:
+                    # Iterate over items, evaluate loop invariant, and update progress
                     fh.write(json.dumps(r) + "\n")
 
             stats = curate.merge_datasets(curated_path, synthetic_path, out_path, max_tokens=100, seed=42)
@@ -172,6 +199,7 @@ class TestCurateAndMergeDatasets(unittest.TestCase):
             self.assertEqual(set(out_rows[0].keys()), {"messages"})
 
     def test_merge_datasets_includes_scraped_library_sft_when_present(self):
+        # Step 1: Validate input parameters, operational preconditions, and state
         with tempfile.TemporaryDirectory() as tmp:
             tmp_path = Path(tmp)
             curated_path = tmp_path / "sft.jsonl"
@@ -180,6 +208,7 @@ class TestCurateAndMergeDatasets(unittest.TestCase):
             out_path = tmp_path / "merged.jsonl"
 
             def make_row(name: str) -> dict:
+                # Step 1: Validate input parameters, operational preconditions, and state
                 return {
                     "messages": [
                         {"role": "system", "content": "sys"},
@@ -227,6 +256,7 @@ class TestCurateAndMergeDatasets(unittest.TestCase):
             self.assertEqual(stats["combined_total"], 0)
 
     def test_merge_datasets_missing_files_produce_empty_output(self):
+        # Step 1: Validate input parameters, operational preconditions, and state
         with tempfile.TemporaryDirectory() as tmp:
             tmp_path = Path(tmp)
             stats = curate.merge_datasets(

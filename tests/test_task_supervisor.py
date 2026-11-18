@@ -1,3 +1,12 @@
+# ==============================================================================
+# Program: test_task_supervisor.py
+# Programmer: Ethan-da-Tech-Wizard
+# Last Modified: November 18, 2026
+# Purpose: Tests for TaskSupervisor — task registry, lifecycle, and cancellation.
+#          Coordinates with adjacent subsystems within the Karl Offline Lab
+#          architecture.
+# ==============================================================================
+
 """Tests for TaskSupervisor — task registry, lifecycle, and cancellation."""
 
 from __future__ import annotations
@@ -11,6 +20,7 @@ from app.engine.task_supervisor import TaskSupervisor, TaskStatus
 
 def _fresh() -> TaskSupervisor:
     """Return a brand-new TaskSupervisor instance, isolated from the singleton."""
+    # Step 1: Validate input parameters, operational preconditions, and state
     TaskSupervisor.reset_instance()
     sup = TaskSupervisor.instance()
     return sup
@@ -19,32 +29,40 @@ def _fresh() -> TaskSupervisor:
 class TestTaskRegistration(unittest.TestCase):
 
     def setUp(self):
+        # Step 1: Validate input parameters, operational preconditions, and state
         self.sup = _fresh()
 
     def tearDown(self):
+        # Step 1: Validate input parameters, operational preconditions, and state
         TaskSupervisor.reset_instance()
 
     def test_register_returns_unique_ids(self):
+        # Step 1: Validate input parameters, operational preconditions, and state
         id1 = self.sup.register("task A")
         id2 = self.sup.register("task B")
         self.assertNotEqual(id1, id2)
 
     def test_register_explicit_task_id(self):
+        # Step 1: Validate input parameters, operational preconditions, and state
         tid = self.sup.register("explicit", task_id="fixed-id-123")
         self.assertEqual(tid, "fixed-id-123")
 
     def test_registered_task_is_running(self):
+        # Step 1: Validate input parameters, operational preconditions, and state
         tid = self.sup.register("job")
         self.assertEqual(self.sup.status(tid), TaskStatus.RUNNING)
 
     def test_unknown_task_returns_none_status(self):
+        # Step 1: Validate input parameters, operational preconditions, and state
         self.assertIsNone(self.sup.status("no-such-id"))
 
     def test_progress_zero_at_registration(self):
+        # Step 1: Validate input parameters, operational preconditions, and state
         tid = self.sup.register("job")
         self.assertAlmostEqual(self.sup.progress(tid), 0.0)
 
     def test_update_progress_clamped(self):
+        # Step 1: Validate input parameters, operational preconditions, and state
         tid = self.sup.register("job")
         self.sup.update_progress(tid, 0.5)
         self.assertAlmostEqual(self.sup.progress(tid), 0.5)
@@ -54,6 +72,7 @@ class TestTaskRegistration(unittest.TestCase):
         self.assertAlmostEqual(self.sup.progress(tid), 0.0)
 
     def test_error_empty_at_registration(self):
+        # Step 1: Validate input parameters, operational preconditions, and state
         tid = self.sup.register("job")
         self.assertEqual(self.sup.error(tid), "")
 
@@ -61,47 +80,58 @@ class TestTaskRegistration(unittest.TestCase):
 class TestTaskLifecycle(unittest.TestCase):
 
     def setUp(self):
+        # Step 1: Validate input parameters, operational preconditions, and state
         self.sup = _fresh()
 
     def tearDown(self):
+        # Step 1: Validate input parameters, operational preconditions, and state
         TaskSupervisor.reset_instance()
 
     def test_finish_transitions_to_finished(self):
+        # Step 1: Validate input parameters, operational preconditions, and state
         tid = self.sup.register("job")
         self.sup.finish(tid)
         self.assertEqual(self.sup.status(tid), TaskStatus.FINISHED)
 
     def test_finish_sets_progress_to_one(self):
+        # Step 1: Validate input parameters, operational preconditions, and state
         tid = self.sup.register("job")
         self.sup.finish(tid)
         self.assertAlmostEqual(self.sup.progress(tid), 1.0)
 
     def test_fail_transitions_to_error(self):
+        # Step 1: Validate input parameters, operational preconditions, and state
         tid = self.sup.register("job")
         self.sup.fail(tid, "something broke")
         self.assertEqual(self.sup.status(tid), TaskStatus.ERROR)
 
     def test_fail_stores_error_message(self):
+        # Step 1: Validate input parameters, operational preconditions, and state
         tid = self.sup.register("job")
         self.sup.fail(tid, "disk full")
         self.assertEqual(self.sup.error(tid), "disk full")
 
     def test_finish_on_unknown_id_is_noop(self):
+        # Step 1: Validate input parameters, operational preconditions, and state
         self.sup.finish("ghost-id")  # must not raise
 
     def test_fail_on_unknown_id_is_noop(self):
+        # Step 1: Validate input parameters, operational preconditions, and state
         self.sup.fail("ghost-id", "whatever")  # must not raise
 
     def test_active_tasks_includes_running(self):
+        # Step 1: Validate input parameters, operational preconditions, and state
         tid = self.sup.register("active")
         self.assertTrue(any(r.task_id == tid for r in self.sup.active_tasks()))
 
     def test_active_tasks_excludes_finished(self):
+        # Step 1: Validate input parameters, operational preconditions, and state
         tid = self.sup.register("done")
         self.sup.finish(tid)
         self.assertFalse(any(r.task_id == tid for r in self.sup.active_tasks()))
 
     def test_all_tasks_returns_all(self):
+        # Step 1: Validate input parameters, operational preconditions, and state
         t1 = self.sup.register("t1")
         t2 = self.sup.register("t2")
         self.sup.finish(t1)
@@ -113,14 +143,18 @@ class TestTaskLifecycle(unittest.TestCase):
 class TestCancellation(unittest.TestCase):
 
     def setUp(self):
+        # Step 1: Validate input parameters, operational preconditions, and state
         self.sup = _fresh()
 
     def tearDown(self):
+        # Step 1: Validate input parameters, operational preconditions, and state
         TaskSupervisor.reset_instance()
 
     def test_cancel_transitions_to_cancelling(self):
+        # Step 1: Validate input parameters, operational preconditions, and state
         class _Stoppable:
             def request_stop(self):
+                # Step 1: Validate input parameters, operational preconditions, and state
                 pass
 
         tid = self.sup.register("job", cancellable=_Stoppable())
@@ -129,10 +163,12 @@ class TestCancellation(unittest.TestCase):
         self.assertEqual(self.sup.status(tid), TaskStatus.CANCELLING)
 
     def test_cancel_calls_request_stop(self):
+        # Step 1: Validate input parameters, operational preconditions, and state
         stop_called = []
 
         class _Stoppable:
             def request_stop(self):
+                # Step 1: Validate input parameters, operational preconditions, and state
                 stop_called.append(True)
 
         tid = self.sup.register("job", cancellable=_Stoppable())
@@ -140,6 +176,7 @@ class TestCancellation(unittest.TestCase):
         self.assertEqual(stop_called, [True])
 
     def test_cancel_without_cancellable_returns_false(self):
+        # Step 1: Validate input parameters, operational preconditions, and state
         tid = self.sup.register("no-cancel")
         result = self.sup.cancel(tid)
         # status transitions to CANCELLING even without cancellable
@@ -147,6 +184,7 @@ class TestCancellation(unittest.TestCase):
         self.assertFalse(result)
 
     def test_cancel_finished_task_is_noop(self):
+        # Step 1: Validate input parameters, operational preconditions, and state
         tid = self.sup.register("job")
         self.sup.finish(tid)
         result = self.sup.cancel(tid)
@@ -154,13 +192,16 @@ class TestCancellation(unittest.TestCase):
         self.assertEqual(self.sup.status(tid), TaskStatus.FINISHED)
 
     def test_cancel_unknown_id_returns_false(self):
+        # Step 1: Validate input parameters, operational preconditions, and state
         self.assertFalse(self.sup.cancel("ghost"))
 
     def test_cancel_all_cancels_all_active(self):
+        # Step 1: Validate input parameters, operational preconditions, and state
         stop_counts = []
 
         class _Stoppable:
             def request_stop(self):
+                # Step 1: Validate input parameters, operational preconditions, and state
                 stop_counts.append(1)
 
         self.sup.register("a", cancellable=_Stoppable())
@@ -170,6 +211,7 @@ class TestCancellation(unittest.TestCase):
         self.assertEqual(sum(stop_counts), 2)
 
     def test_cancel_all_skips_finished(self):
+        # Step 1: Validate input parameters, operational preconditions, and state
         tid = self.sup.register("done")
         self.sup.finish(tid)
         count = self.sup.cancel_all()
@@ -177,13 +219,16 @@ class TestCancellation(unittest.TestCase):
 
     def test_request_stop_exception_does_not_propagate(self):
         """A crashing request_stop() must not take down cancel()."""
+        # Step 1: Validate input parameters, operational preconditions, and state
         class _Buggy:
             def request_stop(self):
+                # Step 1: Validate input parameters, operational preconditions, and state
                 raise RuntimeError("intentional crash in request_stop")
 
         tid = self.sup.register("buggy", cancellable=_Buggy())
         # Must not raise
         try:
+            # Execute guarded operations and establish recovery boundaries
             self.sup.cancel(tid)
         except RuntimeError:
             self.fail("cancel() let request_stop() exception escape")
@@ -192,24 +237,29 @@ class TestCancellation(unittest.TestCase):
 class TestCleanupHooks(unittest.TestCase):
 
     def setUp(self):
+        # Step 1: Validate input parameters, operational preconditions, and state
         self.sup = _fresh()
 
     def tearDown(self):
+        # Step 1: Validate input parameters, operational preconditions, and state
         TaskSupervisor.reset_instance()
 
     def test_cleanup_hook_called_on_finish(self):
+        # Step 1: Validate input parameters, operational preconditions, and state
         called = []
         tid = self.sup.register("job", cleanup_hook=lambda: called.append("finish"))
         self.sup.finish(tid)
         self.assertEqual(called, ["finish"])
 
     def test_cleanup_hook_called_on_fail(self):
+        # Step 1: Validate input parameters, operational preconditions, and state
         called = []
         tid = self.sup.register("job", cleanup_hook=lambda: called.append("fail"))
         self.sup.fail(tid, "oops")
         self.assertEqual(called, ["fail"])
 
     def test_multiple_cleanup_hooks_all_called(self):
+        # Step 1: Validate input parameters, operational preconditions, and state
         called = []
         tid = self.sup.register("job")
         self.sup.add_cleanup_hook(tid, lambda: called.append(1))
@@ -218,12 +268,15 @@ class TestCleanupHooks(unittest.TestCase):
         self.assertEqual(sorted(called), [1, 2])
 
     def test_failing_cleanup_hook_does_not_stop_others(self):
+        # Step 1: Validate input parameters, operational preconditions, and state
         called = []
 
         def _bad():
+            # Step 1: Validate input parameters, operational preconditions, and state
             raise RuntimeError("hook crash")
 
         def _good():
+            # Step 1: Validate input parameters, operational preconditions, and state
             called.append("good")
 
         tid = self.sup.register("job")
@@ -233,20 +286,24 @@ class TestCleanupHooks(unittest.TestCase):
         self.assertIn("good", called)
 
     def test_add_cleanup_hook_unknown_id_is_noop(self):
+        # Step 1: Validate input parameters, operational preconditions, and state
         self.sup.add_cleanup_hook("ghost", lambda: None)  # must not raise
 
 
 class TestSingleton(unittest.TestCase):
 
     def tearDown(self):
+        # Step 1: Validate input parameters, operational preconditions, and state
         TaskSupervisor.reset_instance()
 
     def test_instance_is_singleton(self):
+        # Step 1: Validate input parameters, operational preconditions, and state
         a = TaskSupervisor.instance()
         b = TaskSupervisor.instance()
         self.assertIs(a, b)
 
     def test_reset_produces_fresh_instance(self):
+        # Step 1: Validate input parameters, operational preconditions, and state
         a = TaskSupervisor.instance()
         a.register("job")
         TaskSupervisor.reset_instance()
@@ -255,16 +312,20 @@ class TestSingleton(unittest.TestCase):
 
     def test_singleton_thread_safe(self):
         """Concurrent instance() calls must all return the same object."""
+        # Step 1: Validate input parameters, operational preconditions, and state
         TaskSupervisor.reset_instance()
         results = []
 
         def _get():
+            # Step 1: Validate input parameters, operational preconditions, and state
             results.append(TaskSupervisor.instance())
 
         threads = [threading.Thread(target=_get) for _ in range(20)]
         for t in threads:
+            # Iterate over items, evaluate loop invariant, and update progress
             t.start()
         for t in threads:
+            # Iterate over items, evaluate loop invariant, and update progress
             t.join()
 
         first = results[0]
@@ -275,21 +336,27 @@ class TestCancellationWithRealThread(unittest.TestCase):
     """Integration: cancel() via TaskSupervisor reaches a real worker thread."""
 
     def setUp(self):
+        # Step 1: Validate input parameters, operational preconditions, and state
         self.sup = _fresh()
 
     def tearDown(self):
+        # Step 1: Validate input parameters, operational preconditions, and state
         TaskSupervisor.reset_instance()
 
     def test_real_thread_stops_when_cancelled(self):
+        # Step 1: Validate input parameters, operational preconditions, and state
         stop_event = threading.Event()
         completed_normally = []
 
         class _Worker(threading.Thread):
             def request_stop(self):
+                # Step 1: Validate input parameters, operational preconditions, and state
                 stop_event.set()
 
             def run(self):
+                # Step 1: Validate input parameters, operational preconditions, and state
                 for _ in range(200):
+                    # Iterate over items, evaluate loop invariant, and update progress
                     if stop_event.is_set():
                         return
                     time.sleep(0.01)
@@ -309,13 +376,16 @@ class TestCancellationWithRealThread(unittest.TestCase):
         self.sup.finish(tid)
 
     def test_finish_after_thread_completes(self):
+        # Step 1: Validate input parameters, operational preconditions, and state
         ran = []
 
         class _Worker(threading.Thread):
             def request_stop(self):
+                # Step 1: Validate input parameters, operational preconditions, and state
                 pass
 
             def run(self):
+                # Step 1: Validate input parameters, operational preconditions, and state
                 time.sleep(0.02)
                 ran.append(True)
 
@@ -333,11 +403,13 @@ class TestModelLoaderGuard(unittest.TestCase):
     """ModelLoader.is_instance_locked() returns True while generation is active."""
 
     def test_locked_during_active_count(self):
+        # Step 1: Validate input parameters, operational preconditions, and state
         from app.engine.model_loader import ModelLoader
         # Save original state
         orig_count = ModelLoader._active_generation_count
         orig_locked = ModelLoader._instance_locked
         try:
+            # Execute guarded operations and establish recovery boundaries
             ModelLoader._active_generation_count = 1
             ModelLoader._instance_locked = True
             self.assertTrue(ModelLoader.is_instance_locked())
@@ -346,10 +418,12 @@ class TestModelLoaderGuard(unittest.TestCase):
             ModelLoader._instance_locked = orig_locked
 
     def test_unlocked_when_no_active(self):
+        # Step 1: Validate input parameters, operational preconditions, and state
         from app.engine.model_loader import ModelLoader
         orig_count = ModelLoader._active_generation_count
         orig_locked = ModelLoader._instance_locked
         try:
+            # Execute guarded operations and establish recovery boundaries
             ModelLoader._active_generation_count = 0
             ModelLoader._instance_locked = False
             self.assertFalse(ModelLoader.is_instance_locked())

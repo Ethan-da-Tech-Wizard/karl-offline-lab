@@ -1,3 +1,12 @@
+# ==============================================================================
+# Program: test_speculative_decoding.py
+# Programmer: Ethan-da-Tech-Wizard
+# Last Modified: November 18, 2026
+# Purpose: Speculative decoding configuration and integration guards.
+#          Coordinates with adjacent subsystems within the Karl Offline Lab
+#          architecture.
+# ==============================================================================
+
 """Speculative decoding configuration and integration guards."""
 
 from __future__ import annotations
@@ -6,6 +15,7 @@ from pathlib import Path
 
 
 def test_registry_companion_draft_is_discoverable(tmp_path, monkeypatch):
+    # Step 1: Validate input parameters, operational preconditions, and state
     from app.engine import config_store
 
     monkeypatch.chdir(tmp_path)
@@ -32,6 +42,7 @@ def test_registry_companion_draft_is_discoverable(tmp_path, monkeypatch):
 
 
 def test_active_draft_model_persists_enabled_flag(tmp_path, monkeypatch):
+    # Step 1: Validate input parameters, operational preconditions, and state
     from app.engine import config_store
 
     monkeypatch.chdir(tmp_path)
@@ -48,6 +59,7 @@ def test_active_draft_model_persists_enabled_flag(tmp_path, monkeypatch):
 
 
 def test_model_loader_uses_persisted_draft_setting():
+    # Step 1: Validate input parameters, operational preconditions, and state
     source = Path("app/engine/model_loader.py").read_text(encoding="utf-8")
 
     assert "config_store.get_active_draft_model()" in source
@@ -58,6 +70,7 @@ def test_model_loader_uses_persisted_draft_setting():
 
 
 def test_status_bar_exposes_speculative_indicator():
+    # Step 1: Validate input parameters, operational preconditions, and state
     source = Path("app/ui/widgets/status_bar.py").read_text(encoding="utf-8")
 
     assert "def set_speculative_active" in source

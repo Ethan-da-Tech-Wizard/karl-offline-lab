@@ -1,3 +1,12 @@
+# ==============================================================================
+# Program: mimo.py
+# Programmer: Ethan-da-Tech-Wizard
+# Last Modified: November 18, 2026
+# Purpose: Weight conversion and architectural mapping implementation for MIMO.
+#          Transforms HuggingFace checkpoint tensors, normalizes layer weights,
+#          and writes compliant GGUF data structures for llama.cpp.
+# ==============================================================================
+
 from __future__ import annotations
 
 import re
@@ -21,6 +30,7 @@ class MimoV2Model(TextModel):
     _n_nextn = 3
 
     def __init__(self, *args, **kwargs):
+        # Step 1: Validate input parameters, operational preconditions, and state
         super().__init__(*args, **kwargs)
 
         self.block_count = self.hparams["num_hidden_layers"] + self._n_nextn
@@ -48,6 +58,7 @@ class MimoV2Model(TextModel):
         # detect TP from scale_inv block count, descending order so larger matches first
         tp = None
         for cand in (8, 4):
+            # Iterate over items, evaluate loop invariant, and update progress
             if total_rows % cand != 0:
                 continue
             rpr = total_rows // cand
@@ -86,6 +97,7 @@ class MimoV2Model(TextModel):
         # Re-group per-rank [Q_per|K_per|V_per] rows into unified [Q | K | V]
         qs, ks, vs = [], [], []
         for r in range(tp):
+            # Iterate over items, evaluate loop invariant, and update progress
             base = r * rows_per_rank
             qs.append(dequant[base : base + q_per])
             ks.append(dequant[base + q_per : base + q_per + k_per])
@@ -101,6 +113,7 @@ class MimoV2Model(TextModel):
         if isinstance(qc, dict) and qc.get("quant_method") == "fp8":
             pat = re.compile(r"^model\.layers\.(\d+)\.self_attn\.qkv_proj\.weight_scale_inv$")
             for name in list(self.model_tensors.keys()):
+                # Iterate over items, evaluate loop invariant, and update progress
                 m = pat.match(name)
                 if not m:
                     continue
@@ -133,6 +146,7 @@ class MimoV2Model(TextModel):
             )
 
     def set_gguf_parameters(self):
+        # Step 1: Validate input parameters, operational preconditions, and state
         super().set_gguf_parameters()
 
         assert self.hparams["swa_head_dim"] == self.hparams["head_dim"]
@@ -169,6 +183,7 @@ class MimoV2Model(TextModel):
 
     @classmethod
     def filter_tensors(cls, item: tuple[str, Callable[[], Tensor]]) -> tuple[str, Callable[[], Tensor]] | None:
+        # Step 1: Validate input parameters, operational preconditions, and state
         name, gen = item
 
         if "attention_sink" in name and not name.endswith(".weight"):
@@ -202,9 +217,11 @@ class MimoV2Model(TextModel):
             if len(self._experts[bid]) >= n_experts * 3:
                 # merge the experts into a single 3d tensor
                 for w_name in ["gate_proj", "up_proj", "down_proj"]:
+                    # Iterate over items, evaluate loop invariant, and update progress
                     datas: list[Tensor] = []
 
                     for xid in range(n_experts):
+                        # Iterate over items, evaluate loop invariant, and update progress
                         ename_to_retrieve = f"model.layers.{bid}.mlp.experts.{xid}.{w_name}.weight"
                         datas.append(self._experts[bid][ename_to_retrieve])
                         del self._experts[bid][ename_to_retrieve]
@@ -219,6 +236,7 @@ class MimoV2Model(TextModel):
         yield from super().modify_tensors(data_torch, name, bid)
 
     def prepare_tensors(self):
+        # Step 1: Validate input parameters, operational preconditions, and state
         super().prepare_tensors()
 
         if self._experts is not None:
@@ -231,6 +249,7 @@ class MimoV2Model(TextModel):
 @ModelBase.register("MiMoV2ForCausalLM")
 class MiMoV2VisionModel(MmprojModel):
     def __init__(self, *args, **kwargs):
+        # Step 1: Validate input parameters, operational preconditions, and state
         super().__init__(*args, **kwargs)
         assert self.hparams_vision is not None
         hp = self.hparams_vision
@@ -254,6 +273,7 @@ class MiMoV2VisionModel(MmprojModel):
         self.use_sink = bool(hp.get("use_sink", False))
 
     def set_gguf_parameters(self):
+        # Step 1: Validate input parameters, operational preconditions, and state
         super().set_gguf_parameters()
 
         self.gguf_writer.add_clip_projector_type(gguf.VisionProjectorType.MIMOVL)
@@ -275,6 +295,7 @@ class MiMoV2VisionModel(MmprojModel):
 
     @classmethod
     def filter_tensors(cls, item: tuple[str, Callable[[], Tensor]]) -> tuple[str, Callable[[], Tensor]] | None:
+        # Step 1: Validate input parameters, operational preconditions, and state
         name, _ = item
         if not name.startswith("visual."):
             return None

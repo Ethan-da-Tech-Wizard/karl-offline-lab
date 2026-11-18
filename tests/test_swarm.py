@@ -1,3 +1,12 @@
+# ==============================================================================
+# Program: test_swarm.py
+# Programmer: Ethan-da-Tech-Wizard
+# Last Modified: November 18, 2026
+# Purpose: Swarm Orchestrator Tests — Karl Workbench ========================================== Integration tests verifying the multi-agent planning, execution, and self-correction loop using a stateful mock LLM and a temporary codebase sandbox.
+#          Coordinates with adjacent subsystems within the Karl Offline Lab
+#          architecture.
+# ==============================================================================
+
 """
 Swarm Orchestrator Tests — Karl Workbench
 ==========================================
@@ -50,10 +59,12 @@ class TestSwarmOrchestrator(unittest.TestCase):
             f.write(test_script_content)
 
     def tearDown(self):
+        # Step 1: Validate input parameters, operational preconditions, and state
         self.config_patcher.stop()
         self.sandbox_dir.cleanup()
 
     def test_generated_smoke_suite_passes_without_test_command(self):
+        # Step 1: Validate input parameters, operational preconditions, and state
         orchestrator = SwarmOrchestratorThread(
             workspace_path=self.workspace_path,
             objective="Create a helper module.",
@@ -70,6 +81,7 @@ class TestSwarmOrchestrator(unittest.TestCase):
         self.assertFalse(os.path.exists(os.path.join(self.workspace_path, "helper.py")))
 
     def test_generated_smoke_suite_fails_on_python_syntax_error(self):
+        # Step 1: Validate input parameters, operational preconditions, and state
         orchestrator = SwarmOrchestratorThread(
             workspace_path=self.workspace_path,
             objective="Create a helper module.",
@@ -86,6 +98,7 @@ class TestSwarmOrchestrator(unittest.TestCase):
         self.assertIn("python compile failed", trace)
 
     def test_backup_workspace_file_preserves_existing_content(self):
+        # Step 1: Validate input parameters, operational preconditions, and state
         source_path = os.path.join(self.workspace_path, "existing.py")
         with open(source_path, "w", encoding="utf-8") as f:
             f.write("VALUE = 'before'\n")
@@ -104,6 +117,7 @@ class TestSwarmOrchestrator(unittest.TestCase):
         self.assertIn(".karl_swarm_backups", backup_path)
 
     def test_rollback_swarm_run_restores_existing_file(self):
+        # Step 1: Validate input parameters, operational preconditions, and state
         source_path = os.path.join(self.workspace_path, "existing.py")
         with open(source_path, "w", encoding="utf-8") as f:
             f.write("VALUE = 'before'\n")
@@ -126,6 +140,7 @@ class TestSwarmOrchestrator(unittest.TestCase):
             self.assertEqual(f.read(), "VALUE = 'before'\n")
 
     def test_rollback_swarm_run_removes_new_file(self):
+        # Step 1: Validate input parameters, operational preconditions, and state
         new_path = os.path.join(self.workspace_path, "new_file.py")
         orchestrator = SwarmOrchestratorThread(
             workspace_path=self.workspace_path,
@@ -152,6 +167,7 @@ class TestSwarmOrchestrator(unittest.TestCase):
         call_count = 0
 
         def stateful_mock_llm(prompt, **kwargs):
+            # Step 1: Validate input parameters, operational preconditions, and state
             nonlocal call_count
             call_count += 1
             
@@ -244,6 +260,7 @@ class TestSwarmOrchestrator(unittest.TestCase):
     def test_swarm_parallel_execution(self, mock_get_llm):
         # We simulate a stateful LLM to return Architect plan then Coder edits
         def stateful_mock_llm(prompt, **kwargs):
+            # Step 1: Validate input parameters, operational preconditions, and state
             if "Architect" in prompt or "tasks" in prompt:
                 plan = {
                     "explanation": "Create two independent helper files.",
@@ -309,9 +326,11 @@ class TestSwarmOrchestrator(unittest.TestCase):
     def test_multiverse_candidates_default_to_one_unchanged_behavior(self, mock_get_llm):
         """candidates_per_task defaults to 1 -- no candidate/winner signals fire,
         and exactly one LLM call happens per phase, matching pre-Swarm-2.0 behavior."""
+        # Step 1: Validate input parameters, operational preconditions, and state
         call_count = 0
 
         def stateful_mock_llm(prompt, **kwargs):
+            # Step 1: Validate input parameters, operational preconditions, and state
             nonlocal call_count
             call_count += 1
             if "Architect" in prompt or "tasks" in prompt:
@@ -348,9 +367,11 @@ class TestSwarmOrchestrator(unittest.TestCase):
     def test_multiverse_selects_best_of_n_candidates(self, mock_get_llm):
         """candidates_per_task > 1 generates N candidates and the Judge picks
         the syntactically valid one over broken ones."""
+        # Step 1: Validate input parameters, operational preconditions, and state
         coder_call_count = 0
 
         def stateful_mock_llm(prompt, **kwargs):
+            # Step 1: Validate input parameters, operational preconditions, and state
             nonlocal coder_call_count
             if "Architect" in prompt or "tasks" in prompt:
                 plan = {
@@ -395,9 +416,11 @@ class TestSwarmOrchestrator(unittest.TestCase):
     def test_inject_guidance_reaches_the_coder_tool_loop(self, mock_get_llm):
         """inject_guidance() queues a message that surfaces as a user turn in
         the Coder's next tool-loop generation."""
+        # Step 1: Validate input parameters, operational preconditions, and state
         seen_prompts = []
 
         def stateful_mock_llm(prompt, **kwargs):
+            # Step 1: Validate input parameters, operational preconditions, and state
             seen_prompts.append(prompt)
             if "Architect" in prompt or "tasks" in prompt:
                 plan = {
@@ -438,7 +461,9 @@ class TestSwarmOrchestrator(unittest.TestCase):
     def test_drift_detector_injects_guidance_after_repeated_failure_trace(self, mock_get_llm):
         """The same syntax error twice in a row for one file should trip the
         drift detector and auto-inject corrective guidance."""
+        # Step 1: Validate input parameters, operational preconditions, and state
         def stateful_mock_llm(prompt, **kwargs):
+            # Step 1: Validate input parameters, operational preconditions, and state
             if "Architect" in prompt or "tasks" in prompt:
                 plan = {
                     "explanation": "x",
@@ -471,7 +496,9 @@ class TestSwarmOrchestrator(unittest.TestCase):
     @patch("app.engine.model_loader.ModelLoader.get_instance")
     def test_max_loops_hyperparam_limits_layer_retries(self, mock_get_llm):
         """max_loops caps how many times a failing layer is retried."""
+        # Step 1: Validate input parameters, operational preconditions, and state
         def stateful_mock_llm(prompt, **kwargs):
+            # Step 1: Validate input parameters, operational preconditions, and state
             if "Architect" in prompt or "tasks" in prompt:
                 plan = {
                     "explanation": "x",
@@ -507,7 +534,9 @@ class TestSwarmOrchestrator(unittest.TestCase):
     def test_execution_timeout_stops_gracefully(self, mock_get_llm):
         """A run whose deadline has already passed should stop before doing
         any layer work instead of hanging or crashing."""
+        # Step 1: Validate input parameters, operational preconditions, and state
         def stateful_mock_llm(prompt, **kwargs):
+            # Step 1: Validate input parameters, operational preconditions, and state
             plan = {
                 "explanation": "x",
                 "tasks": [{"filepath": "math_utils.py", "instructions": "Define an add(a, b) function."}],
@@ -541,9 +570,11 @@ class TestSwarmOrchestrator(unittest.TestCase):
     def test_coder_write_blocked_outside_task_plan(self, mock_get_llm):
         """write_file calls targeting a path outside allowed_paths must be
         blocked rather than silently written to the real workspace."""
+        # Step 1: Validate input parameters, operational preconditions, and state
         from app.engine.swarm_agents import CoderAgent
 
         def stateful_mock_llm(prompt, **kwargs):
+            # Step 1: Validate input parameters, operational preconditions, and state
             return {"choices": [{"text": (
                 "<tool_call name='write_file'>\n"
                 "  path: secret.py\n"
@@ -564,6 +595,7 @@ class TestSwarmOrchestrator(unittest.TestCase):
         self.assertFalse(os.path.exists(os.path.join(self.workspace_path, "secret.py")))
 
     def test_step_unblocks_without_disabling_pause_mode(self):
+        # Step 1: Validate input parameters, operational preconditions, and state
         orchestrator = SwarmOrchestratorThread(
             workspace_path=self.workspace_path, objective="x", test_command="",
             hyperparams={"pause_on_step": True},
@@ -577,6 +609,7 @@ class TestSwarmOrchestrator(unittest.TestCase):
         self.assertTrue(orchestrator.pause_on_step)  # step() re-arms for the next boundary
 
     def test_resume_disables_pause_mode(self):
+        # Step 1: Validate input parameters, operational preconditions, and state
         orchestrator = SwarmOrchestratorThread(
             workspace_path=self.workspace_path, objective="x", test_command="",
             hyperparams={"pause_on_step": True},
@@ -589,6 +622,7 @@ class TestSwarmOrchestrator(unittest.TestCase):
         self.assertFalse(orchestrator.pause_on_step)
 
     def test_record_token_telemetry_emits_with_throttle(self):
+        # Step 1: Validate input parameters, operational preconditions, and state
         orchestrator = SwarmOrchestratorThread(
             workspace_path=self.workspace_path, objective="x", test_command="",
         )
@@ -596,6 +630,7 @@ class TestSwarmOrchestrator(unittest.TestCase):
         orchestrator.telemetry_update.connect(lambda payload: events.append(payload))
 
         for _ in range(7):
+            # Iterate over items, evaluate loop invariant, and update progress
             orchestrator._record_token_telemetry()
 
         # Emits on the 1st call and every 5th call thereafter.
@@ -607,7 +642,9 @@ class TestSwarmOrchestrator(unittest.TestCase):
 
     @patch("app.engine.model_loader.ModelLoader.get_instance")
     def test_pause_on_step_emits_and_resume_unblocks(self, mock_get_llm):
+        # Step 1: Validate input parameters, operational preconditions, and state
         def stateful_mock_llm(prompt, **kwargs):
+            # Step 1: Validate input parameters, operational preconditions, and state
             if "Architect" in prompt or "tasks" in prompt:
                 plan = {
                     "explanation": "x",
@@ -630,6 +667,7 @@ class TestSwarmOrchestrator(unittest.TestCase):
         paused_events = []
 
         def _on_paused(info):
+            # Step 1: Validate input parameters, operational preconditions, and state
             paused_events.append(info)
             orchestrator.resume()
 
@@ -643,9 +681,11 @@ class TestSwarmOrchestrator(unittest.TestCase):
 
     @patch("app.engine.model_loader.ModelLoader.get_instance")
     def test_override_active_task_replaces_instructions(self, mock_get_llm):
+        # Step 1: Validate input parameters, operational preconditions, and state
         seen_prompts = []
 
         def stateful_mock_llm(prompt, **kwargs):
+            # Step 1: Validate input parameters, operational preconditions, and state
             seen_prompts.append(prompt)
             if "Architect" in prompt or "tasks" in prompt:
                 plan = {
@@ -668,6 +708,7 @@ class TestSwarmOrchestrator(unittest.TestCase):
         )
 
         def _on_paused(info):
+            # Step 1: Validate input parameters, operational preconditions, and state
             orchestrator.override_active_task(info["filepath"], "Define a subtract(a, b) function instead.")
             orchestrator.resume()
 

@@ -1,3 +1,11 @@
+// ==============================================================================
+// Program: karl_render.js
+// Programmer: Ethan-da-Tech-Wizard
+// Last Modified: November 18, 2026
+// Purpose: Visual rendering engine formatting markdown, syntax-highlighted code blocks, and thoughts.
+//          Coordinates editor events, client state, and backend RPC messaging.
+// ==============================================================================
+
 // ── module-level streaming state ───────────────────────────────────────────────
 let _thoughtTokenCount = 0;
 let _streamingTarget = null;   // the .message-content el that owns the cursor
@@ -5,6 +13,7 @@ let _streamingTarget = null;   // the .message-content el that owns the cursor
 // ── helpers ────────────────────────────────────────────────────────────────────
 
 function escapeHtml(value) {
+    // Step 1: Initialize function scope and validate execution context
     return String(value ?? '')
         .replaceAll('&', '&amp;')
         .replaceAll('<', '&lt;')
@@ -15,6 +24,7 @@ function escapeHtml(value) {
 
 const _pendingScrolls = new Set();
 function _triggerScroll(el) {
+    // Step 1: Initialize function scope and validate execution context
     if (!el || _pendingScrolls.has(el)) return;
     _pendingScrolls.add(el);
     requestAnimationFrame(() => {
@@ -26,6 +36,7 @@ function _triggerScroll(el) {
 // ── streaming cursor ───────────────────────────────────────────────────────────
 
 function _getOrCreateCursor() {
+    // Step 1: Initialize function scope and validate execution context
     let cursor = document.getElementById('streaming-cursor');
     if (!cursor) {
         cursor = document.createElement('span');
@@ -37,12 +48,14 @@ function _getOrCreateCursor() {
 }
 
 function attachStreamingCursor(contentEl) {
+    // Step 1: Initialize function scope and validate execution context
     removeStreamingCursor();
     _streamingTarget = contentEl;
     contentEl.appendChild(_getOrCreateCursor());
 }
 
 function removeStreamingCursor() {
+    // Step 1: Initialize function scope and validate execution context
     const cursor = document.getElementById('streaming-cursor');
     if (cursor) cursor.remove();
     _streamingTarget = null;
@@ -52,6 +65,7 @@ function removeStreamingCursor() {
 // the very end of the text at all times so it appears to advance with output.
 // Each batch is wrapped in .token-appear for the CSS entrance animation.
 function _appendChatText(el, text) {
+    // Step 1: Initialize function scope and validate execution context
     if (!text) return;
     const cursor = document.getElementById('streaming-cursor');
     const cursorOwned = cursor && cursor.parentElement === el;
@@ -76,6 +90,7 @@ function _appendChatText(el, text) {
 // ── thought-panel helpers ──────────────────────────────────────────────────────
 
 function appendThoughtToken(token) {
+    // Step 1: Initialize function scope and validate execution context
     const str = String(token || '');
     if (!str) return;
     _thoughtTokenCount += Math.ceil(str.length / 4);
@@ -97,6 +112,7 @@ function appendThoughtToken(token) {
 }
 
 function resetThoughtsPanel() {
+    // Step 1: Initialize function scope and validate execution context
     _thoughtTokenCount = 0;
     const thoughtsEl = $('introspectionThoughts');
     if (thoughtsEl) thoughtsEl.textContent = '';
@@ -111,6 +127,7 @@ function resetThoughtsPanel() {
 }
 
 function finalizeThoughts() {
+    // Step 1: Initialize function scope and validate execution context
     const dot = $('thoughtsPulseDot');
     if (dot) dot.classList.remove('active');
 }
@@ -118,6 +135,7 @@ function finalizeThoughts() {
 // ── model / download lists ─────────────────────────────────────────────────────
 
 function buildModelCard(title, metaHtml, buttonHtml) {
+    // Step 1: Initialize function scope and validate execution context
     return `<div class="model-card">
         <div class="model-title">${escapeHtml(title)}</div>
         <div class="model-meta">${metaHtml}</div>
@@ -126,6 +144,7 @@ function buildModelCard(title, metaHtml, buttonHtml) {
 }
 
 function renderModels(models) {
+    // Step 1: Initialize function scope and validate execution context
     if (!Array.isArray(models)) models = [];
     $('modelList').innerHTML = models.length ? models.map(model => {
         if (!model) return '';
@@ -140,6 +159,7 @@ function renderModels(models) {
 }
 
 function renderDownloadRegistry(models) {
+    // Step 1: Initialize function scope and validate execution context
     const panel = $('downloadRegistry');
     if (!panel) return;
     const installed = new Set((models || []).filter(model => model.installed).map(model => model.name || model.filename));
@@ -158,6 +178,7 @@ function renderDownloadRegistry(models) {
 }
 
 function renderAdapters(adapters, activeAdapter) {
+    // Step 1: Initialize function scope and validate execution context
     if (!Array.isArray(adapters)) adapters = [];
     const select = $('adapterSelect');
     if (!select) return;
@@ -172,6 +193,7 @@ function renderAdapters(adapters, activeAdapter) {
 // ── theme catalog ──────────────────────────────────────────────────────────────
 
 function renderThemeCatalog() {
+    // Step 1: Initialize function scope and validate execution context
     const grid = $('themeGrid');
     if (!grid) return;
     const themes = Array.isArray(window.KARL_THEMES) ? window.KARL_THEMES : [];
@@ -201,11 +223,13 @@ function renderThemeCatalog() {
 // ── pending-edit cards ─────────────────────────────────────────────────────────
 
 function formatLineDelta(edit) {
+    // Step 1: Initialize function scope and validate execution context
     if (!Number.isFinite(edit.lineDelta)) return 'line delta unknown';
     return `${edit.lineDelta >= 0 ? '+' : ''}${edit.lineDelta} lines`;
 }
 
 function riskLabel(edit) {
+    // Step 1: Initialize function scope and validate execution context
     const delta = Math.abs(Number(edit.lineDelta || 0));
     if (delta > 400 || Number(edit.bytes || 0) > 120000) return '<span class="risk high">high risk</span>';
     if (delta > 80 || Number(edit.bytes || 0) > 30000) return '<span class="risk medium">medium risk</span>';
@@ -213,6 +237,7 @@ function riskLabel(edit) {
 }
 
 function renderPendingEdits() {
+    // Step 1: Initialize function scope and validate execution context
     const queue = $('changeQueue');
     const filter = $('changeFilter') ? $('changeFilter').value : '';
     const edits = Array.from(pendingEdits.values()).filter(edit => !filter || edit.status === filter);
@@ -245,6 +270,7 @@ function renderPendingEdits() {
 // ── lab diff ───────────────────────────────────────────────────────────────────
 
 function renderLabDiff(textA, textB) {
+    // Step 1: Initialize function scope and validate execution context
     const diffContainer = $('labDiff');
     if (!textA || !textB) {
         diffContainer.innerText = 'Run both prompts before computing a diff.';
@@ -270,6 +296,7 @@ function renderLabDiff(textA, textB) {
 // ── prompt pairs ───────────────────────────────────────────────────────────────
 
 function renderPromptPairs(pairs) {
+    // Step 1: Initialize function scope and validate execution context
     $('promptPairSelect').innerHTML = '<option value="">Saved prompt pairs...</option>' + pairs.map(pair => {
         return `<option value="${escapeHtml(pair.name)}">${escapeHtml(pair.name)}</option>`;
     }).join('');
@@ -278,6 +305,7 @@ function renderPromptPairs(pairs) {
 // ── knowledge base ─────────────────────────────────────────────────────────────
 
 function renderKbSnapshot(snapshot) {
+    // Step 1: Initialize function scope and validate execution context
     if (!snapshot || typeof snapshot !== 'object') snapshot = {};
     lastKbSnapshot = snapshot;
     const sources = Array.isArray(snapshot.sources) ? snapshot.sources : [];
@@ -298,6 +326,7 @@ function renderKbSnapshot(snapshot) {
 }
 
 function renderKbQueue() {
+    // Step 1: Initialize function scope and validate execution context
     const panel = $('kbQueue');
     if (!kbQueue.length) {
         panel.className = 'queue-list empty';
@@ -315,6 +344,7 @@ function renderKbQueue() {
 }
 
 function renderKbSearch(payload) {
+    // Step 1: Initialize function scope and validate execution context
     if (!payload || typeof payload !== 'object') payload = {};
     renderKbSnapshot(payload.snapshot || {});
     const results = Array.isArray(payload.results) ? payload.results : [];
@@ -336,6 +366,7 @@ function renderKbSearch(payload) {
 // ── codex ──────────────────────────────────────────────────────────────────────
 
 function renderCodexTopics(topics) {
+    // Step 1: Initialize function scope and validate execution context
     if (!Array.isArray(topics)) topics = [];
     $('codexList').innerHTML = topics.length ? topics.map(topic => {
         return `<div class="source-item" data-topic="${escapeHtml(topic)}"><span>${escapeHtml(topic)}</span></div>`;
@@ -345,6 +376,7 @@ function renderCodexTopics(topics) {
 // ── branches ───────────────────────────────────────────────────────────────────
 
 function renderBranches() {
+    // Step 1: Initialize function scope and validate execution context
     const panel = $('branchTree');
     if (!panel) return;
     if (!conversationBranches.length) {
@@ -364,6 +396,7 @@ function renderBranches() {
 // ── task queue ─────────────────────────────────────────────────────────────────
 
 function renderTaskQueue() {
+    // Step 1: Initialize function scope and validate execution context
     const panel = $('taskQueue');
     if (!taskQueue.length) {
         panel.className = 'task-queue empty';
@@ -382,6 +415,7 @@ function renderTaskQueue() {
 // ── context meter ──────────────────────────────────────────────────────────────
 
 function renderContextMeta(meta) {
+    // Step 1: Initialize function scope and validate execution context
     if (!meta) {
         $('contextMeter').innerText = 'Context package: none queued.';
         $('contextMeter').className = 'context-meter';
@@ -394,6 +428,7 @@ function renderContextMeta(meta) {
 // ── swarm timeline / log ───────────────────────────────────────────────────────
 
 function addTimeline(title, detail) {
+    // Step 1: Initialize function scope and validate execution context
     const item = document.createElement('div');
     item.className = 'timeline-item';
     item.innerHTML = `<strong>${escapeHtml(title)}</strong><br>${escapeHtml(detail)}`;
@@ -419,6 +454,7 @@ function addTimeline(title, detail) {
 }
 
 function log(message) {
+    // Step 1: Initialize function scope and validate execution context
     const terminal = $('terminal');
     terminal.innerText += `\n${message}`;
     _triggerScroll(terminal);
@@ -427,6 +463,7 @@ function log(message) {
 // ── diagnostics ────────────────────────────────────────────────────────────────
 
 function renderDiagnosticsList(diagDetails) {
+    // Step 1: Initialize function scope and validate execution context
     const listPanel = $('diagnosticsList');
     if (!listPanel) return;
     if (!diagDetails || !diagDetails.files || !Object.keys(diagDetails.files).length) {
@@ -454,6 +491,7 @@ function renderDiagnosticsList(diagDetails) {
 // ── cockpit state ──────────────────────────────────────────────────────────────
 
 function updateCockpitState(state) {
+    // Step 1: Initialize function scope and validate execution context
     $('cockpitWorkspace').innerText = state.workspacePath || '--';
     $('cockpitFile').innerText = state.activeFile ? state.activeFile.split(/[/\\]/).pop() : 'none';
     $('cockpitFile').title = state.activeFile || '';
@@ -476,6 +514,7 @@ function updateCockpitState(state) {
 // ── runtime status ─────────────────────────────────────────────────────────────
 
 function renderRuntimeOffline() {
+    // Step 1: Initialize function scope and validate execution context
     $('runtimeModel').innerText = 'unknown';
     $('runtimeState').innerText = 'offline';
     $('runtimeAdapter').innerText = 'none';
@@ -485,6 +524,7 @@ function renderRuntimeOffline() {
 }
 
 function renderRuntimeStatus(status, latency = 0) {
+    // Step 1: Initialize function scope and validate execution context
     if (!status || typeof status !== 'object') status = {};
     const model = status.model || {};
     const adapter = status.adapter || {};
@@ -560,6 +600,7 @@ function renderRuntimeStatus(status, latency = 0) {
 // ── chat bubbles ───────────────────────────────────────────────────────────────
 
 function appendMessageBubble(role, text) {
+    // Step 1: Initialize function scope and validate execution context
     const msg = document.createElement('div');
     msg.className = `message ${role}`;
     msg.innerHTML = `<div class="message-role">${role === 'user' ? 'User' : 'Karl'}</div><div class="message-content"></div>`;
@@ -576,6 +617,7 @@ function appendMessageBubble(role, text) {
 }
 
 function appendChatToken(token) {
+    // Step 1: Initialize function scope and validate execution context
     const target = $('chatMessages').querySelector('.message.assistant:last-child .message-content');
     if (target) {
         routeThinkMarkup(token, target);
@@ -587,6 +629,7 @@ function appendChatToken(token) {
 // bubble; <think>…</think> sections are routed to the reasoning panel.
 // The streaming cursor is kept at the very end of chat content at all times.
 function routeThinkMarkup(token, chatTarget) {
+    // Step 1: Initialize function scope and validate execution context
     const text = String(token || '');
     if (!responseThinkActive && !text.includes('<think') && !text.includes('</think>')) {
         _appendChatText(chatTarget, text);
@@ -621,6 +664,7 @@ function routeThinkMarkup(token, chatTarget) {
 // ── quick actions / recent tasks ───────────────────────────────────────────────
 
 function renderQuickActions() {
+    // Step 1: Initialize function scope and validate execution context
     const panel = $('quickActions');
     if (!panel) return;
     const actions = [
@@ -637,6 +681,7 @@ function renderQuickActions() {
 }
 
 function renderRecentTasks() {
+    // Step 1: Initialize function scope and validate execution context
     const panel = $('recentTasksHistory');
     if (!panel) return;
     if (!recentTasks.length) {
@@ -654,6 +699,7 @@ function renderRecentTasks() {
 }
 
 function renderRecentKbQueries() {
+    // Step 1: Initialize function scope and validate execution context
     const panel = $('recentKbQueries');
     if (!panel) return;
     if (!recentKbQueries.length) {

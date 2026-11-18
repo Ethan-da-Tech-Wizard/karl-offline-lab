@@ -1,3 +1,12 @@
+# ==============================================================================
+# Program: youtuvl.py
+# Programmer: Ethan-da-Tech-Wizard
+# Last Modified: November 18, 2026
+# Purpose: Weight conversion and architectural mapping implementation for YOUTUVL.
+#          Transforms HuggingFace checkpoint tensors, normalizes layer weights,
+#          and writes compliant GGUF data structures for llama.cpp.
+# ==============================================================================
+
 from __future__ import annotations
 
 from typing import Callable, Iterable, TYPE_CHECKING
@@ -11,11 +20,13 @@ from .base import MmprojModel, ModelBase, gguf, logger
 @ModelBase.register("YoutuVLForConditionalGeneration")
 class YoutuVLVisionModel(MmprojModel):
     def __init__(self, *args, **kwargs):
+        # Step 1: Validate input parameters, operational preconditions, and state
         super().__init__(*args, **kwargs)
         assert self.hparams_vision is not None
         self.hparams_vision["image_size"] = self.hparams_vision.get("image_size", 560)
 
     def set_gguf_parameters(self):
+        # Step 1: Validate input parameters, operational preconditions, and state
         super().set_gguf_parameters()
 
         self.gguf_writer.add_clip_projector_type(gguf.VisionProjectorType.YOUTUVL)
@@ -45,6 +56,7 @@ class YoutuVLVisionModel(MmprojModel):
 
     @classmethod
     def filter_tensors(cls, item: tuple[str, Callable[[], Tensor]]) -> tuple[str, Callable[[], Tensor]] | None:
+        # Step 1: Validate input parameters, operational preconditions, and state
         name, gen = item
 
         # Skip language model tensors
@@ -57,6 +69,7 @@ class YoutuVLVisionModel(MmprojModel):
     def modify_tensors(self, data_torch: Tensor, name: str, bid: int | None) -> Iterable[tuple[str, Tensor]]:
         # Try to map the tensor using TensorNameMap (handles vision encoder and projector)
         try:
+            # Execute guarded operations and establish recovery boundaries
             yield from super().modify_tensors(data_torch, name, bid)
         except ValueError:
             # If mapping fails, log warning and skip

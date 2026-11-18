@@ -1,3 +1,12 @@
+# ==============================================================================
+# Program: download_test_model.py
+# Programmer: Ethan-da-Tech-Wizard
+# Last Modified: November 18, 2026
+# Purpose: Bootstrap model downloader for immediate offline testing.
+#          Retrieves the default lightweight DeepSeek-R1-Distill-Qwen-1.5B GGUF
+#          model into data/models to enable out-of-the-box local operation.
+# ==============================================================================
+
 import os
 import requests
 from tqdm import tqdm
@@ -17,6 +26,7 @@ def download_file(url, filepath):
         unit_divisor=1024,
     ) as bar:
         for data in response.iter_content(block_size):
+            # Iterate over items, evaluate loop invariant, and update progress
             size = file.write(data)
             bar.update(size)
 

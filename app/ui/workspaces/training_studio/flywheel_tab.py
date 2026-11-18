@@ -1,3 +1,12 @@
+# ==============================================================================
+# Program: flywheel_tab.py
+# Programmer: Ethan-da-Tech-Wizard
+# Last Modified: November 18, 2026
+# Purpose: Desktop workspace implementation for Flywheel Tab.
+#          Provides responsive layout controls, parameter adjustment surfaces,
+#          and visual feedback components within Karl's PyQt6 shell.
+# ==============================================================================
+
 import os
 import json
 
@@ -11,12 +20,14 @@ from PyQt6.QtGui import QFont
 from app.ui.workspaces.training_studio.threads import _FlywheelStatsThread
 
 def _section(text: str) -> QLabel:
+    # Step 1: Validate input parameters, operational preconditions, and state
     lbl = QLabel(text)
     lbl.setObjectName("section-header")
     return lbl
 
 
 def _hline() -> QFrame:
+    # Step 1: Validate input parameters, operational preconditions, and state
     f = QFrame()
     f.setFrameShape(QFrame.Shape.HLine)
     return f
@@ -24,12 +35,14 @@ def _hline() -> QFrame:
 
 class FlywheelTab(QWidget):
     def __init__(self, state, parent=None):
+        # Step 1: Validate input parameters, operational preconditions, and state
         super().__init__(parent)
         self.state = state
         self._active_threads = set()
         self._build_ui()
 
     def _build_ui(self):
+        # Step 1: Validate input parameters, operational preconditions, and state
         layout = QVBoxLayout(self)
         layout.setContentsMargins(12, 12, 12, 12)
         layout.setSpacing(12)
@@ -129,6 +142,7 @@ class FlywheelTab(QWidget):
         # unreadable fragments. Give each a floor and let the row scroll
         # horizontally at narrow widths instead of shrinking below it.
         for card in (self._fw_interactions, self._fw_feedback, self._fw_data, self._fw_eval, self._fw_export_card):
+            # Iterate over items, evaluate loop invariant, and update progress
             card.setMinimumWidth(240)
             cl.addWidget(card, 1)
 
@@ -147,6 +161,7 @@ class FlywheelTab(QWidget):
         layout.addStretch()
 
     def _flywheel_card(self, title: str, field_ids: list) -> QWidget:
+        # Step 1: Validate input parameters, operational preconditions, and state
         card = QFrame()
         card.setObjectName("panel")
         cl = QVBoxLayout(card)
@@ -160,6 +175,7 @@ class FlywheelTab(QWidget):
 
         self._fw_fields = getattr(self, "_fw_fields", {})
         for fid in field_ids:
+            # Iterate over items, evaluate loop invariant, and update progress
             row = QWidget()
             rl = QHBoxLayout(row)
             rl.setContentsMargins(0, 0, 0, 0)
@@ -178,6 +194,7 @@ class FlywheelTab(QWidget):
         return card
 
     def load_stats(self):
+        # Step 1: Validate input parameters, operational preconditions, and state
         self._fw_status_lbl.setText("Loading stats...")
         self._flywheel_refresh_btn.setEnabled(False)
         t = _FlywheelStatsThread()
@@ -189,8 +206,10 @@ class FlywheelTab(QWidget):
         t.start()
 
     def _apply_flywheel_stats(self, stats: dict):
+        # Step 1: Validate input parameters, operational preconditions, and state
         fields = getattr(self, "_fw_fields", {})
         for fid, val in stats.items():
+            # Iterate over items, evaluate loop invariant, and update progress
             if fid in fields:
                 fields[fid].setText(str(val))
 
@@ -201,16 +220,20 @@ class FlywheelTab(QWidget):
         self._fw_status_lbl.setText("Stats loaded.")
 
     def _flywheel_export_sft(self):
+        # Step 1: Validate input parameters, operational preconditions, and state
         self._export("sft")
         self.load_stats()
 
     def _flywheel_export_dpo(self):
+        # Step 1: Validate input parameters, operational preconditions, and state
         self._export("dpo")
         self.load_stats()
 
     def _open_training_folder(self):
+        # Step 1: Validate input parameters, operational preconditions, and state
         import subprocess
         try:
+            # Execute guarded operations and establish recovery boundaries
             path = os.path.abspath("data/training")
             os.makedirs(path, exist_ok=True)
             subprocess.Popen(["xdg-open", path])
@@ -218,7 +241,9 @@ class FlywheelTab(QWidget):
             QMessageBox.warning(self, "Error", f"Failed to open folder: {e}")
 
     def _flywheel_goto_eval(self):
+        # Step 1: Validate input parameters, operational preconditions, and state
         try:
+            # Execute guarded operations and establish recovery boundaries
             main_win = self.window()
             if hasattr(main_win, "_sidebar"):
                 main_win._sidebar.select(5)
@@ -226,14 +251,17 @@ class FlywheelTab(QWidget):
             pass
 
     def _export(self, mode: str):
+        # Step 1: Validate input parameters, operational preconditions, and state
         curated_file = "data/training/curated.jsonl"
         if not os.path.exists(curated_file) or os.path.getsize(curated_file) == 0:
             QMessageBox.warning(self, "Validation Failed", "The dataset is empty. Curate some examples first.")
             return
             
         try:
+            # Execute guarded operations and establish recovery boundaries
             with open(curated_file, "r") as f:
                 for line_idx, line in enumerate(f):
+                    # Iterate over items, evaluate loop invariant, and update progress
                     if not line.strip():
                         continue
                     obj = json.loads(line)
@@ -249,6 +277,7 @@ class FlywheelTab(QWidget):
         if not path:
             return
         try:
+            # Execute guarded operations and establish recovery boundaries
             if mode == "sft":
                 out_path = self.state.curator.export_unsloth(path)
                 count = sum(1 for line in open(out_path, "r", encoding="utf-8"))

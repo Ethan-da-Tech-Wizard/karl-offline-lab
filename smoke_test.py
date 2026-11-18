@@ -1,3 +1,12 @@
+# ==============================================================================
+# Program: smoke_test.py
+# Programmer: Ethan-da-Tech-Wizard
+# Last Modified: November 18, 2026
+# Purpose: Comprehensive smoke test suite for core non-GUI subsystems.
+#          Validates prompt template substitution, workflow registries, and
+#          evaluation grader assertions.
+# ==============================================================================
+
 import sys
 sys.path.insert(0, '.')
 

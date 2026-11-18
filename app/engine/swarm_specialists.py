@@ -1,3 +1,12 @@
+# ==============================================================================
+# Program: swarm_specialists.py
+# Programmer: Ethan-da-Tech-Wizard
+# Last Modified: November 18, 2026
+# Purpose: Heuristics, prompt profiles, and evaluation rules for specialized swarm workers.
+#          Ensures domain-specific accuracy in coding, refactoring, and testing
+#          assignments.
+# ==============================================================================
+
 """
 Swarm Specialists — adaptive, LLM-free static-analysis reviewers.
 
@@ -38,6 +47,7 @@ _PERFORMANCE_TERMS = re.compile(
 
 def classify_task(task: dict[str, Any]) -> list[str]:
     """Return specialist tags relevant to *task* based on filepath + instructions."""
+    # Step 1: Validate input parameters, operational preconditions, and state
     text = f"{task.get('filepath', '')} {task.get('instructions', '')}"
     tags = []
     if _SECURITY_TERMS.search(text):
@@ -67,9 +77,11 @@ class SecurityAuditorAgent:
     """Regex-based scan for common insecure patterns. LLM-free, instant."""
 
     def review(self, filepath: str, content: str) -> dict[str, Any]:
+        # Step 1: Validate input parameters, operational preconditions, and state
         concerns = []
         risk = 0.0
         for pattern, message, weight in _DANGEROUS_PATTERNS:
+            # Iterate over items, evaluate loop invariant, and update progress
             if pattern.search(content):
                 concerns.append(message)
                 risk = max(risk, weight)
@@ -89,9 +101,11 @@ class PerformanceAuditorAgent:
     """AST-based scan for common performance smells. Advisory only."""
 
     def review(self, filepath: str, content: str) -> dict[str, Any]:
+        # Step 1: Validate input parameters, operational preconditions, and state
         concerns: list[str] = []
         if filepath.endswith(".py"):
             try:
+                # Execute guarded operations and establish recovery boundaries
                 tree = ast.parse(content)
                 concerns.extend(self._scan(tree))
             except SyntaxError:
@@ -106,8 +120,10 @@ class PerformanceAuditorAgent:
         }
 
     def _scan(self, tree: ast.AST) -> list[str]:
+        # Step 1: Validate input parameters, operational preconditions, and state
         concerns = []
         for node in ast.walk(tree):
+            # Iterate over items, evaluate loop invariant, and update progress
             if isinstance(node, (ast.For, ast.While)):
                 nested = [
                     n for n in ast.walk(node)
@@ -135,12 +151,14 @@ class CriticAgent:
     _MAX_FUNCTION_LINES = 120
 
     def review(self, filepath: str, content: str) -> dict[str, Any]:
+        # Step 1: Validate input parameters, operational preconditions, and state
         concerns: list[str] = []
         if "TODO" in content or "FIXME" in content or "XXX" in content:
             concerns.append("Contains TODO/FIXME/XXX markers left in committed code")
 
         if filepath.endswith(".py"):
             try:
+                # Execute guarded operations and establish recovery boundaries
                 tree = ast.parse(content)
                 concerns.extend(self._scan(tree))
             except SyntaxError:
@@ -156,8 +174,10 @@ class CriticAgent:
         }
 
     def _scan(self, tree: ast.AST) -> list[str]:
+        # Step 1: Validate input parameters, operational preconditions, and state
         concerns = []
         for node in ast.walk(tree):
+            # Iterate over items, evaluate loop invariant, and update progress
             if isinstance(node, ast.ExceptHandler):
                 body_is_noop = len(node.body) == 1 and isinstance(node.body[0], ast.Pass)
                 if node.type is None and body_is_noop:

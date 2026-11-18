@@ -1,3 +1,12 @@
+# ==============================================================================
+# Program: test_auto_train.py
+# Programmer: Ethan-da-Tech-Wizard
+# Last Modified: November 18, 2026
+# Purpose: Unit Tests for Karl One-Click Auto-Train Flywheel ================================================= Verifies task generation logic, sandboxed verification helper mocking, PyQt6 background training thread parameters, and WebSocket RPC routing.
+#          Coordinates with adjacent subsystems within the Karl Offline Lab
+#          architecture.
+# ==============================================================================
+
 """
 Unit Tests for Karl One-Click Auto-Train Flywheel
 =================================================
@@ -26,7 +35,9 @@ from app.engine.websocket_server import WebSocketServerManager
 
 
 def _running_under_bwrap() -> bool:
+    # Step 1: Validate input parameters, operational preconditions, and state
     try:
+        # Execute guarded operations and establish recovery boundaries
         with open("/proc/1/comm", "r", encoding="utf-8") as f:
             return f.read().strip() == "bwrap"
     except OSError:
@@ -35,12 +46,14 @@ def _running_under_bwrap() -> bool:
 
 class TestAutoTrain(unittest.TestCase):
     def test_generate_fallback_tasks(self):
+        # Step 1: Validate input parameters, operational preconditions, and state
         topic = "regex_parsing"
         count = 5
         tasks = generate_fallback_tasks(topic, count)
         
         self.assertEqual(len(tasks), count)
         for i, task in enumerate(tasks):
+            # Iterate over items, evaluate loop invariant, and update progress
             self.assertIn("id", task)
             self.assertEqual(task["category"], topic)
             self.assertIn(f"add_numbers_{i}", task["problem_statement"])
@@ -49,6 +62,7 @@ class TestAutoTrain(unittest.TestCase):
 
     @patch("auto_train.SafePythonSandbox")
     def test_verify_solution_passing(self, mock_sandbox_class):
+        # Step 1: Validate input parameters, operational preconditions, and state
         mock_sandbox = MagicMock()
         mock_sandbox.run_code.return_value = (True, "output match")
         mock_sandbox_class.return_value = mock_sandbox
@@ -63,6 +77,7 @@ class TestAutoTrain(unittest.TestCase):
 
     @patch("auto_train.SafePythonSandbox")
     def test_verify_solution_failing(self, mock_sandbox_class):
+        # Step 1: Validate input parameters, operational preconditions, and state
         mock_sandbox = MagicMock()
         mock_sandbox.run_code.return_value = (False, "AssertionError: verification failed")
         mock_sandbox_class.return_value = mock_sandbox
@@ -76,6 +91,7 @@ class TestAutoTrain(unittest.TestCase):
         self.assertEqual(trace, "AssertionError: verification failed")
 
     def test_auto_train_thread_init(self):
+        # Step 1: Validate input parameters, operational preconditions, and state
         topic = "binary_search"
         adapter_name = "binary_search_specialist"
         config = {
@@ -94,6 +110,7 @@ class TestAutoTrain(unittest.TestCase):
     @pytest.mark.integration
     @pytest.mark.websocket
     def test_websocket_start_auto_train_rpc(self):
+        # Step 1: Validate input parameters, operational preconditions, and state
         if _running_under_bwrap():
             self.skipTest("Codex sandbox blocks reliable localhost WebSocket tests")
 
@@ -117,6 +134,7 @@ class TestAutoTrain(unittest.TestCase):
         uri = f"{proto}://localhost:{port}/?token={token}"
 
         async def run_client():
+            # Step 1: Validate input parameters, operational preconditions, and state
             async with websockets.connect(uri, ssl=ssl_context, close_timeout=2) as ws:
                 # Mock Popen inside websocket_server to run a dummy/no-op python command
                 with patch("subprocess.Popen") as mock_popen:
@@ -148,6 +166,7 @@ class TestAutoTrain(unittest.TestCase):
 
         loop = asyncio.new_event_loop()
         try:
+            # Execute guarded operations and establish recovery boundaries
             loop.run_until_complete(run_client())
         finally:
             loop.close()

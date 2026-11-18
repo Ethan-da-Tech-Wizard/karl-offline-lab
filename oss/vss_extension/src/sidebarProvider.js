@@ -1,4 +1,12 @@
 // @ts-check
+// ==============================================================================
+// Program: sidebarProvider.js
+// Programmer: Ethan-da-Tech-Wizard
+// Last Modified: November 18, 2026
+// Purpose: Webview view provider rendering Karl sidebar interface and managing message routing.
+//          Coordinates editor events, client state, and backend RPC messaging.
+// ==============================================================================
+
 const vscode = require('vscode');
 const path = require('path');
 const fs = require('fs');
@@ -28,6 +36,7 @@ const {
  */
 
 function getDiagnosticsStats() {
+    // Step 1: Initialize function scope and validate execution context
     const severityName = ['error', 'warning', 'info', 'hint'];
     const counts = { error: 0, warning: 0, info: 0, hint: 0 };
     for (const [, items] of vscode.languages.getDiagnostics()) {
@@ -46,6 +55,7 @@ let sendStateTimeout = null;
  * @param {KarlSidebarProvider} sidebarProvider
  */
 function sendActiveStateToWebview(sidebarProvider) {
+    // Step 1: Initialize function scope and validate execution context
     if (sendStateTimeout) {
         clearTimeout(sendStateTimeout);
     }

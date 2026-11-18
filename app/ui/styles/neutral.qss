@@ -1,7 +1,11 @@
-/* ================================================================
-   Karl -- Professional Dark Theme v3
-   No unicode above ASCII 127. Pure ASCII only.
-   ================================================================ */
+/* ============================================================================
+ * Program: neutral.qss
+ * Programmer: Ethan-da-Tech-Wizard
+ * Last Modified: November 18, 2026
+ * Purpose: Visual styling and token sheet for neutral.qss.
+ *          Defines theme variables, widget geometry, color palettes, and
+ *          component states.
+ * ============================================================================ */
 
 /* -- Base -------------------------------------------------------- */
 QMainWindow, QWidget {

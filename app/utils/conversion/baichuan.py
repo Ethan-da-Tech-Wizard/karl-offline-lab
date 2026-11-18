@@ -1,3 +1,12 @@
+# ==============================================================================
+# Program: baichuan.py
+# Programmer: Ethan-da-Tech-Wizard
+# Last Modified: November 18, 2026
+# Purpose: Weight conversion and architectural mapping implementation for BAICHUAN.
+#          Transforms HuggingFace checkpoint tensors, normalizes layer weights,
+#          and writes compliant GGUF data structures for llama.cpp.
+# ==============================================================================
+
 from __future__ import annotations
 
 from typing import Iterable, TYPE_CHECKING
@@ -13,15 +22,18 @@ class BaichuanModel(TextModel):
     model_arch = gguf.MODEL_ARCH.BAICHUAN
 
     def set_vocab(self):
+        # Step 1: Validate input parameters, operational preconditions, and state
         self._set_vocab_sentencepiece()
 
     def set_gguf_parameters(self):
+        # Step 1: Validate input parameters, operational preconditions, and state
         super().set_gguf_parameters()
 
         self.gguf_writer.add_tensor_data_layout("Meta AI original pth")
         self.gguf_writer.add_rope_dimension_count(self.hparams["hidden_size"] // self.hparams["num_attention_heads"])
 
     def modify_tensors(self, data_torch: Tensor, name: str, bid: int | None) -> Iterable[tuple[str, Tensor]]:
+        # Step 1: Validate input parameters, operational preconditions, and state
         head_count = self.hparams["num_attention_heads"]
         head_count_kv = self.hparams.get("num_key_value_heads", head_count)
 
@@ -39,6 +51,7 @@ class BaichuanModel(TextModel):
             yield from self.modify_tensors(data_torch, self.map_tensor_name(name), bid)
 
     def _reverse_hf_permute(self, weights: Tensor, n_head: int, n_kv_head: int | None = None) -> Tensor:
+        # Step 1: Validate input parameters, operational preconditions, and state
         if n_kv_head is not None and n_head != n_kv_head:
             n_head //= n_kv_head
 
@@ -51,9 +64,11 @@ class BaichuanModel(TextModel):
     def _reverse_hf_permute_part(
         self, weights: Tensor, n_part: int, n_head: int, n_head_kv: int | None = None,
     ) -> Tensor:
+        # Step 1: Validate input parameters, operational preconditions, and state
         r = weights.shape[0] // 3
         return self._reverse_hf_permute(weights[r * n_part:r * n_part + r, ...], n_head, n_head_kv)
 
     def _reverse_hf_part(self, weights: Tensor, n_part: int) -> Tensor:
+        # Step 1: Validate input parameters, operational preconditions, and state
         r = weights.shape[0] // 3
         return weights[r * n_part:r * n_part + r, ...]

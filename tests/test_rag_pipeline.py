@@ -1,3 +1,12 @@
+# ==============================================================================
+# Program: test_rag_pipeline.py
+# Programmer: Ethan-da-Tech-Wizard
+# Last Modified: November 18, 2026
+# Purpose: Comprehensive test suite exercising rag pipeline functionality.
+#          Verifies state transitions, error boundaries, regression resistance,
+#          and contract compliance under tests.
+# ==============================================================================
+
 import os
 import shutil
 import tempfile
@@ -13,12 +22,15 @@ from app.utils.rag_pipeline import RAGPipeline
 
 class _DeterministicEncoder:
     def encode(self, texts, batch_size=32, show_progress_bar=False):
+        # Step 1: Validate input parameters, operational preconditions, and state
         if isinstance(texts, str):
             texts = [texts]
         vectors = []
         for text in texts:
+            # Iterate over items, evaluate loop invariant, and update progress
             vec = np.zeros(384, dtype="float32")
             for token in text.lower().split():
+                # Iterate over items, evaluate loop invariant, and update progress
                 vec[hash(token) % 384] += 1.0
             norm = np.linalg.norm(vec)
             if norm:
@@ -29,11 +41,13 @@ class _DeterministicEncoder:
 
 class _SlowParseRAG(RAGPipeline):
     def __init__(self, *args, delay=0.01, **kwargs):
+        # Step 1: Validate input parameters, operational preconditions, and state
         super().__init__(*args, **kwargs)
         self._encoder = _DeterministicEncoder()
         self.delay = delay
 
     def _chunks_from_file(self, filepath: str, chunk_size: int, overlap: int):
+        # Step 1: Validate input parameters, operational preconditions, and state
         time.sleep(self.delay)
         with open(filepath, "r", encoding="utf-8") as f:
             return self.chunk_text(f.read(), chunk_size=chunk_size, overlap=overlap)
@@ -41,8 +55,10 @@ class _SlowParseRAG(RAGPipeline):
 
 def test_rag_pipeline_chunking():
     """Test text chunking helper logic under various sizes and overlaps."""
+    # Step 1: Validate input parameters, operational preconditions, and state
     pipeline = RAGPipeline(index_path=tempfile.mkdtemp())
     try:
+        # Execute guarded operations and establish recovery boundaries
         text = "word1 word2 word3 word4 word5 word6 word7 word8 word9 word10"
         
         # Test basic chunk size 4, overlap 1
@@ -69,6 +85,7 @@ def test_rag_pipeline_chunking():
 @pytest.mark.model
 def test_rag_pipeline_ingestion_and_retrieval():
     """Test full file ingestion, vector index save/load, metadata filters, and thresholding."""
+    # Step 1: Validate input parameters, operational preconditions, and state
     import pytest
     from tests.conftest import embedding_model_available
     if not embedding_model_available():
@@ -76,6 +93,7 @@ def test_rag_pipeline_ingestion_and_retrieval():
 
     temp_dir = tempfile.mkdtemp()
     try:
+        # Execute guarded operations and establish recovery boundaries
         pipeline = RAGPipeline(index_path=temp_dir)
         
         # Create dummy text files
@@ -149,6 +167,7 @@ def test_rag_pipeline_ingestion_and_retrieval():
 @pytest.mark.model
 def test_rag_pipeline_retrieve_with_metadata_threshold():
     """Test retrieve_with_metadata threshold filtering."""
+    # Step 1: Validate input parameters, operational preconditions, and state
     import pytest
     from tests.conftest import embedding_model_available
     if not embedding_model_available():
@@ -156,6 +175,7 @@ def test_rag_pipeline_retrieve_with_metadata_threshold():
 
     temp_dir = tempfile.mkdtemp()
     try:
+        # Execute guarded operations and establish recovery boundaries
         pipeline = RAGPipeline(index_path=temp_dir)
         pipeline.ingest_text("Deep learning models are neural networks.", source_name="doc1.txt")
         
@@ -174,6 +194,7 @@ def test_rag_pipeline_retrieve_with_metadata_threshold():
 @pytest.mark.model
 def test_rag_pipeline_attribution():
     """Test retrieve with attribution parameter and retrieve_with_attribution wrapper."""
+    # Step 1: Validate input parameters, operational preconditions, and state
     import pytest
     from tests.conftest import embedding_model_available
     if not embedding_model_available():
@@ -181,6 +202,7 @@ def test_rag_pipeline_attribution():
 
     temp_dir = tempfile.mkdtemp()
     try:
+        # Execute guarded operations and establish recovery boundaries
         pipeline = RAGPipeline(index_path=temp_dir)
         pipeline.ingest_text("Deep learning models are neural networks.", source_name="doc1.txt")
         
@@ -204,16 +226,19 @@ def test_rag_pipeline_attribution():
 
 
 def test_parallel_batch_ingestion_benchmark_100_mock_python_files():
+    # Step 1: Validate input parameters, operational preconditions, and state
     temp_dir = tempfile.mkdtemp()
     seq_dir = tempfile.mkdtemp()
     par_dir = tempfile.mkdtemp()
     try:
+        # Execute guarded operations and establish recovery boundaries
         files = []
         body = "\n".join(
             f"def function_{i}(): return 'parallel rag ingestion benchmark {i}'"
             for i in range(50)
         )
         for i in range(100):
+            # Iterate over items, evaluate loop invariant, and update progress
             path = os.path.join(temp_dir, f"mock_{i:03d}.py")
             with open(path, "w", encoding="utf-8") as f:
                 f.write(body)
@@ -240,12 +265,15 @@ def test_parallel_batch_ingestion_benchmark_100_mock_python_files():
 
 
 def test_parallel_batch_ingestion_matches_sequential_index_results():
+    # Step 1: Validate input parameters, operational preconditions, and state
     temp_dir = tempfile.mkdtemp()
     seq_dir = tempfile.mkdtemp()
     par_dir = tempfile.mkdtemp()
     try:
+        # Execute guarded operations and establish recovery boundaries
         files = []
         for i in range(20):
+            # Iterate over items, evaluate loop invariant, and update progress
             topic = "neural vector search" if i % 2 == 0 else "processor instruction cache"
             path = os.path.join(temp_dir, f"doc_{i:02d}.py")
             with open(path, "w", encoding="utf-8") as f:

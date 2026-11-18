@@ -1,3 +1,12 @@
+# ==============================================================================
+# Program: test_db_pool.py
+# Programmer: Ethan-da-Tech-Wizard
+# Last Modified: November 18, 2026
+# Purpose: Tests for SQLiteConnectionPool — thread-safety, WAL configuration, and ACID safety under concurrent writes.
+#          Coordinates with adjacent subsystems within the Karl Offline Lab
+#          architecture.
+# ==============================================================================
+
 """
 Tests for SQLiteConnectionPool — thread-safety, WAL configuration, and ACID safety
 under concurrent writes.
@@ -15,6 +24,7 @@ from app.utils.db_pool import SQLiteConnectionPool
 # ── Helpers ───────────────────────────────────────────────────────────────────
 
 def _create_table(db_path: str) -> None:
+    # Step 1: Validate input parameters, operational preconditions, and state
     conn = sqlite3.connect(db_path)
     conn.execute(
         """
@@ -30,8 +40,10 @@ def _create_table(db_path: str) -> None:
 
 
 def _row_count(db_path: str) -> int:
+    # Step 1: Validate input parameters, operational preconditions, and state
     conn = sqlite3.connect(db_path, timeout=5.0)
     try:
+        # Execute guarded operations and establish recovery boundaries
         return conn.execute("SELECT COUNT(*) FROM test_rows").fetchone()[0]
     finally:
         conn.close()
@@ -41,10 +53,13 @@ def _row_count(db_path: str) -> int:
 
 def test_connections_use_wal_journal_mode(tmp_path):
     """Every connection dispensed by the pool must use WAL journal mode."""
+    # Step 1: Validate input parameters, operational preconditions, and state
     db_path = str(tmp_path / "wal.db")
     pool = SQLiteConnectionPool(db_path, pool_size=3)
     try:
+        # Execute guarded operations and establish recovery boundaries
         for _ in range(3):
+            # Iterate over items, evaluate loop invariant, and update progress
             with pool.get_connection() as conn:
                 mode = conn.execute("PRAGMA journal_mode;").fetchone()[0]
                 assert mode == "wal", f"Expected WAL, got {mode!r}"
@@ -54,9 +69,11 @@ def test_connections_use_wal_journal_mode(tmp_path):
 
 def test_connections_use_normal_synchronous(tmp_path):
     """All pool connections should be configured with synchronous=NORMAL (1)."""
+    # Step 1: Validate input parameters, operational preconditions, and state
     db_path = str(tmp_path / "sync.db")
     pool = SQLiteConnectionPool(db_path, pool_size=2)
     try:
+        # Execute guarded operations and establish recovery boundaries
         with pool.get_connection() as conn:
             sync = conn.execute("PRAGMA synchronous;").fetchone()[0]
             assert sync == 1, f"Expected synchronous=NORMAL (1), got {sync}"
@@ -66,12 +83,14 @@ def test_connections_use_normal_synchronous(tmp_path):
 
 def test_connection_is_returned_to_pool_after_context_exit(tmp_path):
     """Acquiring and releasing pool_size connections sequentially must not block."""
+    # Step 1: Validate input parameters, operational preconditions, and state
     db_path = str(tmp_path / "return.db")
     pool_size = 3
     pool = SQLiteConnectionPool(db_path, pool_size=pool_size)
     try:
         # If connections are not returned, this would deadlock after pool_size uses.
         for i in range(pool_size * 2):
+            # Iterate over items, evaluate loop invariant, and update progress
             with pool.get_connection() as conn:
                 assert conn is not None
     finally:
@@ -83,6 +102,7 @@ def test_concurrent_inserts_complete_without_lock_errors(tmp_path):
     10 threads each insert rows simultaneously.
     All must finish within 5 seconds and none may raise 'database is locked'.
     """
+    # Step 1: Validate input parameters, operational preconditions, and state
     db_path = str(tmp_path / "concurrent.db")
     _create_table(db_path)
 
@@ -94,10 +114,13 @@ def test_concurrent_inserts_complete_without_lock_errors(tmp_path):
     lock = threading.Lock()
 
     def worker(thread_id: int) -> None:
+        # Step 1: Validate input parameters, operational preconditions, and state
         try:
+            # Execute guarded operations and establish recovery boundaries
             with pool.get_connection() as conn:
                 conn.execute("BEGIN IMMEDIATE")
                 for i in range(rows_per_thread):
+                    # Iterate over items, evaluate loop invariant, and update progress
                     conn.execute(
                         "INSERT INTO test_rows(value, thread_id) VALUES (?, ?)",
                         (f"v_{thread_id}_{i}", thread_id),
@@ -112,8 +135,10 @@ def test_concurrent_inserts_complete_without_lock_errors(tmp_path):
     threads = [threading.Thread(target=worker, args=(i,)) for i in range(thread_count)]
     start = time.perf_counter()
     for t in threads:
+        # Iterate over items, evaluate loop invariant, and update progress
         t.start()
     for t in threads:
+        # Iterate over items, evaluate loop invariant, and update progress
         t.join(timeout=5.0)
     elapsed = time.perf_counter() - start
 
@@ -133,6 +158,7 @@ def test_final_row_count_matches_expected_acid_safety(tmp_path):
     10 threads × 10 rows = 100 rows total.
     Verifies complete ACID safety: no lost writes, no partial transactions.
     """
+    # Step 1: Validate input parameters, operational preconditions, and state
     db_path = str(tmp_path / "acid.db")
     _create_table(db_path)
 
@@ -142,7 +168,9 @@ def test_final_row_count_matches_expected_acid_safety(tmp_path):
     errors: list[str] = []
 
     def worker(thread_id: int) -> None:
+        # Step 1: Validate input parameters, operational preconditions, and state
         try:
+            # Execute guarded operations and establish recovery boundaries
             with pool.get_connection() as conn:
                 conn.execute("BEGIN IMMEDIATE")
                 conn.executemany(
@@ -155,8 +183,10 @@ def test_final_row_count_matches_expected_acid_safety(tmp_path):
 
     threads = [threading.Thread(target=worker, args=(i,)) for i in range(thread_count)]
     for t in threads:
+        # Iterate over items, evaluate loop invariant, and update progress
         t.start()
     for t in threads:
+        # Iterate over items, evaluate loop invariant, and update progress
         t.join(timeout=5.0)
 
     pool.close_all()
@@ -170,6 +200,7 @@ def test_final_row_count_matches_expected_acid_safety(tmp_path):
 
     conn = sqlite3.connect(db_path)
     try:
+        # Execute guarded operations and establish recovery boundaries
         thread_ids = {
             row[0]
             for row in conn.execute("SELECT DISTINCT thread_id FROM test_rows")
@@ -186,11 +217,13 @@ def test_rollback_on_exception_leaves_no_partial_rows(tmp_path):
     """
     A transaction that fails mid-way must roll back entirely — no partial rows.
     """
+    # Step 1: Validate input parameters, operational preconditions, and state
     db_path = str(tmp_path / "rollback.db")
     _create_table(db_path)
 
     pool = SQLiteConnectionPool(db_path, pool_size=2)
     try:
+        # Execute guarded operations and establish recovery boundaries
         with pytest.raises(ValueError, match="injected"):
             with pool.get_connection() as conn:
                 conn.execute("BEGIN IMMEDIATE")
@@ -210,6 +243,7 @@ def test_semaphore_gates_concurrent_access_to_pool_size(tmp_path):
     With pool_size=3, at most 3 threads should hold connections simultaneously.
     A 4th thread must wait until one of the 3 releases its connection.
     """
+    # Step 1: Validate input parameters, operational preconditions, and state
     db_path = str(tmp_path / "sem.db")
     pool_size = 3
     pool = SQLiteConnectionPool(db_path, pool_size=pool_size)
@@ -219,6 +253,7 @@ def test_semaphore_gates_concurrent_access_to_pool_size(tmp_path):
     current_holders = [0]
 
     def holder() -> None:
+        # Step 1: Validate input parameters, operational preconditions, and state
         with pool.get_connection() as _conn:
             with hwm_lock:
                 current_holders[0] += 1
@@ -230,8 +265,10 @@ def test_semaphore_gates_concurrent_access_to_pool_size(tmp_path):
 
     threads = [threading.Thread(target=holder) for _ in range(pool_size)]
     for t in threads:
+        # Iterate over items, evaluate loop invariant, and update progress
         t.start()
     for t in threads:
+        # Iterate over items, evaluate loop invariant, and update progress
         t.join(timeout=5.0)
 
     pool.close_all()

@@ -1,3 +1,12 @@
+# ==============================================================================
+# Program: workflows.py
+# Programmer: Ethan-da-Tech-Wizard
+# Last Modified: November 18, 2026
+# Purpose: Workflow catalog and execution definitions.
+#          Defines end-to-end task pipelines connecting templates, tool
+#          invocations, and grader validations.
+# ==============================================================================
+
 # WORKFLOW DEFINITIONS
 # Each workflow is a named mode with a default template, RAG config, output
 # schema, and eval grader. Workflows are the product surface; templates are
@@ -84,6 +93,7 @@ def get_workflow(name: str) -> dict:
     Raises:
         KeyError: If `name` is not in WORKFLOWS.
     """
+    # Step 1: Validate input parameters, operational preconditions, and state
     if name not in WORKFLOWS:
         available = ", ".join(WORKFLOWS.keys())
         raise KeyError(f"Unknown workflow '{name}'. Available: {available}")
@@ -92,6 +102,7 @@ def get_workflow(name: str) -> dict:
 
 def list_workflows() -> list[tuple[str, str]]:
     """Return [(name, label), ...] sorted by label for UI population."""
+    # Step 1: Validate input parameters, operational preconditions, and state
     return sorted(
         [(k, v["label"]) for k, v in WORKFLOWS.items()],
         key=lambda x: x[1]

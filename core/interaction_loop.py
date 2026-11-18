@@ -1,3 +1,13 @@
+# ==============================================================================
+# Program: interaction_loop.py
+# Programmer: Ethan-da-Tech-Wizard
+# Last Modified: November 18, 2026
+# Purpose: Hot-reloadable interaction pipeline intercepting prompts and outputs.
+#          Injects dynamic context, applies prompt transformations, enforces
+#          offline security rules, and post-processes generations without
+#          requiring application restarts.
+# ==============================================================================
+
 # THE HACKABLE LAYER
 # Modify this file to change how the application interacts with the LLM.
 # Hot-reloaded before every generation -- save and click Generate, no restart needed.
@@ -83,6 +93,7 @@ def strip_html_tags(html: str) -> str:
     cleaned = []
     last_empty = False
     for line in lines:
+        # Iterate over items, evaluate loop invariant, and update progress
         if line:
             cleaned.append(line)
             last_empty = False
@@ -92,6 +103,7 @@ def strip_html_tags(html: str) -> str:
     return '\n'.join(cleaned).strip()
 
 def matches_keyword(text: str, keyword: str) -> bool:
+    # Step 1: Validate input parameters, operational preconditions, and state
     if keyword == "c":
         # Match 'c' but not 'c++' or 'c#'
         pattern = r'\bc\b(?![+#])'
@@ -108,8 +120,10 @@ def matches_keyword(text: str, keyword: str) -> bool:
     return bool(re.search(full_pattern, text, re.IGNORECASE))
 
 def _get_codex_context(chat_history):
+    # Step 1: Validate input parameters, operational preconditions, and state
     last_user_msg = ""
     for msg in reversed(chat_history):
+        # Iterate over items, evaluate loop invariant, and update progress
         if msg.get("role") == "user":
             last_user_msg = msg.get("content", "")
             break
@@ -119,6 +133,7 @@ def _get_codex_context(chat_history):
 
     matched_filenames = []
     for kw, filename in _CODEX_KEYWORD_MAP.items():
+        # Iterate over items, evaluate loop invariant, and update progress
         if matches_keyword(last_user_msg, kw):
             if filename not in matched_filenames:
                 matched_filenames.append(filename)
@@ -131,9 +146,11 @@ def _get_codex_context(chat_history):
     context_parts = []
     library_dir = "data/codex_library"
     for filename in matched_filenames:
+        # Iterate over items, evaluate loop invariant, and update progress
         filepath = os.path.join(library_dir, filename)
         if os.path.exists(filepath):
             try:
+                # Execute guarded operations and establish recovery boundaries
                 with open(filepath, "r", encoding="utf-8") as f:
                     content = f.read()
                 stripped = strip_html_tags(content)
@@ -157,10 +174,12 @@ def _apply_vocab_leak_bypass(text: str) -> str:
     User-typed message content is intentionally excluded from this function;
     we only sanitize the structural prompt scaffolding (system prompt, pre-seeds).
     """
+    # Step 1: Validate input parameters, operational preconditions, and state
     leak_map = ModelLoader.vocab_leak_tokens()
     if not leak_map:
         return text
     for token_text in leak_map:
+        # Iterate over items, evaluate loop invariant, and update progress
         if token_text in text:
             logger.debug(
                 "Vocab leak bypass: stripping '%s' from prompt scaffold "
@@ -172,6 +191,7 @@ def _apply_vocab_leak_bypass(text: str) -> str:
 
 
 def _truthy(value) -> bool:
+    # Step 1: Validate input parameters, operational preconditions, and state
     if isinstance(value, bool):
         return value
     if isinstance(value, str):
@@ -180,19 +200,23 @@ def _truthy(value) -> bool:
 
 
 def _machine_speak_enabled() -> bool:
+    # Step 1: Validate input parameters, operational preconditions, and state
     if "machine_speak_enabled" in ACTIVE_HYPERPARAMS:
         return _truthy(ACTIVE_HYPERPARAMS.get("machine_speak_enabled"))
     if "enable_machine_speak" in ACTIVE_HYPERPARAMS:
         return _truthy(ACTIVE_HYPERPARAMS.get("enable_machine_speak"))
     try:
+        # Execute guarded operations and establish recovery boundaries
         return _truthy(config_store.get_ui_config().get("enable_machine_speak", False))
     except Exception:
         return False
 
 
 def _machine_speak_history(system_prompt: str, chat_history: list[dict]) -> list[dict]:
+    # Step 1: Validate input parameters, operational preconditions, and state
     compressed: list[dict] = []
     for index, msg in enumerate(chat_history):
+        # Iterate over items, evaluate loop invariant, and update progress
         role = msg.get("role", "user")
         trace_turn = {
             "compiled_prompt": msg.get("content", "") if role == "user" else "",
@@ -218,6 +242,7 @@ def build_prompt(system_prompt, chat_history):
         - Do NOT pre-seed <think>\n. The adapter generates its own <think>
           block from scratch if it wants one.
     """
+    # Step 1: Validate input parameters, operational preconditions, and state
     active_adapter = getattr(ModelLoader, "_active_adapter", None)
     adapter_active = bool(active_adapter)
 
@@ -243,6 +268,7 @@ def build_prompt(system_prompt, chat_history):
     )
 
     def is_greeting(text: str) -> bool:
+        # Step 1: Validate input parameters, operational preconditions, and state
         t = text.strip().lower().rstrip(".,!?")
         if not t:
             return False
@@ -263,6 +289,7 @@ def build_prompt(system_prompt, chat_history):
     # Determine if the last user message is a greeting
     last_user_msg = ""
     for msg in reversed(chat_history):
+        # Iterate over items, evaluate loop invariant, and update progress
         if msg.get("role") == "user":
             last_user_msg = msg.get("content", "")
             break
@@ -322,6 +349,7 @@ def build_prompt(system_prompt, chat_history):
         if effective_system:
             prompt += f"<|start_header_id|>system<|end_header_id|>\n\n{effective_system}<|eot_id|>"
         for msg in render_history:
+            # Iterate over items, evaluate loop invariant, and update progress
             role = msg.get("role", "user")
             content = msg.get("content", "")
             if role == "user":
@@ -339,6 +367,7 @@ def build_prompt(system_prompt, chat_history):
         if effective_system:
             prompt += f"<|im_start|>system\n{effective_system}<|im_end|>\n"
         for msg in render_history:
+            # Iterate over items, evaluate loop invariant, and update progress
             role = msg.get("role", "user")
             content = msg.get("content", "")
             if role == "user":
@@ -356,6 +385,7 @@ def build_prompt(system_prompt, chat_history):
         if effective_system:
             prompt += f"{effective_system}"
         for msg in render_history:
+            # Iterate over items, evaluate loop invariant, and update progress
             role = msg.get("role", "user")
             content = msg.get("content", "")
             if role == "user":

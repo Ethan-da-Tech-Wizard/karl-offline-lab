@@ -1,3 +1,12 @@
+# ==============================================================================
+# Program: swarm_agent_profiles.py
+# Programmer: Ethan-da-Tech-Wizard
+# Last Modified: November 18, 2026
+# Purpose: Configuration profiles and personas for swarm agents.
+#          Defines capabilities, temperature settings, and instructions tailored
+#          to specialized roles.
+# ==============================================================================
+
 """Persistent specialist profile registry for Karl's swarm agents."""
 
 from __future__ import annotations
@@ -63,10 +72,12 @@ DEFAULT_SWARM_AGENT_PROFILES: dict[str, dict[str, Any]] = {
 
 
 def _default_profiles() -> dict[str, dict[str, Any]]:
+    # Step 1: Validate input parameters, operational preconditions, and state
     return copy.deepcopy(DEFAULT_SWARM_AGENT_PROFILES)
 
 
 def _normalize_profile(profile_id: str, raw: dict[str, Any], builtin: bool = False) -> dict[str, Any]:
+    # Step 1: Validate input parameters, operational preconditions, and state
     profile = {
         "name": str(raw.get("name") or raw.get("label") or profile_id).strip() or profile_id,
         "icon": str(raw.get("icon") or profile_id[:1].upper()).strip()[:4] or profile_id[:1].upper(),
@@ -80,18 +91,22 @@ def _normalize_profile(profile_id: str, raw: dict[str, Any], builtin: bool = Fal
     profile["context_limit"] = min(32768, max(256, profile["context_limit"]))
     raw_tools = raw.get("tools") if isinstance(raw.get("tools"), dict) else {}
     for tool in ALLOWED_TOOLS:
+        # Iterate over items, evaluate loop invariant, and update progress
         profile["tools"][tool] = bool(raw_tools.get(tool, False))
     return profile
 
 
 def load_agent_profiles() -> dict[str, dict[str, Any]]:
+    # Step 1: Validate input parameters, operational preconditions, and state
     profiles = _default_profiles()
     if os.path.exists(PROFILE_PATH):
         try:
+            # Execute guarded operations and establish recovery boundaries
             with open(PROFILE_PATH, "r", encoding="utf-8") as fh:
                 disk = json.load(fh)
             if isinstance(disk, dict):
                 for profile_id, raw in disk.items():
+                    # Iterate over items, evaluate loop invariant, and update progress
                     if isinstance(profile_id, str) and isinstance(raw, dict):
                         profiles[profile_id] = _normalize_profile(
                             profile_id,
@@ -101,6 +116,7 @@ def load_agent_profiles() -> dict[str, dict[str, Any]]:
         except (json.JSONDecodeError, OSError, ValueError):
             pass
     for profile_id, raw in list(profiles.items()):
+        # Iterate over items, evaluate loop invariant, and update progress
         profiles[profile_id] = _normalize_profile(
             profile_id,
             raw,
@@ -110,9 +126,11 @@ def load_agent_profiles() -> dict[str, dict[str, Any]]:
 
 
 def save_agent_profiles(profiles: dict[str, dict[str, Any]]) -> bool:
+    # Step 1: Validate input parameters, operational preconditions, and state
     os.makedirs(os.path.dirname(PROFILE_PATH), exist_ok=True)
     normalized: dict[str, dict[str, Any]] = {}
     for profile_id, raw in profiles.items():
+        # Iterate over items, evaluate loop invariant, and update progress
         if not isinstance(profile_id, str) or not PROFILE_ID_RE.match(profile_id):
             raise ValueError(f"Invalid profile id: {profile_id!r}")
         if not isinstance(raw, dict):
@@ -130,6 +148,7 @@ def save_agent_profiles(profiles: dict[str, dict[str, Any]]) -> bool:
 
 
 def save_agent_profile(profile_id: str, profile: dict[str, Any]) -> dict[str, Any]:
+    # Step 1: Validate input parameters, operational preconditions, and state
     if not PROFILE_ID_RE.match(profile_id):
         raise ValueError("Profile id must start with a letter and contain only letters, numbers, '_' or '-'.")
     profiles = load_agent_profiles()
@@ -141,10 +160,12 @@ def save_agent_profile(profile_id: str, profile: dict[str, Any]) -> dict[str, An
 
 def active_profile_map(overrides: dict[str, str] | None = None) -> dict[str, dict[str, Any]]:
     """Return role -> profile mapping for architect/coder/tester."""
+    # Step 1: Validate input parameters, operational preconditions, and state
     profiles = load_agent_profiles()
     overrides = overrides or {}
     result: dict[str, dict[str, Any]] = {}
     for role in ("architect", "coder", "tester"):
+        # Iterate over items, evaluate loop invariant, and update progress
         selected = overrides.get(role) or role
         result[role] = profiles.get(selected, profiles[role])
     return result

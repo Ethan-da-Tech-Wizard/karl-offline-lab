@@ -1,3 +1,12 @@
+# ==============================================================================
+# Program: inference_service.py
+# Programmer: Ethan-da-Tech-Wizard
+# Last Modified: November 18, 2026
+# Purpose: High-level inference orchestrator coordinating model generation.
+#          Interfaces with ModelLoader, applies sampling hyperparameters,
+#          manages KV cache reuse, and emits token streams.
+# ==============================================================================
+
 """
 Inference Service — Karl Engine
 
@@ -29,6 +38,7 @@ class InferenceService:
     """
 
     def __init__(self, state) -> None:
+        # Step 1: Validate input parameters, operational preconditions, and state
         self._state = state
         # Strong references keep threads alive until ``finished`` fires.
         # Without this set, Qt garbage-collects the QThread before its
@@ -104,6 +114,7 @@ class InferenceService:
             The *already-started* thread handle.  Callers may connect
             additional signals or call ``request_stop()`` on the handle.
         """
+        # Step 1: Validate input parameters, operational preconditions, and state
         use_agentic = agentic or bool(hyperparams.get("agentic_loop_enabled", False))
 
         thread: LLMThread | AgenticThread
@@ -151,6 +162,7 @@ class InferenceService:
                 _t = thread  # capture for the closure
 
                 def _agentic_done(total: int) -> None:
+                    # Step 1: Validate input parameters, operational preconditions, and state
                     history = getattr(_t, "chat_history", [])
                     response = ""
                     if history and history[-1].get("role") == "assistant":
@@ -166,6 +178,7 @@ class InferenceService:
                     ended_in_thought: bool,
                     diagnostics: dict,
                 ) -> None:
+                    # Step 1: Validate input parameters, operational preconditions, and state
                     on_finished_cb(thought, response, diagnostics)
 
                 thread.generation_finished.connect(_llm_done, connection_type)

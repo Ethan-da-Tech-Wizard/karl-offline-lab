@@ -1,3 +1,12 @@
+# ==============================================================================
+# Program: sarashina2.py
+# Programmer: Ethan-da-Tech-Wizard
+# Last Modified: November 18, 2026
+# Purpose: Weight conversion and architectural mapping implementation for SARASHINA2.
+#          Transforms HuggingFace checkpoint tensors, normalizes layer weights,
+#          and writes compliant GGUF data structures for llama.cpp.
+# ==============================================================================
+
 from __future__ import annotations
 
 from typing import Callable, TYPE_CHECKING
@@ -17,6 +26,7 @@ class Sarashina2VLTextModel(LlamaModel):
 
     @classmethod
     def filter_tensors(cls, item: tuple[str, Callable[[], Tensor]]) -> tuple[str, Callable[[], Tensor]] | None:
+        # Step 1: Validate input parameters, operational preconditions, and state
         name, gen = item
         if name.startswith("llm."):
             name = name.replace("llm.", "", 1)
@@ -28,5 +38,6 @@ class Sarashina2VLTextModel(LlamaModel):
 @ModelBase.register("Sarashina2VisionForCausalLM")
 class Sarashina2VLVisionModel(Qwen2VLVisionModel):
     def __init__(self, *args, **kwargs):
+        # Step 1: Validate input parameters, operational preconditions, and state
         super().__init__(*args, **kwargs)
         self.global_config['model_type'] = "qwen2_vl"

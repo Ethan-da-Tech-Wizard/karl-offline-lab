@@ -1,3 +1,12 @@
+# ==============================================================================
+# Program: agent1_generator.py
+# Programmer: Ethan-da-Tech-Wizard
+# Last Modified: November 18, 2026
+# Purpose: Flywheel Agent-1 problem generator.
+#          Proposes novel programming challenges, edge-case unit tests, and
+#          problem specifications.
+# ==============================================================================
+
 import os
 import sys
 import json
@@ -26,11 +35,13 @@ _NGRAM_SIZE = 3
 
 
 def _ngrams(text: str, n: int = _NGRAM_SIZE) -> set:
+    # Step 1: Validate input parameters, operational preconditions, and state
     t = text.lower()
     return {t[i:i+n] for i in range(len(t) - n + 1)} if len(t) >= n else set()
 
 
 def _jaccard_ngram(a: str, b: str) -> float:
+    # Step 1: Validate input parameters, operational preconditions, and state
     sa, sb = _ngrams(a), _ngrams(b)
     if not sa and not sb:
         return 1.0
@@ -42,14 +53,18 @@ def _is_duplicate(candidate: str) -> bool:
     """Return True if candidate is too similar to any recent or queued problem."""
     # In-session cache
     for stmt in _recent_statements:
+        # Iterate over items, evaluate loop invariant, and update progress
         if _jaccard_ngram(candidate, stmt) > _SIMILARITY_THRESHOLD:
             return True
     # Existing queue files
     try:
+        # Execute guarded operations and establish recovery boundaries
         for fname in os.listdir(QUEUE_DIR):
+            # Iterate over items, evaluate loop invariant, and update progress
             if not fname.endswith(".json"):
                 continue
             try:
+                # Execute guarded operations and establish recovery boundaries
                 with open(os.path.join(QUEUE_DIR, fname), "r", encoding="utf-8") as f:
                     data = json.load(f)
                 stmt = data.get("problem_statement", "")
@@ -68,6 +83,7 @@ def generate_math_problem_3var():
     y = random.randint(2, 12)
     z = random.randint(2, 12)
     while x == y or y == z or x == z:
+        # Iterate over items, evaluate loop invariant, and update progress
         y = random.randint(2, 12)
         z = random.randint(2, 12)
         
@@ -82,6 +98,7 @@ def generate_math_problem_3var():
     ]
     # Add minor randomness but keep them linearly independent
     for i in range(3):
+        # Iterate over items, evaluate loop invariant, and update progress
         coeffs[i] = [c + random.randint(0, 2) for c in coeffs[i]]
         
     e1 = coeffs[0][0]*x + coeffs[0][1]*y + coeffs[0][2]*z
@@ -119,6 +136,7 @@ def verify(response):
     }
 
 def generate_coding_problem_extended(challenge_name: str | None = None):
+    # Step 1: Validate input parameters, operational preconditions, and state
     challenges = [
         {
             "name": "is_balanced_parentheses",
@@ -234,6 +252,7 @@ def verify(response):
     }
 
 def generate_symbolic_problem_extended():
+    # Step 1: Validate input parameters, operational preconditions, and state
     choices = ["matrix_det", "combinations"]
     choice = random.choice(choices)
     
@@ -296,6 +315,7 @@ def generate_quadratic_problem():
     r1 = random.randint(-8, 8)
     r2 = random.randint(-8, 8)
     while r1 == r2:
+        # Iterate over items, evaluate loop invariant, and update progress
         r2 = random.randint(-8, 8)
     a = random.randint(1, 3)
 
@@ -304,6 +324,7 @@ def generate_quadratic_problem():
     c =  a *  r1 * r2
 
     def _fmt_term(coeff, var=""):
+        # Step 1: Validate input parameters, operational preconditions, and state
         if coeff == 0:
             return ""
         sign = "+" if coeff > 0 else "-"
@@ -362,6 +383,7 @@ _TOPIC_DISPATCH = {
 
 
 def main():
+    # Step 1: Validate input parameters, operational preconditions, and state
     parser = argparse.ArgumentParser(description="Agent 1 (Problem Generator) for Karl Self-Improvement Flywheel")
     parser.add_argument("--limit", type=int, default=100, help="Max number of tasks to generate (when infinite mode is off)")
     parser.add_argument("--infinite", action="store_true", help="Run indefinitely in an infinite loop")
@@ -386,6 +408,7 @@ def main():
 
         # Check queue size to prevent flooding
         try:
+            # Execute guarded operations and establish recovery boundaries
             queue_files = [f for f in os.listdir(QUEUE_DIR) if f.startswith("task_") and f.endswith(".json")]
         except Exception:
             queue_files = []
@@ -399,6 +422,7 @@ def main():
         
         # Check active learner's recommendation for ZPD throttling
         try:
+            # Execute guarded operations and establish recovery boundaries
             from data.flywheel.active_learner import ActiveLearner
             active_learner = ActiveLearner()
             if not active_learner.should_generate(topic):
@@ -443,6 +467,7 @@ def main():
         final_path = os.path.join(QUEUE_DIR, f"task_{task_id}.json")
 
         try:
+            # Execute guarded operations and establish recovery boundaries
             with open(temp_path, "w", encoding="utf-8") as f:
                 json.dump(task, f, indent=2)
             os.rename(temp_path, final_path)

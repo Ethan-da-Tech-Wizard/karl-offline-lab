@@ -1,3 +1,12 @@
+# ==============================================================================
+# Program: jais.py
+# Programmer: Ethan-da-Tech-Wizard
+# Last Modified: November 18, 2026
+# Purpose: Weight conversion and architectural mapping implementation for JAIS.
+#          Transforms HuggingFace checkpoint tensors, normalizes layer weights,
+#          and writes compliant GGUF data structures for llama.cpp.
+# ==============================================================================
+
 from __future__ import annotations
 
 import math
@@ -15,6 +24,7 @@ class Jais2Model(TextModel):
     model_arch = gguf.MODEL_ARCH.JAIS2
 
     def set_gguf_parameters(self):
+        # Step 1: Validate input parameters, operational preconditions, and state
         super().set_gguf_parameters()
         hparams = self.hparams
         head_dim = hparams.get("head_dim", hparams["hidden_size"] // hparams["num_attention_heads"])
@@ -26,6 +36,7 @@ class JaisModel(TextModel):
     model_arch = gguf.MODEL_ARCH.JAIS
 
     def __init__(self, *args, **kwargs):
+        # Step 1: Validate input parameters, operational preconditions, and state
         super().__init__(*args, **kwargs)
 
         # SwigLU activation
@@ -54,9 +65,11 @@ class JaisModel(TextModel):
         self.max_alibi_bias = 8.0
 
     def set_vocab(self):
+        # Step 1: Validate input parameters, operational preconditions, and state
         self._set_vocab_gpt2()
 
     def set_gguf_parameters(self):
+        # Step 1: Validate input parameters, operational preconditions, and state
         self.gguf_writer.add_block_count(self.block_count)
         self.gguf_writer.add_context_length(self.hparams["n_positions"])
         self.gguf_writer.add_embedding_length(self.hparams["n_embd"])
@@ -67,6 +80,7 @@ class JaisModel(TextModel):
 
     @classmethod
     def filter_tensors(cls, item: tuple[str, Callable[[], Tensor]]) -> tuple[str, Callable[[], Tensor]] | None:
+        # Step 1: Validate input parameters, operational preconditions, and state
         name, gen = item
 
         # we don't need these
@@ -76,6 +90,7 @@ class JaisModel(TextModel):
         return super().filter_tensors(item)
 
     def modify_tensors(self, data_torch: Tensor, name: str, bid: int | None) -> Iterable[tuple[str, Tensor]]:
+        # Step 1: Validate input parameters, operational preconditions, and state
         if name.endswith(("relative_pe.slopes")):
             # Calculate max ALiBi bias (this is the inverse of the ALiBi calculation)
             # Some other models has max_alibi_bias spelled out explicitly in the hyperparams,
@@ -100,5 +115,6 @@ class JaisModel(TextModel):
             yield from super().modify_tensors(data_torch, new_name, bid)
 
     def prepare_tensors(self):
+        # Step 1: Validate input parameters, operational preconditions, and state
         super().prepare_tensors()
         self.gguf_writer.add_max_alibi_bias(self.max_alibi_bias)

@@ -1,3 +1,12 @@
+# ==============================================================================
+# Program: xverse.py
+# Programmer: Ethan-da-Tech-Wizard
+# Last Modified: November 18, 2026
+# Purpose: Weight conversion and architectural mapping implementation for XVERSE.
+#          Transforms HuggingFace checkpoint tensors, normalizes layer weights,
+#          and writes compliant GGUF data structures for llama.cpp.
+# ==============================================================================
+
 from __future__ import annotations
 
 import re
@@ -15,6 +24,7 @@ class XverseModel(TextModel):
     model_arch = gguf.MODEL_ARCH.XVERSE
 
     def set_vocab(self):
+        # Step 1: Validate input parameters, operational preconditions, and state
         assert (self.dir_model / "tokenizer.json").is_file()
         dir_model = self.dir_model
         hparams = self.hparams
@@ -35,6 +45,7 @@ class XverseModel(TextModel):
         added_vocab = tokenizer.get_added_vocab()  # ty: ignore[unresolved-attribute]
 
         for token_id in range(vocab_size):
+            # Iterate over items, evaluate loop invariant, and update progress
             token_text = reverse_vocab[token_id].encode('utf-8')
             # replace "\x00" to string with length > 0
             if token_text == b"\x00":
@@ -62,12 +73,14 @@ class XverseModel(TextModel):
         special_vocab.add_to_gguf(self.gguf_writer)
 
     def set_gguf_parameters(self):
+        # Step 1: Validate input parameters, operational preconditions, and state
         super().set_gguf_parameters()
 
         self.gguf_writer.add_tensor_data_layout("Meta AI original pth")
         self.gguf_writer.add_rope_dimension_count(self.hparams["hidden_size"] // self.hparams["num_attention_heads"])
 
     def modify_tensors(self, data_torch: Tensor, name: str, bid: int | None) -> Iterable[tuple[str, Tensor]]:
+        # Step 1: Validate input parameters, operational preconditions, and state
         head_count = self.hparams["num_attention_heads"]
         head_count_kv = self.hparams.get("num_key_value_heads", head_count)
 
@@ -80,6 +93,7 @@ class XverseModel(TextModel):
         yield from super().modify_tensors(data_torch, name, bid)
 
     def _reverse_hf_permute(self, weights: Tensor, n_head: int, n_kv_head: int | None = None) -> Tensor:
+        # Step 1: Validate input parameters, operational preconditions, and state
         if n_kv_head is not None and n_head != n_kv_head:
             n_head //= n_kv_head
 

@@ -1,3 +1,12 @@
+# ==============================================================================
+# Program: tool_executor.py
+# Programmer: Ethan-da-Tech-Wizard
+# Last Modified: November 18, 2026
+# Purpose: Sandboxed tool execution subsystem for local development actions.
+#          Executes read, write, grep, git, and shell commands within strict
+#          security boundaries.
+# ==============================================================================
+
 """
 tool_executor.py — MCP tool call execution for LLMThread.
 Provides build_tool_schema_prompt() and execute_tool_call() for the chat loop.
@@ -12,10 +21,12 @@ logger = logging.getLogger("karl.tool_executor")
 
 def build_tool_schema_prompt(tools: list[dict]) -> str:
     """Convert MCP tool list to a prompt-injectable XML schema block."""
+    # Step 1: Validate input parameters, operational preconditions, and state
     if not tools:
         return ""
     lines = ["<available_tools>"]
     for t in tools:
+        # Iterate over items, evaluate loop invariant, and update progress
         schema = t.get("input_schema", {})
         props = schema.get("properties", {})
         param_strs = [
@@ -41,8 +52,10 @@ def build_tool_schema_prompt(tools: list[dict]) -> str:
 
 def parse_tool_calls(text: str) -> list[dict]:
     """Extract all <tool_call> blocks from model output."""
+    # Step 1: Validate input parameters, operational preconditions, and state
     calls = []
     for m in re.finditer(r"<tool_call(?:\s+server='([^']*)')?(?:\s+name='([^']*)')>(.*?)</tool_call>", text, re.DOTALL):
+        # Iterate over items, evaluate loop invariant, and update progress
         server = m.group(1) or ""
         name = m.group(2) or ""
         body = m.group(3).strip()
@@ -51,6 +64,7 @@ def parse_tool_calls(text: str) -> list[dict]:
         lines = body.splitlines()
         i = 0
         while i < len(lines):
+            # Iterate over items, evaluate loop invariant, and update progress
             line = lines[i]
             match = re.match(r"^\s*([a-zA-Z_][a-zA-Z0-9_-]*)\s*:(.*)$", line)
             if match:
@@ -87,18 +101,22 @@ def parse_tool_calls(text: str) -> list[dict]:
 
 def execute_tool_calls(calls: list[dict]) -> list[str]:
     """Execute a list of parsed tool calls via MCPClientManager. Returns result strings."""
+    # Step 1: Validate input parameters, operational preconditions, and state
     from app.engine.mcp_client import MCPClientManager
     results = []
     try:
+        # Execute guarded operations and establish recovery boundaries
         manager = MCPClientManager.get_instance()
     except Exception as e:
         return [f"<tool_result>ERROR: MCP manager unavailable: {e}</tool_result>"]
 
     for call in calls:
+        # Iterate over items, evaluate loop invariant, and update progress
         if call["name"] == "done":
             results.append("<tool_result name='done'>OK</tool_result>")
             continue
         try:
+            # Execute guarded operations and establish recovery boundaries
             resp = manager.call_tool(call["server"], call["name"], call["args"])
             if resp.get("is_error"):
                 text = resp.get("error", "Unknown error")

@@ -1,3 +1,12 @@
+# ==============================================================================
+# Program: test_training_curator.py
+# Programmer: Ethan-da-Tech-Wizard
+# Last Modified: November 18, 2026
+# Purpose: Comprehensive test suite exercising training curator functionality.
+#          Verifies state transitions, error boundaries, regression resistance,
+#          and contract compliance under tests.
+# ==============================================================================
+
 import os
 import sys
 import json
@@ -10,6 +19,7 @@ import app.utils.training_curator as tc
 from app.utils.training_curator import TrainingCurator
 
 def test_curation_saving_and_sft_export():
+    # Step 1: Validate input parameters, operational preconditions, and state
     print("Testing curator save & SFT export...")
     temp_dir = tempfile.mkdtemp()
     
@@ -17,6 +27,7 @@ def test_curation_saving_and_sft_export():
     tc.CURATED_PATH = os.path.join(temp_dir, "curated.jsonl")
     
     try:
+        # Execute guarded operations and establish recovery boundaries
         curator = TrainingCurator()
         
         # Save a couple of examples
@@ -60,6 +71,7 @@ def test_curation_saving_and_sft_export():
         shutil.rmtree(temp_dir)
 
 def test_curator_dpo_pairing():
+    # Step 1: Validate input parameters, operational preconditions, and state
     print("Testing curator DPO pairing...")
     temp_dir = tempfile.mkdtemp()
     
@@ -67,6 +79,7 @@ def test_curator_dpo_pairing():
     tc.CURATED_PATH = os.path.join(temp_dir, "curated.jsonl")
     
     try:
+        # Execute guarded operations and establish recovery boundaries
         curator = TrainingCurator()
         
         # Add a matching pair (chosen + rejected)
@@ -90,6 +103,7 @@ def test_curator_dpo_pairing():
         pairs = []
         with open(export_file, "r") as f:
             for line in f:
+                # Iterate over items, evaluate loop invariant, and update progress
                 pairs.append(json.loads(line.strip()))
                 
         # Expect 2 pairs

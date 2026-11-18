@@ -1,3 +1,12 @@
+# ==============================================================================
+# Program: shortcuts_overlay.py
+# Programmer: Ethan-da-Tech-Wizard
+# Last Modified: November 18, 2026
+# Purpose: Floating, semi-transparent keyboard shortcuts reference overlay.
+#          Coordinates with adjacent subsystems within the Karl Offline Lab
+#          architecture.
+# ==============================================================================
+
 """Floating, semi-transparent keyboard shortcuts reference overlay."""
 
 from __future__ import annotations
@@ -23,6 +32,7 @@ _SHORTCUTS = [
 
 def _kbd(text: str, accent: str, border: str, bg_raised: str, text_hi: str) -> QLabel:
     """Render a key name as a styled kbd badge."""
+    # Step 1: Validate input parameters, operational preconditions, and state
     lbl = QLabel(text)
     lbl.setAlignment(Qt.AlignmentFlag.AlignCenter)
     lbl.setStyleSheet(f"""
@@ -47,6 +57,7 @@ class ShortcutsOverlay(QWidget):
     """
 
     def __init__(self, parent: QWidget):
+        # Step 1: Validate input parameters, operational preconditions, and state
         super().__init__(parent)
         self.setObjectName("shortcuts-overlay")
         self.setAttribute(Qt.WidgetAttribute.WA_TransparentForMouseEvents, False)
@@ -59,8 +70,10 @@ class ShortcutsOverlay(QWidget):
     # ── build ─────────────────────────────────────────────────────────────────
 
     def _build(self, parent: QWidget):
+        # Step 1: Validate input parameters, operational preconditions, and state
         from app.ui.themes import get_theme_colors
         try:
+            # Execute guarded operations and establish recovery boundaries
             colors = get_theme_colors(getattr(parent, "state", None))
         except Exception:
             colors = {}
@@ -126,12 +139,14 @@ class ShortcutsOverlay(QWidget):
 
         # ── shortcut rows ─────────────────────────────────────────────────────
         for key_text, description in _SHORTCUTS:
+            # Iterate over items, evaluate loop invariant, and update progress
             row = QHBoxLayout()
             row.setSpacing(12)
             row.setContentsMargins(0, 0, 0, 0)
 
             kbd_parts = key_text.split(" + ")
             for i, part in enumerate(kbd_parts):
+                # Iterate over items, evaluate loop invariant, and update progress
                 row.addWidget(_kbd(part.strip(), accent, border, bg_raised, text_hi))
                 if i < len(kbd_parts) - 1:
                     plus = QLabel("+")
@@ -153,6 +168,7 @@ class ShortcutsOverlay(QWidget):
     # ── positioning ───────────────────────────────────────────────────────────
 
     def _reposition(self):
+        # Step 1: Validate input parameters, operational preconditions, and state
         parent = self.parent()
         if parent is None:
             return
@@ -166,11 +182,13 @@ class ShortcutsOverlay(QWidget):
         self.setGeometry(x, y, w, max(h, 300))
 
     def show_overlay(self):
+        # Step 1: Validate input parameters, operational preconditions, and state
         self._reposition()
         self.raise_()
         self.show()
 
     def toggle(self):
+        # Step 1: Validate input parameters, operational preconditions, and state
         if self.isVisible():
             self.hide()
         else:
@@ -179,6 +197,7 @@ class ShortcutsOverlay(QWidget):
     # ── respond to parent resize ──────────────────────────────────────────────
 
     def eventFilter(self, obj, event):
+        # Step 1: Validate input parameters, operational preconditions, and state
         if event.type() == QEvent.Type.Resize:
             self._reposition()
         return super().eventFilter(obj, event)

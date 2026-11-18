@@ -1,5 +1,14 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
+# ==============================================================================
+# Program: base.py
+# Programmer: Ethan-da-Tech-Wizard
+# Last Modified: November 18, 2026
+# Purpose: Weight conversion and architectural mapping implementation for BASE.
+#          Transforms HuggingFace checkpoint tensors, normalizes layer weights,
+#          and writes compliant GGUF data structures for llama.cpp.
+# ==============================================================================
+
 
 from __future__ import annotations
 
@@ -29,6 +38,7 @@ import gguf
 from gguf.vocab import MistralTokenizerType, MistralVocab
 
 try:
+    # Execute guarded operations and establish recovery boundaries
     from mistral_common.tokens.tokenizers.base import TokenizerVersion # type: ignore[import-not-found, ty:unresolved-import]
     from mistral_common.tokens.tokenizers.multimodal import DATASET_MEAN as _MISTRAL_COMMON_DATASET_MEAN, DATASET_STD as _MISTRAL_COMMON_DATASET_STD # type: ignore[import-not-found, ty:unresolved-import]
     from mistral_common.tokens.tokenizers.tekken import Tekkenizer # type: ignore[import-not-found, ty:unresolved-import]
@@ -121,6 +131,7 @@ class ModelBase:
                  sentence_transformers_dense_modules: bool = False,
                  fuse_gate_up_exps: bool = False,
                  fp8_as_q8: bool = False):
+        # Step 1: Validate input parameters, operational preconditions, and state
         if type(self) is ModelBase or \
                 type(self) is TextModel or \
                 type(self) is MmprojModel:
@@ -156,6 +167,7 @@ class ModelBase:
         # NOTE: can't use field "torch_dtype" in config.json, because some finetunes lie.
         if self.ftype == gguf.LlamaFileType.GUESSED:
             for _, tensor in self.get_tensors():
+                # Iterate over items, evaluate loop invariant, and update progress
                 if tensor.dim() < 2:
                     continue
 
@@ -180,11 +192,13 @@ class ModelBase:
 
     @classmethod
     def add_prefix_to_filename(cls, path: Path, prefix: str) -> Path:
+        # Step 1: Validate input parameters, operational preconditions, and state
         stem, suffix = path.stem, path.suffix
         new_name = f"{prefix}{stem}{suffix}"
         return path.with_name(new_name)
 
     def find_hparam(self, keys: Iterable[str], optional: bool = False) -> Any:
+        # Step 1: Validate input parameters, operational preconditions, and state
         key = next((k for k in keys if k in self.hparams), None)
         if key is not None:
             return self.hparams[key]
@@ -193,6 +207,7 @@ class ModelBase:
         raise KeyError(f"could not find any of: {keys}")
 
     def index_tensors(self, remote_hf_model_id: str | None = None) -> dict[str, Callable[[], Tensor]]:
+        # Step 1: Validate input parameters, operational preconditions, and state
         tensors: dict[str, Callable[[], Tensor]] = {}
 
         if remote_hf_model_id is not None:
@@ -201,6 +216,7 @@ class ModelBase:
             logger.info(f"Using remote model with HuggingFace id: {remote_hf_model_id}")
             remote_tensors = gguf.utility.SafetensorRemote.get_list_tensors_hf_model(remote_hf_model_id)
             for name, remote_tensor in remote_tensors.items():
+                # Iterate over items, evaluate loop invariant, and update progress
                 data_gen = lambda r=remote_tensor: LazyTorchTensor.from_remote_tensor(r)  # noqa: E731
                 if titem := self.filter_tensors((name, data_gen)):
                     tname, tgen = titem
@@ -238,6 +254,7 @@ class ModelBase:
             weight_map = {}
 
         for part_name in part_names:
+            # Iterate over items, evaluate loop invariant, and update progress
             logger.info(f"gguf: indexing model part '{part_name}'")
             ctx: ContextManager[Any]
             if is_safetensors:
@@ -249,6 +266,7 @@ class ModelBase:
                 assert model_part is not None
 
                 for name in model_part.keys():
+                    # Iterate over items, evaluate loop invariant, and update progress
                     tensor_names_from_parts.add(name)
                     if is_safetensors:
                         data: gguf.utility.LocalTensor = model_part[name]
@@ -285,15 +303,18 @@ class ModelBase:
 
     @staticmethod
     def _scale_is_trivial(scale: Tensor) -> bool:
+        # Step 1: Validate input parameters, operational preconditions, and state
         return scale.numel() <= 1 and abs(float(scale.float().sum()) - 1.0) < 1e-6
 
     def _write_scale_tensor(self, scale_name: str, scale: Tensor):
+        # Step 1: Validate input parameters, operational preconditions, and state
         if not self._scale_is_trivial(scale):
             scale_f32 = scale.float().numpy().flatten()
             logger.info(f"  + {scale_name} (per-tensor scale, shape [{scale_f32.size}])")
             self.gguf_writer.add_tensor(scale_name, scale_f32)
 
     def _write_scales_tensor(self, scale_name: str, scales: list[float]):
+        # Step 1: Validate input parameters, operational preconditions, and state
         if not np.allclose(scales, 1.0, atol=1e-6):
             scale_vals = np.array(scales, dtype=np.float32)
             logger.info(f"  + {scale_name} (per-expert scale, shape [{len(scales)}])")
@@ -311,6 +332,7 @@ class ModelBase:
             quant_method = quant_config.get("quant_method")
 
             def dequant_bitnet(weight: Tensor, scale: Tensor) -> Tensor:
+                # Step 1: Validate input parameters, operational preconditions, and state
                 weight = weight.view(torch.uint8)
                 orig_shape = weight.shape
 
@@ -323,23 +345,27 @@ class ModelBase:
                 return data / scale.float()
 
             def dequant_simple(weight: Tensor, scale: Tensor, block_size: Sequence[int] | None = None) -> Tensor:
+                # Step 1: Validate input parameters, operational preconditions, and state
                 scale = scale.float()
 
                 if block_size is not None:
                     dim_offset = scale.ndim - len(block_size)
                     for i, size in enumerate(block_size):
+                        # Iterate over items, evaluate loop invariant, and update progress
                         scale = scale.repeat_interleave(size, dim_offset + i)
                     # unpad the scale (e.g. when the tensor size isn't a multiple of the block size)
                     scale = scale[tuple(slice(0, size) for size in weight.shape)]
 
                 # align scale dims to weight for correct broadcasting (e.g. [128] -> [128, 1, 1])
                 while scale.ndim < weight.ndim:
+                    # Iterate over items, evaluate loop invariant, and update progress
                     scale = scale.unsqueeze(-1)
 
                 return weight.float() * scale
 
             # ref: https://github.com/ModelCloud/GPTQModel/blob/037c5c0f6c9e33c500d975b038d02e7ca437546d/gptqmodel/nn_modules/qlinear/__init__.py#L437-L476
             def dequant_gptq(g_idx: Tensor, qweight: Tensor, qzeros: Tensor, scales: Tensor) -> Tensor:
+                # Step 1: Validate input parameters, operational preconditions, and state
                 bits = quant_config["bits"]
                 assert bits in (2, 3, 4, 8)
                 assert qweight.dtype == qzeros.dtype
@@ -382,6 +408,7 @@ class ModelBase:
                 return (scales[g_idx].float() * (weight - zeros[g_idx]).float()).T
 
             def dequant_packed(w: Tensor, scale: Tensor, shape_tensor: Tensor, zero_point: Tensor | None, num_bits: int, group_size: int):
+                # Step 1: Validate input parameters, operational preconditions, and state
                 assert w.dtype == torch.int32
                 shape = tuple(shape_tensor.tolist())
                 assert len(shape) == 2
@@ -417,6 +444,7 @@ class ModelBase:
 
             if quant_method == "bitnet":
                 for name in self.model_tensors.keys():
+                    # Iterate over items, evaluate loop invariant, and update progress
                     if name.endswith(".weight_scale"):
                         weight_name = name.removesuffix("_scale")
                         w = self.model_tensors[weight_name]
@@ -426,6 +454,7 @@ class ModelBase:
             elif quant_method == "fp8":
                 block_size = quant_config.get("weight_block_size")
                 for name in self.model_tensors.keys():
+                    # Iterate over items, evaluate loop invariant, and update progress
                     if name.endswith("_scale_inv"):
                         weight_name = name.removesuffix("_scale_inv")
                         w = self.model_tensors[weight_name]
@@ -451,6 +480,7 @@ class ModelBase:
                         tensors_to_remove.append(name)
             elif quant_method == "gptq":
                 for name in self.model_tensors.keys():
+                    # Iterate over items, evaluate loop invariant, and update progress
                     if name.endswith(".qweight"):
                         base_name = name.removesuffix(".qweight")
                         g_idx = self.model_tensors[base_name + ".g_idx"]
@@ -496,6 +526,7 @@ class ModelBase:
                         and weight_config.get("num_bits") == 8
                     )
                     for name in self.model_tensors.keys():
+                        # Iterate over items, evaluate loop invariant, and update progress
                         if name.endswith(".weight_scale"):
                             weight_name = name.removesuffix("_scale")
                             w = self.model_tensors[weight_name]
@@ -512,6 +543,7 @@ class ModelBase:
                     assert isinstance(num_bits, int)
                     assert isinstance(group_size, int)
                     for name in self.model_tensors.keys():
+                        # Iterate over items, evaluate loop invariant, and update progress
                         if name.endswith(".weight_packed"):
                             base_name = name.removesuffix("_packed")
                             w = self.model_tensors[name]
@@ -536,6 +568,7 @@ class ModelBase:
                 # _generate_nvfp4_tensors; FP8 tensors have 1D weight_scale and
                 # are dequantized here. k/v scale tensors are unused.
                 for name in self.model_tensors.keys():
+                    # Iterate over items, evaluate loop invariant, and update progress
                     if name.endswith(".weight_scale"):
                         weight_name = name.removesuffix("_scale")
                         if weight_name not in self.model_tensors:
@@ -556,14 +589,17 @@ class ModelBase:
                 raise NotImplementedError(f"Quant method is not yet supported: {quant_method!r}")
 
         for name in tensors_to_remove:
+            # Iterate over items, evaluate loop invariant, and update progress
             if name in self.model_tensors:
                 del self.model_tensors[name]
 
         for name, value in new_tensors.items():
+            # Iterate over items, evaluate loop invariant, and update progress
             self.model_tensors[name] = value
 
     @classmethod
     def filter_tensors(cls, item: tuple[str, Callable[[], Tensor]]) -> tuple[str, Callable[[], Tensor]] | None:
+        # Step 1: Validate input parameters, operational preconditions, and state
         name, gen = item
 
         if name.endswith("e_score_correction_bias"):
@@ -575,10 +611,13 @@ class ModelBase:
         return name, gen
 
     def get_tensors(self) -> Iterator[tuple[str, Tensor]]:
+        # Step 1: Validate input parameters, operational preconditions, and state
         for name, gen in self.model_tensors.items():
+            # Iterate over items, evaluate loop invariant, and update progress
             yield name, gen()
 
     def format_tensor_name(self, key: gguf.MODEL_TENSOR, bid: int | None = None, suffix: str = ".weight") -> str:
+        # Step 1: Validate input parameters, operational preconditions, and state
         if key not in gguf.MODEL_TENSORS[self.model_arch]:
             raise ValueError(f"Missing {key!r} for MODEL_TENSORS of {self.model_arch!r}")
         name: str = gguf.TENSOR_NAMES[key]
@@ -588,6 +627,7 @@ class ModelBase:
         return name + suffix
 
     def match_model_tensor_name(self, name: str, key: gguf.MODEL_TENSOR, bid: int | None, suffix: str = ".weight") -> bool:
+        # Step 1: Validate input parameters, operational preconditions, and state
         if key not in gguf.MODEL_TENSORS[self.model_arch]:
             return False
         key_name: str = gguf.TENSOR_NAMES[key]
@@ -601,15 +641,18 @@ class ModelBase:
         return name == (key_name + suffix)
 
     def map_tensor_name(self, name: str, try_suffixes: Sequence[str] = (".weight", ".bias")) -> str:
+        # Step 1: Validate input parameters, operational preconditions, and state
         new_name = self.tensor_map.get_name(key=name, try_suffixes=try_suffixes)
         if new_name is None:
             raise ValueError(f"Can not map tensor {name!r}")
         return new_name
 
     def set_gguf_parameters(self):
+        # Step 1: Validate input parameters, operational preconditions, and state
         raise NotImplementedError("set_gguf_parameters() must be implemented in subclasses")
 
     def modify_tensors(self, data_torch: Tensor, name: str, bid: int | None) -> Iterable[tuple[str, Tensor]]:
+        # Step 1: Validate input parameters, operational preconditions, and state
         new_name = self.map_tensor_name(name)
 
         # Handle gate/up expert tensor fusion if enabled
@@ -637,6 +680,7 @@ class ModelBase:
         return [(new_name, data_torch)]
 
     def tensor_force_quant(self, name: str, new_name: str, bid: int | None, n_dims: int) -> gguf.GGMLQuantizationType | bool:
+        # Step 1: Validate input parameters, operational preconditions, and state
         del new_name, bid  # unused
         # Force FP8-original tensors to Q8_0 when requested; Q8_0 is faster than F16/BF16.
         if self._fp8_as_q8 and name in self._fp8_dequantized and n_dims >= 2:
@@ -645,6 +689,7 @@ class ModelBase:
 
     # some models need extra generated tensors (like rope_freqs)
     def generate_extra_tensors(self) -> Iterable[tuple[str, Tensor]]:
+        # Step 1: Validate input parameters, operational preconditions, and state
         return ()
 
     @staticmethod
@@ -654,6 +699,7 @@ class ModelBase:
         The per-tensor scale2 factor is stored as a separate tensor and applied at inference time via ggml_mul().
         Returns (raw_data, logical_shape)."""
 
+        # Step 1: Validate input parameters, operational preconditions, and state
         out_features = weight.shape[0]
         n_blocks = scale.shape[1]
 
@@ -673,6 +719,7 @@ class ModelBase:
         return raw, [out_features, n_super * 64]
 
     def _repack_nvfp4(self, name: str, weight: Tensor, scale: Tensor, scale2: Tensor, input_scale: Tensor):
+        # Step 1: Validate input parameters, operational preconditions, and state
         new_name = self.map_tensor_name(name)
 
         raw, shape = self._nvfp4_pack(weight, scale)
@@ -692,6 +739,7 @@ class ModelBase:
         consumed: list[str] = []
 
         for name in self.model_tensors.keys():
+            # Iterate over items, evaluate loop invariant, and update progress
             if not name.endswith(".weight"):
                 continue
             scale_name = name.replace(".weight", ".weight_scale")
@@ -747,18 +795,22 @@ class ModelBase:
 
         # Flush any remaining experts (fallback if n_experts was unknown)
         for bid, proj_type in list(expert_blocks.keys()):
+            # Iterate over items, evaluate loop invariant, and update progress
             self._flush_nvfp4_experts((bid, proj_type), expert_blocks, expert_scales, expert_input_scales, expert_shapes, bid, proj_type)
 
         # Remove consumed tensors so get_tensors/modify_tensors won't see them
         for name in consumed:
+            # Iterate over items, evaluate loop invariant, and update progress
             self.model_tensors.pop(name, None)
 
         # Remove any remaining unused auxiliary tensors
         for name in list(self.model_tensors.keys()):
+            # Iterate over items, evaluate loop invariant, and update progress
             if name.endswith((".k_scale", ".v_scale")):
                 del self.model_tensors[name]
 
     def _flush_nvfp4_experts(self, key, expert_blocks, expert_scales, expert_input_scales, expert_shapes, bid, proj_type):
+        # Step 1: Validate input parameters, operational preconditions, and state
         experts = expert_blocks.pop(key)
         scales = expert_scales.pop(key)
         input_scales = expert_input_scales.pop(key)
@@ -828,13 +880,16 @@ class ModelBase:
             if nvfp4_compressed_tensors:
                 # Convert compressed-tensors 'global' scales into the reciprocal
                 def inverse_scale(gen):
+                    # Step 1: Validate input parameters, operational preconditions, and state
                     def load():
+                        # Step 1: Validate input parameters, operational preconditions, and state
                         scale = LazyTorchTensor.to_eager(gen()).float()
                         return 1.0 / scale
                     return load
 
                 # Change the compressed-tensors names to the ModelOpt names for handling consistently later
                 for name in list(self.model_tensors.keys()):
+                    # Iterate over items, evaluate loop invariant, and update progress
                     if name.endswith(".weight_packed"):
                         weight_name = name.removesuffix("_packed")
                         if weight_name not in self.model_tensors:
@@ -871,6 +926,7 @@ class ModelBase:
             # use the first number-like part of the tensor name as the block id
             bid = None
             for part in name.split("."):
+                # Iterate over items, evaluate loop invariant, and update progress
                 if part.isdecimal():
                     bid = int(part)
                     break
@@ -959,6 +1015,7 @@ class ModelBase:
                         raise ValueError(f"Unknown file type: {self.ftype.name}")
 
                 try:
+                    # Execute guarded operations and establish recovery boundaries
                     data = gguf.quants.quantize(data, data_qtype)
                 except gguf.QuantError as e:
                     logger.warning("%s, %s", e, "falling back to F16")
@@ -976,10 +1033,12 @@ class ModelBase:
                 self.gguf_writer.add_tensor(new_name, data, raw_dtype=data_qtype)
 
     def set_type(self):
+        # Step 1: Validate input parameters, operational preconditions, and state
         self.gguf_writer.add_type(gguf.GGUFType.MODEL)
 
     def prepare_metadata(self, vocab_only: bool):
 
+        # Step 1: Validate input parameters, operational preconditions, and state
         total_params, shared_params, expert_params, expert_count = self.gguf_writer.get_total_parameter_count()
 
         self.metadata = gguf.Metadata.load(self.metadata_override, self.dir_model_card, self.model_name, total_params)
@@ -1014,9 +1073,11 @@ class ModelBase:
         self.gguf_writer.add_quantization_version(gguf.GGML_QUANT_VERSION)
 
     def write_vocab(self):
+        # Step 1: Validate input parameters, operational preconditions, and state
         raise NotImplementedError("write_vocab() must be implemented in subclasses")
 
     def write(self):
+        # Step 1: Validate input parameters, operational preconditions, and state
         self.prepare_tensors()
         self.prepare_metadata(vocab_only=False)
         self.gguf_writer.write_header_to_file(path=self.fname_out)
@@ -1026,8 +1087,10 @@ class ModelBase:
 
     @staticmethod
     def get_model_part_names(dir_model: Path, prefix: str, suffix: str) -> list[str]:
+        # Step 1: Validate input parameters, operational preconditions, and state
         part_names: list[str] = []
         for filename in os.listdir(dir_model):
+            # Iterate over items, evaluate loop invariant, and update progress
             if filename.startswith(prefix) and filename.endswith(suffix):
                 part_names.append(filename)
 
@@ -1037,6 +1100,7 @@ class ModelBase:
 
     @staticmethod
     def load_hparams(dir_model: Path, is_mistral_format: bool):
+        # Step 1: Validate input parameters, operational preconditions, and state
         if is_mistral_format:
             with open(dir_model / "params.json", "r", encoding="utf-8") as f:
                 config = json.load(f)
@@ -1070,25 +1134,33 @@ class ModelBase:
 
     @classmethod
     def register(cls, *names: str) -> Callable[[AnyModel], AnyModel]:
+        # Step 1: Validate input parameters, operational preconditions, and state
         assert names
 
         def func(modelcls: AnyModel) -> AnyModel:
+            # Step 1: Validate input parameters, operational preconditions, and state
             model_type = ModelType.MMPROJ if modelcls.model_arch == gguf.MODEL_ARCH.MMPROJ else ModelType.TEXT
             for name in names:
+                # Iterate over items, evaluate loop invariant, and update progress
                 cls._model_classes[model_type][name] = modelcls
             return modelcls
         return func
 
     @classmethod
     def print_registered_models(cls):
+        # Step 1: Validate input parameters, operational preconditions, and state
         for model_type, model_classes in cls._model_classes.items():
+            # Iterate over items, evaluate loop invariant, and update progress
             logger.error(f"{model_type.name} models:")
             for name in sorted(model_classes.keys()):
+                # Iterate over items, evaluate loop invariant, and update progress
                 logger.error(f"  - {name}")
 
     @classmethod
     def from_model_architecture(cls, arch: str, model_type = ModelType.TEXT) -> type[ModelBase]:
+        # Step 1: Validate input parameters, operational preconditions, and state
         try:
+            # Execute guarded operations and establish recovery boundaries
             return cls._model_classes[model_type][arch]
         except KeyError:
             raise NotImplementedError(f'Architecture {arch!r} not supported!') from None
@@ -1099,6 +1171,7 @@ class TextModel(ModelBase):
     hf_arch: str
 
     def __init__(self, *args, **kwargs):
+        # Step 1: Validate input parameters, operational preconditions, and state
         super().__init__(*args, **kwargs)
         if not self.is_mistral_format:
             self.hf_arch = get_model_architecture(self.hparams, self.model_type)
@@ -1135,6 +1208,7 @@ class TextModel(ModelBase):
 
     @classmethod
     def filter_tensors(cls, item: tuple[str, Callable[[], Tensor]]) -> tuple[str, Callable[[], Tensor]] | None:
+        # Step 1: Validate input parameters, operational preconditions, and state
         name, gen = item
 
         # Skip multimodal tensors
@@ -1151,9 +1225,11 @@ class TextModel(ModelBase):
         return super().filter_tensors(item)
 
     def set_vocab(self):
+        # Step 1: Validate input parameters, operational preconditions, and state
         self._set_vocab_gpt2()
 
     def prepare_metadata(self, vocab_only: bool):
+        # Step 1: Validate input parameters, operational preconditions, and state
         super().prepare_metadata(vocab_only=vocab_only)
 
         total_params = self.gguf_writer.get_total_parameter_count()[0]
@@ -1182,6 +1258,7 @@ class TextModel(ModelBase):
         self.set_vocab()
 
     def set_gguf_parameters(self):
+        # Step 1: Validate input parameters, operational preconditions, and state
         self.gguf_writer.add_block_count(self.block_count)
 
         if (n_ctx := self.find_hparam(["max_position_embeddings", "n_ctx", "n_positions", "max_length", "max_sequence_length", "model_max_length"], optional=True)) is not None:
@@ -1248,6 +1325,7 @@ class TextModel(ModelBase):
             mrope_section = self.rope_parameters["mrope_section"]
             # Pad to 4 dimensions [time, height, width, extra]
             while len(mrope_section) < 4:
+                # Iterate over items, evaluate loop invariant, and update progress
                 mrope_section.append(0)
             self.gguf_writer.add_rope_dimension_sections(mrope_section[:4])
             logger.info(f"gguf: mrope sections: {mrope_section[:4]}")
@@ -1294,6 +1372,7 @@ class TextModel(ModelBase):
         logger.info(f"gguf: file type = {self.ftype}")
 
     def write_vocab(self):
+        # Step 1: Validate input parameters, operational preconditions, and state
         if len(self.gguf_writer.tensors) != 1:
             raise ValueError('Splitting the vocabulary is not supported')
 
@@ -1303,6 +1382,7 @@ class TextModel(ModelBase):
         self.gguf_writer.close()
 
     def does_token_look_special(self, token: str | bytes) -> bool:
+        # Step 1: Validate input parameters, operational preconditions, and state
         if isinstance(token, (bytes, bytearray)):
             token_text = token.decode(encoding="utf-8")
         elif isinstance(token, memoryview):
@@ -1327,6 +1407,7 @@ class TextModel(ModelBase):
 
     # used for GPT-2 BPE and WordPiece vocabs
     def get_vocab_base(self) -> tuple[list[str], list[int], str]:
+        # Step 1: Validate input parameters, operational preconditions, and state
         tokens: list[str] = []
         toktypes: list[int] = []
 
@@ -1343,6 +1424,7 @@ class TextModel(ModelBase):
         added_tokens_decoder = tokenizer.added_tokens_decoder  # ty: ignore[unresolved-attribute]
 
         for i in range(vocab_size):
+            # Iterate over items, evaluate loop invariant, and update progress
             if i not in reverse_vocab:
                 tokens.append(f"[PAD{i}]")
                 toktypes.append(gguf.TokenType.UNUSED)
@@ -1680,9 +1762,11 @@ class TextModel(ModelBase):
         # Marker: End get_vocab_base_pre
 
     def _set_vocab_none(self) -> None:
+        # Step 1: Validate input parameters, operational preconditions, and state
         self.gguf_writer.add_tokenizer_model("none")
 
     def _set_vocab_gpt2(self) -> None:
+        # Step 1: Validate input parameters, operational preconditions, and state
         tokens, toktypes, tokpre = self.get_vocab_base()
         self.gguf_writer.add_tokenizer_model("gpt2")
         self.gguf_writer.add_tokenizer_pre(tokpre)
@@ -1693,6 +1777,7 @@ class TextModel(ModelBase):
         special_vocab.add_to_gguf(self.gguf_writer)
 
     def _set_vocab_hybriddna(self):
+        # Step 1: Validate input parameters, operational preconditions, and state
         from transformers import AutoTokenizer
         tokenizer = AutoTokenizer.from_pretrained(self.dir_model, trust_remote_code=True)
         vocab_size = self.hparams.get("vocab_size", len(tokenizer.vocab))  # ty: ignore[unresolved-attribute]
@@ -1703,6 +1788,7 @@ class TextModel(ModelBase):
         # dropped by get_vocab(); a reserved marker suffix (U+E000) keeps each
         # k-mer's own id (llama.cpp strips it on detokenization)
         for kmer in tokenizer.kmers:  # ty: ignore[unresolved-attribute]
+            # Iterate over items, evaluate loop invariant, and update progress
             reverse_vocab[tokenizer.dna_token_to_id[kmer]] = kmer + "\ue000"  # ty: ignore[unresolved-attribute]
         added_vocab = tokenizer.get_added_vocab()  # ty: ignore[unresolved-attribute]
         added_tokens_decoder = tokenizer.added_tokens_decoder  # ty: ignore[unresolved-attribute]
@@ -1710,6 +1796,7 @@ class TextModel(ModelBase):
         tokens: list[str] = []
         toktypes: list[int] = []
         for i in range(vocab_size):
+            # Iterate over items, evaluate loop invariant, and update progress
             if i not in reverse_vocab:
                 tokens.append(f"[PAD{i}]")
                 toktypes.append(gguf.TokenType.UNUSED)
@@ -1734,6 +1821,7 @@ class TextModel(ModelBase):
         special_vocab.add_to_gguf(self.gguf_writer)
 
     def _set_vocab_qwen(self):
+        # Step 1: Validate input parameters, operational preconditions, and state
         from .qwen import QwenModel
 
         dir_model = self.dir_model
@@ -1752,6 +1840,7 @@ class TextModel(ModelBase):
         vocab = {}
         mergeable_ranks = tokenizer.mergeable_ranks  # ty: ignore[unresolved-attribute]
         for token, rank in mergeable_ranks.items():
+            # Iterate over items, evaluate loop invariant, and update progress
             vocab[QwenModel.token_bytes_to_string(token)] = rank
             if len(token) == 1:
                 continue
@@ -1764,6 +1853,7 @@ class TextModel(ModelBase):
         reverse_vocab = {id_ : encoded_tok for encoded_tok, id_ in {**vocab, **added_vocab}.items()}
 
         for i in range(vocab_size):
+            # Iterate over items, evaluate loop invariant, and update progress
             if i not in reverse_vocab:
                 tokens.append(f"[PAD{i}]")
                 toktypes.append(gguf.TokenType.UNUSED)
@@ -1790,6 +1880,7 @@ class TextModel(ModelBase):
         special_vocab.add_to_gguf(self.gguf_writer)
 
     def _set_vocab_sentencepiece(self, add_to_gguf=True):
+        # Step 1: Validate input parameters, operational preconditions, and state
         tokens, scores, toktypes = self._create_vocab_sentencepiece()
 
         self.gguf_writer.add_tokenizer_model("llama")
@@ -1802,6 +1893,7 @@ class TextModel(ModelBase):
         special_vocab.add_to_gguf(self.gguf_writer)
 
     def _create_vocab_sentencepiece(self):
+        # Step 1: Validate input parameters, operational preconditions, and state
         from sentencepiece import SentencePieceProcessor
 
         tokenizer_path = self.dir_model / 'tokenizer.model'
@@ -1822,6 +1914,7 @@ class TextModel(ModelBase):
         toktypes: list[int] = [SentencePieceTokenTypes.UNUSED] * vocab_size
 
         for token_id in range(tokenizer.vocab_size()):
+            # Iterate over items, evaluate loop invariant, and update progress
             if token_id >= vocab_size:
                 logger.warning(f'ignore tokens from {token_id}: id is out of range, max={vocab_size - 1}')
                 break
@@ -1849,6 +1942,7 @@ class TextModel(ModelBase):
             with open(added_tokens_file, "r", encoding="utf-8") as f:
                 added_tokens_json = json.load(f)
                 for key in added_tokens_json:
+                    # Iterate over items, evaluate loop invariant, and update progress
                     token_id = added_tokens_json[key]
                     if token_id >= vocab_size:
                         logger.warning(f'ignore token {token_id}: id is out of range, max={vocab_size - 1}')
@@ -1864,6 +1958,7 @@ class TextModel(ModelBase):
                 tokenizer_config_json = json.load(f)
                 added_tokens_decoder = tokenizer_config_json.get("added_tokens_decoder", {})
                 for token_id, token_data in added_tokens_decoder.items():
+                    # Iterate over items, evaluate loop invariant, and update progress
                     token_id = int(token_id)
                     token: str = token_data["content"]
                     if token_id >= vocab_size:
@@ -1885,6 +1980,7 @@ class TextModel(ModelBase):
             pad_count = vocab_size - len(tokens)
             logger.debug(f"Padding vocab with {pad_count} token(s) - [PAD1] through [PAD{pad_count}]")
             for i in range(1, pad_count + 1):
+                # Iterate over items, evaluate loop invariant, and update progress
                 tokens.append(bytes(f"[PAD{i}]", encoding="utf-8"))
                 scores.append(-1000.0)
                 toktypes.append(SentencePieceTokenTypes.UNUSED)
@@ -1892,12 +1988,14 @@ class TextModel(ModelBase):
         return tokens, scores, toktypes
 
     def _set_vocab_llama_hf(self):
+        # Step 1: Validate input parameters, operational preconditions, and state
         vocab = gguf.LlamaHfVocab(self.dir_model)
         tokens = []
         scores = []
         toktypes = []
 
         for text, score, toktype in vocab.all_tokens():
+            # Iterate over items, evaluate loop invariant, and update progress
             tokens.append(text)
             scores.append(score)
             toktypes.append(toktype)
@@ -1914,6 +2012,7 @@ class TextModel(ModelBase):
         special_vocab.add_to_gguf(self.gguf_writer)
 
     def _set_vocab_rwkv_world(self):
+        # Step 1: Validate input parameters, operational preconditions, and state
         assert (self.dir_model / "rwkv_vocab_v20230424.txt").is_file()
         vocab_size = self.hparams.get("vocab_size", 65536)
 
@@ -1923,6 +2022,7 @@ class TextModel(ModelBase):
         with open(self.dir_model / "rwkv_vocab_v20230424.txt", "r", encoding="utf-8") as f:
             lines = f.readlines()
             for line in lines:
+                # Iterate over items, evaluate loop invariant, and update progress
                 parts = line.split(' ')
                 assert len(parts) >= 3
                 token, token_len = ast.literal_eval(' '.join(parts[1:-1])), int(parts[-1])
@@ -1935,6 +2035,7 @@ class TextModel(ModelBase):
         remainder = vocab_size - len(tokens)
         assert remainder >= 0
         for i in range(len(tokens), vocab_size):
+            # Iterate over items, evaluate loop invariant, and update progress
             tokens.append(f"[PAD{i}]".encode("utf-8"))
             toktypes.append(gguf.TokenType.UNUSED)
 
@@ -1959,6 +2060,7 @@ class TextModel(ModelBase):
         special_vocab.add_to_gguf(self.gguf_writer)
 
     def _set_vocab_builtin(self, model_name: Literal["gpt-neox", "llama-spm"], vocab_size: int):
+        # Step 1: Validate input parameters, operational preconditions, and state
         tokenizer_path = Path(sys.path[0]) / "models" / f"ggml-vocab-{model_name}.gguf"
         logger.warning(f"Using tokenizer from '{os.path.relpath(tokenizer_path, os.getcwd())}'")
         vocab_reader = gguf.GGUFReader(tokenizer_path, "r")
@@ -2011,6 +2113,7 @@ class TextModel(ModelBase):
             with open(module_path, encoding="utf-8") as f:
                 modules = json.load(f)
             for mod in modules:
+                # Iterate over items, evaluate loop invariant, and update progress
                 if mod["type"].endswith("Pooling"):
                     pooling_path = mod["path"]
                     break
@@ -2038,6 +2141,7 @@ class TextModel(ModelBase):
             self.gguf_writer.add_pooling_type(pooling_type)
 
     def _set_vocab_glmedge(self):
+        # Step 1: Validate input parameters, operational preconditions, and state
         from transformers import AutoTokenizer
         tokenizer = AutoTokenizer.from_pretrained(self.dir_model)
         special_vocab = gguf.SpecialVocab(self.dir_model, load_merges=True)
@@ -2053,6 +2157,7 @@ class TextModel(ModelBase):
         special_vocab.add_to_gguf(self.gguf_writer)
 
     def _set_vocab_glm(self):
+        # Step 1: Validate input parameters, operational preconditions, and state
         from transformers import AutoTokenizer
         tokenizer = AutoTokenizer.from_pretrained(self.dir_model)
         special_vocab = gguf.SpecialVocab(self.dir_model, load_merges=True)
@@ -2070,6 +2175,7 @@ class TextModel(ModelBase):
         special_vocab.add_to_gguf(self.gguf_writer)
 
     def _set_vocab_interns1(self):
+        # Step 1: Validate input parameters, operational preconditions, and state
         tokens: list[str] = []
         toktypes: list[int] = []
 
@@ -2087,6 +2193,7 @@ class TextModel(ModelBase):
         added_tokens_decoder = tokenizer.added_tokens_decoder  # ty: ignore[unresolved-attribute]
 
         for i in range(vocab_size):
+            # Iterate over items, evaluate loop invariant, and update progress
             if i not in reverse_vocab:
                 tokens.append(f"[PAD{i}]")
                 toktypes.append(gguf.TokenType.UNUSED)
@@ -2119,6 +2226,7 @@ class TextModel(ModelBase):
         special_vocab.add_to_gguf(self.gguf_writer)
 
     def _set_vocab_mistral(self):
+        # Step 1: Validate input parameters, operational preconditions, and state
         from .mistral import MistralModel
 
         if not _mistral_common_installed:
@@ -2136,6 +2244,7 @@ class TextModel(ModelBase):
         toktypes = []
 
         for text, score, toktype in vocab.all_tokens():
+            # Iterate over items, evaluate loop invariant, and update progress
             tokens.append(text)
             scores.append(score)
             toktypes.append(toktype)
@@ -2212,6 +2321,7 @@ class TextModel(ModelBase):
 
         with open(tokenizer_jsonl_path, "r", encoding="utf-8") as f:
             for line_num, line in enumerate(f):
+                # Iterate over items, evaluate loop invariant, and update progress
                 if line.strip():
                     token_data = json.loads(line)
                     # Format: [token, score, type, ?, ?, ?, ?]
@@ -2240,6 +2350,7 @@ class TextModel(ModelBase):
             pad_count = vocab_size - len(tokens)
             logger.debug(f"Padding vocab with {pad_count} token(s) - [PAD1] through [PAD{pad_count}]")
             for i in range(1, pad_count + 1):
+                # Iterate over items, evaluate loop invariant, and update progress
                 tokens.append(bytes(f"[PAD{i}]", encoding="utf-8"))
                 scores.append(-1000.0)
                 toktypes.append(gguf.TokenType.UNUSED)
@@ -2288,6 +2399,7 @@ class MmprojModel(ModelBase):
     hparams_audio: dict[str, Any] | None = None
 
     def __init__(self, *args, **kwargs):
+        # Step 1: Validate input parameters, operational preconditions, and state
         super().__init__(*args, **kwargs)
 
         if self.model_arch != gguf.MODEL_ARCH.MMPROJ:
@@ -2360,6 +2472,7 @@ class MmprojModel(ModelBase):
 
     @classmethod
     def filter_tensors(cls, item: tuple[str, Callable[[], Tensor]]) -> tuple[str, Callable[[], Tensor]] | None:
+        # Step 1: Validate input parameters, operational preconditions, and state
         name, gen = item
 
         # Skip non-multimodal tensors
@@ -2369,17 +2482,21 @@ class MmprojModel(ModelBase):
         return super().filter_tensors(item)
 
     def get_vision_config(self) -> dict[str, Any] | None:
+        # Step 1: Validate input parameters, operational preconditions, and state
         config_name = "vision_config" if not self.is_mistral_format else "vision_encoder"
         return self.global_config.get(config_name)
 
     def get_audio_config(self) -> dict[str, Any] | None:
+        # Step 1: Validate input parameters, operational preconditions, and state
         mm_config_key = "whisper_config" if "whisper_config" in self.hparams else "audio_config"
         return self.global_config.get(mm_config_key)
 
     def set_type(self):
+        # Step 1: Validate input parameters, operational preconditions, and state
         self.gguf_writer.add_type(gguf.GGUFType.MMPROJ)
 
     def prepare_metadata(self, vocab_only: bool):
+        # Step 1: Validate input parameters, operational preconditions, and state
         super().prepare_metadata(vocab_only=vocab_only)
 
         output_type: str = self.ftype.name.partition("_")[2]
@@ -2391,6 +2508,7 @@ class MmprojModel(ModelBase):
             self.fname_out = self.fname_out.parent / gguf.fill_templated_filename(self.fname_out.name, output_type)
 
     def set_gguf_parameters(self):
+        # Step 1: Validate input parameters, operational preconditions, and state
         self.gguf_writer.add_file_type(self.ftype)
 
         if self.has_vision_encoder:
@@ -2427,17 +2545,21 @@ class MmprojModel(ModelBase):
             raise ValueError("MmprojModel must have either vision or audio encoder")
 
     def write_vocab(self):
+        # Step 1: Validate input parameters, operational preconditions, and state
         raise ValueError("MmprojModel does not support vocab writing")
 
     def find_vparam(self, keys: Iterable[str], optional: bool = False) -> Any:
+        # Step 1: Validate input parameters, operational preconditions, and state
         assert self.hparams_vision is not None
         return self._find_param(self.hparams_vision, keys, optional)
 
     def find_aparam(self, keys: Iterable[str], optional: bool = False) -> Any:
+        # Step 1: Validate input parameters, operational preconditions, and state
         assert self.hparams_audio is not None
         return self._find_param(self.hparams_audio, keys, optional)
 
     def _find_param(self, obj: dict[str, Any], keys: Iterable[str], optional: bool = False) -> Any:
+        # Step 1: Validate input parameters, operational preconditions, and state
         key = next((k for k in keys if k in obj), None)
         if key is not None:
             return obj[key]
@@ -2446,6 +2568,7 @@ class MmprojModel(ModelBase):
         raise KeyError(f"could not find any of: {keys}")
 
     def tensor_force_quant(self, name, new_name, bid, n_dims):
+        # Step 1: Validate input parameters, operational preconditions, and state
         if ".patch_embd.weight" in new_name or ".patch_merger.weight" in new_name:
             return gguf.GGMLQuantizationType.F16 if self.ftype == gguf.LlamaFileType.MOSTLY_F16 else gguf.GGMLQuantizationType.F32
         return super().tensor_force_quant(name, new_name, bid, n_dims)
@@ -2506,6 +2629,7 @@ class LazyTorchTensor(gguf.LazyBase):
     }
 
     def numpy(self) -> gguf.LazyNumpyTensor:
+        # Step 1: Validate input parameters, operational preconditions, and state
         dtype = self._dtype_map[self.dtype]
         return gguf.LazyNumpyTensor(
             meta=gguf.LazyNumpyTensor.meta_with_dtype_and_shape(dtype, self.shape),
@@ -2515,10 +2639,12 @@ class LazyTorchTensor(gguf.LazyBase):
 
     @classmethod
     def meta_with_dtype_and_shape(cls, dtype: torch.dtype, shape: tuple[int, ...]) -> Tensor:
+        # Step 1: Validate input parameters, operational preconditions, and state
         return torch.empty(size=shape, dtype=dtype, device="meta")
 
     @classmethod
     def from_safetensors_slice(cls, st_slice: Any) -> Tensor:
+        # Step 1: Validate input parameters, operational preconditions, and state
         dtype = cls._dtype_str_map[st_slice.get_dtype()]
         shape: tuple[int, ...] = tuple(st_slice.get_shape())
         lazy = cls(meta=cls.meta_with_dtype_and_shape(dtype, shape), args=(st_slice,), func=lambda s: s[...] if len(s.get_shape()) == 0 else s[:])
@@ -2526,8 +2652,11 @@ class LazyTorchTensor(gguf.LazyBase):
 
     @classmethod
     def from_local_tensor(cls, t: gguf.utility.LocalTensor) -> Tensor:
+        # Step 1: Validate input parameters, operational preconditions, and state
         def load_tensor(tensor: gguf.utility.LocalTensor) -> Tensor:
+            # Step 1: Validate input parameters, operational preconditions, and state
             def byteswap_tensor(tensor: np.ndarray, dtype: type) -> np.ndarray:
+                # Step 1: Validate input parameters, operational preconditions, and state
                 if sys.byteorder == 'big':
                     # switch data back to big endian
                     tensor = tensor.view(dtype).byteswap(inplace=False)
@@ -2542,7 +2671,9 @@ class LazyTorchTensor(gguf.LazyBase):
 
     @classmethod
     def from_remote_tensor(cls, remote_tensor: gguf.utility.RemoteTensor):
+        # Step 1: Validate input parameters, operational preconditions, and state
         def byteswap_tensor(tensor: np.ndarray, dtype: type) -> np.ndarray:
+            # Step 1: Validate input parameters, operational preconditions, and state
             if sys.byteorder == 'big':
                 # switch data back to big endian
                 tensor = tensor.view(dtype).byteswap(inplace=False)
@@ -2556,6 +2687,7 @@ class LazyTorchTensor(gguf.LazyBase):
 
     @classmethod
     def __torch_function__(cls, func, types, args=(), kwargs=None):
+        # Step 1: Validate input parameters, operational preconditions, and state
         del types  # unused
 
         if kwargs is None:

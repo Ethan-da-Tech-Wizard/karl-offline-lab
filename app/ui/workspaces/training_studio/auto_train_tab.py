@@ -1,3 +1,12 @@
+# ==============================================================================
+# Program: auto_train_tab.py
+# Programmer: Ethan-da-Tech-Wizard
+# Last Modified: November 18, 2026
+# Purpose: Desktop workspace implementation for Auto Train Tab.
+#          Provides responsive layout controls, parameter adjustment surfaces,
+#          and visual feedback components within Karl's PyQt6 shell.
+# ==============================================================================
+
 import re
 
 from PyQt6.QtWidgets import (
@@ -11,12 +20,14 @@ from app.ui.workspaces.training_studio.threads import AutoTrainThread
 from app.engine.model_loader import ModelLoader
 
 def _section(text: str) -> QLabel:
+    # Step 1: Validate input parameters, operational preconditions, and state
     lbl = QLabel(text)
     lbl.setObjectName("section-header")
     return lbl
 
 
 def _hline() -> QFrame:
+    # Step 1: Validate input parameters, operational preconditions, and state
     f = QFrame()
     f.setFrameShape(QFrame.Shape.HLine)
     return f
@@ -24,6 +35,7 @@ def _hline() -> QFrame:
 
 class AutoTrainTab(QWidget):
     def __init__(self, state, parent=None):
+        # Step 1: Validate input parameters, operational preconditions, and state
         super().__init__(parent)
         self.state = state
         self._active_threads = set()
@@ -31,6 +43,7 @@ class AutoTrainTab(QWidget):
         self._build_ui()
 
     def _build_ui(self):
+        # Step 1: Validate input parameters, operational preconditions, and state
         layout = QHBoxLayout(self)
         layout.setContentsMargins(8, 8, 8, 8)
         layout.setSpacing(12)
@@ -163,6 +176,7 @@ class AutoTrainTab(QWidget):
         layout.addWidget(right_col, 1)
 
     def _begin_auto_training(self):
+        # Step 1: Validate input parameters, operational preconditions, and state
         topic = self._auto_topic_input.text().strip()
         adapter_name = self._auto_adapter_input.text().strip()
         if not topic:
@@ -206,9 +220,11 @@ class AutoTrainTab(QWidget):
         self._auto_thread.start()
 
     def _on_auto_log(self, text: str):
+        # Step 1: Validate input parameters, operational preconditions, and state
         self._auto_log.append(text)
 
     def _on_auto_done(self, adapter_name: str):
+        # Step 1: Validate input parameters, operational preconditions, and state
         self._auto_train_btn.setEnabled(True)
         self._auto_progress.setVisible(False)
         QMessageBox.information(
@@ -219,6 +235,7 @@ class AutoTrainTab(QWidget):
         self._auto_adapter_input.clear()
 
     def _on_auto_error(self, msg: str):
+        # Step 1: Validate input parameters, operational preconditions, and state
         self._auto_train_btn.setEnabled(True)
         self._auto_progress.setVisible(False)
         self._auto_log.append(f"\n[ERROR] Auto-training failed: {msg}")

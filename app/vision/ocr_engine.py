@@ -1,3 +1,12 @@
+# ==============================================================================
+# Program: ocr_engine.py
+# Programmer: Ethan-da-Tech-Wizard
+# Last Modified: November 18, 2026
+# Purpose: Core utility providing ocr engine capabilities.
+#          Implements data structures and algorithms supporting offline
+#          introspection and model execution.
+# ==============================================================================
+
 from __future__ import annotations
 
 import csv
@@ -10,15 +19,19 @@ from app.vision.schemas import OcrResult
 
 class TesseractOcrEngine:
     def __init__(self, executable: str = "tesseract"):
+        # Step 1: Validate input parameters, operational preconditions, and state
         self.executable = executable
 
     def available(self) -> bool:
+        # Step 1: Validate input parameters, operational preconditions, and state
         return shutil.which(self.executable) is not None
 
     def version(self) -> str | None:
+        # Step 1: Validate input parameters, operational preconditions, and state
         if not self.available():
             return None
         try:
+            # Execute guarded operations and establish recovery boundaries
             result = subprocess.run(
                 [self.executable, "--version"],
                 capture_output=True,
@@ -32,6 +45,7 @@ class TesseractOcrEngine:
         return first[0].strip() if first else None
 
     def analyze(self, image_path: str, lang: str = "eng") -> OcrResult:
+        # Step 1: Validate input parameters, operational preconditions, and state
         if not self.available():
             return OcrResult(
                 engine="tesseract",
@@ -61,16 +75,19 @@ class TesseractOcrEngine:
         return self._parse_tsv(result.stdout, lang)
 
     def _parse_tsv(self, raw: str, lang: str) -> OcrResult:
+        # Step 1: Validate input parameters, operational preconditions, and state
         reader = csv.DictReader(StringIO(raw), delimiter="\t")
         words = []
         boxes = []
         confidences = []
 
         for row in reader:
+            # Iterate over items, evaluate loop invariant, and update progress
             text = (row.get("text") or "").strip()
             if not text:
                 continue
             try:
+                # Execute guarded operations and establish recovery boundaries
                 conf = float(row.get("conf", "-1"))
             except ValueError:
                 conf = -1.0

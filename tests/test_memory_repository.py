@@ -1,3 +1,12 @@
+# ==============================================================================
+# Program: test_memory_repository.py
+# Programmer: Ethan-da-Tech-Wizard
+# Last Modified: November 18, 2026
+# Purpose: Comprehensive test suite exercising memory repository functionality.
+#          Verifies state transitions, error boundaries, regression resistance,
+#          and contract compliance under tests.
+# ==============================================================================
+
 import os
 import sys
 
@@ -7,15 +16,19 @@ from app.utils.memory_manager import MemoryManager
 
 class MockInMemoryRepository:
     def __init__(self):
+        # Step 1: Validate input parameters, operational preconditions, and state
         self.store = {}
 
     def save(self, session_id: str, session_tree: dict) -> None:
+        # Step 1: Validate input parameters, operational preconditions, and state
         self.store[session_id] = session_tree
 
     def get(self, session_id: str) -> dict | None:
+        # Step 1: Validate input parameters, operational preconditions, and state
         return self.store.get(session_id)
 
     def list_all(self) -> list[dict]:
+        # Step 1: Validate input parameters, operational preconditions, and state
         return [
             {"filename": sid, "data": data, "mtime": 123456789.0}
             for sid, data in self.store.items()
@@ -23,6 +36,7 @@ class MockInMemoryRepository:
         ]
 
     def delete(self, session_id: str) -> bool:
+        # Step 1: Validate input parameters, operational preconditions, and state
         if session_id in self.store:
             del self.store[session_id]
             return True

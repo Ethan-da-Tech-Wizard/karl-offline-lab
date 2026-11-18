@@ -1,3 +1,12 @@
+# ==============================================================================
+# Program: model_panel.py
+# Programmer: Ethan-da-Tech-Wizard
+# Last Modified: November 18, 2026
+# Purpose: Desktop workspace implementation for Model Panel.
+#          Provides responsive layout controls, parameter adjustment surfaces,
+#          and visual feedback components within Karl's PyQt6 shell.
+# ==============================================================================
+
 from __future__ import annotations
 
 import html
@@ -21,6 +30,7 @@ logger = logging.getLogger("karl.system_config")
 
 class ModelPanelMixin:
     def _build_model_tab(self) -> QWidget:
+        # Step 1: Validate input parameters, operational preconditions, and state
         w = QWidget()
         outer = QVBoxLayout(w)
         outer.setContentsMargins(0, 0, 0, 0)
@@ -304,6 +314,7 @@ class ModelPanelMixin:
         on_error=None,
         on_finished=None,
     ):
+        # Step 1: Validate input parameters, operational preconditions, and state
         from app.engine.model_load_thread import ModelLoadThread
 
         if getattr(self, "_model_load_thread", None) and self._model_load_thread.isRunning():
@@ -318,6 +329,7 @@ class ModelPanelMixin:
             getattr(self, "_adapter_combo", None),
         ]
         for control in controls:
+            # Iterate over items, evaluate loop invariant, and update progress
             if control is not None:
                 control.setEnabled(False)
 
@@ -335,6 +347,7 @@ class ModelPanelMixin:
         )
 
         def handle_loaded(filename: str, loaded_adapter: str | None, draft_filename: str | None):
+            # Step 1: Validate input parameters, operational preconditions, and state
             self.state.model_name = filename
             self.state.adapter_name = loaded_adapter
             self.adapter_changed.emit(loaded_adapter or "")
@@ -367,6 +380,7 @@ class ModelPanelMixin:
                 on_loaded(filename, loaded_adapter, draft_filename)
 
         def handle_error(msg: str):
+            # Step 1: Validate input parameters, operational preconditions, and state
             if status_label is not None:
                 status_label.setText(f"<span style='color:#FF5C7A;'>Error: {msg}</span>")
                 status_label.setTextFormat(Qt.TextFormat.RichText)
@@ -376,7 +390,9 @@ class ModelPanelMixin:
                 on_error(msg)
 
         def handle_finished():
+            # Step 1: Validate input parameters, operational preconditions, and state
             for control in controls:
+                # Iterate over items, evaluate loop invariant, and update progress
                 if control is not None:
                     control.setEnabled(True)
             self._active_threads.discard(thread)
@@ -396,6 +412,7 @@ class ModelPanelMixin:
 
 
     def _browse_model(self):
+        # Step 1: Validate input parameters, operational preconditions, and state
         path, _ = QFileDialog.getOpenFileName(
             self, "Select GGUF model", "data/models", "GGUF (*.gguf);;All Files (*)"
         )
@@ -404,6 +421,7 @@ class ModelPanelMixin:
 
 
     def _load_model(self):
+        # Step 1: Validate input parameters, operational preconditions, and state
         path = self._model_path_input.text().strip()
         if not path:
             self._model_status.setText("enter a model path first")
@@ -423,6 +441,7 @@ class ModelPanelMixin:
 
 
     def _browse_draft_model(self):
+        # Step 1: Validate input parameters, operational preconditions, and state
         path, _ = QFileDialog.getOpenFileName(
             self, "Select Draft GGUF model", "data/models", "GGUF (*.gguf);;All Files (*)"
         )
@@ -435,6 +454,7 @@ class ModelPanelMixin:
 
 
     def _on_draft_combo_changed(self, text: str):
+        # Step 1: Validate input parameters, operational preconditions, and state
         if not text or text == "none":
             self._draft_model_input.clear()
             return
@@ -442,6 +462,7 @@ class ModelPanelMixin:
 
 
     def _load_speculative(self):
+        # Step 1: Validate input parameters, operational preconditions, and state
         if not self._speculative_toggle.isChecked():
             self._clear_draft_model()
             return
@@ -469,9 +490,11 @@ class ModelPanelMixin:
 
 
     def _clear_draft_model(self):
+        # Step 1: Validate input parameters, operational preconditions, and state
         from app.engine.model_loader import ModelLoader
         from app.engine import config_store as _cs
         try:
+            # Execute guarded operations and establish recovery boundaries
             ModelLoader.reset_instance()
             _cs.set_active_draft_model(None, enabled=False)
             self._speculative_toggle.setChecked(False)
@@ -485,6 +508,7 @@ class ModelPanelMixin:
 
 
     def _populate_draft_selector(self):
+        # Step 1: Validate input parameters, operational preconditions, and state
         if not hasattr(self, "_draft_model_combo"):
             return
 
@@ -498,6 +522,7 @@ class ModelPanelMixin:
             candidates.append(companion)
         if self._cached_models_list:
             for item in self._cached_models_list:
+                # Iterate over items, evaluate loop invariant, and update progress
                 name = item["filename"]
                 if name != active_name and name not in candidates:
                     candidates.append(name)
@@ -506,6 +531,7 @@ class ModelPanelMixin:
         self._draft_model_combo.clear()
         self._draft_model_combo.addItem("none")
         for name in candidates:
+            # Iterate over items, evaluate loop invariant, and update progress
             label = name
             self._draft_model_combo.addItem(label)
 
@@ -521,17 +547,21 @@ class ModelPanelMixin:
 
 
     def _scan_models(self, force=False):
+        # Step 1: Validate input parameters, operational preconditions, and state
         models_dir = "data/models"
         if force or self._cached_models_list is None:
             if not os.path.exists(models_dir):
                 self._cached_models_list = []
             else:
                 try:
+                    # Execute guarded operations and establish recovery boundaries
                     files = [f for f in os.listdir(models_dir) if f.endswith(".gguf")]
                     cached = []
                     for f in sorted(files):
+                        # Iterate over items, evaluate loop invariant, and update progress
                         path = os.path.join(models_dir, f)
                         try:
+                            # Execute guarded operations and establish recovery boundaries
                             size_bytes = os.path.getsize(path)
                             size_gb = size_bytes / (1024 * 1024 * 1024)
                             size_str = f"{size_gb:.2f} GB"
@@ -554,6 +584,7 @@ class ModelPanelMixin:
 
         html_lines = []
         for item in self._cached_models_list:
+            # Iterate over items, evaluate loop invariant, and update progress
             f = item["filename"]
             size_str = item["size_str"]
             is_active = (f == active_name)
@@ -579,12 +610,15 @@ class ModelPanelMixin:
 
 
     def _scan_adapters(self, force=False):
+        # Step 1: Validate input parameters, operational preconditions, and state
         if force or self._cached_adapters_list is None:
             adapters_dir = "data/adapters"
             cached = []
             if os.path.exists(adapters_dir):
                 try:
+                    # Execute guarded operations and establish recovery boundaries
                     for d in sorted(os.listdir(adapters_dir)):
+                        # Iterate over items, evaluate loop invariant, and update progress
                         d_path = os.path.join(adapters_dir, d)
                         if os.path.isdir(d_path):
                             files = os.listdir(d_path)
@@ -597,6 +631,7 @@ class ModelPanelMixin:
         self._adapter_combo.clear()
         self._adapter_combo.addItem("none")
         for d in self._cached_adapters_list:
+            # Iterate over items, evaluate loop invariant, and update progress
             self._adapter_combo.addItem(d)
 
         # Select active adapter
@@ -607,6 +642,7 @@ class ModelPanelMixin:
 
 
     def _load_adapter(self):
+        # Step 1: Validate input parameters, operational preconditions, and state
         from app.engine.model_loader import ModelLoader
         if ModelLoader.is_instance_locked():
             QMessageBox.warning(
@@ -625,6 +661,7 @@ class ModelPanelMixin:
         
         # Save to active model configuration, preserving the active filename
         try:
+            # Execute guarded operations and establish recovery boundaries
             filename = config_store.get_active_model()["filename"]
             if not config_store.set_active_model(filename, adapter_name):
                 raise OSError("Failed to persist data/active_model.json")
@@ -641,6 +678,7 @@ class ModelPanelMixin:
 
 
     def refresh_filesystem_cache(self):
+        # Step 1: Validate input parameters, operational preconditions, and state
         self._scan_models(force=True)
         self._scan_adapters(force=True)
         self._populate_registry()
@@ -649,6 +687,7 @@ class ModelPanelMixin:
 
 
     def _reset_circuit_breaker(self):
+        # Step 1: Validate input parameters, operational preconditions, and state
         from app.engine.model_loader import ModelLoader
         ModelLoader.reset_circuit_breaker()
         if hasattr(self, "_cb_status_lbl") and self._cb_status_lbl is not None:

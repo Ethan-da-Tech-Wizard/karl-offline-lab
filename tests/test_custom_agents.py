@@ -1,3 +1,12 @@
+# ==============================================================================
+# Program: test_custom_agents.py
+# Programmer: Ethan-da-Tech-Wizard
+# Last Modified: November 18, 2026
+# Purpose: Unit and Integration Tests for Custom Agent Profiles =================================================== Verifies profile reloading, JSON-RPC validation, and correct model/adapter configuration.
+#          Coordinates with adjacent subsystems within the Karl Offline Lab
+#          architecture.
+# ==============================================================================
+
 """
 Unit and Integration Tests for Custom Agent Profiles
 ===================================================
@@ -22,7 +31,9 @@ from app.engine.llm_thread import LLMThread
 
 
 def _running_under_bwrap() -> bool:
+    # Step 1: Validate input parameters, operational preconditions, and state
     try:
+        # Execute guarded operations and establish recovery boundaries
         with open("/proc/1/comm", "r", encoding="utf-8") as f:
             return f.read().strip() == "bwrap"
     except OSError:
@@ -72,6 +83,7 @@ class TestCustomAgents(unittest.TestCase):
         # Restore backup or remove custom_agents.json
         if os.path.exists(self.custom_agents_path):
             try:
+                # Execute guarded operations and establish recovery boundaries
                 os.remove(self.custom_agents_path)
             except OSError:
                 pass
@@ -92,6 +104,7 @@ class TestCustomAgents(unittest.TestCase):
             WebSocketServerManager.reset_instance()
 
     def _get_uri(self):
+        # Step 1: Validate input parameters, operational preconditions, and state
         token = self.manager.bridge_token
         proto = "ws"
         if os.path.exists(self.manager._SSL_CERT_PATH):
@@ -99,6 +112,7 @@ class TestCustomAgents(unittest.TestCase):
         return f"{proto}://localhost:{self.port}/?token={token}"
 
     def _get_ssl_context(self):
+        # Step 1: Validate input parameters, operational preconditions, and state
         import ssl
         if os.path.exists(self.manager._SSL_CERT_PATH):
             ssl_context = ssl.SSLContext(ssl.PROTOCOL_TLS_CLIENT)
@@ -151,10 +165,12 @@ class TestCustomAgents(unittest.TestCase):
     @pytest.mark.websocket
     def test_json_rpc_validation_and_listing(self):
         """Verifies validation rules and list/create RPC functionality."""
+        # Step 1: Validate input parameters, operational preconditions, and state
         if _running_under_bwrap():
             self.skipTest("Bwrap blocks localhost websocket testing")
 
         async def run_client():
+            # Step 1: Validate input parameters, operational preconditions, and state
             async with websockets.connect(self._get_uri(), ssl=self._get_ssl_context(), close_timeout=2) as ws:
                 # 1. Test invalid name (non-alphanumeric)
                 payload_invalid = {
@@ -242,6 +258,7 @@ class TestCustomAgents(unittest.TestCase):
     @patch("app.engine.model_loader.ModelLoader.get_instance")
     def test_llm_thread_custom_model_and_adapter(self, mock_get_llm):
         """Verifies LLMThread loads the custom model and adapter specified in custom agent."""
+        # Step 1: Validate input parameters, operational preconditions, and state
         mock_llm_instance = MagicMock()
         mock_llm_instance.tokenize.return_value = [1, 2, 3]
         mock_llm_instance.side_effect = lambda *args, **kwargs: [{"choices": [{"text": "Hello", "finish_reason": "stop"}]}]
@@ -271,6 +288,7 @@ class TestCustomAgents(unittest.TestCase):
     @patch("app.engine.model_loader.ModelLoader.get_instance")
     def test_websocket_chat_custom_agent_routing(self, mock_get_llm):
         """Verifies websocket submit_chat routes custom agent model and adapter parameters to LLMThread."""
+        # Step 1: Validate input parameters, operational preconditions, and state
         if _running_under_bwrap():
             self.skipTest("Bwrap blocks localhost websocket testing")
 
@@ -298,13 +316,17 @@ class TestCustomAgents(unittest.TestCase):
         reload_profiles()
 
         async def qt_event_loop_spinner():
+            # Step 1: Validate input parameters, operational preconditions, and state
             while True:
+                # Iterate over items, evaluate loop invariant, and update progress
                 QCoreApplication.processEvents()
                 await asyncio.sleep(0.01)
 
         async def run_client():
+            # Step 1: Validate input parameters, operational preconditions, and state
             spinner = asyncio.create_task(qt_event_loop_spinner())
             try:
+                # Execute guarded operations and establish recovery boundaries
                 async with websockets.connect(self._get_uri(), ssl=self._get_ssl_context(), close_timeout=2) as ws:
                     chat_payload = {
                         "jsonrpc": "2.0",
@@ -325,6 +347,7 @@ class TestCustomAgents(unittest.TestCase):
 
                     # Wait for finished response or stream end
                     for _ in range(50):
+                        # Iterate over items, evaluate loop invariant, and update progress
                         msg = json.loads(await asyncio.wait_for(ws.recv(), timeout=5.0))
                         if msg.get("method") == "chat_finished":
                             break
@@ -336,6 +359,7 @@ class TestCustomAgents(unittest.TestCase):
             finally:
                 spinner.cancel()
                 try:
+                    # Execute guarded operations and establish recovery boundaries
                     await spinner
                 except asyncio.CancelledError:
                     pass

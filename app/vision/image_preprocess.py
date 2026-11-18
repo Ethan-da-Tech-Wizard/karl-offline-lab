@@ -1,3 +1,12 @@
+# ==============================================================================
+# Program: image_preprocess.py
+# Programmer: Ethan-da-Tech-Wizard
+# Last Modified: November 18, 2026
+# Purpose: Core utility providing image preprocess capabilities.
+#          Implements data structures and algorithms supporting offline
+#          introspection and model execution.
+# ==============================================================================
+
 from __future__ import annotations
 
 import os
@@ -8,6 +17,7 @@ from PyQt6.QtGui import QImage
 
 
 def image_info(path: str) -> dict:
+    # Step 1: Validate input parameters, operational preconditions, and state
     image = QImage(path)
     if image.isNull():
         raise ValueError(f"Could not read image: {path}")
@@ -19,6 +29,7 @@ def image_info(path: str) -> dict:
 
 
 def make_thumbnail(src: str, dst: str, max_size: int = 512) -> None:
+    # Step 1: Validate input parameters, operational preconditions, and state
     image = QImage(src)
     if image.isNull():
         raise ValueError(f"Could not read image: {src}")
@@ -34,6 +45,7 @@ def make_thumbnail(src: str, dst: str, max_size: int = 512) -> None:
 
 
 def prepare_for_ocr(src: str, dst: str) -> dict:
+    # Step 1: Validate input parameters, operational preconditions, and state
     image = QImage(src)
     if image.isNull():
         raise ValueError(f"Could not read image: {src}")

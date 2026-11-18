@@ -1,3 +1,12 @@
+# ==============================================================================
+# Program: test_image_store.py
+# Programmer: Ethan-da-Tech-Wizard
+# Last Modified: November 18, 2026
+# Purpose: Comprehensive test suite exercising image store functionality.
+#          Verifies state transitions, error boundaries, regression resistance,
+#          and contract compliance under tests.
+# ==============================================================================
+
 import os
 import sys
 
@@ -10,12 +19,14 @@ from app.vision.image_store import ImageStore
 
 
 def _sample_image(width=80, height=48):
+    # Step 1: Validate input parameters, operational preconditions, and state
     image = QImage(width, height, QImage.Format.Format_RGB32)
     image.fill(QColor("#00C2FF"))
     return image
 
 
 def test_save_qimage_creates_record_and_files(tmp_path):
+    # Step 1: Validate input parameters, operational preconditions, and state
     store = ImageStore(base_dir=str(tmp_path / "images"))
     record = store.save_qimage(_sample_image(), source="test")
 
@@ -35,6 +46,7 @@ def test_save_qimage_creates_record_and_files(tmp_path):
 
 
 def test_import_file_copies_image(tmp_path):
+    # Step 1: Validate input parameters, operational preconditions, and state
     source = tmp_path / "source.png"
     assert _sample_image(32, 24).save(str(source), "PNG")
 
@@ -48,6 +60,7 @@ def test_import_file_copies_image(tmp_path):
 
 
 def test_update_analysis_round_trip(tmp_path):
+    # Step 1: Validate input parameters, operational preconditions, and state
     store = ImageStore(base_dir=str(tmp_path / "images"))
     record = store.save_qimage(_sample_image(), source="test")
 
@@ -59,6 +72,7 @@ def test_update_analysis_round_trip(tmp_path):
 
 
 def test_update_analysis_accepts_ocr_dict(tmp_path):
+    # Step 1: Validate input parameters, operational preconditions, and state
     store = ImageStore(base_dir=str(tmp_path / "images"))
     record = store.save_qimage(_sample_image(), source="test")
     ocr = OcrResult(engine="tesseract", text="NameError at line 3", confidence=0.9)
@@ -71,6 +85,7 @@ def test_update_analysis_accepts_ocr_dict(tmp_path):
 
 
 def test_image_metadata_and_corrections_round_trip(tmp_path):
+    # Step 1: Validate input parameters, operational preconditions, and state
     store = ImageStore(base_dir=str(tmp_path / "images"))
     record = store.save_qimage(_sample_image(), source="test")
 

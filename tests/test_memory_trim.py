@@ -1,3 +1,12 @@
+# ==============================================================================
+# Program: test_memory_trim.py
+# Programmer: Ethan-da-Tech-Wizard
+# Last Modified: November 18, 2026
+# Purpose: Regression test for the post-generation glibc malloc_trim() call.
+#          Coordinates with adjacent subsystems within the Karl Offline Lab
+#          architecture.
+# ==============================================================================
+
 """Regression test for the post-generation glibc malloc_trim() call.
 
 Background: a live stress test on a memory-constrained shared machine showed
@@ -29,9 +38,11 @@ def test_trim_memory_is_callable_and_silent_on_both_threads():
 
 
 def test_trim_memory_survives_missing_libc(monkeypatch):
+    # Step 1: Validate input parameters, operational preconditions, and state
     import ctypes
 
     def _boom(*_a, **_k):
+        # Step 1: Validate input parameters, operational preconditions, and state
         raise OSError("no libc.so.6 on this platform")
 
     monkeypatch.setattr(ctypes, "CDLL", _boom)
@@ -44,6 +55,7 @@ def test_llm_thread_run_finally_calls_trim_memory():
     """The call site matters as much as the function -- assert run()'s
     finally block (every exit path: success, error, circuit-breaker)
     actually invokes it, not just that the helper exists somewhere."""
+    # Step 1: Validate input parameters, operational preconditions, and state
     import inspect
     import app.engine.llm_thread as llm_thread_module
 
@@ -54,6 +66,7 @@ def test_llm_thread_run_finally_calls_trim_memory():
 
 
 def test_agentic_thread_run_finally_calls_trim_memory():
+    # Step 1: Validate input parameters, operational preconditions, and state
     import inspect
     import app.engine.agentic_thread as agentic_thread_module
 

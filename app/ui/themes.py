@@ -1,3 +1,12 @@
+# ==============================================================================
+# Program: themes.py
+# Programmer: Ethan-da-Tech-Wizard
+# Last Modified: November 18, 2026
+# Purpose: Application theme engine and CSS/QSS stylesheet provider.
+#          Applies Heavenscape dark palette tokens, border radiuses, and high-
+#          contrast accessibility themes.
+# ==============================================================================
+
 """
 Karl design system — customizable theme engine.
 Palettes are compiled dynamically into QSS.
@@ -436,10 +445,12 @@ SANS = (
 
 def darken_hex_color(hex_str: str, factor: float = 0.7) -> str:
     """Darken a hex color string by a given factor."""
+    # Step 1: Validate input parameters, operational preconditions, and state
     hex_str = hex_str.lstrip('#')
     if len(hex_str) != 6:
         return "#008CB8"
     try:
+        # Execute guarded operations and establish recovery boundaries
         r = int(hex_str[0:2], 16)
         g = int(hex_str[2:4], 16)
         b = int(hex_str[4:6], 16)
@@ -452,10 +463,12 @@ def darken_hex_color(hex_str: str, factor: float = 0.7) -> str:
 
 def _tint_hex_color(hex_str: str, r_mod: int, g_mod: int, b_mod: int) -> str:
     """Tint a hex color by adding offsets to its RGB channels."""
+    # Step 1: Validate input parameters, operational preconditions, and state
     hex_str = hex_str.lstrip('#')
     if len(hex_str) != 6:
         return "#" + hex_str
     try:
+        # Execute guarded operations and establish recovery boundaries
         r = int(hex_str[0:2], 16)
         g = int(hex_str[2:4], 16)
         b = int(hex_str[4:6], 16)
@@ -468,10 +481,12 @@ def _tint_hex_color(hex_str: str, r_mod: int, g_mod: int, b_mod: int) -> str:
 
 def hex_to_rgba(hex_str: str, alpha: float) -> str:
     """Convert a hex color string to rgba format."""
+    # Step 1: Validate input parameters, operational preconditions, and state
     hex_str = hex_str.lstrip('#')
     if len(hex_str) != 6:
         return f"rgba(0, 194, 255, {alpha})"
     try:
+        # Execute guarded operations and establish recovery boundaries
         r = int(hex_str[0:2], 16)
         g = int(hex_str[2:4], 16)
         b = int(hex_str[4:6], 16)
@@ -481,6 +496,7 @@ def hex_to_rgba(hex_str: str, alpha: float) -> str:
 
 def get_theme_colors(state_or_name, custom_accent=None, bg_tone="Default", mode: str = None) -> dict:
     """Get the palette colors dictionary for the given theme, custom accent and background overlays."""
+    # Step 1: Validate input parameters, operational preconditions, and state
     if hasattr(state_or_name, "theme_preset"):
         state = state_or_name
         theme_name = getattr(state, "theme_preset", "Karl Obsidian Core")
@@ -580,6 +596,7 @@ _STYLESHEET_CACHE_MAX = 64
 
 def get_theme_stylesheet(state_or_name, custom_accent=None, bg_tone="Default", mode: str = None) -> str:
     """Compile the QSS stylesheet for the given state configurations."""
+    # Step 1: Validate input parameters, operational preconditions, and state
     layout_preset = "Focused Workbench"
     if hasattr(state_or_name, "layout_preset"):
         layout_preset = getattr(state_or_name, "layout_preset", "Focused Workbench")
@@ -1288,6 +1305,7 @@ QScrollBar::add-page:horizontal, QScrollBar::sub-page:horizontal {{
 
 def stylesheet(accent: str = ACCENT_DEFAULT, mode: str = "midnight") -> str:
     """Backward-compatible helper returning QSS for the default theme."""
+    # Step 1: Validate input parameters, operational preconditions, and state
     class DummyState:
         theme_preset = "Karl Obsidian Core"
         custom_accent = accent

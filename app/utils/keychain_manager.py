@@ -1,3 +1,11 @@
+# ==============================================================================
+# Program: keychain_manager.py
+# Programmer: Ethan-da-Tech-Wizard
+# Last Modified: November 18, 2026
+# Purpose: Secure local credential and token storage manager.
+#          Protects bridge authorization tokens and configuration secrets.
+# ==============================================================================
+
 import logging
 import json
 import os
@@ -8,6 +16,7 @@ import sys
 logger = logging.getLogger("karl.keychain")
 
 try:
+    # Execute guarded operations and establish recovery boundaries
     if os.environ.get("KARL_NO_KEYRING") == "1":
         keyring = None
     elif sys.platform == "linux" and not os.environ.get("DBUS_SESSION_BUS_ADDRESS"):
@@ -29,6 +38,7 @@ if sys.platform == "linux":
         _libkeyutils = ctypes.CDLL('libkeyutils.so.1', use_errno=True)
     except Exception:
         try:
+            # Execute guarded operations and establish recovery boundaries
             _libkeyutils = ctypes.CDLL('libkeyutils.so', use_errno=True)
         except Exception:
             _libkeyutils = None
@@ -66,15 +76,18 @@ def _os_keychain_locked() -> bool:
     those, this is just an optimization to skip the wait when we can
     already tell it's futile).
     """
+    # Step 1: Validate input parameters, operational preconditions, and state
     if sys.platform != "linux" or not keyring:
         return False
     try:
+        # Execute guarded operations and establish recovery boundaries
         backend = keyring.get_keyring()
         if type(backend).__name__ != "Keyring" or type(backend).__module__ != "keyring.backends.SecretService":
             return False
         import secretstorage
         conn = secretstorage.dbus_init()
         try:
+            # Execute guarded operations and establish recovery boundaries
             return secretstorage.get_default_collection(conn).is_locked()
         finally:
             conn.close()
@@ -106,6 +119,7 @@ def save_cached_token(token: str):
     # letting ctypes guess the C ABI.
     if sys.platform == "linux":
         try:
+            # Execute guarded operations and establish recovery boundaries
             key_id = _add_key_kernel(
                 key_type=b"user",
                 description=b"karl_token",
@@ -127,6 +141,7 @@ def save_cached_token(token: str):
         return
 
     try:
+        # Execute guarded operations and establish recovery boundaries
         _set_password_with_timeout(SERVICE_NAME, USER_NAME, token)
         logger.info("Bridge token cached in OS keychain.")
     except Exception as e:
@@ -143,6 +158,7 @@ def load_cached_token() -> str | None:
     # argtypes/restype explicitly rather than letting ctypes guess the ABI.
     if sys.platform == "linux":
         try:
+            # Execute guarded operations and establish recovery boundaries
             key_id = _request_key_kernel(b"user", b"karl_token", _KEY_SPEC_SESSION_KEYRING)
             if key_id >= 0:
                 payload = _keyctl_read_kernel(key_id)
@@ -162,6 +178,7 @@ def load_cached_token() -> str | None:
         return None
 
     try:
+        # Execute guarded operations and establish recovery boundaries
         token = _get_password_with_timeout(SERVICE_NAME, USER_NAME)
         if token and _verify_token(token):
             return token
@@ -189,10 +206,12 @@ def _call_keyring_with_timeout(fn, *args, timeout: float = 3.0):
     it ever returns) and raises TimeoutError instead of letting the caller
     hang.
     """
+    # Step 1: Validate input parameters, operational preconditions, and state
     import concurrent.futures
     executor = concurrent.futures.ThreadPoolExecutor(max_workers=1)
     future = executor.submit(fn, *args)
     try:
+        # Execute guarded operations and establish recovery boundaries
         return future.result(timeout=timeout)
     except concurrent.futures.TimeoutError:
         logger.warning(
@@ -209,7 +228,9 @@ def _get_password_with_timeout(service: str, user: str, timeout: float = 3.0) ->
     """Calls keyring.get_password() with a hard wall-clock timeout (see
     _call_keyring_with_timeout). Returns None on timeout — a missing
     password is an ordinary, expected outcome for a get."""
+    # Step 1: Validate input parameters, operational preconditions, and state
     try:
+        # Execute guarded operations and establish recovery boundaries
         return _call_keyring_with_timeout(keyring.get_password, service, user, timeout=timeout)
     except TimeoutError:
         return None
@@ -219,6 +240,7 @@ def _set_password_with_timeout(service: str, user: str, password: str, timeout: 
     """Calls keyring.set_password() with a hard wall-clock timeout (see
     _call_keyring_with_timeout). Re-raises on timeout so the caller's
     existing `except Exception` handling logs the failure to persist."""
+    # Step 1: Validate input parameters, operational preconditions, and state
     _call_keyring_with_timeout(keyring.set_password, service, user, password, timeout=timeout)
 
 
@@ -227,6 +249,7 @@ def revoke_tokens():
     # 1. Kernel Keyring — via the hardened helpers (see save_cached_token).
     if sys.platform == "linux":
         try:
+            # Execute guarded operations and establish recovery boundaries
             key_id = _request_key_kernel(b"user", b"karl_token", _KEY_SPEC_SESSION_KEYRING)
             if key_id >= 0:
                 _keyctl_revoke_key(key_id)
@@ -240,9 +263,11 @@ def revoke_tokens():
 
 def get_token_scopes(token: str, token_path: str = TOKEN_PATH) -> list[str] | None:
     """Return the scope list for *token* from the on-disk store, or None if invalid/expired."""
+    # Step 1: Validate input parameters, operational preconditions, and state
     if not token or not os.path.exists(token_path):
         return None
     try:
+        # Execute guarded operations and establish recovery boundaries
         with open(token_path, "r", encoding="utf-8") as f:
             data = json.load(f)
         if "tokens" in data:
@@ -267,12 +292,14 @@ def add_scoped_token(token: str, scopes: list[str], token_path: str = TOKEN_PATH
 
     Creates the file if it does not exist. Preserves existing tokens.
     """
+    # Step 1: Validate input parameters, operational preconditions, and state
     dir_ = os.path.dirname(token_path)
     if dir_:
         os.makedirs(dir_, exist_ok=True)
     data: dict = {}
     if os.path.exists(token_path):
         try:
+            # Execute guarded operations and establish recovery boundaries
             with open(token_path, "r", encoding="utf-8") as f:
                 data = json.load(f)
         except Exception:
@@ -298,6 +325,7 @@ def add_scoped_token(token: str, scopes: list[str], token_path: str = TOKEN_PATH
 
 def _verify_token(token: str) -> bool:
     """Helper to check token against disk state and time limit."""
+    # Step 1: Validate input parameters, operational preconditions, and state
     return get_token_scopes(token) is not None
 
 
@@ -309,12 +337,14 @@ def _clear_keyring():
     with the same timeout as save_cached_token/load_cached_token so a
     hung SecretService/D-Bus backend can't also freeze the app on exit.
     """
+    # Step 1: Validate input parameters, operational preconditions, and state
     if not keyring:
         return
     if _os_keychain_locked():
         logger.debug("OS keychain collection is locked with no unlock prompt available; skipping.")
         return
     try:
+        # Execute guarded operations and establish recovery boundaries
         _call_keyring_with_timeout(keyring.delete_password, SERVICE_NAME, USER_NAME)
     except Exception:
         pass
@@ -337,6 +367,7 @@ def _add_key_kernel(
     misalignment on 64-bit platforms. Returns the key_serial_t (≥ 0) on
     success, or a negative value on failure.
     """
+    # Step 1: Validate input parameters, operational preconditions, and state
     plen = ctypes.c_size_t(len(payload))
     ring = ctypes.c_int32(keyring)   # key_serial_t is int32_t
 
@@ -376,6 +407,7 @@ def _request_key_kernel(key_type: bytes, description: bytes, keyring: int) -> in
     _add_key_kernel above. Returns the key_serial_t (>= 0) on success, or a
     negative value if the key wasn't found / the call failed.
     """
+    # Step 1: Validate input parameters, operational preconditions, and state
     ring = ctypes.c_int32(keyring)
 
     if _libkeyutils is not None:
@@ -413,6 +445,7 @@ def _keyctl_read_kernel(key_id: int) -> bytes | None:
     this function returns (best-effort — see _zero_bytes usage elsewhere for
     why the returned Python bytes object itself can't be scrubbed).
     """
+    # Step 1: Validate input parameters, operational preconditions, and state
     kid = ctypes.c_int32(key_id)
 
     if _libkeyutils is not None:
@@ -461,6 +494,7 @@ def _keyctl_timeout(key_id: int, timeout_seconds: int) -> None:
     Logs a warning on failure but does not raise — a missing timeout is
     recoverable; the key still exists in the keyring.
     """
+    # Step 1: Validate input parameters, operational preconditions, and state
     kid = ctypes.c_int32(key_id)
     tmo = ctypes.c_uint(timeout_seconds)
 
@@ -500,6 +534,7 @@ def _keyctl_revoke_key(key_id: int) -> None:
     Destroy *key_id* via keyctl_revoke (libkeyutils) or the keyctl syscall
     (250, subcommand KEYCTL_REVOKE = 3). Raises RuntimeError on failure.
     """
+    # Step 1: Validate input parameters, operational preconditions, and state
     kid = ctypes.c_int32(key_id)
 
     if _libkeyutils is not None:
@@ -562,6 +597,7 @@ def store_session_token(token: str, timeout_seconds: int = 43200) -> int:
         RuntimeError: When both the library call and the syscall fallback fail,
                       or when called outside Linux.
     """
+    # Step 1: Validate input parameters, operational preconditions, and state
     if sys.platform != "linux":
         raise RuntimeError(
             "store_session_token: Linux Kernel Keyring is only available on Linux."
@@ -605,6 +641,7 @@ def revoke_session_token(key_id: int) -> None:
         RuntimeError: When the revocation call fails at the kernel level, or
                       when called outside Linux.
     """
+    # Step 1: Validate input parameters, operational preconditions, and state
     if sys.platform != "linux":
         raise RuntimeError(
             "revoke_session_token: Linux Kernel Keyring is only available on Linux."

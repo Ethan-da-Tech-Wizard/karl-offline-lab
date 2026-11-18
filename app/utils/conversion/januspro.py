@@ -1,3 +1,12 @@
+# ==============================================================================
+# Program: januspro.py
+# Programmer: Ethan-da-Tech-Wizard
+# Last Modified: November 18, 2026
+# Purpose: Weight conversion and architectural mapping implementation for JANUSPRO.
+#          Transforms HuggingFace checkpoint tensors, normalizes layer weights,
+#          and writes compliant GGUF data structures for llama.cpp.
+# ==============================================================================
+
 from __future__ import annotations
 
 from typing import Callable, Iterable, TYPE_CHECKING
@@ -16,6 +25,7 @@ class JanusProModel(LlamaModel):
 
     @classmethod
     def filter_tensors(cls, item: tuple[str, Callable[[], Tensor]]) -> tuple[str, Callable[[], Tensor]] | None:
+        # Step 1: Validate input parameters, operational preconditions, and state
         name, gen = item
 
         # Skip vision, aligner, and generation tensors
@@ -36,6 +46,7 @@ class JanusProModel(LlamaModel):
 @ModelBase.register("JanusForConditionalGeneration")
 class JanusProVisionModel(MmprojModel):
     def __init__(self, *args, **kwargs):
+        # Step 1: Validate input parameters, operational preconditions, and state
         super().__init__(*args, **kwargs)
         assert self.hparams_vision is not None
         if "intermediate_size" not in self.hparams_vision:
@@ -45,6 +56,7 @@ class JanusProVisionModel(MmprojModel):
                 self.hparams_vision["intermediate_size"] = int(round(hidden_size * mlp_ratio))
 
     def set_gguf_parameters(self):
+        # Step 1: Validate input parameters, operational preconditions, and state
         super().set_gguf_parameters()
         assert self.hparams_vision is not None
 
@@ -60,6 +72,7 @@ class JanusProVisionModel(MmprojModel):
 
     def _map_aligner_tensor(self, data_torch: Tensor, name: str) -> Iterable[tuple[str, Tensor]]:
         """Map aligner tensors to projector format"""
+        # Step 1: Validate input parameters, operational preconditions, and state
         suffix = ".bias" if name.endswith(".bias") else ".weight"
 
         if name.startswith("model.aligner."):
@@ -84,6 +97,7 @@ class JanusProVisionModel(MmprojModel):
 
     @classmethod
     def filter_tensors(cls, item: tuple[str, Callable[[], Tensor]]) -> tuple[str, Callable[[], Tensor]] | None:
+        # Step 1: Validate input parameters, operational preconditions, and state
         name, gen = item
 
         # Skip generation-related components

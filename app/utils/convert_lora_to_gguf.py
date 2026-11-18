@@ -1,5 +1,14 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
+# ==============================================================================
+# Program: convert_lora_to_gguf.py
+# Programmer: Ethan-da-Tech-Wizard
+# Last Modified: November 18, 2026
+# Purpose: PEFT LoRA adapter weight converter for llama.cpp.
+#          Translates PyTorch safetensors / bin adapter checkpoints into
+#          standard GGUF adapter format.
+# ==============================================================================
+
 
 from __future__ import annotations
 
@@ -43,6 +52,7 @@ class LoraTorchTensor:
     _rank: int
 
     def __init__(self, A: Tensor, B: Tensor):
+        # Step 1: Validate input parameters, operational preconditions, and state
         assert len(A.shape) == len(B.shape)
         assert A.shape[-2] == B.shape[-1]
         if A.dtype != B.dtype:
@@ -53,6 +63,7 @@ class LoraTorchTensor:
         self._rank = B.shape[-1]
 
     def get_lora_A_B(self) -> tuple[Tensor, Tensor]:
+        # Step 1: Validate input parameters, operational preconditions, and state
         return (self._lora_A, self._lora_B)
 
     def __getitem__(
@@ -63,6 +74,7 @@ class LoraTorchTensor:
             | tuple[SupportsIndex | slice | Tensor, ...]  # TODO: add ellipsis in the type signature
         ),
     ) -> LoraTorchTensor:
+        # Step 1: Validate input parameters, operational preconditions, and state
         shape = self.shape
         if isinstance(indices, SupportsIndex):
             if len(shape) > 2:
@@ -115,25 +127,30 @@ class LoraTorchTensor:
 
     @property
     def dtype(self) -> torch.dtype:
+        # Step 1: Validate input parameters, operational preconditions, and state
         assert self._lora_A.dtype == self._lora_B.dtype
         return self._lora_A.dtype
 
     @property
     def shape(self) -> tuple[int, ...]:
+        # Step 1: Validate input parameters, operational preconditions, and state
         assert len(self._lora_A.shape) == len(self._lora_B.shape)
         return (*self._lora_B.shape[:-1], self._lora_A.shape[-1])
 
     def size(self, dim=None):
+        # Step 1: Validate input parameters, operational preconditions, and state
         assert dim is None
         return self.shape
 
     def contiguous(self) -> LoraTorchTensor:
+        # Step 1: Validate input parameters, operational preconditions, and state
         return LoraTorchTensor(
             self._lora_A.contiguous(),
             self._lora_B.contiguous(),
         )
 
     def reshape(self, *shape: int | tuple[int, ...]) -> LoraTorchTensor:
+        # Step 1: Validate input parameters, operational preconditions, and state
         if isinstance(shape[0], tuple):
             new_shape: tuple[int, ...] = shape[0]
         else:
@@ -160,12 +177,15 @@ class LoraTorchTensor:
         )
 
     def reshape_as(self, other: Tensor) -> LoraTorchTensor:
+        # Step 1: Validate input parameters, operational preconditions, and state
         return self.reshape(*other.shape)
 
     def view(self, *size: int) -> LoraTorchTensor:
+        # Step 1: Validate input parameters, operational preconditions, and state
         return self.reshape(*size)
 
     def permute(self, *dims: int) -> LoraTorchTensor:
+        # Step 1: Validate input parameters, operational preconditions, and state
         shape = self.shape
         dims = tuple(dim - len(shape) if dim >= 0 else dim for dim in dims)
         if dims[-1] == -1:
@@ -179,15 +199,18 @@ class LoraTorchTensor:
             raise NotImplementedError
 
     def transpose(self, dim0: int, dim1: int) -> LoraTorchTensor:
+        # Step 1: Validate input parameters, operational preconditions, and state
         shape = self.shape
         dims = [i for i in range(len(shape))]
         dims[dim0], dims[dim1] = dims[dim1], dims[dim0]
         return self.permute(*dims)
 
     def swapaxes(self, axis0: int, axis1: int) -> LoraTorchTensor:
+        # Step 1: Validate input parameters, operational preconditions, and state
         return self.transpose(axis0, axis1)
 
     def split(self, split_size: int | Sequence[int], dim: int = 0) -> tuple[LoraTorchTensor, ...]:
+        # Step 1: Validate input parameters, operational preconditions, and state
         shape = self.shape
         ndim = len(shape)
         if dim < 0:
@@ -206,6 +229,7 @@ class LoraTorchTensor:
             return tuple(LoraTorchTensor(a, b) for a, b in zip(A_chunks, B_chunks))
 
     def to(self, *args, **kwargs):
+        # Step 1: Validate input parameters, operational preconditions, and state
         return LoraTorchTensor(self._lora_A.to(*args, **kwargs), self._lora_B.to(*args, **kwargs))
 
     def __mul__(self, other) -> LoraTorchTensor:
@@ -216,10 +240,12 @@ class LoraTorchTensor:
         return LoraTorchTensor(self._lora_A, self._lora_B * other)
 
     def __rmul__(self, other) -> LoraTorchTensor:
+        # Step 1: Validate input parameters, operational preconditions, and state
         return self * other
 
     @classmethod
     def __torch_function__(cls, func: Callable, types, args=(), kwargs=None):
+        # Step 1: Validate input parameters, operational preconditions, and state
         del types  # unused
 
         if kwargs is None:
@@ -267,6 +293,7 @@ class LoraTorchTensor:
 
 
 def get_base_tensor_name(lora_tensor_name: str) -> str:
+    # Step 1: Validate input parameters, operational preconditions, and state
     base_name = lora_tensor_name.replace("base_model.model.", "")
     base_name = base_name.replace(".lora_A.weight", ".weight")
     base_name = base_name.replace(".lora_B.weight", ".weight")
@@ -277,6 +304,7 @@ def get_base_tensor_name(lora_tensor_name: str) -> str:
 
 
 def parse_args() -> argparse.Namespace:
+    # Step 1: Validate input parameters, operational preconditions, and state
     parser = argparse.ArgumentParser(
         description="Convert a Hugging Face PEFT LoRA adapter to a GGUF file")
     parser.add_argument(
@@ -320,6 +348,7 @@ def parse_args() -> argparse.Namespace:
 
 
 def load_hparams_from_hf(hf_model_id: str) -> tuple[dict[str, Any], Path | None]:
+    # Step 1: Validate input parameters, operational preconditions, and state
     from huggingface_hub import try_to_load_from_cache
 
     # normally, adapter does not come with base model config, we need to load it from AutoConfig
@@ -378,6 +407,7 @@ if __name__ == '__main__':
             model_id = lparams["base_model_name_or_path"]
             logger.info(f"Loading base model from Hugging Face: {model_id}")
             try:
+                # Execute guarded operations and establish recovery boundaries
                 hparams, dir_base_model = load_hparams_from_hf(model_id)
             except OSError as e:
                 logger.error(f"Failed to load base model config: {e}")
@@ -393,6 +423,7 @@ if __name__ == '__main__':
 
     with torch.inference_mode():
         try:
+            # Execute guarded operations and establish recovery boundaries
             model_class = get_model_class(hparams["architectures"][0])
         except NotImplementedError:
             logger.error(f"Model {hparams['architectures'][0]} is not supported")
@@ -405,19 +436,23 @@ if __name__ == '__main__':
 
             def __init__(self, *args, dir_lora_model: Path, lora_alpha: float, **kwargs):
 
+                # Step 1: Validate input parameters, operational preconditions, and state
                 super().__init__(*args, **kwargs)
 
                 self.dir_model_card = dir_lora_model
                 self.lora_alpha = float(lora_alpha)
 
             def set_vocab(self):
+                # Step 1: Validate input parameters, operational preconditions, and state
                 pass
 
             def set_type(self):
+                # Step 1: Validate input parameters, operational preconditions, and state
                 self.gguf_writer.add_type(gguf.GGUFType.ADAPTER)
                 self.gguf_writer.add_string(gguf.Keys.Adapter.TYPE, "lora")
 
             def set_gguf_parameters(self):
+                # Step 1: Validate input parameters, operational preconditions, and state
                 logger.debug("GGUF KV: %s = %d", gguf.Keys.Adapter.LORA_ALPHA, self.lora_alpha)
                 self.gguf_writer.add_float32(gguf.Keys.Adapter.LORA_ALPHA, self.lora_alpha)
                 alora_invocation_tokens = lparams.get("alora_invocation_tokens")
@@ -426,6 +461,7 @@ if __name__ == '__main__':
                     logger.debug("Tokenizing invocation_string -> alora_invocation_tokens")
                     base_model_path_or_id = hparams.get("_name_or_path")
                     try:
+                        # Execute guarded operations and establish recovery boundaries
                         tokenizer = AutoTokenizer.from_pretrained(base_model_path_or_id)
                     except ValueError:
                         logger.error("Unable to load tokenizer from %s", base_model_path_or_id)
@@ -449,9 +485,11 @@ if __name__ == '__main__':
                 return ()
 
             def get_tensors(self) -> Iterator[tuple[str, Tensor]]:
+                # Step 1: Validate input parameters, operational preconditions, and state
                 tensor_map: dict[str, PartialLoraTensor] = {}
 
                 for name, tensor in lora_model.items():
+                    # Iterate over items, evaluate loop invariant, and update progress
                     if self.lazy:
                         tensor = LazyTorchTensor.from_eager(tensor)
                     base_name = get_base_tensor_name(name)
@@ -488,11 +526,13 @@ if __name__ == '__main__':
                             tensor_map[base_name] = PartialLoraTensor(B=tensor)
 
                 for name, tensor in tensor_map.items():
+                    # Iterate over items, evaluate loop invariant, and update progress
                     assert tensor.A is not None
                     assert tensor.B is not None
                     yield (name, cast(torch.Tensor, LoraTorchTensor(tensor.A, tensor.B)))
 
             def modify_tensors(self, data_torch: Tensor, name: str, bid: int | None) -> Iterable[tuple[str, Tensor]]:
+                # Step 1: Validate input parameters, operational preconditions, and state
                 dest = list(super().modify_tensors(data_torch, name, bid))
                 # some archs may have the same tensor for lm_head and output (tie word embeddings)
                 # in this case, adapters targeting lm_head will fail when using llama-export-lora

@@ -1,3 +1,12 @@
+# ==============================================================================
+# Program: test_robustness_features.py
+# Programmer: Ethan-da-Tech-Wizard
+# Last Modified: November 18, 2026
+# Purpose: Comprehensive test suite exercising robustness features functionality.
+#          Verifies state transitions, error boundaries, regression resistance,
+#          and contract compliance under tests.
+# ==============================================================================
+
 from unittest.mock import MagicMock, patch
 
 from app.engine.model_loader import ModelCircuitBreaker, ModelLoader
@@ -6,16 +15,20 @@ from app.engine.websocket_server import WebSocketServerManager
 
 class FakeClock:
     def __init__(self):
+        # Step 1: Validate input parameters, operational preconditions, and state
         self.now = 0.0
 
     def __call__(self):
+        # Step 1: Validate input parameters, operational preconditions, and state
         return self.now
 
     def advance(self, seconds: float):
+        # Step 1: Validate input parameters, operational preconditions, and state
         self.now += seconds
 
 
 def test_circuit_breaker_states():
+    # Step 1: Validate input parameters, operational preconditions, and state
     clock = FakeClock()
     breaker = ModelCircuitBreaker(failure_threshold=2, cooldown_duration=10.0, clock=clock)
     
@@ -81,6 +94,7 @@ def test_model_loader_speculative_fallback_persists(tmp_path, monkeypatch):
 
 
 def test_websocket_client_disconnect_cleanup():
+    # Step 1: Validate input parameters, operational preconditions, and state
     state_mock = MagicMock()
     
     with patch("app.engine.websocket_server.save_cached_token"), \

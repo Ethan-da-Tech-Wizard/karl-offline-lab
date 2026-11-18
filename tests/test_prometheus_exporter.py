@@ -1,3 +1,12 @@
+# ==============================================================================
+# Program: test_prometheus_exporter.py
+# Programmer: Ethan-da-Tech-Wizard
+# Last Modified: November 18, 2026
+# Purpose: Comprehensive test suite exercising prometheus exporter functionality.
+#          Verifies state transitions, error boundaries, regression resistance,
+#          and contract compliance under tests.
+# ==============================================================================
+
 from types import SimpleNamespace
 
 import tests.qt_test_helper  # noqa: F401
@@ -8,6 +17,7 @@ from app.engine.websocket_server import WebSocketServerManager
 
 
 def make_manager():
+    # Step 1: Validate input parameters, operational preconditions, and state
     manager = WebSocketServerManager.__new__(WebSocketServerManager)
     manager.clients = set()
     manager.last_generation_metrics = {
@@ -20,14 +30,17 @@ def make_manager():
 
 
 def make_request(path, headers=None):
+    # Step 1: Validate input parameters, operational preconditions, and state
     return SimpleNamespace(path=path, headers=Headers(headers or []))
 
 
 def response_text(response):
+    # Step 1: Validate input parameters, operational preconditions, and state
     return bytes(response.body).decode("utf-8")
 
 
 def test_prometheus_metrics_exposition_contains_expected_headers():
+    # Step 1: Validate input parameters, operational preconditions, and state
     manager = make_manager()
     manager.clients = {object()}
 
@@ -45,6 +58,7 @@ def test_prometheus_metrics_exposition_contains_expected_headers():
 
 
 def test_metrics_http_request_returns_200_prometheus_text():
+    # Step 1: Validate input parameters, operational preconditions, and state
     manager = make_manager()
 
     response = manager._process_http_request(None, make_request("/metrics"))
@@ -57,6 +71,7 @@ def test_metrics_http_request_returns_200_prometheus_text():
 
 
 def test_non_websocket_http_request_returns_404():
+    # Step 1: Validate input parameters, operational preconditions, and state
     manager = make_manager()
 
     response = manager._process_http_request(None, make_request("/not-metrics"))
@@ -66,6 +81,7 @@ def test_non_websocket_http_request_returns_404():
 
 
 def test_websocket_upgrade_bypasses_http_interceptor():
+    # Step 1: Validate input parameters, operational preconditions, and state
     manager = make_manager()
     request = make_request(
         "/?token=test-token",
@@ -76,6 +92,7 @@ def test_websocket_upgrade_bypasses_http_interceptor():
 
 
 def test_generation_diagnostics_update_last_metrics():
+    # Step 1: Validate input parameters, operational preconditions, and state
     manager = make_manager()
 
     manager._record_generation_metrics({

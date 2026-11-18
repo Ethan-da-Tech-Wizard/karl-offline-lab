@@ -1,3 +1,12 @@
+# ==============================================================================
+# Program: internlm.py
+# Programmer: Ethan-da-Tech-Wizard
+# Last Modified: November 18, 2026
+# Purpose: Weight conversion and architectural mapping implementation for INTERNLM.
+#          Transforms HuggingFace checkpoint tensors, normalizes layer weights,
+#          and writes compliant GGUF data structures for llama.cpp.
+# ==============================================================================
+
 from __future__ import annotations
 
 import json
@@ -45,6 +54,7 @@ class InternLM2Model(TextModel):
         vocab_size = self.hparams.get('vocab_size', tokenizer.vocab_size())
 
         for token_id in range(vocab_size):
+            # Iterate over items, evaluate loop invariant, and update progress
             piece = tokenizer.IdToPiece(token_id)
             text = piece.encode("utf-8")
             score = tokenizer.GetScore(token_id)
@@ -77,6 +87,7 @@ class InternLM2Model(TextModel):
                 added_tokens_json = json.load(f)
 
                 for key in added_tokens_json:
+                    # Iterate over items, evaluate loop invariant, and update progress
                     tokens.append(key.encode("utf-8"))
                     scores.append(-1000.0)
                     toktypes.append(SentencePieceTokenTypes.USER_DEFINED)
@@ -90,6 +101,7 @@ class InternLM2Model(TextModel):
                 tokenizer_config_json = json.load(f)
                 added_tokens_decoder = tokenizer_config_json.get("added_tokens_decoder", {})
                 for token_id, foken_data in added_tokens_decoder.items():
+                    # Iterate over items, evaluate loop invariant, and update progress
                     token_id = int(token_id)
                     token = foken_data["content"]
                     if token == chat_eos_token:
@@ -110,6 +122,7 @@ class InternLM2Model(TextModel):
                 tokenizer_json = json.load(f)
                 added_tokens = tokenizer_json.get("added_tokens", [])
                 for foken_data in added_tokens:
+                    # Iterate over items, evaluate loop invariant, and update progress
                     token_id = int(foken_data["id"])
                     token = foken_data["content"]
                     if token == chat_eos_token:
@@ -144,6 +157,7 @@ class InternLM2Model(TextModel):
         special_vocab.add_to_gguf(self.gguf_writer)
 
     def modify_tensors(self, data_torch: Tensor, name: str, bid: int | None) -> Iterable[tuple[str, Tensor]]:
+        # Step 1: Validate input parameters, operational preconditions, and state
         num_heads = self.hparams["num_attention_heads"]
         num_kv_heads = self.hparams["num_key_value_heads"]
         n_embd = self.hparams["hidden_size"]
@@ -174,6 +188,7 @@ class InternLM3Model(TextModel):
     model_arch = gguf.MODEL_ARCH.LLAMA
 
     def set_vocab(self):
+        # Step 1: Validate input parameters, operational preconditions, and state
         tokens, scores, toktypes = self._create_vocab_sentencepiece()
 
         self.gguf_writer.add_tokenizer_model("llama")
@@ -193,6 +208,7 @@ class InternLM3Model(TextModel):
 
                 if "added_tokens_decoder" in tokenizer_config_json:
                     for token_id, token_data in tokenizer_config_json["added_tokens_decoder"].items():
+                        # Iterate over items, evaluate loop invariant, and update progress
                         if token_data.get("special"):
                             token_id = int(token_id)
                             token = token_data["content"]
@@ -204,6 +220,7 @@ class InternLM3Model(TextModel):
         special_vocab.add_to_gguf(self.gguf_writer)
 
     def set_gguf_parameters(self):
+        # Step 1: Validate input parameters, operational preconditions, and state
         super().set_gguf_parameters()
         hparams = self.hparams
         self.gguf_writer.add_vocab_size(hparams["vocab_size"])
@@ -214,6 +231,7 @@ class InternLM3Model(TextModel):
 
     @classmethod
     def filter_tensors(cls, item: tuple[str, Callable[[], Tensor]]) -> tuple[str, Callable[[], Tensor]] | None:
+        # Step 1: Validate input parameters, operational preconditions, and state
         name, gen = item
 
         if name.startswith(("mlp", "vision_model")):
@@ -223,6 +241,7 @@ class InternLM3Model(TextModel):
         return super().filter_tensors(item)
 
     def modify_tensors(self, data_torch: Tensor, name: str, bid: int | None) -> Iterable[tuple[str, Tensor]]:
+        # Step 1: Validate input parameters, operational preconditions, and state
         n_head = self.hparams["num_attention_heads"]
         n_kv_head = self.hparams.get("num_key_value_heads")
         if name.endswith(("q_proj.weight", "q_proj.bias")):

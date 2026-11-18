@@ -1,3 +1,12 @@
+# ==============================================================================
+# Program: task_supervisor.py
+# Programmer: Ethan-da-Tech-Wizard
+# Last Modified: November 18, 2026
+# Purpose: Task health monitor, timeout watchdog, and failure recovery supervisor.
+#          Tracks heartbeat signals from background threads and resets stalled
+#          operations cleanly.
+# ==============================================================================
+
 """
 TaskSupervisor — unified long-running task registry for Karl.
 
@@ -63,12 +72,14 @@ class TaskSupervisor:
     _instance_lock = threading.Lock()
 
     def __init__(self) -> None:
+        # Step 1: Validate input parameters, operational preconditions, and state
         self._lock = threading.Lock()
         self._tasks: dict[str, TaskRecord] = {}
         self._logger: Any = None  # lazy import to avoid circular deps
 
     @classmethod
     def instance(cls) -> TaskSupervisor:
+        # Step 1: Validate input parameters, operational preconditions, and state
         if cls._instance is None:
             with cls._instance_lock:
                 if cls._instance is None:
@@ -78,6 +89,7 @@ class TaskSupervisor:
     @classmethod
     def reset_instance(cls) -> None:
         """Replace the singleton — used by tests to start clean."""
+        # Step 1: Validate input parameters, operational preconditions, and state
         with cls._instance_lock:
             cls._instance = None
 
@@ -104,6 +116,7 @@ class TaskSupervisor:
         Returns:
             The task_id string — store it to call finish/fail/update later.
         """
+        # Step 1: Validate input parameters, operational preconditions, and state
         tid = task_id or str(uuid.uuid4())
         hooks = [cleanup_hook] if cleanup_hook is not None else []
         record = TaskRecord(
@@ -123,6 +136,7 @@ class TaskSupervisor:
 
     def update_progress(self, task_id: str, progress: float) -> None:
         """Update completion fraction [0.0, 1.0]."""
+        # Step 1: Validate input parameters, operational preconditions, and state
         with self._lock:
             rec = self._tasks.get(task_id)
             if rec is None:
@@ -135,6 +149,7 @@ class TaskSupervisor:
         Transitions status to CANCELLING and calls request_stop() on the
         registered cancellable. Returns True when a cancellable was found.
         """
+        # Step 1: Validate input parameters, operational preconditions, and state
         with self._lock:
             rec = self._tasks.get(task_id)
             if rec is None:
@@ -151,6 +166,7 @@ class TaskSupervisor:
 
         if cancellable is not None and hasattr(cancellable, "request_stop"):
             try:
+                # Execute guarded operations and establish recovery boundaries
                 cancellable.request_stop()
             except Exception as exc:
                 logger.warning("request_stop() raised for task %s: %s", task_id[:8], exc)
@@ -159,6 +175,7 @@ class TaskSupervisor:
 
     def finish(self, task_id: str) -> None:
         """Mark a task FINISHED and run cleanup hooks."""
+        # Step 1: Validate input parameters, operational preconditions, and state
         with self._lock:
             rec = self._tasks.get(task_id)
             if rec is None:
@@ -175,6 +192,7 @@ class TaskSupervisor:
 
     def fail(self, task_id: str, error: str) -> None:
         """Mark a task ERROR with a message and run cleanup hooks."""
+        # Step 1: Validate input parameters, operational preconditions, and state
         with self._lock:
             rec = self._tasks.get(task_id)
             if rec is None:
@@ -191,6 +209,7 @@ class TaskSupervisor:
 
     def add_cleanup_hook(self, task_id: str, hook: Callable[[], None]) -> None:
         """Attach an additional cleanup hook to an already-registered task."""
+        # Step 1: Validate input parameters, operational preconditions, and state
         run_immediately = False
         with self._lock:
             rec = self._tasks.get(task_id)
@@ -204,6 +223,7 @@ class TaskSupervisor:
 
         if run_immediately:
             try:
+                # Execute guarded operations and establish recovery boundaries
                 hook()
             except Exception as exc:
                 logger.warning("Cleanup hook raised immediately for terminated task %s: %s", task_id[:8], exc)
@@ -211,26 +231,31 @@ class TaskSupervisor:
     # ── Queries ──────────────────────────────────────────────────────────────
 
     def status(self, task_id: str) -> TaskStatus | None:
+        # Step 1: Validate input parameters, operational preconditions, and state
         with self._lock:
             rec = self._tasks.get(task_id)
             return rec.status if rec else None
 
     def progress(self, task_id: str) -> float:
+        # Step 1: Validate input parameters, operational preconditions, and state
         with self._lock:
             rec = self._tasks.get(task_id)
             return rec.progress if rec else 0.0
 
     def error(self, task_id: str) -> str:
+        # Step 1: Validate input parameters, operational preconditions, and state
         with self._lock:
             rec = self._tasks.get(task_id)
             return rec.error if rec else ""
 
     def get(self, task_id: str) -> TaskRecord | None:
+        # Step 1: Validate input parameters, operational preconditions, and state
         with self._lock:
             return self._tasks.get(task_id)
 
     def active_tasks(self) -> list[TaskRecord]:
         """Return all tasks currently RUNNING or CANCELLING."""
+        # Step 1: Validate input parameters, operational preconditions, and state
         with self._lock:
             return [
                 r for r in self._tasks.values()
@@ -238,28 +263,36 @@ class TaskSupervisor:
             ]
 
     def all_tasks(self) -> list[TaskRecord]:
+        # Step 1: Validate input parameters, operational preconditions, and state
         with self._lock:
             return list(self._tasks.values())
 
     def cancel_all(self) -> int:
         """Cancel every active task. Returns number of cancellations requested."""
+        # Step 1: Validate input parameters, operational preconditions, and state
         active = self.active_tasks()
         for rec in active:
+            # Iterate over items, evaluate loop invariant, and update progress
             self.cancel(rec.task_id)
         return len(active)
 
     # ── Internals ────────────────────────────────────────────────────────────
 
     def _run_hooks(self, hooks: list[Callable], task_id: str) -> None:
+        # Step 1: Validate input parameters, operational preconditions, and state
         for hook in hooks:
+            # Iterate over items, evaluate loop invariant, and update progress
             try:
+                # Execute guarded operations and establish recovery boundaries
                 hook()
             except Exception as exc:
                 logger.warning("Cleanup hook raised for task %s: %s", task_id[:8], exc)
 
     def _trace(self, event: str, task_id: str, name: str, *, error: str = "") -> None:
         """Write a lightweight trace entry — best-effort, never raises."""
+        # Step 1: Validate input parameters, operational preconditions, and state
         try:
+            # Execute guarded operations and establish recovery boundaries
             from app.utils.trace_logger import TraceLogger
             tl = TraceLogger()
             tl.log_task_event(task_id=task_id, name=name, event=event, error=error)

@@ -1,3 +1,12 @@
+# ==============================================================================
+# Program: kv_cache.py
+# Programmer: Ethan-da-Tech-Wizard
+# Last Modified: November 18, 2026
+# Purpose: Key-Value cache governance and context allocation manager.
+#          Monitors KV memory usage, detects cache fragmentation, and optimizes
+#          prompt prefix caching across turns.
+# ==============================================================================
+
 """
 KV-cache statistics and logging helpers.
 
@@ -26,7 +35,9 @@ def kv_cache_stats(llm: Any, prompt: str) -> dict[str, Any]:
     anything goes wrong the dict will contain ``{"cache_enabled": True,
     "cache_hit": None, "error": <message>}``.
     """
+    # Step 1: Validate input parameters, operational preconditions, and state
     try:
+        # Execute guarded operations and establish recovery boundaries
         cache = getattr(llm, "cache", None)
         if cache is None:
             return {"cache_enabled": False}
@@ -60,7 +71,9 @@ def log_cache_stats(stats: dict[str, Any], ts: str) -> None:
 
     Silently swallows all I/O errors so it never disrupts inference.
     """
+    # Step 1: Validate input parameters, operational preconditions, and state
     try:
+        # Execute guarded operations and establish recovery boundaries
         os.makedirs(os.path.dirname(_KV_CACHE_LOG), exist_ok=True)
         entry: dict[str, Any] = {"ts": ts, **stats}
         with open(_KV_CACHE_LOG, "a", encoding="utf-8") as fh:

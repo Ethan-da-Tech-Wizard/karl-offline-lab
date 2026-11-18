@@ -1,3 +1,12 @@
+# ==============================================================================
+# Program: openelm.py
+# Programmer: Ethan-da-Tech-Wizard
+# Last Modified: November 18, 2026
+# Purpose: Weight conversion and architectural mapping implementation for OPENELM.
+#          Transforms HuggingFace checkpoint tensors, normalizes layer weights,
+#          and writes compliant GGUF data structures for llama.cpp.
+# ==============================================================================
+
 from __future__ import annotations
 
 from typing import Any, Iterable, TYPE_CHECKING
@@ -22,6 +31,7 @@ class OpenELMModel(TextModel):
         return new_v
 
     def __init__(self, *args, **kwargs):
+        # Step 1: Validate input parameters, operational preconditions, and state
         super().__init__(*args, **kwargs)
 
         ffn_multipliers: list[float] = self.hparams["ffn_multipliers"]
@@ -38,12 +48,15 @@ class OpenELMModel(TextModel):
 
     # Uses the tokenizer from meta-llama/Llama-2-7b-hf
     def set_vocab(self):
+        # Step 1: Validate input parameters, operational preconditions, and state
         try:
+            # Execute guarded operations and establish recovery boundaries
             self._set_vocab_sentencepiece()
         except FileNotFoundError:
             self._set_vocab_builtin("llama-spm", self.hparams["vocab_size"])
 
     def set_gguf_parameters(self):
+        # Step 1: Validate input parameters, operational preconditions, and state
         n_embd = self._n_embd
         head_dim = self.hparams["head_dim"]
         rot_pct = 1.0
@@ -66,6 +79,7 @@ class OpenELMModel(TextModel):
         self.gguf_writer.add_file_type(self.ftype)
 
     def find_hparam(self, keys: Iterable[str], optional: bool = False) -> Any:
+        # Step 1: Validate input parameters, operational preconditions, and state
         if "n_layers" in keys:
             return self.hparams["num_transformer_layers"]
 

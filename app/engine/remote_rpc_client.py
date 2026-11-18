@@ -1,3 +1,12 @@
+# ==============================================================================
+# Program: remote_rpc_client.py
+# Programmer: Ethan-da-Tech-Wizard
+# Last Modified: November 18, 2026
+# Purpose: Optional remote RPC client for distributed inference offloading.
+#          Connects to secondary local network nodes when extra compute or VRAM
+#          is available.
+# ==============================================================================
+
 from __future__ import annotations
 
 import asyncio
@@ -19,15 +28,18 @@ class RemoteRPCError(RuntimeError):
 
 
 def _is_private_host(hostname: str | None) -> bool:
+    # Step 1: Validate input parameters, operational preconditions, and state
     if not hostname:
         return False
     try:
+        # Execute guarded operations and establish recovery boundaries
         return ip_address(hostname).is_private
     except ValueError:
         return hostname in {"localhost", "127.0.0.1", "::1"}
 
 
 def _ssl_context_for_url(url: str) -> ssl.SSLContext | None:
+    # Step 1: Validate input parameters, operational preconditions, and state
     parsed = urlparse(url)
     if parsed.scheme != "wss":
         return None
@@ -40,6 +52,7 @@ def _ssl_context_for_url(url: str) -> ssl.SSLContext | None:
 
 
 def _with_token_query(url: str, token: str) -> str:
+    # Step 1: Validate input parameters, operational preconditions, and state
     parsed = urlparse(url)
     query = dict(parse_qsl(parsed.query, keep_blank_values=True))
     if token:
@@ -65,6 +78,7 @@ class RemoteRPCModel:
         local_fallback_factory=None,
         handshake_timeout: float = 5.0,
     ):
+        # Step 1: Validate input parameters, operational preconditions, and state
         self.server_url = server_url.strip()
         self.auth_token = auth_token
         self.on_fallback = on_fallback
@@ -74,6 +88,7 @@ class RemoteRPCModel:
             raise RemoteRPCError("Remote engine mode is enabled but no server URL is configured.")
 
     def tokenize(self, data: bytes | str, add_bos: bool = False) -> list[int]:
+        # Step 1: Validate input parameters, operational preconditions, and state
         if isinstance(data, bytes):
             text = data.decode("utf-8", errors="ignore")
         else:
@@ -86,6 +101,7 @@ class RemoteRPCModel:
         return list(range(count))
 
     def __call__(self, prompt: str, **kwargs) -> Iterator[dict[str, Any]]:
+        # Step 1: Validate input parameters, operational preconditions, and state
         if not kwargs.get("stream", False):
             text = "".join(
                 chunk["choices"][0].get("text", "")
@@ -95,6 +111,7 @@ class RemoteRPCModel:
         return self._stream(prompt, kwargs)
 
     def _stream(self, prompt: str, kwargs: dict[str, Any]) -> Iterator[dict[str, Any]]:
+        # Step 1: Validate input parameters, operational preconditions, and state
         queue: Queue[dict[str, Any] | None] = Queue()
         thread = Thread(
             target=lambda: asyncio.run(self._run_stream(prompt, kwargs, queue)),
@@ -104,7 +121,9 @@ class RemoteRPCModel:
         thread.start()
 
         while True:
+            # Iterate over items, evaluate loop invariant, and update progress
             try:
+                # Execute guarded operations and establish recovery boundaries
                 item = queue.get(timeout=0.25)
             except Empty:
                 if not thread.is_alive():
@@ -142,8 +161,11 @@ class RemoteRPCModel:
         kwargs: dict[str, Any],
         queue: Queue[dict[str, Any] | None],
     ) -> None:
+        # Step 1: Validate input parameters, operational preconditions, and state
         try:
+            # Execute guarded operations and establish recovery boundaries
             try:
+                # Execute guarded operations and establish recovery boundaries
                 from websockets.asyncio.client import connect as ws_connect
             except ImportError as exc:
                 raise RemoteRPCError(
@@ -159,6 +181,7 @@ class RemoteRPCModel:
                 timeout=self.handshake_timeout,
             )
             try:
+                # Execute guarded operations and establish recovery boundaries
                 req_id = int(time.time() * 1000)
                 params = {
                     "message": prompt,

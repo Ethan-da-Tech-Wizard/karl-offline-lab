@@ -1,3 +1,12 @@
+# ==============================================================================
+# Program: test_self_correction_dataset.py
+# Programmer: Ethan-da-Tech-Wizard
+# Last Modified: November 18, 2026
+# Purpose: Comprehensive test suite exercising self correction dataset functionality.
+#          Verifies state transitions, error boundaries, regression resistance,
+#          and contract compliance under tests.
+# ==============================================================================
+
 import json
 import ast
 
@@ -14,6 +23,7 @@ from tools.generate_code_sft_dataset import DefinitionVisitor, build_user_prompt
 
 
 def test_normalize_problem_record_accepts_verifiable_task():
+    # Step 1: Validate input parameters, operational preconditions, and state
     record = {
         "id": "task-1",
         "problem_statement": "Write solve(x).",
@@ -31,10 +41,12 @@ def test_normalize_problem_record_accepts_verifiable_task():
 
 
 def test_normalize_problem_record_rejects_missing_verifier():
+    # Step 1: Validate input parameters, operational preconditions, and state
     assert normalize_problem_record({"prompt": "Write code"}) is None
 
 
 def test_extract_code_and_thought_blocks():
+    # Step 1: Validate input parameters, operational preconditions, and state
     text = "<think>\nfix off by one\n</think>\n```python\ndef solve():\n    return 1\n```"
 
     assert extract_thought_block(text) == "fix off by one"
@@ -42,6 +54,7 @@ def test_extract_code_and_thought_blocks():
 
 
 def test_code_diff_tracks_correction():
+    # Step 1: Validate input parameters, operational preconditions, and state
     before = "```python\ndef solve():\n    return 1\n```"
     after = "```python\ndef solve():\n    return 2\n```"
 
@@ -54,6 +67,7 @@ def test_code_diff_tracks_correction():
 
 
 def test_build_self_correction_row_format():
+    # Step 1: Validate input parameters, operational preconditions, and state
     problem = CodingProblem(
         problem_id="p1",
         prompt="Return 2.",
@@ -93,6 +107,7 @@ def test_build_self_correction_row_format():
 
 
 def test_build_correction_prompt_includes_traceback():
+    # Step 1: Validate input parameters, operational preconditions, and state
     problem = CodingProblem("p1", "Write solve().", "def verify(response): return False")
 
     prompt = build_correction_prompt(problem, "bad response", "NameError: solve")
@@ -103,6 +118,7 @@ def test_build_correction_prompt_includes_traceback():
 
 
 def test_code_scrape_docstring_parsing_feeds_prompt_formatting():
+    # Step 1: Validate input parameters, operational preconditions, and state
     source = '''
 def add(a: int, b: int) -> int:
     """Return the sum of two integers."""

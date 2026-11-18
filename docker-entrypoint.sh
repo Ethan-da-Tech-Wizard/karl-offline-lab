@@ -1,4 +1,14 @@
 #!/bin/sh
+# ==============================================================================
+# Program: docker-entrypoint.sh
+# Programmer: Ethan-da-Tech-Wizard
+# Last Modified: November 18, 2026
+# Purpose: Container initialization and bootstrap script.
+#          Configures runtime environment variables, provisions self-signed TLS
+#          certificates for secure WebSocket (WSS) communication, and delegates
+#          execution to the container command.
+# ==============================================================================
+
 # Karl container entrypoint.
 #
 # KARL_WS_HOST=0.0.0.0 (set by docker-compose.yml / k8s) makes the WSS

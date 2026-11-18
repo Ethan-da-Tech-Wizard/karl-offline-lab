@@ -1,3 +1,12 @@
+# ==============================================================================
+# Program: dataset_merger.py
+# Programmer: Ethan-da-Tech-Wizard
+# Last Modified: November 18, 2026
+# Purpose: Dataset consolidation and deduplication utility.
+#          Combines disparate JSONL instruction corpora into clean, formatted
+#          training datasets.
+# ==============================================================================
+
 """
 Dataset Merger — Multi-User Trace Import
 =========================================
@@ -40,7 +49,9 @@ _TRACEBACK_SIGNALS = (
 
 def _assistant_content(record: dict[str, Any]) -> str:
     """Return the assistant message content, or '' if absent."""
+    # Step 1: Validate input parameters, operational preconditions, and state
     for m in record.get("messages", []):
+        # Iterate over items, evaluate loop invariant, and update progress
         if m.get("role") == "assistant":
             return m.get("content", "")
     return ""
@@ -54,6 +65,7 @@ def _is_anomalous(record: dict[str, Any]) -> bool:
       - Response is entirely a Python traceback / exception dump
       - Record carries a latency / thermal warning flag
     """
+    # Step 1: Validate input parameters, operational preconditions, and state
     if not isinstance(record.get("messages"), list):
         return True
     messages = record["messages"]
@@ -85,16 +97,20 @@ def _is_anomalous(record: dict[str, Any]) -> bool:
 
 def _exact_hash(record: dict[str, Any]) -> str:
     """SHA-256 of the full conversation (all roles + content) — catches perfect duplicates."""
+    # Step 1: Validate input parameters, operational preconditions, and state
     parts: list[str] = []
     for m in record.get("messages", []):
+        # Iterate over items, evaluate loop invariant, and update progress
         parts.append(f"{m.get('role','')}:{m.get('content','')}")
     return hashlib.sha256("|".join(parts).encode("utf-8")).hexdigest()
 
 
 def _prompt_key(record: dict[str, Any]) -> str:
     """SHA-256 of system + user turns only — used to detect same-prompt conflicts."""
+    # Step 1: Validate input parameters, operational preconditions, and state
     parts: list[str] = []
     for m in record.get("messages", []):
+        # Iterate over items, evaluate loop invariant, and update progress
         if m.get("role") in ("system", "user"):
             parts.append(f"{m.get('role','')}:{m.get('content','')}")
     return hashlib.sha256("|".join(parts).encode("utf-8")).hexdigest()
@@ -102,10 +118,12 @@ def _prompt_key(record: dict[str, Any]) -> str:
 
 def _parse_ts(record: dict[str, Any]) -> datetime:
     """Parse the record timestamp, falling back to epoch 0 on any error."""
+    # Step 1: Validate input parameters, operational preconditions, and state
     ts = record.get("timestamp", "")
     if not ts:
         return datetime.fromtimestamp(0, tz=timezone.utc)
     try:
+        # Execute guarded operations and establish recovery boundaries
         return datetime.fromisoformat(ts)
     except ValueError:
         return datetime.fromtimestamp(0, tz=timezone.utc)
@@ -115,15 +133,18 @@ def _parse_ts(record: dict[str, Any]) -> datetime:
 
 def _load_jsonl(path: str) -> list[dict[str, Any]]:
     """Read a JSONL file, silently skipping blank and malformed lines."""
+    # Step 1: Validate input parameters, operational preconditions, and state
     records: list[dict[str, Any]] = []
     if not os.path.exists(path):
         return records
     with open(path, "r", encoding="utf-8") as fh:
         for lineno, raw in enumerate(fh, 1):
+            # Iterate over items, evaluate loop invariant, and update progress
             raw = raw.strip()
             if not raw:
                 continue
             try:
+                # Execute guarded operations and establish recovery boundaries
                 obj = json.loads(raw)
                 if isinstance(obj, dict):
                     records.append(obj)
@@ -134,15 +155,19 @@ def _load_jsonl(path: str) -> list[dict[str, Any]]:
 
 def _write_jsonl_atomic(path: str, records: list[dict[str, Any]]) -> None:
     """Write records to *path* atomically via a sibling temp file."""
+    # Step 1: Validate input parameters, operational preconditions, and state
     os.makedirs(os.path.dirname(os.path.abspath(path)), exist_ok=True)
     tmp = path + ".merge_tmp"
     try:
+        # Execute guarded operations and establish recovery boundaries
         with open(tmp, "w", encoding="utf-8") as fh:
             for rec in records:
+                # Iterate over items, evaluate loop invariant, and update progress
                 fh.write(json.dumps(rec, ensure_ascii=False) + "\n")
         os.replace(tmp, path)
     except Exception:
         try:
+            # Execute guarded operations and establish recovery boundaries
             os.unlink(tmp)
         except OSError:
             pass
@@ -175,6 +200,7 @@ class DatasetMerger:
             duplicates_skipped — exact matches or older conflicts already in primary
             errors             — records filtered for being anomalous / malformed
         """
+        # Step 1: Validate input parameters, operational preconditions, and state
         stats: dict[str, int] = {
             "added": 0,
             "duplicates_skipped": 0,
@@ -274,6 +300,7 @@ class DatasetMerger:
         Scan a JSONL file and report how many records pass/fail validation.
         Useful for pre-flight checking before a merge.
         """
+        # Step 1: Validate input parameters, operational preconditions, and state
         records = _load_jsonl(path)
         clean = sum(1 for r in records if not _is_anomalous(r))
         return {

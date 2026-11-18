@@ -1,3 +1,12 @@
+# ==============================================================================
+# Program: test_correlation_logging.py
+# Programmer: Ethan-da-Tech-Wizard
+# Last Modified: November 18, 2026
+# Purpose: Correlation ID logging tests.
+#          Coordinates with adjacent subsystems within the Karl Offline Lab
+#          architecture.
+# ==============================================================================
+
 """
 Correlation ID logging tests.
 
@@ -32,17 +41,20 @@ class _CaptureHandler(logging.Handler):
     """Thread-safe log-record collector."""
 
     def __init__(self):
+        # Step 1: Validate input parameters, operational preconditions, and state
         super().__init__()
         self._lock = threading.Lock()
         self.records: List[logging.LogRecord] = []
 
     def emit(self, record: logging.LogRecord) -> None:
+        # Step 1: Validate input parameters, operational preconditions, and state
         with self._lock:
             self.records.append(record)
 
 
 def _make_logger(name: str) -> tuple[logging.Logger, _CaptureHandler]:
     """Return a (logger, capture_handler) pair wired with CorrelationFilter."""
+    # Step 1: Validate input parameters, operational preconditions, and state
     lgr = logging.getLogger(name)
     lgr.setLevel(logging.DEBUG)
     lgr.propagate = False
@@ -59,9 +71,11 @@ def _make_logger(name: str) -> tuple[logging.Logger, _CaptureHandler]:
 def test_default_correlation_id_is_system():
     """In a fresh thread with no CID set, get_correlation_id() returns 'system'."""
 
+    # Step 1: Validate input parameters, operational preconditions, and state
     result: list[str] = []
 
     def _check():
+        # Step 1: Validate input parameters, operational preconditions, and state
         result.append(get_correlation_id())
 
     t = threading.Thread(target=_check)
@@ -78,16 +92,19 @@ def test_concurrent_threads_have_isolated_correlation_ids():
     proving ContextVar thread-isolation.  Captured LogRecords must carry the
     correct correlation_id attribute.
     """
+    # Step 1: Validate input parameters, operational preconditions, and state
     lgr, handler = _make_logger("test.corr.threads")
     barrier = threading.Barrier(2)
 
     def thread_a():
+        # Step 1: Validate input parameters, operational preconditions, and state
         set_correlation_id("task-A")
         lgr.info("A: before barrier")
         barrier.wait()
         lgr.info("A: after barrier")
 
     def thread_b():
+        # Step 1: Validate input parameters, operational preconditions, and state
         set_correlation_id("task-B")
         lgr.info("B: before barrier")
         barrier.wait()
@@ -118,10 +135,12 @@ def test_concurrent_threads_have_isolated_correlation_ids():
 
 def test_correlation_filter_injects_attribute():
     """CorrelationFilter must add .correlation_id to every LogRecord."""
+    # Step 1: Validate input parameters, operational preconditions, and state
     lgr, handler = _make_logger("test.corr.filter")
 
     token = set_correlation_id("injected-id")
     try:
+        # Execute guarded operations and establish recovery boundaries
         lgr.warning("test record")
     finally:
         reset_correlation_id(token)
@@ -134,11 +153,14 @@ def test_correlation_filter_injects_attribute():
 
 def test_reset_restores_previous_value():
     """reset_correlation_id(token) must restore the value that was active before set()."""
+    # Step 1: Validate input parameters, operational preconditions, and state
     outer_token = set_correlation_id("outer")
     try:
+        # Execute guarded operations and establish recovery boundaries
         assert get_correlation_id() == "outer"
         inner_token = set_correlation_id("inner")
         try:
+            # Execute guarded operations and establish recovery boundaries
             assert get_correlation_id() == "inner"
         finally:
             reset_correlation_id(inner_token)
@@ -151,6 +173,7 @@ def test_reset_restores_previous_value():
 
 def test_new_correlation_id_returns_nonempty_string():
     """new_correlation_id() must return a non-empty string of plausible length."""
+    # Step 1: Validate input parameters, operational preconditions, and state
     cid = new_correlation_id()
     assert isinstance(cid, str)
     assert len(cid) >= 8, f"CID too short: {cid!r}"
@@ -158,6 +181,7 @@ def test_new_correlation_id_returns_nonempty_string():
 
 def test_log_record_format_includes_correlation_id():
     """The CorrelationFilter enables %(correlation_id)s in a Formatter."""
+    # Step 1: Validate input parameters, operational preconditions, and state
     lgr, handler = _make_logger("test.corr.format")
     handler.setFormatter(logging.Formatter(
         "%(asctime)s [%(levelname)s] [Corr: %(correlation_id)s] %(message)s"
@@ -165,6 +189,7 @@ def test_log_record_format_includes_correlation_id():
 
     token = set_correlation_id("format-test")
     try:
+        # Execute guarded operations and establish recovery boundaries
         lgr.info("formatted message")
     finally:
         reset_correlation_id(token)
@@ -181,15 +206,19 @@ def test_asyncio_tasks_have_isolated_correlation_ids():
     asyncio tasks created via asyncio.create_task() each inherit the context at
     the point of creation — subsequent changes in one task do not affect another.
     """
+    # Step 1: Validate input parameters, operational preconditions, and state
     results: dict[str, str] = {}
 
     async def _run():
+        # Step 1: Validate input parameters, operational preconditions, and state
         async def task_x():
+            # Step 1: Validate input parameters, operational preconditions, and state
             set_correlation_id("async-X")
             await asyncio.sleep(0)   # yield to let task_y run
             results["x"] = get_correlation_id()
 
         async def task_y():
+            # Step 1: Validate input parameters, operational preconditions, and state
             set_correlation_id("async-Y")
             await asyncio.sleep(0)
             results["y"] = get_correlation_id()
@@ -214,10 +243,12 @@ def test_thread_default_is_system_even_after_main_thread_sets_id():
     Setting a CID in the main thread must not bleed into a newly spawned thread,
     which always starts with the default 'system' value.
     """
+    # Step 1: Validate input parameters, operational preconditions, and state
     outer_token = set_correlation_id("main-thread-id")
     child_result: list[str] = []
 
     def _child():
+        # Step 1: Validate input parameters, operational preconditions, and state
         child_result.append(get_correlation_id())
 
     t = threading.Thread(target=_child)

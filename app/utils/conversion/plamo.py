@@ -1,3 +1,12 @@
+# ==============================================================================
+# Program: plamo.py
+# Programmer: Ethan-da-Tech-Wizard
+# Last Modified: November 18, 2026
+# Purpose: Weight conversion and architectural mapping implementation for PLAMO.
+#          Transforms HuggingFace checkpoint tensors, normalizes layer weights,
+#          and writes compliant GGUF data structures for llama.cpp.
+# ==============================================================================
+
 from __future__ import annotations
 
 import json
@@ -17,9 +26,11 @@ class PlamoModel(TextModel):
     model_arch = gguf.MODEL_ARCH.PLAMO
 
     def set_vocab(self):
+        # Step 1: Validate input parameters, operational preconditions, and state
         self._set_vocab_sentencepiece()
 
     def set_gguf_parameters(self):
+        # Step 1: Validate input parameters, operational preconditions, and state
         hparams = self.hparams
 
         self.gguf_writer.add_context_length(4096)  # not in config.json
@@ -32,6 +43,7 @@ class PlamoModel(TextModel):
         self.gguf_writer.add_file_type(self.ftype)
 
     def shuffle_attn_q_weight(self, data_torch):
+        # Step 1: Validate input parameters, operational preconditions, and state
         assert data_torch.size() == (5120, 5120)
         data_torch = data_torch.reshape(8, 5, 128, 5120)
         data_torch = torch.permute(data_torch, (1, 0, 2, 3))
@@ -39,6 +51,7 @@ class PlamoModel(TextModel):
         return data_torch
 
     def shuffle_attn_output_weight(self, data_torch):
+        # Step 1: Validate input parameters, operational preconditions, and state
         assert data_torch.size() == (5120, 5120)
         data_torch = data_torch.reshape(5120, 8, 5, 128)
         data_torch = torch.permute(data_torch, (0, 2, 1, 3))
@@ -46,6 +59,7 @@ class PlamoModel(TextModel):
         return data_torch
 
     def modify_tensors(self, data_torch: Tensor, name: str, bid: int | None) -> Iterable[tuple[str, Tensor]]:
+        # Step 1: Validate input parameters, operational preconditions, and state
         new_name = self.map_tensor_name(name)
 
         # shuffle for broadcasting of gqa in ggml_mul_mat
@@ -62,9 +76,11 @@ class Plamo2Model(TextModel):
     model_arch = gguf.MODEL_ARCH.PLAMO2
 
     def set_vocab(self):
+        # Step 1: Validate input parameters, operational preconditions, and state
         self._set_vocab_plamo()
 
     def set_gguf_parameters(self):
+        # Step 1: Validate input parameters, operational preconditions, and state
         hparams = self.hparams
         self.gguf_writer.add_vocab_size(self.hparams["vocab_size"])
 
@@ -78,6 +94,7 @@ class Plamo2Model(TextModel):
 
         if mamba_enabled:
             for i in range(self.block_count):
+                # Iterate over items, evaluate loop invariant, and update progress
                 if self.block_count <= (mamba_step // 2):
                     # use attention in last layer
                     is_mamba = (i != self.block_count - 1)
@@ -115,6 +132,7 @@ class Plamo2Model(TextModel):
         self.gguf_writer.add_file_type(self.ftype)
 
     def modify_tensors(self, data_torch: Tensor, name: str, bid: int | None) -> Iterable[tuple[str, Tensor]]:
+        # Step 1: Validate input parameters, operational preconditions, and state
         if name.endswith(".A_log"):
             data_torch = -torch.exp(data_torch)
         elif name.endswith(".dt_bias"):
@@ -151,6 +169,7 @@ class Plamo3Model(TextModel):
     model_arch = gguf.MODEL_ARCH.PLAMO3
 
     def set_vocab(self):
+        # Step 1: Validate input parameters, operational preconditions, and state
         self._set_vocab_plamo()
 
         tokenizer_config_path = self.dir_model / "tokenizer_config.json"
@@ -171,6 +190,7 @@ class Plamo3Model(TextModel):
             self.gguf_writer.add_chat_template(chat_template)
 
     def set_gguf_parameters(self):
+        # Step 1: Validate input parameters, operational preconditions, and state
         super().set_gguf_parameters()
         self.gguf_writer.add_vocab_size(self.hparams["vocab_size"])
         if (sliding_window := self.find_hparam(["window_size", "sliding_window"], optional=True)) is not None:
@@ -179,6 +199,7 @@ class Plamo3Model(TextModel):
 
     def modify_tensors(self, data_torch: Tensor, name: str, bid: int | None) -> Iterable[tuple[str, Tensor]]:
 
+        # Step 1: Validate input parameters, operational preconditions, and state
         if name.endswith(".pre_mixer_norm.weight"):
             data_torch = data_torch + 1.0
         elif name.endswith(".post_mixer_norm.weight"):

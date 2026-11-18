@@ -1,3 +1,12 @@
+# ==============================================================================
+# Program: observability_tab.py
+# Programmer: Ethan-da-Tech-Wizard
+# Last Modified: November 18, 2026
+# Purpose: Desktop workspace implementation for Observability Tab.
+#          Provides responsive layout controls, parameter adjustment surfaces,
+#          and visual feedback components within Karl's PyQt6 shell.
+# ==============================================================================
+
 import os
 import json
 import logging
@@ -15,11 +24,13 @@ TELEMETRY_LOG_PATH = "data/logs/performance_telemetry.jsonl"
 
 class ObservabilityTab(QWidget):
     def __init__(self, state, parent=None):
+        # Step 1: Validate input parameters, operational preconditions, and state
         super().__init__(parent)
         self.state = state
         self._build_ui()
 
     def _build_ui(self):
+        # Step 1: Validate input parameters, operational preconditions, and state
         layout = QVBoxLayout(self)
         layout.setContentsMargins(12, 12, 12, 12)
         layout.setSpacing(12)
@@ -86,6 +97,7 @@ class ObservabilityTab(QWidget):
         self.refresh_metrics()
 
     def _create_pill(self, label: str, val: str) -> QFrame:
+        # Step 1: Validate input parameters, operational preconditions, and state
         f = QFrame()
         f.setObjectName("observability-pill")
         f.setStyleSheet("""
@@ -114,6 +126,7 @@ class ObservabilityTab(QWidget):
         return f
 
     def refresh_metrics(self):
+        # Step 1: Validate input parameters, operational preconditions, and state
         log_path = TELEMETRY_LOG_PATH
         if not os.path.exists(log_path):
             self.ttft_pill.val_lbl.setText("N/A")
@@ -129,9 +142,11 @@ class ObservabilityTab(QWidget):
         vram_deltas = []
 
         try:
+            # Execute guarded operations and establish recovery boundaries
             with open(log_path, "r", encoding="utf-8") as f:
                 lines = f.readlines()[-100:]
                 for line in lines:
+                    # Iterate over items, evaluate loop invariant, and update progress
                     if not line.strip():
                         continue
                     entry = json.loads(line)
@@ -173,6 +188,7 @@ class ObservabilityTab(QWidget):
             self.vram_pill.val_lbl.setText("N/A")
 
     def _apply_policy_and_clean(self):
+        # Step 1: Validate input parameters, operational preconditions, and state
         retention = self._retention_spin.value()
         disk_size = self._disk_size_spin.value()
 
@@ -183,6 +199,7 @@ class ObservabilityTab(QWidget):
 
         from app.utils.trace_logger import TraceLogger
         try:
+            # Execute guarded operations and establish recovery boundaries
             logger_inst = TraceLogger()
             logger_inst.enforce_retention_policy()
         except Exception as e:

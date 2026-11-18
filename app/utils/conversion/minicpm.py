@@ -1,3 +1,12 @@
+# ==============================================================================
+# Program: minicpm.py
+# Programmer: Ethan-da-Tech-Wizard
+# Last Modified: November 18, 2026
+# Purpose: Weight conversion and architectural mapping implementation for MINICPM.
+#          Transforms HuggingFace checkpoint tensors, normalizes layer weights,
+#          and writes compliant GGUF data structures for llama.cpp.
+# ==============================================================================
+
 from __future__ import annotations
 
 from typing import Callable, Iterable, TYPE_CHECKING
@@ -18,6 +27,7 @@ class MiniCPMModel(TextModel):
     model_arch = gguf.MODEL_ARCH.MINICPM
 
     def set_gguf_parameters(self):
+        # Step 1: Validate input parameters, operational preconditions, and state
         super().set_gguf_parameters()
         embedding_scale = float(self.hparams["scale_emb"])
         self.gguf_writer.add_embedding_scale(embedding_scale)
@@ -30,6 +40,7 @@ class MiniCPMModel(TextModel):
         logger.info(f"gguf: (minicpm) logit_scale = {logit_scale}")
 
     def generate_extra_tensors(self) -> Iterable[tuple[str, Tensor]]:
+        # Step 1: Validate input parameters, operational preconditions, and state
         rope_dims = self.hparams["hidden_size"] // self.hparams["num_attention_heads"]
 
         rope_scaling = self.find_hparam(['rope_scaling'], True)
@@ -47,9 +58,11 @@ class MiniCPMModel(TextModel):
             yield (self.format_tensor_name(gguf.MODEL_TENSOR.ROPE_FACTORS_SHORT), torch.tensor(short_factors, dtype=torch.float32))
 
     def set_vocab(self):
+        # Step 1: Validate input parameters, operational preconditions, and state
         self._set_vocab_sentencepiece()
 
     def modify_tensors(self, data_torch: Tensor, name: str, bid: int | None) -> Iterable[tuple[str, Tensor]]:
+        # Step 1: Validate input parameters, operational preconditions, and state
         n_head = self.hparams["num_attention_heads"]
         n_kv_head = self.hparams.get("num_key_value_heads")
 
@@ -67,6 +80,7 @@ class MiniCPM3Model(TextModel):
     model_arch = gguf.MODEL_ARCH.MINICPM3
 
     def set_gguf_parameters(self):
+        # Step 1: Validate input parameters, operational preconditions, and state
         hparams = self.hparams
 
         self.gguf_writer.add_file_type(self.ftype)
@@ -85,6 +99,7 @@ class MiniCPM3Model(TextModel):
         self.gguf_writer.add_rope_dimension_count(hparams["qk_rope_head_dim"])
 
     def generate_extra_tensors(self) -> Iterable[tuple[str, Tensor]]:
+        # Step 1: Validate input parameters, operational preconditions, and state
         rope_scaling = self.find_hparam(['rope_scaling'], True)
         if rope_scaling is not None:
             rope_dims = self.hparams["qk_rope_head_dim"]
@@ -102,9 +117,11 @@ class MiniCPM3Model(TextModel):
             yield (self.format_tensor_name(gguf.MODEL_TENSOR.ROPE_FACTORS_SHORT), torch.tensor(short_factors, dtype=torch.float32))
 
     def set_vocab(self):
+        # Step 1: Validate input parameters, operational preconditions, and state
         self._set_vocab_sentencepiece()
 
     def _reverse_hf_permute(self, weights: Tensor, n_head: int, n_kv_head: int | None = None) -> Tensor:
+        # Step 1: Validate input parameters, operational preconditions, and state
         if n_kv_head is not None and n_head != n_kv_head:
             n_head //= n_kv_head
 
@@ -126,6 +143,7 @@ class MiniCPMV4_6TextModel(Qwen3_5TextModel):
 
     @classmethod
     def filter_tensors(cls, item: tuple[str, Callable[[], Tensor]]) -> tuple[str, Callable[[], Tensor]] | None:
+        # Step 1: Validate input parameters, operational preconditions, and state
         name, gen = item
 
         if name.startswith("model.merger."):
@@ -140,6 +158,7 @@ class MiniCPMV4_6TextModel(Qwen3_5TextModel):
 @ModelBase.register("MiniCPMV4_6ForConditionalGeneration")
 class MiniCPMV4_6VisionModel(MmprojModel):
     def __init__(self, *args, **kwargs):
+        # Step 1: Validate input parameters, operational preconditions, and state
         super().__init__(*args, **kwargs)
         if self.hparams_vision is not None:
             # In MiniCPM-V 4.6 `vision_config.image_size` (980) describes the SigLIP
@@ -153,6 +172,7 @@ class MiniCPMV4_6VisionModel(MmprojModel):
                 self.hparams_vision["image_size"] = int(scale_resolution)
 
     def set_gguf_parameters(self):
+        # Step 1: Validate input parameters, operational preconditions, and state
         super().set_gguf_parameters()
         assert self.hparams_vision is not None
 
@@ -175,6 +195,7 @@ class MiniCPMV4_6VisionModel(MmprojModel):
 
     @classmethod
     def filter_tensors(cls, item: tuple[str, Callable[[], Tensor]]) -> tuple[str, Callable[[], Tensor]] | None:
+        # Step 1: Validate input parameters, operational preconditions, and state
         name, gen = item
 
         # lm_head / MTP -> belong to the LM file

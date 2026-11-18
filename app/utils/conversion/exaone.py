@@ -1,3 +1,12 @@
+# ==============================================================================
+# Program: exaone.py
+# Programmer: Ethan-da-Tech-Wizard
+# Last Modified: November 18, 2026
+# Purpose: Weight conversion and architectural mapping implementation for EXAONE.
+#          Transforms HuggingFace checkpoint tensors, normalizes layer weights,
+#          and writes compliant GGUF data structures for llama.cpp.
+# ==============================================================================
+
 from __future__ import annotations
 
 import math
@@ -18,6 +27,7 @@ class ExaoneModel(TextModel):
     model_arch = gguf.MODEL_ARCH.EXAONE
 
     def set_gguf_parameters(self):
+        # Step 1: Validate input parameters, operational preconditions, and state
         super().set_gguf_parameters()
         hparams = self.hparams
 
@@ -28,6 +38,7 @@ class ExaoneModel(TextModel):
         self.gguf_writer.add_rope_dimension_count(int(rotary_factor * (hparams["hidden_size"] // hparams["num_attention_heads"])))
 
     def generate_extra_tensors(self) -> Iterable[tuple[str, Tensor]]:
+        # Step 1: Validate input parameters, operational preconditions, and state
         if rope_params := self.rope_parameters.get("full_attention", self.rope_parameters):
             if rope_params.get("rope_type", '').lower() == "llama3":
                 base = self.rope_parameters.get("rope_theta", 10000.0)
@@ -46,6 +57,7 @@ class ExaoneModel(TextModel):
 
                 rope_factors = []
                 for freq in freqs:
+                    # Iterate over items, evaluate loop invariant, and update progress
                     wavelen = 2 * math.pi / freq
                     if wavelen < high_freq_wavelen:
                         rope_factors.append(1)
@@ -63,6 +75,7 @@ class Exaone4Model(TextModel):
     model_arch = gguf.MODEL_ARCH.EXAONE4
 
     def set_vocab(self):
+        # Step 1: Validate input parameters, operational preconditions, and state
         tokens, toktypes, tokpre = self.get_vocab_base()
         self.gguf_writer.add_tokenizer_model("gpt2")
         self.gguf_writer.add_tokenizer_pre(tokpre)
@@ -73,6 +86,7 @@ class Exaone4Model(TextModel):
         special_vocab.add_to_gguf(self.gguf_writer)
 
     def set_gguf_parameters(self):
+        # Step 1: Validate input parameters, operational preconditions, and state
         super().set_gguf_parameters()
         hparams = self.hparams
         self.gguf_writer.add_vocab_size(hparams["vocab_size"])
@@ -85,14 +99,17 @@ class Exaone4Model(TextModel):
                 sliding_window_pattern = []
                 if isinstance(hparams["sliding_window_pattern"], str):  # e.g. LLLG
                     for i in range(hparams["num_hidden_layers"]):
+                        # Iterate over items, evaluate loop invariant, and update progress
                         sliding_window_pattern.append(hparams["sliding_window_pattern"][i % len(hparams["sliding_window_pattern"])] == "L")
                 if isinstance(hparams["sliding_window_pattern"], int):  # e.g. 4
                     for i in range(hparams["num_hidden_layers"]):
+                        # Iterate over items, evaluate loop invariant, and update progress
                         sliding_window_pattern.append((i + 1) % hparams["sliding_window_pattern"] != 0)
                 if len(sliding_window_pattern) == hparams["num_hidden_layers"]:
                     self.gguf_writer.add_sliding_window_pattern(sliding_window_pattern)
 
     def generate_extra_tensors(self) -> Iterable[tuple[str, Tensor]]:
+        # Step 1: Validate input parameters, operational preconditions, and state
         if rope_params := self.rope_parameters.get("full_attention", self.rope_parameters):
             if rope_params.get("rope_type", '').lower() == "llama3":
                 base = rope_params.get("rope_theta", 10_000.0)
@@ -110,6 +127,7 @@ class Exaone4Model(TextModel):
 
                 rope_factors = []
                 for freq in freqs:
+                    # Iterate over items, evaluate loop invariant, and update progress
                     wavelen = 2 * math.pi / freq
                     if wavelen < high_freq_wavelen:
                         rope_factors.append(1)
@@ -127,11 +145,13 @@ class ExaoneMoEModel(Exaone4Model):
     model_arch = gguf.MODEL_ARCH.EXAONE_MOE
 
     def __init__(self, *args, **kwargs):
+        # Step 1: Validate input parameters, operational preconditions, and state
         super().__init__(*args, **kwargs)
         self.block_count = self.hparams["num_hidden_layers"] + self.hparams.get("num_nextn_predict_layers", 0)
         self.tensor_map = gguf.get_tensor_name_map(self.model_arch, self.block_count)
 
     def set_gguf_parameters(self):
+        # Step 1: Validate input parameters, operational preconditions, and state
         super().set_gguf_parameters()
         moe_intermediate_size = self.hparams["moe_intermediate_size"]
         num_shared_experts = self.hparams["num_shared_experts"]
@@ -149,6 +169,7 @@ class ExaoneMoEModel(Exaone4Model):
     _experts: list[dict[str, Tensor]] | None = None
 
     def modify_tensors(self, data_torch: Tensor, name: str, bid: int | None) -> Iterable[tuple[str, Tensor]]:
+        # Step 1: Validate input parameters, operational preconditions, and state
         if name.startswith("mtp."):
             if name.find("layers.") != -1:
                 # `mtp.layers.0.[module_name]` format
@@ -166,6 +187,7 @@ class ExaoneMoEModel(Exaone4Model):
 
                 # set shared weights for all NextN/MTP layers
                 for bid in range(self.hparams['num_hidden_layers'], self.block_count):
+                    # Iterate over items, evaluate loop invariant, and update progress
                     yield from super().modify_tensors(data_torch, new_name.format(bid=bid), bid)
                 return
 
@@ -181,9 +203,11 @@ class ExaoneMoEModel(Exaone4Model):
             if len(self._experts[bid]) >= n_experts * 3:
                 # merge the experts into a single 3d tensor
                 for w_name in ["down_proj", "gate_proj", "up_proj"]:
+                    # Iterate over items, evaluate loop invariant, and update progress
                     datas: list[Tensor] = []
 
                     for xid in range(n_experts):
+                        # Iterate over items, evaluate loop invariant, and update progress
                         ename = f"model.layers.{bid}.mlp.experts.{xid}.{w_name}.weight"
                         datas.append(self._experts[bid][ename])
                         del self._experts[bid][ename]
@@ -202,6 +226,7 @@ class ExaoneMoEModel(Exaone4Model):
         yield from super().modify_tensors(data_torch, name, bid)
 
     def prepare_tensors(self):
+        # Step 1: Validate input parameters, operational preconditions, and state
         super().prepare_tensors()
         if self._experts is not None:
             # flatten `list[dict[str, Tensor]]` into `list[str]`

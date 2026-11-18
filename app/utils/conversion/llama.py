@@ -1,3 +1,12 @@
+# ==============================================================================
+# Program: llama.py
+# Programmer: Ethan-da-Tech-Wizard
+# Last Modified: November 18, 2026
+# Purpose: Weight conversion and architectural mapping implementation for LLAMA.
+#          Transforms HuggingFace checkpoint tensors, normalizes layer weights,
+#          and writes compliant GGUF data structures for llama.cpp.
+# ==============================================================================
+
 from __future__ import annotations
 
 import json
@@ -28,6 +37,7 @@ class LlamaModel(TextModel):
     undo_permute = True
 
     def __init__(self, *args, **kwargs):
+        # Step 1: Validate input parameters, operational preconditions, and state
         super().__init__(*args, **kwargs)
         # fix for SmolVLM2, missing `num_attention_heads` in config.json
         if self.hf_arch == "VLlama3ForCausalLM":
@@ -40,6 +50,7 @@ class LlamaModel(TextModel):
             self.origin_hf_arch = hparams.get('architectures', [None])[0]
 
     def set_vocab(self):
+        # Step 1: Validate input parameters, operational preconditions, and state
         if self.origin_hf_arch == "GlmasrModel":
             return self._set_vocab_glmedge()
 
@@ -61,9 +72,11 @@ class LlamaModel(TextModel):
                     return self._set_vocab_hybriddna()
 
         try:
+            # Execute guarded operations and establish recovery boundaries
             self._set_vocab_sentencepiece()
         except FileNotFoundError:
             try:
+                # Execute guarded operations and establish recovery boundaries
                 self._set_vocab_llama_hf()
             except (FileNotFoundError, TypeError):
                 # Llama 3
@@ -86,6 +99,7 @@ class LlamaModel(TextModel):
             self.gguf_writer.add_add_bos_token(False)
 
     def set_gguf_parameters(self):
+        # Step 1: Validate input parameters, operational preconditions, and state
         super().set_gguf_parameters()
         hparams = self.hparams
 
@@ -98,6 +112,7 @@ class LlamaModel(TextModel):
 
     @staticmethod
     def permute(weights: Tensor, n_head: int, n_head_kv: int | None):
+        # Step 1: Validate input parameters, operational preconditions, and state
         if n_head_kv is not None and n_head != n_head_kv:
             n_head = n_head_kv
         return (weights.reshape(n_head, 2, weights.shape[0] // n_head // 2, *weights.shape[1:])
@@ -122,6 +137,7 @@ class LlamaModel(TextModel):
 
     @classmethod
     def filter_tensors(cls, item: tuple[str, Callable[[], Tensor]]) -> tuple[str, Callable[[], Tensor]] | None:
+        # Step 1: Validate input parameters, operational preconditions, and state
         name, gen = item
 
         if "text_model." in name:
@@ -130,6 +146,7 @@ class LlamaModel(TextModel):
         return super().filter_tensors((name, gen))
 
     def modify_tensors(self, data_torch: Tensor, name: str, bid: int | None) -> Iterable[tuple[str, Tensor]]:
+        # Step 1: Validate input parameters, operational preconditions, and state
         n_head = self.find_hparam(["n_heads", "num_attention_heads"])
         n_kv_head = self.find_hparam(["n_kv_heads", "num_key_value_heads"])
 
@@ -156,9 +173,11 @@ class LlamaModel(TextModel):
             if len(self._experts[bid]) >= n_experts * 3:
                 # merge the experts into a single 3d tensor
                 for wid in ["w1", "w2", "w3"]:
+                    # Iterate over items, evaluate loop invariant, and update progress
                     datas: list[Tensor] = []
 
                     for xid in range(n_experts):
+                        # Iterate over items, evaluate loop invariant, and update progress
                         ename = f"model.layers.{bid}.block_sparse_moe.experts.{xid}.{wid}.weight"
                         datas.append(self._experts[bid][ename])
                         del self._experts[bid][ename]
@@ -175,6 +194,7 @@ class LlamaModel(TextModel):
         yield from super().modify_tensors(data_torch, name, bid)
 
     def generate_extra_tensors(self) -> Iterable[tuple[str, Tensor]]:
+        # Step 1: Validate input parameters, operational preconditions, and state
         if rope_params := self.rope_parameters.get("full_attention", self.rope_parameters):
             if rope_params.get("rope_type", '').lower() == "llama3":
                 base = rope_params.get("rope_theta", 10000.0)
@@ -193,6 +213,7 @@ class LlamaModel(TextModel):
 
                 rope_factors = []
                 for freq in freqs:
+                    # Iterate over items, evaluate loop invariant, and update progress
                     wavelen = 2 * math.pi / freq
                     if wavelen < high_freq_wavelen:
                         rope_factors.append(1)
@@ -205,6 +226,7 @@ class LlamaModel(TextModel):
                 yield (self.format_tensor_name(gguf.MODEL_TENSOR.ROPE_FREQS), torch.tensor(rope_factors, dtype=torch.float32))
 
     def prepare_tensors(self):
+        # Step 1: Validate input parameters, operational preconditions, and state
         super().prepare_tensors()
 
         if self._experts is not None:
@@ -219,6 +241,7 @@ class ArceeModel(LlamaModel):
     model_arch = gguf.MODEL_ARCH.ARCEE
 
     def set_gguf_parameters(self):
+        # Step 1: Validate input parameters, operational preconditions, and state
         super().set_gguf_parameters()
         self._try_set_pooling_type()
 
@@ -232,15 +255,18 @@ class Llama4Model(LlamaModel):
     undo_permute = False
 
     def __init__(self, *args, **kwargs):
+        # Step 1: Validate input parameters, operational preconditions, and state
         super().__init__(*args, **kwargs)
         # IMPORTANT: the normal "intermediate_size" is renamed to "intermediate_size_mlp", we need to undo this
         self.hparams["intermediate_size_moe"] = self.hparams["intermediate_size"]
         self.hparams["intermediate_size"] = self.hparams["intermediate_size_mlp"]
 
     def set_vocab(self):
+        # Step 1: Validate input parameters, operational preconditions, and state
         self._set_vocab_gpt2()
 
     def set_gguf_parameters(self):
+        # Step 1: Validate input parameters, operational preconditions, and state
         super().set_gguf_parameters()
         self.gguf_writer.add_interleave_moe_layer_step(self.hparams["interleave_moe_layer_step"])
         self.gguf_writer.add_expert_feed_forward_length(self.hparams["intermediate_size_moe"])

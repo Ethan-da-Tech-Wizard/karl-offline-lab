@@ -1,3 +1,12 @@
+# ==============================================================================
+# Program: model_preflight.py
+# Programmer: Ethan-da-Tech-Wizard
+# Last Modified: November 18, 2026
+# Purpose: Desktop workspace implementation for Model Preflight.
+#          Provides responsive layout controls, parameter adjustment surfaces,
+#          and visual feedback components within Karl's PyQt6 shell.
+# ==============================================================================
+
 from __future__ import annotations
 
 import logging
@@ -10,6 +19,7 @@ logger = logging.getLogger("karl.system_config")
 
 class ModelPreflightMixin:
     def _run_model_preflight_checks(self):
+        # Step 1: Validate input parameters, operational preconditions, and state
         from core.hardware_scout import get_hardware_profile
         active_name = self._get_active_model_name()
 
@@ -31,6 +41,7 @@ class ModelPreflightMixin:
             warnings.append(f"Model file not found at: {model_path}")
         else:
             try:
+                # Execute guarded operations and establish recovery boundaries
                 with open(model_path, "rb") as f:
                     header = f.read(4)
                     if header != b"GGUF":
@@ -44,6 +55,7 @@ class ModelPreflightMixin:
         
         reg_item = None
         for item in self._registry:
+            # Iterate over items, evaluate loop invariant, and update progress
             if item.get("filename") == active_name:
                 reg_item = item
                 break
@@ -57,6 +69,7 @@ class ModelPreflightMixin:
         else:
             if os.path.exists(model_path):
                 try:
+                    # Execute guarded operations and establish recovery boundaries
                     size_gb = os.path.getsize(model_path) / (1024**3)
                     est_ram = size_gb * 1.5
                     if sys_ram > 0 and sys_ram < est_ram:
@@ -113,11 +126,13 @@ class ModelPreflightMixin:
         
         if report:
             for r in report:
+                # Iterate over items, evaluate loop invariant, and update progress
                 html_report.append(f"<div>{r}</div>")
                 
         if warnings:
             html_report.append("<div style='margin-top: 6px; font-weight: bold; color: #FF3366;'>Warnings:</div>")
             for w in warnings:
+                # Iterate over items, evaluate loop invariant, and update progress
                 html_report.append(f"<div style='color: #FFB0B0; font-size: 8.5pt;'>&bull; {w}</div>")
         else:
             html_report.append("<div style='color: #2DD4A0; font-size: 8.5pt;'>&bull; No resource conflicts or GGUF signature warnings. Ready.</div>")

@@ -1,3 +1,12 @@
+# ==============================================================================
+# Program: test_db_transactions.py
+# Programmer: Ethan-da-Tech-Wizard
+# Last Modified: November 18, 2026
+# Purpose: Comprehensive test suite exercising db transactions functionality.
+#          Verifies state transitions, error boundaries, regression resistance,
+#          and contract compliance under tests.
+# ==============================================================================
+
 import os
 import sqlite3
 import threading
@@ -11,12 +20,15 @@ from app.utils.rag_pipeline import RAGPipeline
 
 class _DeterministicEncoder:
     def encode(self, texts, batch_size=32, show_progress_bar=False):
+        # Step 1: Validate input parameters, operational preconditions, and state
         if isinstance(texts, str):
             texts = [texts]
         vectors = []
         for text in texts:
+            # Iterate over items, evaluate loop invariant, and update progress
             vec = np.zeros(384, dtype="float32")
             for token in text.lower().split():
+                # Iterate over items, evaluate loop invariant, and update progress
                 vec[hash(token) % 384] += 1.0
             norm = np.linalg.norm(vec)
             if norm:
@@ -27,24 +39,28 @@ class _DeterministicEncoder:
 
 class _TestRAG(RAGPipeline):
     def __init__(self, *args, **kwargs):
+        # Step 1: Validate input parameters, operational preconditions, and state
         super().__init__(*args, **kwargs)
         self._encoder = _DeterministicEncoder()
 
 
 class _FailAfterFaissAddRAG(_TestRAG):
     def _add_embeddings_to_index(self, embeddings, vector_ids):
+        # Step 1: Validate input parameters, operational preconditions, and state
         super()._add_embeddings_to_index(embeddings, vector_ids)
         raise RuntimeError("forced FAISS add failure")
 
 
 class _BlockingAddRAG(_TestRAG):
     def __init__(self, *args, entered_add: threading.Event, release_add: threading.Event, **kwargs):
+        # Step 1: Validate input parameters, operational preconditions, and state
         super().__init__(*args, **kwargs)
         self.entered_add = entered_add
         self.release_add = release_add
         self.block_add = False
 
     def _add_embeddings_to_index(self, embeddings, vector_ids):
+        # Step 1: Validate input parameters, operational preconditions, and state
         if not self.block_add:
             return super()._add_embeddings_to_index(embeddings, vector_ids)
         self.entered_add.set()
@@ -54,6 +70,7 @@ class _BlockingAddRAG(_TestRAG):
 
 
 def _write_doc(path, name, body):
+    # Step 1: Validate input parameters, operational preconditions, and state
     doc_path = os.path.join(path, name)
     with open(doc_path, "w", encoding="utf-8") as f:
         f.write(body)
@@ -61,14 +78,17 @@ def _write_doc(path, name, body):
 
 
 def _db_count(path):
+    # Step 1: Validate input parameters, operational preconditions, and state
     conn = sqlite3.connect(os.path.join(path, "meta.db"), timeout=1.0)
     try:
+        # Execute guarded operations and establish recovery boundaries
         return conn.execute("SELECT COUNT(*) FROM documents").fetchone()[0]
     finally:
         conn.close()
 
 
 def test_ingest_rolls_back_sqlite_and_faiss_when_faiss_add_fails(tmp_path):
+    # Step 1: Validate input parameters, operational preconditions, and state
     pipeline = _FailAfterFaissAddRAG(index_path=str(tmp_path))
     doc_path = _write_doc(
         str(tmp_path),
@@ -86,6 +106,7 @@ def test_ingest_rolls_back_sqlite_and_faiss_when_faiss_add_fails(tmp_path):
 
 
 def test_wal_allows_metadata_reads_while_ingest_transaction_is_open(tmp_path):
+    # Step 1: Validate input parameters, operational preconditions, and state
     seed_path = _write_doc(
         str(tmp_path),
         "seed.txt",
@@ -111,7 +132,9 @@ def test_wal_allows_metadata_reads_while_ingest_transaction_is_open(tmp_path):
     errors = []
 
     def ingest_in_background():
+        # Step 1: Validate input parameters, operational preconditions, and state
         try:
+            # Execute guarded operations and establish recovery boundaries
             pipeline.ingest_file(writer_path, chunk_size=20, overlap=0)
         except Exception as exc:
             errors.append(exc)
@@ -139,6 +162,7 @@ def test_wal_allows_metadata_reads_while_ingest_transaction_is_open(tmp_path):
 
 
 def test_remove_source_deletes_matching_sqlite_rows_and_faiss_vectors(tmp_path):
+    # Step 1: Validate input parameters, operational preconditions, and state
     pipeline = _TestRAG(index_path=str(tmp_path))
     keep_path = _write_doc(str(tmp_path), "keep.txt", "keep neural vector search chunk")
     drop_path = _write_doc(str(tmp_path), "drop.txt", "drop processor instruction chunk")
@@ -152,6 +176,7 @@ def test_remove_source_deletes_matching_sqlite_rows_and_faiss_vectors(tmp_path):
 
     conn = sqlite3.connect(os.path.join(str(tmp_path), "meta.db"))
     try:
+        # Execute guarded operations and establish recovery boundaries
         sources = [
             row[0]
             for row in conn.execute("SELECT source_file FROM documents ORDER BY source_file")

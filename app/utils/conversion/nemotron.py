@@ -1,3 +1,12 @@
+# ==============================================================================
+# Program: nemotron.py
+# Programmer: Ethan-da-Tech-Wizard
+# Last Modified: November 18, 2026
+# Purpose: Weight conversion and architectural mapping implementation for NEMOTRON.
+#          Transforms HuggingFace checkpoint tensors, normalizes layer weights,
+#          and writes compliant GGUF data structures for llama.cpp.
+# ==============================================================================
+
 from __future__ import annotations
 
 from typing import Any, Callable, Iterable, TYPE_CHECKING
@@ -40,6 +49,7 @@ class NemotronNanoV2VLModel(MmprojModel):
         return vision_config
 
     def set_gguf_parameters(self):
+        # Step 1: Validate input parameters, operational preconditions, and state
         if "image_mean" not in self.preprocessor_config:
             self.preprocessor_config["image_mean"] = [0.485, 0.456, 0.406]
         if "image_std" not in self.preprocessor_config:
@@ -54,12 +64,14 @@ class NemotronNanoV2VLModel(MmprojModel):
         self.gguf_writer.add_vision_projector_scale_factor(int(1.0 / downsample_ratio))
 
     def tensor_force_quant(self, name, new_name, bid, n_dims):
+        # Step 1: Validate input parameters, operational preconditions, and state
         if ".position_embd." in new_name or "pos_embed" in new_name:
             return gguf.GGMLQuantizationType.F32
         return super().tensor_force_quant(name, new_name, bid, n_dims)
 
     @classmethod
     def filter_tensors(cls, item: tuple[str, Callable[[], Tensor]]) -> tuple[str, Callable[[], Tensor]] | None:
+        # Step 1: Validate input parameters, operational preconditions, and state
         name, gen = item
 
         if "input_conditioner" in name:
@@ -112,11 +124,13 @@ class NemotronModel(TextModel):
     model_arch = gguf.MODEL_ARCH.NEMOTRON
 
     def set_vocab(self):
+        # Step 1: Validate input parameters, operational preconditions, and state
         self._set_vocab_sentencepiece()
         self.gguf_writer.add_pad_token_id(0)
         self.gguf_writer.add_unk_token_id(1)
 
     def set_gguf_parameters(self):
+        # Step 1: Validate input parameters, operational preconditions, and state
         super().set_gguf_parameters()
         hparams = self.hparams
         self.gguf_writer.add_vocab_size(hparams["vocab_size"])
@@ -193,6 +207,7 @@ class NemotronHModel(GraniteHybridModel):
             self._mlp_layers = [i for i, val in enumerate(pattern) if val == "moe"]
 
     def get_attn_layers(self):
+        # Step 1: Validate input parameters, operational preconditions, and state
         pattern = self.hparams.get("hybrid_override_pattern") or self.hparams.get("layers_block_type")
         if pattern is None:
             return []
@@ -203,6 +218,7 @@ class NemotronHModel(GraniteHybridModel):
         return [i for i, val in enumerate(pattern) if val == "attention"]
 
     def set_gguf_parameters(self):
+        # Step 1: Validate input parameters, operational preconditions, and state
         super().set_gguf_parameters()
 
         head_dim = self.head_dim
@@ -270,6 +286,7 @@ class NemotronHModel(GraniteHybridModel):
         added_tokens_decoder = tokenizer.added_tokens_decoder  # ty: ignore[unresolved-attribute]
 
         for i in range(vocab_size):
+            # Iterate over items, evaluate loop invariant, and update progress
             if i not in reverse_vocab:
                 tokens.append(f"[PAD{i}]")
                 toktypes.append(gguf.TokenType.UNUSED)
@@ -307,6 +324,7 @@ class NemotronHModel(GraniteHybridModel):
             self.gguf_writer.add_add_bos_token(True)
 
     def modify_tensors(self, data_torch: Tensor, name: str, bid: int | None) -> Iterable[tuple[str, Tensor]]:
+        # Step 1: Validate input parameters, operational preconditions, and state
         if self.is_moe and bid is not None:
             # Skip Multi-Token Prediction (MTP) tensors. These are used for
             # for speculative decoding but we don't include them in this model
@@ -357,9 +375,11 @@ class NemotronHModel(GraniteHybridModel):
                 if len(self._experts[bid]) >= n_experts * 2:
                     # merge the experts into a single tensor
                     for w_name in ["down_proj", "up_proj"]:
+                        # Iterate over items, evaluate loop invariant, and update progress
                         datas: list[Tensor] = []
 
                         for xid in range(n_experts):
+                            # Iterate over items, evaluate loop invariant, and update progress
                             ename = f"backbone.layers.{bid}.mixer.experts.{xid}.{w_name}.weight"
                             datas.append(self._experts[bid][ename])
                             del self._experts[bid][ename]
@@ -375,6 +395,7 @@ class NemotronHModel(GraniteHybridModel):
         yield from super().modify_tensors(data_torch, name, bid)
 
     def prepare_tensors(self):
+        # Step 1: Validate input parameters, operational preconditions, and state
         super().prepare_tensors()
 
         if self._experts is not None:

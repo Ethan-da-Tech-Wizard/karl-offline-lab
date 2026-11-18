@@ -1,3 +1,12 @@
+# ==============================================================================
+# Program: streaming_parser.py
+# Programmer: Ethan-da-Tech-Wizard
+# Last Modified: November 18, 2026
+# Purpose: Real-time streaming token parser for conversational generation.
+#          Separates <think> tags from main answer streams incrementally without
+#          buffering entire responses.
+# ==============================================================================
+
 from __future__ import annotations
 
 import re
@@ -39,6 +48,7 @@ _SPECIAL_TOKEN_LEAK_RE = re.compile(
 
 
 def _strip_special_token_leaks(text: str) -> str:
+    # Step 1: Validate input parameters, operational preconditions, and state
     return _SPECIAL_TOKEN_LEAK_RE.sub("", text)
 
 
@@ -58,6 +68,7 @@ class StreamingThoughtParser:
         chat_cb: Callable[[str], None],
         publish_events: bool = True,
     ):
+        # Step 1: Validate input parameters, operational preconditions, and state
         self.in_thought = in_thought
         self.buffer = ""
         self.parsed_thought = ""
@@ -67,6 +78,7 @@ class StreamingThoughtParser:
         self._publish_events = publish_events
 
     def feed(self, text: str, defer_after_think_close: bool = False) -> ParserFeedResult:
+        # Step 1: Validate input parameters, operational preconditions, and state
         self.buffer += text
         closed_think = False
 
@@ -99,6 +111,7 @@ class StreamingThoughtParser:
         return ParserFeedResult(closed_think=closed_think)
 
     def flush(self) -> None:
+        # Step 1: Validate input parameters, operational preconditions, and state
         if not self.buffer:
             return
         if self.in_thought:
@@ -108,6 +121,7 @@ class StreamingThoughtParser:
         self.buffer = ""
 
     def _emit_thought(self, token: str) -> None:
+        # Step 1: Validate input parameters, operational preconditions, and state
         token = _strip_special_token_leaks(token)
         if not token:
             return
@@ -117,6 +131,7 @@ class StreamingThoughtParser:
         self.parsed_thought += token
 
     def _emit_chat(self, token: str) -> None:
+        # Step 1: Validate input parameters, operational preconditions, and state
         token = _strip_special_token_leaks(token)
         if not token:
             return

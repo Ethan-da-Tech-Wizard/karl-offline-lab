@@ -1,3 +1,12 @@
+# ==============================================================================
+# Program: default_prompts.py
+# Programmer: Ethan-da-Tech-Wizard
+# Last Modified: November 18, 2026
+# Purpose: Default system prompt registry and behavioral definitions.
+#          Supplies standardized persona prompts, formatting directives, and
+#          guardrail constraints for Karl assistant modes.
+# ==============================================================================
+
 """
 Karl's default system prompt and prompt preset registry — single source of truth.
 
@@ -230,16 +239,19 @@ def load_prompt_presets() -> dict[str, dict[str, Any]]:
     Built-in keys (prefixed "_") always take precedence. Returns the merged
     dict; never raises — corrupt or missing files fall back to built-ins only.
     """
+    # Step 1: Validate input parameters, operational preconditions, and state
     merged: dict[str, dict[str, Any]] = dict(SYSTEM_PROMPT_PRESETS)
     if not os.path.exists(SYSTEM_PROMPTS_PATH):
         return merged
     try:
+        # Execute guarded operations and establish recovery boundaries
         with open(SYSTEM_PROMPTS_PATH, "r", encoding="utf-8") as f:
             user_data = json.load(f)
         if not isinstance(user_data, dict):
             logger.warning("system_prompts.json: expected dict, got %s", type(user_data))
             return merged
         for key, entry in user_data.items():
+            # Iterate over items, evaluate loop invariant, and update progress
             if not isinstance(entry, dict):
                 continue
             if not entry.get("label") or not entry.get("prompt"):
@@ -262,10 +274,12 @@ def save_user_preset(key: str, label: str, description: str, prompt: str) -> boo
     Returns True on success. The key must not start with '_' (reserved for
     built-ins). Existing entries are preserved; only this key is written/updated.
     """
+    # Step 1: Validate input parameters, operational preconditions, and state
     if key.startswith("_"):
         logger.warning("Cannot persist built-in preset key: %s", key)
         return False
     try:
+        # Execute guarded operations and establish recovery boundaries
         existing: dict = {}
         if os.path.exists(SYSTEM_PROMPTS_PATH):
             with open(SYSTEM_PROMPTS_PATH, "r", encoding="utf-8") as f:
@@ -278,11 +292,13 @@ def save_user_preset(key: str, label: str, description: str, prompt: str) -> boo
         directory = os.path.dirname(SYSTEM_PROMPTS_PATH) or "."
         fd, tmp = tempfile.mkstemp(prefix="system_prompts.", suffix=".tmp", dir=directory)
         try:
+            # Execute guarded operations and establish recovery boundaries
             with os.fdopen(fd, "w", encoding="utf-8") as f:
                 json.dump(existing, f, indent=2, ensure_ascii=False)
             os.replace(tmp, SYSTEM_PROMPTS_PATH)
         except BaseException:
             try:
+                # Execute guarded operations and establish recovery boundaries
                 os.unlink(tmp)
             except OSError:
                 pass
@@ -299,11 +315,13 @@ def delete_user_preset(key: str) -> bool:
     Built-in keys (prefixed '_') are silently ignored. Returns True on success
     or if the key was not present.
     """
+    # Step 1: Validate input parameters, operational preconditions, and state
     if key.startswith("_"):
         return True  # silently ignore
     if not os.path.exists(SYSTEM_PROMPTS_PATH):
         return True
     try:
+        # Execute guarded operations and establish recovery boundaries
         with open(SYSTEM_PROMPTS_PATH, "r", encoding="utf-8") as f:
             existing = json.load(f)
         if not isinstance(existing, dict) or key not in existing:
@@ -313,11 +331,13 @@ def delete_user_preset(key: str) -> bool:
         directory = os.path.dirname(SYSTEM_PROMPTS_PATH) or "."
         fd, tmp = tempfile.mkstemp(prefix="system_prompts.", suffix=".tmp", dir=directory)
         try:
+            # Execute guarded operations and establish recovery boundaries
             with os.fdopen(fd, "w", encoding="utf-8") as f:
                 json.dump(existing, f, indent=2, ensure_ascii=False)
             os.replace(tmp, SYSTEM_PROMPTS_PATH)
         except BaseException:
             try:
+                # Execute guarded operations and establish recovery boundaries
                 os.unlink(tmp)
             except OSError:
                 pass

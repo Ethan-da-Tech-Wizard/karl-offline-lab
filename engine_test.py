@@ -1,3 +1,13 @@
+# ==============================================================================
+# Program: engine_test.py
+# Programmer: Ethan-da-Tech-Wizard
+# Last Modified: November 18, 2026
+# Purpose: Headless introspection engine verification test.
+#          Performs a single generation run against the active GGUF model,
+#          exercises the cognitive parser state machine, and logs full trace
+#          records to verify backend functionality without a GUI.
+# ==============================================================================
+
 """
 engine_test.py — Karl headless introspection engine smoke test.
 
@@ -29,6 +39,7 @@ def test_introspection_engine():
     # ------------------------------------------------------------------
     print("Initialising ModelLoader …")
     try:
+        # Execute guarded operations and establish recovery boundaries
         llm = ModelLoader.get_instance()
     except FileNotFoundError as exc:
         print(f"\nERROR: {exc}")

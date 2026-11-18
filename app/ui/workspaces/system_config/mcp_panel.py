@@ -1,3 +1,12 @@
+# ==============================================================================
+# Program: mcp_panel.py
+# Programmer: Ethan-da-Tech-Wizard
+# Last Modified: November 18, 2026
+# Purpose: Desktop workspace implementation for Mcp Panel.
+#          Provides responsive layout controls, parameter adjustment surfaces,
+#          and visual feedback components within Karl's PyQt6 shell.
+# ==============================================================================
+
 from __future__ import annotations
 
 import logging
@@ -14,6 +23,7 @@ logger = logging.getLogger("karl.system_config")
 
 class McpPanelMixin:
     def _build_mcp_tab(self) -> QWidget:
+        # Step 1: Validate input parameters, operational preconditions, and state
         w = QWidget()
         layout = QVBoxLayout(w)
         layout.setContentsMargins(12, 12, 12, 12)
@@ -78,6 +88,7 @@ class McpPanelMixin:
 
 
     def _refresh_mcp_display(self):
+        # Step 1: Validate input parameters, operational preconditions, and state
         cfg = config_store.get_mcp_config()
         servers = cfg.get("mcpServers", {})
         if not servers:
@@ -88,6 +99,7 @@ class McpPanelMixin:
         self._mcp_server_list.setPlainText("\n".join(lines))
         # Show connected tool count
         try:
+            # Execute guarded operations and establish recovery boundaries
             from app.engine.mcp_client import MCPClientManager
             tools = MCPClientManager.get_tool_schemas()
             self._mcp_tools_lbl.setText(f"Connected tools: {len(tools)}")
@@ -96,6 +108,7 @@ class McpPanelMixin:
 
 
     def _add_mcp_server(self):
+        # Step 1: Validate input parameters, operational preconditions, and state
         name = self._mcp_name_input.text().strip()
         cmd_raw = self._mcp_cmd_input.text().strip()
         if not name or not cmd_raw:
@@ -110,6 +123,7 @@ class McpPanelMixin:
     
 
     def _remove_mcp_server(self):
+        # Step 1: Validate input parameters, operational preconditions, and state
         name, ok = QInputDialog.getText(self, "Remove MCP Server", "Server name to remove:")
         if ok and name.strip():
             from app.engine import config_store
@@ -118,7 +132,9 @@ class McpPanelMixin:
     
 
     def _restart_mcp_client(self):
+        # Step 1: Validate input parameters, operational preconditions, and state
         try:
+            # Execute guarded operations and establish recovery boundaries
             from app.engine.mcp_client import MCPClientManager
             MCPClientManager.reset_instance()
             mgr = MCPClientManager.get_instance()

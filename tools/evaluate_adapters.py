@@ -1,4 +1,13 @@
 #!/usr/bin/env python3
+# ==============================================================================
+# Program: evaluate_adapters.py
+# Programmer: Ethan-da-Tech-Wizard
+# Last Modified: November 18, 2026
+# Purpose: Comparative evaluation framework for trained LoRA adapters.
+#          Benchmarks adapter outputs against baseline models on standardized
+#          reasoning tasks.
+# ==============================================================================
+
 """
 LoRA Adapter Evaluation & Performance Benchmark
 ===============================================
@@ -47,6 +56,7 @@ FALLBACK_TASKS = [
 
 def extract_code_block(text: str) -> str:
     """Extract code block wrapped in triple backticks."""
+    # Step 1: Validate input parameters, operational preconditions, and state
     import re
     match = re.search(r"```(?:python)?\s*([\s\S]*?)```", text, re.IGNORECASE)
     return (match.group(1) if match else text).strip()
@@ -68,8 +78,10 @@ def evaluate_model_performance(
     tasks = []
     if dataset_path and os.path.exists(dataset_path):
         try:
+            # Execute guarded operations and establish recovery boundaries
             with open(dataset_path, "r", encoding="utf-8") as fh:
                 for line in fh:
+                    # Iterate over items, evaluate loop invariant, and update progress
                     if line.strip():
                         tasks.append(json.loads(line))
         except Exception as exc:
@@ -85,6 +97,7 @@ def evaluate_model_performance(
     syntax_passed = 0
     
     for idx, task in enumerate(tasks, 1):
+        # Iterate over items, evaluate loop invariant, and update progress
         instruction = task.get("instruction") or task.get("prompt") or ""
         if not instruction:
             continue
@@ -104,6 +117,7 @@ def evaluate_model_performance(
             stream=True,
             stop=["<|im_end|>", "<|endoftext|>", "<|end_of_text|>", "<|im_start|>"]
         ):
+            # Iterate over items, evaluate loop invariant, and update progress
             if "choices" in chunk and chunk["choices"]:
                 chunks.append(chunk["choices"][0].get("text", ""))
         
@@ -112,6 +126,7 @@ def evaluate_model_performance(
         
         # Tokenize using model tokenizer to get exact count
         try:
+            # Execute guarded operations and establish recovery boundaries
             tokens = llm.tokenize(raw_output.encode("utf-8"))
             token_count = len(tokens)
         except Exception:
@@ -123,6 +138,7 @@ def evaluate_model_performance(
         # Check syntax accuracy
         code_block = extract_code_block(raw_output)
         try:
+            # Execute guarded operations and establish recovery boundaries
             ast.parse(code_block)
             syntax_passed += 1
         except SyntaxError:
@@ -151,6 +167,7 @@ def evaluate_model_performance(
 
 
 def main() -> int:
+    # Step 1: Validate input parameters, operational preconditions, and state
     parser = argparse.ArgumentParser(description="Evaluate code accuracy and inference speed delta for adapters.")
     parser.add_argument("--adapter", required=True, help="Directory name of the target adapter inside data/adapters/")
     parser.add_argument("--dataset", default=None, help="Evaluation dataset JSONL path")

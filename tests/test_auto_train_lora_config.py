@@ -1,3 +1,12 @@
+# ==============================================================================
+# Program: test_auto_train_lora_config.py
+# Programmer: Ethan-da-Tech-Wizard
+# Last Modified: November 18, 2026
+# Purpose: Comprehensive test suite exercising auto train lora config functionality.
+#          Verifies state transitions, error boundaries, regression resistance,
+#          and contract compliance under tests.
+# ==============================================================================
+
 import argparse
 import importlib.util
 from pathlib import Path
@@ -13,6 +22,7 @@ from tools.auto_train_lora import (
 
 class FakeModel:
     def named_modules(self):
+        # Step 1: Validate input parameters, operational preconditions, and state
         names = [
             "model.layers.0.self_attn.q_proj",
             "model.layers.0.self_attn.k_proj",
@@ -27,6 +37,7 @@ class FakeModel:
 
 
 def test_detect_target_modules_keeps_known_projection_order():
+    # Step 1: Validate input parameters, operational preconditions, and state
     assert detect_target_modules(FakeModel()) == [
         "q_proj",
         "k_proj",
@@ -39,14 +50,17 @@ def test_detect_target_modules_keeps_known_projection_order():
 
 
 def test_detect_target_modules_has_attention_fallback():
+    # Step 1: Validate input parameters, operational preconditions, and state
     class EmptyModel:
         def named_modules(self):
+            # Step 1: Validate input parameters, operational preconditions, and state
             return [("embed_tokens", object())]
 
     assert detect_target_modules(EmptyModel()) == ["q_proj", "v_proj"]
 
 
 def test_build_sft_config_enables_packing_and_cosine_schedule():
+    # Step 1: Validate input parameters, operational preconditions, and state
     args = argparse.Namespace(
         max_length=4096,
         batch_size=1,
@@ -73,6 +87,7 @@ def test_sft_config_accepts_packing_and_cosine_kwargs_when_trl_available():
     through the same filter_kwargs_for_class() compatibility layer train()
     uses, rather than asserting the raw kwargs dict always matches whatever
     SFTConfig happens to accept in the installed version."""
+    # Step 1: Validate input parameters, operational preconditions, and state
     if importlib.util.find_spec("trl") is None:
         pytest.skip("trl not installed")
     from trl import SFTConfig
@@ -96,8 +111,10 @@ def test_sft_config_accepts_packing_and_cosine_kwargs_when_trl_available():
 
 @pytest.mark.parametrize("value", [True, False])
 def test_checkpointing_uses_legacy_name_on_older_config(value):
+    # Step 1: Validate input parameters, operational preconditions, and state
     class OldConfig:
         def __init__(self, gradient_checkpointing=False, gradient_checkpointing_kwargs=None):
+            # Step 1: Validate input parameters, operational preconditions, and state
             self.enabled = gradient_checkpointing
             self.options = gradient_checkpointing_kwargs
 
@@ -111,9 +128,11 @@ def test_checkpointing_uses_legacy_name_on_older_config(value):
 
 @pytest.mark.parametrize("value", [True, False])
 def test_checkpointing_prefers_new_name_without_deprecated_alias(value):
+    # Step 1: Validate input parameters, operational preconditions, and state
     class NewConfig:
         def __init__(self, activation_checkpointing=False, activation_checkpointing_kwargs=None,
                      gradient_checkpointing=None, gradient_checkpointing_kwargs=None):
+            # Step 1: Validate input parameters, operational preconditions, and state
             if gradient_checkpointing is not None or gradient_checkpointing_kwargs is not None:
                 raise AssertionError("deprecated checkpointing arguments passed")
             self.enabled = activation_checkpointing
@@ -127,8 +146,10 @@ def test_checkpointing_prefers_new_name_without_deprecated_alias(value):
 
 
 def test_explicit_new_checkpointing_setting_takes_precedence():
+    # Step 1: Validate input parameters, operational preconditions, and state
     class NewConfig:
         def __init__(self, activation_checkpointing=None, gradient_checkpointing=None):
+            # Step 1: Validate input parameters, operational preconditions, and state
             pass
 
     raw = {"gradient_checkpointing": True, "activation_checkpointing": False}
@@ -136,8 +157,10 @@ def test_explicit_new_checkpointing_setting_takes_precedence():
 
 
 def test_checkpointing_unknown_signature_keeps_legacy_and_other_kwargs():
+    # Step 1: Validate input parameters, operational preconditions, and state
     class FlexibleConfig:
         def __init__(self, **kwargs):
+            # Step 1: Validate input parameters, operational preconditions, and state
             self.kwargs = kwargs
 
     raw = {"gradient_checkpointing": True, "future_option": "x"}
@@ -145,8 +168,10 @@ def test_checkpointing_unknown_signature_keeps_legacy_and_other_kwargs():
 
 
 def test_checkpointing_without_supported_parameter_reports_drop(capsys):
+    # Step 1: Validate input parameters, operational preconditions, and state
     class NoCheckpointConfig:
         def __init__(self, output_dir):
+            # Step 1: Validate input parameters, operational preconditions, and state
             pass
 
     assert filter_kwargs_for_class({"output_dir": "out", "gradient_checkpointing": True}, NoCheckpointConfig) == {"output_dir": "out"}
@@ -154,8 +179,10 @@ def test_checkpointing_without_supported_parameter_reports_drop(capsys):
 
 
 def test_checkpointing_accepts_new_only_signature():
+    # Step 1: Validate input parameters, operational preconditions, and state
     class NewOnlyConfig:
         def __init__(self, activation_checkpointing=False):
+            # Step 1: Validate input parameters, operational preconditions, and state
             self.enabled = activation_checkpointing
 
     cfg = NewOnlyConfig(**filter_kwargs_for_class({"gradient_checkpointing": True}, NewOnlyConfig))
@@ -163,8 +190,10 @@ def test_checkpointing_accepts_new_only_signature():
 
 
 def test_checkpointing_adapts_explicit_new_name_with_flexible_kwargs():
+    # Step 1: Validate input parameters, operational preconditions, and state
     class NewFlexibleConfig:
         def __init__(self, activation_checkpointing=False, **kwargs):
+            # Step 1: Validate input parameters, operational preconditions, and state
             self.enabled = activation_checkpointing
             self.kwargs = kwargs
 

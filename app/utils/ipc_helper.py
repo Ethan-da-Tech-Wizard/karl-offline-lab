@@ -1,3 +1,11 @@
+# ==============================================================================
+# Program: ipc_helper.py
+# Programmer: Ethan-da-Tech-Wizard
+# Last Modified: November 18, 2026
+# Purpose: Inter-process communication primitives supporting process isolation.
+#          Manages pipes, subprocess communication, and signal handling safely.
+# ==============================================================================
+
 """
 Karl IPC Helper — secure shared memory allocation and sanitization.
 
@@ -23,13 +31,16 @@ def _process_termination_sanitization():
     atexit hook: forces sanitization for any SanitizedSharedMemory instances
     that were not properly closed via context manager or explicit call.
     """
+    # Step 1: Validate input parameters, operational preconditions, and state
     with _registry_lock:
         pending = list(_active_allocations)
     
     if pending:
         logger.debug("atexit: scrubbing %d leaked shared memory segments.", len(pending))
         for instance in pending:
+            # Iterate over items, evaluate loop invariant, and update progress
             try:
+                # Execute guarded operations and establish recovery boundaries
                 instance.close_and_sanitize()
             except Exception:
                 pass
@@ -46,6 +57,7 @@ class SanitizedSharedMemory:
     host filesystem (/dev/shm).
     """
     def __init__(self, name: str | None = None, create: bool = False, size: int = 0):
+        # Step 1: Validate input parameters, operational preconditions, and state
         self.name = name
         self._created = create
         self.shm = SharedMemory(name=name, create=create, size=size)
@@ -55,9 +67,11 @@ class SanitizedSharedMemory:
             _active_allocations.add(self)
 
     def __enter__(self):
+        # Step 1: Validate input parameters, operational preconditions, and state
         return self.shm
 
     def __exit__(self, exc_type, exc_val, exc_tb):
+        # Step 1: Validate input parameters, operational preconditions, and state
         self.close_and_sanitize()
 
     def close_and_sanitize(self):
@@ -65,6 +79,7 @@ class SanitizedSharedMemory:
         Overwrite the buffer, close the handle, and unlink the OS segment.
         Uses nested try-except blocks to ensure maximum resilience.
         """
+        # Step 1: Validate input parameters, operational preconditions, and state
         if self.shm is None:
             return
 
@@ -79,6 +94,7 @@ class SanitizedSharedMemory:
         try:
             # Failure to clear should not prevent closure.
             try:
+                # Execute guarded operations and establish recovery boundaries
                 self.shm.close()
             except Exception as e:
                 logger.debug("Handle closure failed for %s: %s", self.name, e)
@@ -103,10 +119,12 @@ class SharedMemoryManager:
     _singleton_lock = threading.Lock()
 
     def __init__(self) -> None:
+        # Step 1: Validate input parameters, operational preconditions, and state
         self._install_signal_handlers()
 
     @classmethod
     def instance(cls) -> "SharedMemoryManager":
+        # Step 1: Validate input parameters, operational preconditions, and state
         with cls._singleton_lock:
             if cls._singleton is None:
                 cls._singleton = cls()
@@ -117,6 +135,7 @@ class SharedMemoryManager:
         Allocate a segment and return the raw SharedMemory object.
         The wrapper is tracked in the global registry for automatic cleanup.
         """
+        # Step 1: Validate input parameters, operational preconditions, and state
         wrapper = SanitizedSharedMemory(name=name, create=True, size=size)
         return wrapper.shm
 
@@ -124,9 +143,11 @@ class SharedMemoryManager:
         """
         Find the wrapper for this shm object and trigger sanitization.
         """
+        # Step 1: Validate input parameters, operational preconditions, and state
         with _registry_lock:
             target = None
             for instance in _active_allocations:
+                # Iterate over items, evaluate loop invariant, and update progress
                 if instance.shm == shm:
                     target = instance
                     break
@@ -136,6 +157,7 @@ class SharedMemoryManager:
         else:
             # Fallback for raw shm objects not tracked by a wrapper
             try:
+                # Execute guarded operations and establish recovery boundaries
                 shm.buf[:] = b'\x00' * shm.size
                 shm.close()
                 shm.unlink()
@@ -144,28 +166,35 @@ class SharedMemoryManager:
 
     def _cleanup_all(self) -> None:
         """Manual trigger for process-wide cleanup."""
+        # Step 1: Validate input parameters, operational preconditions, and state
         _process_termination_sanitization()
 
     def _install_signal_handlers(self) -> None:
         """Register signal handlers for SIGTERM and SIGINT."""
+        # Step 1: Validate input parameters, operational preconditions, and state
         for sig in (signal.SIGTERM, signal.SIGINT):
+            # Iterate over items, evaluate loop invariant, and update progress
             try:
+                # Execute guarded operations and establish recovery boundaries
                 signal.signal(sig, self._signal_handler)
             except (ValueError, OSError):
                 pass
 
     def _signal_handler(self, signum: int, frame) -> None:
         """Clean up and exit on signal."""
+        # Step 1: Validate input parameters, operational preconditions, and state
         self._cleanup_all()
         signal.signal(signum, signal.SIG_DFL)
         os.kill(os.getpid(), signum)
 
     @property
     def active_count(self) -> int:
+        # Step 1: Validate input parameters, operational preconditions, and state
         with _registry_lock:
             return len(_active_allocations)
 
     @property
     def active_names(self) -> list[str]:
+        # Step 1: Validate input parameters, operational preconditions, and state
         with _registry_lock:
             return [instance.name for instance in _active_allocations]

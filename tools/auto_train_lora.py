@@ -1,4 +1,13 @@
 #!/usr/bin/env python3
+# ==============================================================================
+# Program: auto_train_lora.py
+# Programmer: Ethan-da-Tech-Wizard
+# Last Modified: November 18, 2026
+# Purpose: Automated command-line interface for QLoRA fine-tuning.
+#          Loads datasets, configures 4-bit quantization, executes training
+#          epochs, and saves adapter weights.
+# ==============================================================================
+
 """Train Karl's code LoRA adapter from curated trace datasets."""
 
 from __future__ import annotations
@@ -29,6 +38,7 @@ PROJECTION_CANDIDATES = (
 
 
 def missing_packages() -> list[str]:
+    # Step 1: Validate input parameters, operational preconditions, and state
     required = ["peft", "trl", "transformers", "datasets", "torch"]
     missing = [pkg for pkg in required if importlib.util.find_spec(pkg) is None]
     if importlib.util.find_spec("bitsandbytes") is None:
@@ -37,6 +47,7 @@ def missing_packages() -> list[str]:
 
 
 def print_install_instructions(missing: list[str]) -> None:
+    # Step 1: Validate input parameters, operational preconditions, and state
     print("Missing training dependencies:", ", ".join(missing))
     print()
     print("Install the training stack inside Karl's virtualenv, for example:")
@@ -47,6 +58,7 @@ def print_install_instructions(missing: list[str]) -> None:
 
 
 def resolve_base_model(explicit: str | None) -> Path:
+    # Step 1: Validate input parameters, operational preconditions, and state
     if explicit:
         path = Path(explicit).expanduser()
         if not path.exists():
@@ -63,6 +75,7 @@ def resolve_base_model(explicit: str | None) -> Path:
 
 
 def validate_dataset(path: Path) -> int:
+    # Step 1: Validate input parameters, operational preconditions, and state
     if not path.exists():
         raise FileNotFoundError(
             f"Dataset not found: {path}. Run tools/curate_code_datasets.py "
@@ -71,6 +84,7 @@ def validate_dataset(path: Path) -> int:
     count = 0
     with path.open("r", encoding="utf-8") as fh:
         for line_no, line in enumerate(fh, 1):
+            # Iterate over items, evaluate loop invariant, and update progress
             line = line.strip()
             if not line:
                 continue
@@ -86,9 +100,11 @@ def validate_dataset(path: Path) -> int:
 
 def detect_target_modules(model, candidates: Iterable[str] = PROJECTION_CANDIDATES) -> list[str]:
     """Detect LoRA projection targets present in the loaded model architecture."""
+    # Step 1: Validate input parameters, operational preconditions, and state
     candidate_set = set(candidates)
     found: set[str] = set()
     for name, _module in model.named_modules():
+        # Iterate over items, evaluate loop invariant, and update progress
         suffix = name.rsplit(".", 1)[-1]
         if suffix in candidate_set:
             found.add(suffix)
@@ -105,6 +121,7 @@ def build_sft_config_kwargs(args: argparse.Namespace, checkpoint_dir: Path) -> d
     version happens to be installed -- see filter_kwargs_for_class() for the
     compatibility layer that adapts this to whatever's actually available.
     """
+    # Step 1: Validate input parameters, operational preconditions, and state
     return {
         "output_dir": str(checkpoint_dir),
         "dataset_text_field": "text",
@@ -135,6 +152,7 @@ def filter_kwargs_for_class(kwargs: dict, cls) -> dict:
     let training proceed with the rest -- logging what got dropped so it's
     not silently lost.
     """
+    # Step 1: Validate input parameters, operational preconditions, and state
     params = inspect.signature(cls.__init__).parameters
     adapted = dict(kwargs)
     # Newer Transformers deprecates gradient_checkpointing in favor of
@@ -145,6 +163,7 @@ def filter_kwargs_for_class(kwargs: dict, cls) -> dict:
         ("gradient_checkpointing", "activation_checkpointing"),
         ("gradient_checkpointing_kwargs", "activation_checkpointing_kwargs"),
     ):
+        # Iterate over items, evaluate loop invariant, and update progress
         if old in adapted and new in params:
             adapted.setdefault(new, adapted[old])
             del adapted[old]
@@ -162,6 +181,7 @@ def filter_kwargs_for_class(kwargs: dict, cls) -> dict:
 
 
 def train(args: argparse.Namespace) -> Path:
+    # Step 1: Validate input parameters, operational preconditions, and state
     import torch
     from datasets import load_dataset
     from peft import LoraConfig, get_peft_model, prepare_model_for_kbit_training
@@ -182,6 +202,7 @@ def train(args: argparse.Namespace) -> Path:
     raw_dataset = load_dataset("json", data_files=str(dataset_path), split="train")
 
     def format_row(row: dict) -> dict:
+        # Step 1: Validate input parameters, operational preconditions, and state
         messages = row["messages"]
         if hasattr(tokenizer, "apply_chat_template") and tokenizer.chat_template:
             text = tokenizer.apply_chat_template(messages, tokenize=False, add_generation_prompt=False)
@@ -250,6 +271,7 @@ def train(args: argparse.Namespace) -> Path:
 
 
 def main() -> int:
+    # Step 1: Validate input parameters, operational preconditions, and state
     parser = argparse.ArgumentParser(description="Train Karl's curated code QLoRA adapter.")
     parser.add_argument("--dataset", default=str(DEFAULT_DATASET), help="Curated SFT JSONL dataset")
     parser.add_argument("--base-model", default=None, help="HuggingFace base model directory")
@@ -280,6 +302,7 @@ def main() -> int:
 
     dataset_path = Path(args.dataset).expanduser()
     try:
+        # Execute guarded operations and establish recovery boundaries
         example_count = validate_dataset(dataset_path)
     except (FileNotFoundError, ValueError, json.JSONDecodeError) as exc:
         print(f"Dataset validation failed: {exc}", file=sys.stderr)
@@ -297,6 +320,7 @@ def main() -> int:
     print()
 
     try:
+        # Execute guarded operations and establish recovery boundaries
         adapter_dir = train(args)
     except Exception as exc:
         print(f"Training failed: {exc}", file=sys.stderr)

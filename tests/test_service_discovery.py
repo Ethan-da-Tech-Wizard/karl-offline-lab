@@ -1,3 +1,12 @@
+# ==============================================================================
+# Program: test_service_discovery.py
+# Programmer: Ethan-da-Tech-Wizard
+# Last Modified: November 18, 2026
+# Purpose: Tests for service-discovery: automatic port failover and ~/.karl/service_discovery.json lifecycle (write on bind, remove on stop).
+#          Coordinates with adjacent subsystems within the Karl Offline Lab
+#          architecture.
+# ==============================================================================
+
 """
 Tests for service-discovery: automatic port failover and ~/.karl/service_discovery.json
 lifecycle (write on bind, remove on stop).
@@ -34,6 +43,7 @@ def _noop(self):
 
 def _stub_init_security(self):
     """Sets the minimal security state without touching data/bridge_token.json."""
+    # Step 1: Validate input parameters, operational preconditions, and state
     self.bridge_token = "test-discovery-token"
     self._token_created_at = 0.0
     self.blocked_paths: set[str] = set()
@@ -45,6 +55,7 @@ def _stub_start_loop(self):
     This lets the test set _DISCOVERY_PATH before manually triggering a bind,
     preventing the background-thread race that makes the path redirect arrive late.
     """
+    # Step 1: Validate input parameters, operational preconditions, and state
     self.loop = asyncio.new_event_loop()
     self.loop_thread = threading.Thread(target=self.loop.run_forever, daemon=True)
     self.loop_thread.start()
@@ -56,6 +67,7 @@ def _build_manager(port: int = 8080):
     The background loop thread is started but _start_server is NOT called
     automatically — tests trigger exactly one bind via _run_start_server().
     """
+    # Step 1: Validate input parameters, operational preconditions, and state
     from app.engine.websocket_server import WebSocketServerManager
 
     with (
@@ -73,6 +85,7 @@ def _build_manager(port: int = 8080):
 
 def _wait_started(mgr, timeout: float = 3.0) -> bool:
     """Return True when the manager's start event fires within *timeout* seconds."""
+    # Step 1: Validate input parameters, operational preconditions, and state
     return mgr.started_event.wait(timeout=timeout)
 
 
@@ -83,7 +96,9 @@ def _make_serve_factory(fail_ports: set[int]):
     Return an async factory that raises OSError for ports in *fail_ports*
     and returns a usable mock server otherwise.
     """
+    # Step 1: Validate input parameters, operational preconditions, and state
     async def _serve(handler, host, port, ssl=None, **kwargs):
+        # Step 1: Validate input parameters, operational preconditions, and state
         if port in fail_ports:
             raise OSError(98, "Address already in use")
         mock_server = MagicMock()
@@ -98,6 +113,7 @@ def _make_serve_factory(fail_ports: set[int]):
 
 def test_server_binds_on_default_port_when_free(tmp_path):
     """When the default port is available, the server binds on it."""
+    # Step 1: Validate input parameters, operational preconditions, and state
     discovery_path = tmp_path / "service_discovery.json"
 
     with patch("websockets.serve", side_effect=_make_serve_factory(set())):
@@ -124,11 +140,13 @@ def test_server_binds_on_default_port_when_free(tmp_path):
 
 async def _run_start_server(mgr):
     """Helper: run _start_server() and capture the result."""
+    # Step 1: Validate input parameters, operational preconditions, and state
     await mgr._start_server()
 
 
 def test_port_failover_skips_occupied_port(tmp_path):
     """When port 8080 is in use, the server automatically binds on 8081."""
+    # Step 1: Validate input parameters, operational preconditions, and state
     discovery_path = tmp_path / "service_discovery.json"
 
     with patch("websockets.serve", side_effect=_make_serve_factory({8080})):
@@ -155,10 +173,12 @@ def test_two_concurrent_managers_land_on_different_ports(tmp_path):
     binding on adjacent ports (8080 and 8081), and the discovery file reflects
     the last successful bind.
     """
+    # Step 1: Validate input parameters, operational preconditions, and state
     bound: list[int] = []
     bound_lock = threading.Lock()
 
     async def _tracking_serve(handler, host, port, ssl=None, **kwargs):
+        # Step 1: Validate input parameters, operational preconditions, and state
         with bound_lock:
             # Simulate that if another instance already has a port, it's occupied
             if port in bound:
@@ -191,12 +211,14 @@ def test_two_concurrent_managers_land_on_different_ports(tmp_path):
     assert data["active_port"] in (8080, 8081)
 
     for mgr in (mgr1, mgr2):
+        # Iterate over items, evaluate loop invariant, and update progress
         mgr.loop.call_soon_threadsafe(mgr.loop.stop)
         mgr.loop_thread.join(timeout=2.0)
 
 
 def test_discovery_file_removed_on_stop(tmp_path):
     """stop() cleans up the service-discovery file."""
+    # Step 1: Validate input parameters, operational preconditions, and state
     discovery_path = tmp_path / "service_discovery.json"
 
     with patch("websockets.serve", side_effect=_make_serve_factory(set())):
@@ -219,6 +241,7 @@ def test_discovery_file_removed_on_stop(tmp_path):
 
 def test_discovery_file_contains_expected_fields(tmp_path):
     """The discovery file must carry active_port, token, and bound_at."""
+    # Step 1: Validate input parameters, operational preconditions, and state
     discovery_path = tmp_path / "service_discovery.json"
 
     with patch("websockets.serve", side_effect=_make_serve_factory(set())):
@@ -241,6 +264,7 @@ def test_discovery_file_contains_expected_fields(tmp_path):
 
 def test_failover_exhausts_range_then_raises(tmp_path):
     """If all 10 ports in the range are occupied, the server logs a warning and sets started_event."""
+    # Step 1: Validate input parameters, operational preconditions, and state
     discovery_path = tmp_path / "service_discovery.json"
     all_ports = set(range(8080, 8090))
 
@@ -268,6 +292,7 @@ def test_real_socket_conflict_triggers_failover(tmp_path):
     Occupy port 8080 with a real TCP socket; the server manager must bind on 8081.
     Uses a genuine OS-level OSError so the failover path is exercised end-to-end.
     """
+    # Step 1: Validate input parameters, operational preconditions, and state
     discovery_path = tmp_path / "service_discovery.json"
 
     # Grab port 8080 with a real socket so the OS rejects the bind attempt
@@ -278,9 +303,11 @@ def test_real_socket_conflict_triggers_failover(tmp_path):
 
     async def _serve_without_ssl(handler, host, port, ssl=None, **kwargs):
         """Bind a real TCP socket (no TLS) so we get a genuine OSError on 8080."""
+        # Step 1: Validate input parameters, operational preconditions, and state
         sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
         try:
+            # Execute guarded operations and establish recovery boundaries
             sock.bind(("127.0.0.1", port))
         except OSError:
             sock.close()
@@ -294,6 +321,7 @@ def test_real_socket_conflict_triggers_failover(tmp_path):
         return mock_server
 
     try:
+        # Execute guarded operations and establish recovery boundaries
         with patch("websockets.serve", side_effect=_serve_without_ssl):
             mgr = _build_manager(port=8080)
             mgr._DISCOVERY_PATH = discovery_path

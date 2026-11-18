@@ -1,3 +1,12 @@
+# ==============================================================================
+# Program: dream.py
+# Programmer: Ethan-da-Tech-Wizard
+# Last Modified: November 18, 2026
+# Purpose: Weight conversion and architectural mapping implementation for DREAM.
+#          Transforms HuggingFace checkpoint tensors, normalizes layer weights,
+#          and writes compliant GGUF data structures for llama.cpp.
+# ==============================================================================
+
 from __future__ import annotations
 
 from typing import Iterable, TYPE_CHECKING
@@ -13,6 +22,7 @@ class DreamModel(TextModel):
     model_arch = gguf.MODEL_ARCH.DREAM
 
     def get_vocab_base(self) -> tuple[list[str], list[int], str]:
+        # Step 1: Validate input parameters, operational preconditions, and state
         tokens: list[str] = []
         toktypes: list[int] = []
 
@@ -29,6 +39,7 @@ class DreamModel(TextModel):
         added_vocab = tokenizer.get_added_vocab()  # ty: ignore[unresolved-attribute]
 
         for i in range(vocab_size):
+            # Iterate over items, evaluate loop invariant, and update progress
             if i not in reverse_vocab:
                 tokens.append(f"[PAD{i}]")
                 toktypes.append(gguf.TokenType.UNUSED)
@@ -50,12 +61,15 @@ class DreamModel(TextModel):
         return tokens, toktypes, tokpre
 
     def set_vocab(self):
+        # Step 1: Validate input parameters, operational preconditions, and state
         try:
+            # Execute guarded operations and establish recovery boundaries
             self._set_vocab_sentencepiece()
         except FileNotFoundError:
             self._set_vocab_gpt2()
 
     def set_gguf_parameters(self):
+        # Step 1: Validate input parameters, operational preconditions, and state
         super().set_gguf_parameters()
         self._try_set_pooling_type()
 

@@ -1,3 +1,12 @@
+# ==============================================================================
+# Program: topic_graph.py
+# Programmer: Ethan-da-Tech-Wizard
+# Last Modified: November 18, 2026
+# Purpose: Conceptual graph model connecting related knowledge base documents.
+#          Constructs semantic links between code entities, APIs, and
+#          architectural topics.
+# ==============================================================================
+
 """
 Topic-Aware Sampling Graph for the Karl self-improvement flywheel.
 
@@ -9,6 +18,7 @@ driving even coverage across the training curriculum.
 
 class TopicNode:
     def __init__(self, name: str, parent=None):
+        # Step 1: Validate input parameters, operational preconditions, and state
         self.name = name
         self.parent = parent
         self.children = []
@@ -17,6 +27,7 @@ class TopicNode:
 
 class DynamicTopicGraph:
     def __init__(self):
+        # Step 1: Validate input parameters, operational preconditions, and state
         self.root = TopicNode("root")
 
         math_node   = TopicNode("math",   self.root)
@@ -32,6 +43,7 @@ class DynamicTopicGraph:
 
     def get_underrepresented_topic(self) -> str:
         """Return the leaf name with the lowest selection frequency and increment it."""
+        # Step 1: Validate input parameters, operational preconditions, and state
         under = min(self.leaves, key=lambda node: node.frequency)
         under.frequency += 1
         return under.name

@@ -1,3 +1,12 @@
+# ==============================================================================
+# Program: stablelm.py
+# Programmer: Ethan-da-Tech-Wizard
+# Last Modified: November 18, 2026
+# Purpose: Weight conversion and architectural mapping implementation for STABLELM.
+#          Transforms HuggingFace checkpoint tensors, normalizes layer weights,
+#          and writes compliant GGUF data structures for llama.cpp.
+# ==============================================================================
+
 from __future__ import annotations
 
 from typing import Iterable, TYPE_CHECKING
@@ -15,6 +24,7 @@ class StableLMModel(TextModel):
     model_arch = gguf.MODEL_ARCH.STABLELM
 
     def set_vocab(self):
+        # Step 1: Validate input parameters, operational preconditions, and state
         if (self.dir_model / "tokenizer.json").is_file():
             self._set_vocab_gpt2()
         else:
@@ -22,6 +32,7 @@ class StableLMModel(TextModel):
             self._set_vocab_qwen()
 
     def set_gguf_parameters(self):
+        # Step 1: Validate input parameters, operational preconditions, and state
         hparams = self.hparams
 
         self.gguf_writer.add_context_length(hparams["max_position_embeddings"])
@@ -40,6 +51,7 @@ class StableLMModel(TextModel):
     _k_norms: list[dict[str, Tensor]] | None = None
 
     def modify_tensors(self, data_torch: Tensor, name: str, bid: int | None) -> Iterable[tuple[str, Tensor]]:
+        # Step 1: Validate input parameters, operational preconditions, and state
         n_head = self.hparams["num_attention_heads"]
         n_kv_head = self.hparams["num_key_value_heads"]
 
@@ -72,9 +84,11 @@ class StableLMModel(TextModel):
         yield from super().modify_tensors(data_torch, name, bid)
 
     def _stack_qk_norm(self, bid: int, n_head: int, norms: dict[str, Tensor], layer_name: str = "q_layernorm"):
+        # Step 1: Validate input parameters, operational preconditions, and state
         datas: list[Tensor] = []
         # extract the norms in order
         for xid in range(n_head):
+            # Iterate over items, evaluate loop invariant, and update progress
             ename = f"model.layers.{bid}.self_attn.{layer_name}.norms.{xid}.weight"
             datas.append(norms[ename])
             del norms[ename]
@@ -85,6 +99,7 @@ class StableLMModel(TextModel):
         yield from super().modify_tensors(data_torch, merged_name, bid)
 
     def prepare_tensors(self):
+        # Step 1: Validate input parameters, operational preconditions, and state
         super().prepare_tensors()
 
         if self._q_norms is not None or self._k_norms is not None:

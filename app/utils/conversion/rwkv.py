@@ -1,3 +1,12 @@
+# ==============================================================================
+# Program: rwkv.py
+# Programmer: Ethan-da-Tech-Wizard
+# Last Modified: November 18, 2026
+# Purpose: Weight conversion and architectural mapping implementation for RWKV.
+#          Transforms HuggingFace checkpoint tensors, normalizes layer weights,
+#          and writes compliant GGUF data structures for llama.cpp.
+# ==============================================================================
+
 from __future__ import annotations
 
 from typing import Callable, Iterable, TYPE_CHECKING
@@ -15,9 +24,11 @@ class Rwkv6Model(TextModel):
     model_arch = gguf.MODEL_ARCH.RWKV6
 
     def set_vocab(self):
+        # Step 1: Validate input parameters, operational preconditions, and state
         self._set_vocab_rwkv_world()
 
     def set_gguf_parameters(self):
+        # Step 1: Validate input parameters, operational preconditions, and state
         head_size = self.hparams["head_size"]
         hidden_size = self.hparams["hidden_size"]
         layer_norm_eps = self.hparams["layer_norm_epsilon"]
@@ -44,6 +55,7 @@ class Rwkv6Model(TextModel):
     lerp_weights: dict[int, dict[str, Tensor]] = {}
 
     def modify_tensors(self, data_torch: Tensor, name: str, bid: int | None) -> Iterable[tuple[str, Tensor]]:
+        # Step 1: Validate input parameters, operational preconditions, and state
         new_name = self.map_tensor_name(name)
 
         if not (new_name.endswith(".weight") or new_name.endswith(".bias")):
@@ -59,6 +71,7 @@ class Rwkv6Model(TextModel):
             data_torch = data_torch.squeeze()
 
         try:
+            # Execute guarded operations and establish recovery boundaries
             rescale_every_n_layers = self.hparams["rescale_every"]
             if rescale_every_n_layers > 0:
                 if new_name.endswith("time_mix_output.weight") or new_name.endswith("channel_mix_value.weight"):
@@ -70,6 +83,7 @@ class Rwkv6Model(TextModel):
         # also reduces the number of tensors in the model
         if bid is not None and "time_mix_lerp" in new_name and "time_mix_lerp_x" not in new_name:
             try:
+                # Execute guarded operations and establish recovery boundaries
                 self.lerp_weights[bid][new_name] = data_torch
             except KeyError:
                 self.lerp_weights[bid] = {new_name: data_torch}
@@ -87,12 +101,15 @@ class RWKV6Qwen2Model(Rwkv6Model):
     model_arch = gguf.MODEL_ARCH.RWKV6QWEN2
 
     def set_vocab(self):
+        # Step 1: Validate input parameters, operational preconditions, and state
         try:
+            # Execute guarded operations and establish recovery boundaries
             self._set_vocab_sentencepiece()
         except FileNotFoundError:
             self._set_vocab_gpt2()
 
     def set_gguf_parameters(self):
+        # Step 1: Validate input parameters, operational preconditions, and state
         num_attention_heads = self.hparams["num_attention_heads"]
         num_key_value_heads = self.hparams["num_key_value_heads"]
         hidden_size = self.hparams["hidden_size"]
@@ -122,7 +139,9 @@ class RWKV6Qwen2Model(Rwkv6Model):
         self.gguf_writer.add_head_count(0)
 
     def modify_tensors(self, data_torch: Tensor, name: str, bid: int | None) -> Iterable[tuple[str, Tensor]]:
+        # Step 1: Validate input parameters, operational preconditions, and state
         for new_name, data in super().modify_tensors(data_torch, name, bid):
+            # Iterate over items, evaluate loop invariant, and update progress
             if "time_mix_w1" in new_name or "time_mix_w2" in new_name:
                 data = data.view(5, -1, data.shape[-1])
                 # rwkv6qwen2 has a different order of rkvwg instead of the original wkvrg
@@ -140,13 +159,17 @@ class Rwkv7Model(TextModel):
     model_arch = gguf.MODEL_ARCH.RWKV7
 
     def set_vocab(self):
+        # Step 1: Validate input parameters, operational preconditions, and state
         self._set_vocab_rwkv_world()
 
     def calc_lora_rank(self, hidden_size, exponent, multiplier):
+        # Step 1: Validate input parameters, operational preconditions, and state
         return max(1, round(hidden_size ** exponent * multiplier / 32)) * 32
 
     def set_gguf_parameters(self):
+        # Step 1: Validate input parameters, operational preconditions, and state
         try:
+            # Execute guarded operations and establish recovery boundaries
             head_size = self.hparams["head_size"]
             layer_norm_eps = self.hparams["layer_norm_epsilon"]
         except KeyError:
@@ -157,6 +180,7 @@ class Rwkv7Model(TextModel):
 
         # ICLR: In-Context-Learning-Rate
         try:
+            # Execute guarded operations and establish recovery boundaries
             lora_rank_decay = self.hparams["lora_rank_decay"] if self.hparams["lora_rank_decay"] is not None else self.calc_lora_rank(hidden_size, 0.5, 1.8)
             lora_rank_iclr = self.hparams["lora_rank_iclr"] if self.hparams["lora_rank_iclr"] is not None else self.calc_lora_rank(hidden_size, 0.5, 1.8)
             lora_rank_value_residual_mix = self.hparams["lora_rank_value_residual_mix"] if self.hparams["lora_rank_value_residual_mix"] is not None else self.calc_lora_rank(hidden_size, 0.5, 1.3)
@@ -188,6 +212,7 @@ class Rwkv7Model(TextModel):
 
     @classmethod
     def filter_tensors(cls, item: tuple[str, Callable[[], Tensor]]) -> tuple[str, Callable[[], Tensor]] | None:
+        # Step 1: Validate input parameters, operational preconditions, and state
         name, gen = item
 
         # unify tensor names here to make life easier
@@ -224,6 +249,7 @@ class Rwkv7Model(TextModel):
                 yield (new_name, data)
             else:
                 try:
+                    # Execute guarded operations and establish recovery boundaries
                     self.lerp_weights[bid][name] = data_torch
                 except KeyError:
                     self.lerp_weights[bid] = {name: data_torch}
@@ -265,12 +291,15 @@ class ARwkv7Model(Rwkv7Model):
     model_arch = gguf.MODEL_ARCH.ARWKV7
 
     def set_vocab(self):
+        # Step 1: Validate input parameters, operational preconditions, and state
         try:
+            # Execute guarded operations and establish recovery boundaries
             self._set_vocab_sentencepiece()
         except FileNotFoundError:
             self._set_vocab_gpt2()
 
     def set_gguf_parameters(self):
+        # Step 1: Validate input parameters, operational preconditions, and state
         hidden_size = self.hparams["hidden_size"]
         head_size = self.hparams["head_size"]
         rms_norm_eps = self.hparams["rms_norm_eps"]

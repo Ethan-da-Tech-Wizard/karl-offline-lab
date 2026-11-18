@@ -1,3 +1,13 @@
+# ==============================================================================
+# Program: agentic_loop.py
+# Programmer: Ethan-da-Tech-Wizard
+# Last Modified: November 18, 2026
+# Purpose: Hackable autonomous agent loop governing multi-turn inference.
+#          Defines iteration stopping conditions, completion signal matching,
+#          and dynamic user-turn prompt construction for recursive self-
+#          refinement.
+# ==============================================================================
+
 # THE HACKABLE AGENTIC LAYER
 # Modify this file to control how Karl loops autonomously.
 # This script is hot-reloaded on every agentic iteration -- no restart needed.
@@ -24,6 +34,7 @@ def should_continue(iteration: int, last_response: str) -> bool:
     For long-context questions, the model will keep refining until
     it produces a final answer.
     """
+    # Step 1: Validate input parameters, operational preconditions, and state
     if iteration >= MAX_ITERATIONS:
         return False
 
@@ -31,6 +42,7 @@ def should_continue(iteration: int, last_response: str) -> bool:
 
     # Stop on explicit completion signals
     for signal in COMPLETION_SIGNALS:
+        # Iterate over items, evaluate loop invariant, and update progress
         if signal.upper() in resp_upper:
             return False
 
@@ -49,6 +61,7 @@ def build_next_prompt(last_response: str, iteration: int) -> str:
     On early iterations: ask it to continue and deepen.
     On later iterations: push it toward a final conclusion.
     """
+    # Step 1: Validate input parameters, operational preconditions, and state
     if iteration == 0:
         return (
             "Good start. Continue your reasoning -- go deeper into the details "

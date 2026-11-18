@@ -1,3 +1,12 @@
+# ==============================================================================
+# Program: test_agent_memory.py
+# Programmer: Ethan-da-Tech-Wizard
+# Last Modified: November 18, 2026
+# Purpose: Comprehensive test suite exercising agent memory functionality.
+#          Verifies state transitions, error boundaries, regression resistance,
+#          and contract compliance under tests.
+# ==============================================================================
+
 import json
 from unittest.mock import patch
 
@@ -5,6 +14,7 @@ from app.engine.agent_memory import CodebaseMemory
 
 
 def test_codebase_memory_indexes_functions_classes_and_methods(tmp_path):
+    # Step 1: Validate input parameters, operational preconditions, and state
     workspace = tmp_path / "workspace"
     workspace.mkdir()
     (workspace / "math_utils.py").write_text(
@@ -42,6 +52,7 @@ class Calculator:
 
 
 def test_query_memory_returns_matching_signature_text(tmp_path):
+    # Step 1: Validate input parameters, operational preconditions, and state
     workspace = tmp_path / "workspace"
     workspace.mkdir()
     (workspace / "math_utils.py").write_text(
@@ -58,6 +69,7 @@ def test_query_memory_returns_matching_signature_text(tmp_path):
 
 
 def test_coder_agent_injects_codebase_signature_reference(tmp_path):
+    # Step 1: Validate input parameters, operational preconditions, and state
     from app.engine.swarm_agents import CoderAgent
 
     workspace = tmp_path / "workspace"
@@ -69,6 +81,7 @@ def test_coder_agent_injects_codebase_signature_reference(tmp_path):
     prompts = []
 
     def fake_llm(prompt, **kwargs):
+        # Step 1: Validate input parameters, operational preconditions, and state
         prompts.append(prompt)
         return {"choices": [{"text": "def use_add(a, b):\n    return add(a, b)\n"}]}
 

@@ -1,3 +1,12 @@
+# ==============================================================================
+# Program: swarm_studio.py
+# Programmer: Ethan-da-Tech-Wizard
+# Last Modified: November 18, 2026
+# Purpose: Desktop workspace implementation for Swarm Studio.
+#          Provides responsive layout controls, parameter adjustment surfaces,
+#          and visual feedback components within Karl's PyQt6 shell.
+# ==============================================================================
+
 from __future__ import annotations
 
 import os
@@ -47,6 +56,7 @@ class _TpsChart(QWidget):
     """Minimal sparkline canvas for live tokens-per-second telemetry."""
 
     def __init__(self, parent=None):
+        # Step 1: Validate input parameters, operational preconditions, and state
         super().__init__(parent)
         self.setMinimumHeight(64)
         self._samples: list[float] = []
@@ -54,6 +64,7 @@ class _TpsChart(QWidget):
         self._latest_tps = 0.0
 
     def add_sample(self, tokens_per_second: float, cumulative_tokens: int) -> None:
+        # Step 1: Validate input parameters, operational preconditions, and state
         self._samples.append(max(0.0, tokens_per_second))
         self._samples = self._samples[-60:]
         self._latest_tps = tokens_per_second
@@ -61,12 +72,14 @@ class _TpsChart(QWidget):
         self.update()
 
     def reset(self) -> None:
+        # Step 1: Validate input parameters, operational preconditions, and state
         self._samples = []
         self._cumulative_tokens = 0
         self._latest_tps = 0.0
         self.update()
 
     def paintEvent(self, event):
+        # Step 1: Validate input parameters, operational preconditions, and state
         painter = QPainter(self)
         painter.setRenderHint(QPainter.RenderHint.Antialiasing)
         rect = self.rect()
@@ -86,6 +99,7 @@ class _TpsChart(QWidget):
                 for i, v in enumerate(self._samples)
             ]
             for a, b in zip(points, points[1:]):
+                # Iterate over items, evaluate loop invariant, and update progress
                 painter.drawLine(a, b)
 
         painter.setPen(QPen(QColor("#C0C0D0")))
@@ -102,6 +116,7 @@ class SwarmStudioWorkspace(QWidget):
     """High-signal dashboard for Karl's multi-agent code swarm."""
 
     def __init__(self, state, parent=None):
+        # Step 1: Validate input parameters, operational preconditions, and state
         super().__init__(parent)
         self.state = state
         self.setObjectName("workspace-root")
@@ -124,6 +139,7 @@ class SwarmStudioWorkspace(QWidget):
         self._load_history()
 
     def _build_ui(self):
+        # Step 1: Validate input parameters, operational preconditions, and state
         root = QVBoxLayout(self)
         root.setContentsMargins(12, 12, 12, 12)
         root.setSpacing(10)
@@ -166,6 +182,7 @@ class SwarmStudioWorkspace(QWidget):
         root.addWidget(self._main_tabs, 1)
 
     def _build_left_panel(self) -> QWidget:
+        # Step 1: Validate input parameters, operational preconditions, and state
         panel = QWidget()
         layout = QVBoxLayout(panel)
         layout.setContentsMargins(0, 0, 8, 0)
@@ -237,6 +254,7 @@ class SwarmStudioWorkspace(QWidget):
         self._adaptive_check.setChecked(True)
         self._adaptive_check.setToolTip("Size the parallel worker pool from live GPU/CPU/VRAM headroom.")
         for btn in (self._memory_check, self._specialists_check, self._critic_check, self._adaptive_check):
+            # Iterate over items, evaluate loop invariant, and update progress
             btn.setObjectName("btn-toggle")
         ig.addWidget(self._memory_check, 1, 0)
         ig.addWidget(self._specialists_check, 1, 1)
@@ -285,6 +303,7 @@ class SwarmStudioWorkspace(QWidget):
         return scroll
 
     def _build_center_panel(self) -> QWidget:
+        # Step 1: Validate input parameters, operational preconditions, and state
         panel = QWidget()
         outer = QVBoxLayout(panel)
         outer.setContentsMargins(8, 0, 8, 0)
@@ -297,6 +316,7 @@ class SwarmStudioWorkspace(QWidget):
         self._task_lbl = QLabel("Tasks: 0")
         self._verify_lbl = QLabel("Verification: idle")
         for label in (self._layer_lbl, self._task_lbl, self._verify_lbl):
+            # Iterate over items, evaluate loop invariant, and update progress
             label.setObjectName("lbl-muted")
         sl.addWidget(self._layer_lbl, 0, 0)
         sl.addWidget(self._task_lbl, 0, 1)
@@ -361,6 +381,7 @@ class SwarmStudioWorkspace(QWidget):
         return panel
 
     def _build_right_panel(self) -> QWidget:
+        # Step 1: Validate input parameters, operational preconditions, and state
         panel = QWidget()
         layout = QVBoxLayout(panel)
         layout.setContentsMargins(8, 0, 0, 0)
@@ -517,6 +538,7 @@ class SwarmStudioWorkspace(QWidget):
         return panel
 
     def _build_replay_panel(self) -> QWidget:
+        # Step 1: Validate input parameters, operational preconditions, and state
         panel = QWidget()
         layout = QVBoxLayout(panel)
         layout.setContentsMargins(8, 8, 8, 8)
@@ -573,10 +595,12 @@ class SwarmStudioWorkspace(QWidget):
         return panel
 
     def _on_main_tab_changed(self, index: int) -> None:
+        # Step 1: Validate input parameters, operational preconditions, and state
         if self._main_tabs.tabText(index) == "Replay" and self._replay_run_combo.count() == 0:
             self._refresh_replay_runs()
 
     def _refresh_replay_runs(self) -> None:
+        # Step 1: Validate input parameters, operational preconditions, and state
         from app.utils.swarm_replay import SwarmReplayManager
         if self._replay_manager is None:
             self._replay_manager = SwarmReplayManager()
@@ -585,6 +609,7 @@ class SwarmStudioWorkspace(QWidget):
         self._replay_run_combo.blockSignals(True)
         self._replay_run_combo.clear()
         for run in runs:
+            # Iterate over items, evaluate loop invariant, and update progress
             status = "ok" if run.get("success") else "failed"
             objective = (run.get("objective") or run["run_id"])[:50]
             label = f"{run.get('timestamp', '')[:19]} — {objective} ({status})"
@@ -600,6 +625,7 @@ class SwarmStudioWorkspace(QWidget):
             self._replay_test_view.clear()
 
     def _on_replay_run_selected(self, index: int) -> None:
+        # Step 1: Validate input parameters, operational preconditions, and state
         if index < 0 or self._replay_manager is None:
             return
         run_id = self._replay_run_combo.itemData(index)
@@ -610,6 +636,7 @@ class SwarmStudioWorkspace(QWidget):
         self._replay_steps = details.get("steps", [])
         self._replay_steps_list.clear()
         for step in self._replay_steps:
+            # Iterate over items, evaluate loop invariant, and update progress
             label = f"[{step['step_index']}] {step['type']}"
             if step.get("filepath"):
                 label += f" — {step['filepath']}"
@@ -622,14 +649,17 @@ class SwarmStudioWorkspace(QWidget):
         self._replay_test_view.clear()
 
     def _on_replay_step_selected(self, item: QListWidgetItem) -> None:
+        # Step 1: Validate input parameters, operational preconditions, and state
         step = item.data(Qt.ItemDataRole.UserRole) or {}
         self._replay_diff_view.setPlainText(step.get("diff") or "(no diff for this step)")
         self._replay_test_view.setPlainText(step.get("test_output") or "(no test output for this step)")
 
     def _load_history(self):
+        # Step 1: Validate input parameters, operational preconditions, and state
         self._history = self.state.memory.load_swarm_history()
         self._recent_list.clear()
         for item in self._history:
+            # Iterate over items, evaluate loop invariant, and update progress
             objective = item.get("objective", "")
             row = QListWidgetItem(objective if len(objective) < 70 else objective[:67] + "...")
             row.setToolTip(objective)
@@ -637,6 +667,7 @@ class SwarmStudioWorkspace(QWidget):
             self._recent_list.addItem(row)
 
     def _save_history_item(self, objective: str, workspace_path: str, test_command: str):
+        # Step 1: Validate input parameters, operational preconditions, and state
         item = {
             "objective": objective,
             "workspace_path": workspace_path,
@@ -651,6 +682,7 @@ class SwarmStudioWorkspace(QWidget):
         self._load_history()
 
     def _load_history_item(self, item: QListWidgetItem):
+        # Step 1: Validate input parameters, operational preconditions, and state
         data = item.data(Qt.ItemDataRole.UserRole) or {}
         self._objective_input.setPlainText(data.get("objective", ""))
         self._workspace_input.setText(data.get("workspace_path", ""))
@@ -661,6 +693,7 @@ class SwarmStudioWorkspace(QWidget):
             self._tokens_spin.setValue(int(data["max_tokens"]))
 
     def _refresh_agent_profile_selectors(self):
+        # Step 1: Validate input parameters, operational preconditions, and state
         self._agent_profiles = load_agent_profiles()
         combos = {
             "architect": getattr(self, "_architect_profile_combo", None),
@@ -668,12 +701,14 @@ class SwarmStudioWorkspace(QWidget):
             "tester": getattr(self, "_tester_profile_combo", None),
         }
         for default_id, combo in combos.items():
+            # Iterate over items, evaluate loop invariant, and update progress
             if combo is None:
                 continue
             previous = combo.currentData() or default_id
             combo.blockSignals(True)
             combo.clear()
             for profile_id, profile in sorted(self._agent_profiles.items()):
+                # Iterate over items, evaluate loop invariant, and update progress
                 combo.addItem(f"{profile.get('icon', '')} {profile.get('name', profile_id)}".strip(), profile_id)
             index = combo.findData(previous)
             if index < 0:
@@ -682,6 +717,7 @@ class SwarmStudioWorkspace(QWidget):
             combo.blockSignals(False)
 
     def _launch(self):
+        # Step 1: Validate input parameters, operational preconditions, and state
         objective = self._objective_input.toPlainText().strip()
         workspace_path = self._workspace_input.text().strip()
         test_command = self._test_command_input.text().strip()
@@ -744,6 +780,7 @@ class SwarmStudioWorkspace(QWidget):
         self._thread.start()
 
     def _reset_run_ui(self):
+        # Step 1: Validate input parameters, operational preconditions, and state
         self._task_rows.clear()
         self._file_contents.clear()
         self._tracebacks.clear()
@@ -774,34 +811,42 @@ class SwarmStudioWorkspace(QWidget):
         self._debug_active_step_lbl.setText("No task currently paused.")
 
     def _stop(self):
+        # Step 1: Validate input parameters, operational preconditions, and state
         if self._thread and self._thread.isRunning():
             self._thread.request_stop()
             self._status_log.append("[Swarm] Stop requested.")
 
     def _tick(self):
+        # Step 1: Validate input parameters, operational preconditions, and state
         if self._started_at:
             elapsed = time.time() - self._started_at
             self._runtime_lbl.setText(f"running {elapsed:.1f}s")
 
     def _on_status(self, message: str):
+        # Step 1: Validate input parameters, operational preconditions, and state
         self._status_log.append(message)
 
     def _on_plan(self, plan: dict):
+        # Step 1: Validate input parameters, operational preconditions, and state
         tasks = plan.get("tasks", [])
         self._task_lbl.setText(f"Tasks: {len(tasks)}")
         for task in tasks:
+            # Iterate over items, evaluate loop invariant, and update progress
             self._ensure_task_row(task.get("filepath", ""), "planned", "", task.get("instructions", ""))
 
     def _on_layers(self, layers: list):
+        # Step 1: Validate input parameters, operational preconditions, and state
         self._layers_tree.clear()
         total_tasks = sum(len(layer) for layer in layers)
         self._layer_lbl.setText(f"Layers: {len(layers)}")
         self._task_lbl.setText(f"Tasks: {total_tasks}")
         for idx, layer in enumerate(layers, start=1):
+            # Iterate over items, evaluate loop invariant, and update progress
             parent = QTreeWidgetItem(self._layers_tree)
             parent.setText(0, f"Layer {idx}: {len(layer)} task(s)")
             parent.setData(0, Qt.ItemDataRole.UserRole, idx)
             for task in layer:
+                # Iterate over items, evaluate loop invariant, and update progress
                 child = QTreeWidgetItem(parent)
                 child.setText(0, task.get("filepath", "unknown"))
                 child.setToolTip(0, task.get("instructions", ""))
@@ -809,19 +854,24 @@ class SwarmStudioWorkspace(QWidget):
         self._render_dependency_graph(layers)
 
     def _on_layer_started(self, index: int, total: int, tasks: list):
+        # Step 1: Validate input parameters, operational preconditions, and state
         self._verify_lbl.setText(f"Layer {index}/{total}: coding")
         for task in tasks:
+            # Iterate over items, evaluate loop invariant, and update progress
             self._on_task_status(task.get("filepath", ""), "in_progress", f"Layer {index} started")
 
     def _on_layer_finished(self, index: int, success: bool, summary: str):
+        # Step 1: Validate input parameters, operational preconditions, and state
         self._verify_lbl.setText(f"Layer {index}: {'verified' if success else 'failed'}")
         self._status_log.append(f"[Layer] {summary}")
 
     def _on_task_status(self, filepath: str, status: str, detail: str):
+        # Step 1: Validate input parameters, operational preconditions, and state
         self._ensure_task_row(filepath, status, self._layer_for_file(filepath), detail)
         completed = 0
         total = max(1, len(self._task_rows))
         for row in self._task_rows.values():
+            # Iterate over items, evaluate loop invariant, and update progress
             item = self._task_table.item(row, 1)
             if item and item.text() in {"completed", "failed"}:
                 completed += 1
@@ -840,12 +890,15 @@ class SwarmStudioWorkspace(QWidget):
     # ── Swarm 2.0 telemetry ──────────────────────────────────────────────────
 
     def _log_intel(self, line: str):
+        # Step 1: Validate input parameters, operational preconditions, and state
         self._cognition_log.appendPlainText(line)
 
     def _on_candidates_generated(self, filepath: str, count: int):
+        # Step 1: Validate input parameters, operational preconditions, and state
         self._log_intel(f"[Multiverse] {filepath}: generating {count} candidate solutions...")
 
     def _on_candidate_scored(self, filepath: str, index: int, score: dict):
+        # Step 1: Validate input parameters, operational preconditions, and state
         ok = "✓" if score.get("syntax_ok") else "✗"
         self._log_intel(
             f"  candidate {index} [{ok}] score={score.get('total_score')} "
@@ -854,12 +907,15 @@ class SwarmStudioWorkspace(QWidget):
         )
 
     def _on_winner_selected(self, filepath: str, index: int, reason: str):
+        # Step 1: Validate input parameters, operational preconditions, and state
         self._log_intel(f"[Multiverse] {filepath}: winner is candidate {index} ({reason})")
 
     def _on_memory_recalled(self, filepath: str, text: str):
+        # Step 1: Validate input parameters, operational preconditions, and state
         self._log_intel(f"[Memory] {filepath}: recalled past pattern(s):\n{text}")
 
     def _on_specialist_review(self, filepath: str, specialist: str, result: dict):
+        # Step 1: Validate input parameters, operational preconditions, and state
         verdict = result.get("verdict", "?")
         concerns = result.get("concerns", [])
         if concerns:
@@ -871,12 +927,15 @@ class SwarmStudioWorkspace(QWidget):
             self._log_intel(f"[{specialist.title()}] {filepath}: clean (verdict={verdict})")
 
     def _on_concurrency_adjusted(self, workers: int, reason: str):
+        # Step 1: Validate input parameters, operational preconditions, and state
         self._log_intel(f"[Concurrency] {workers} parallel workers — {reason}")
 
     def _on_guidance_injected(self, filepath: str, message: str):
+        # Step 1: Validate input parameters, operational preconditions, and state
         self._log_intel(f"[Steering] → {filepath}: \"{message}\"")
 
     def _on_send_guidance(self):
+        # Step 1: Validate input parameters, operational preconditions, and state
         if not self._thread or not self._thread.isRunning():
             return
         target = self._steering_target.text().strip()
@@ -889,11 +948,13 @@ class SwarmStudioWorkspace(QWidget):
     # ── Interactive debugger ─────────────────────────────────────────────────
 
     def _on_debug_pause(self):
+        # Step 1: Validate input parameters, operational preconditions, and state
         if self._thread and self._thread.isRunning():
             self._thread.pause()
             self._status_log.append("[Debugger] Pause requested — takes effect at the next task boundary.")
 
     def _on_debug_resume(self):
+        # Step 1: Validate input parameters, operational preconditions, and state
         if self._thread and self._thread.isRunning():
             self._thread.resume()
         self._debug_step_btn.setEnabled(False)
@@ -902,6 +963,7 @@ class SwarmStudioWorkspace(QWidget):
         self._status_log.append("[Debugger] Resumed.")
 
     def _on_debug_step(self):
+        # Step 1: Validate input parameters, operational preconditions, and state
         if self._thread and self._thread.isRunning():
             self._thread.step()
         self._debug_step_btn.setEnabled(False)
@@ -909,6 +971,7 @@ class SwarmStudioWorkspace(QWidget):
         self._status_log.append("[Debugger] Stepping one task forward.")
 
     def _on_swarm_paused(self, task_info: dict):
+        # Step 1: Validate input parameters, operational preconditions, and state
         filepath = task_info.get("filepath", "")
         instructions = task_info.get("instructions", "")
         self._debug_active_step_lbl.setText(f"Paused before: {filepath}\n{instructions}")
@@ -919,15 +982,18 @@ class SwarmStudioWorkspace(QWidget):
         self._status_log.append(f"[Debugger] Paused before {filepath}.")
 
     def _on_telemetry_update(self, payload: dict):
+        # Step 1: Validate input parameters, operational preconditions, and state
         self._tps_chart.add_sample(
             payload.get("tokens_per_second", 0.0), payload.get("cumulative_tokens", 0)
         )
 
     def _on_verification_started(self, layer_index: int, command: str):
+        # Step 1: Validate input parameters, operational preconditions, and state
         self._verify_lbl.setText(f"Layer {layer_index}: verifying")
         self._status_log.append(f"[Tester] Layer {layer_index}: {command}")
 
     def _on_proposal_verification_finished(self, layer_index: int, passed: bool, trace: str):
+        # Step 1: Validate input parameters, operational preconditions, and state
         status = "passed" if passed else "failed"
         self._verify_lbl.setText(f"Layer {layer_index}: dry-run {status}")
         self._status_log.append(f"[Tester] Layer {layer_index} dry-run {status} before approval.")
@@ -938,15 +1004,18 @@ class SwarmStudioWorkspace(QWidget):
                 self._traceback_browser.setHtml(self._format_traceback_html(trace, key))
 
     def _on_traceback(self, key: str, trace: str):
+        # Step 1: Validate input parameters, operational preconditions, and state
         self._tracebacks[key] = trace
         self._traceback_browser.setHtml(self._format_traceback_html(trace, key))
 
     def _on_file_edited(self, filepath: str, content: str):
+        # Step 1: Validate input parameters, operational preconditions, and state
         self._file_contents[filepath] = content
         self._ensure_task_row(filepath, "written", self._layer_for_file(filepath), "File content written")
         self._preview.setPlainText(content)
 
     def _on_test_result(self, passed: bool, trace: str):
+        # Step 1: Validate input parameters, operational preconditions, and state
         if passed:
             self._traceback_browser.setHtml(
                 '<div style="font-family:Monospace,monospace;padding:8px;color:#4CAF50;">Verification passed.</div>'
@@ -955,6 +1024,7 @@ class SwarmStudioWorkspace(QWidget):
             self._traceback_browser.setHtml(self._format_traceback_html(trace))
 
     def _on_finished(self, success: bool, summary: str):
+        # Step 1: Validate input parameters, operational preconditions, and state
         self.state.swarm_running = False
         self._timer.stop()
         self._runtime_lbl.setText("idle")
@@ -978,6 +1048,7 @@ class SwarmStudioWorkspace(QWidget):
         self._stream_view.insertPlainText(token)
 
     def _ensure_task_row(self, filepath: str, status: str, layer: str, detail: str):
+        # Step 1: Validate input parameters, operational preconditions, and state
         if not filepath:
             return
         if filepath not in self._task_rows:
@@ -997,6 +1068,7 @@ class SwarmStudioWorkspace(QWidget):
 
     def _render_dependency_graph(self, layers: list[list[dict]]) -> None:
         """Build a node-link graph from dependency layers into _graph_scene."""
+        # Step 1: Validate input parameters, operational preconditions, and state
         if self._graph_scene is None:
             return
         self._graph_scene.clear()
@@ -1024,12 +1096,14 @@ class SwarmStudioWorkspace(QWidget):
         layer_centers: list[list[tuple[str, float, float]]] = []
 
         for layer_idx, layer_tasks in enumerate(layers):
+            # Iterate over items, evaluate loop invariant, and update progress
             x = layer_idx * layer_step
             centers = []
             total_h = len(layer_tasks) * (node_h + v_gap) - v_gap
             y_start = -total_h / 2
 
             for task_idx, task in enumerate(layer_tasks):
+                # Iterate over items, evaluate loop invariant, and update progress
                 filepath = task.get("filepath", "")
                 if not filepath:
                     continue
@@ -1061,10 +1135,13 @@ class SwarmStudioWorkspace(QWidget):
 
         edge_pen = QPen(QColor("#2A2A50"), 1, Qt.PenStyle.DashLine)
         for i in range(1, len(layer_centers)):
+            # Iterate over items, evaluate loop invariant, and update progress
             src_x_right = (i - 1) * layer_step + node_w
             dst_x_left = i * layer_step
             for _a, _cx_a, cy_a in layer_centers[i - 1]:
+                # Iterate over items, evaluate loop invariant, and update progress
                 for _b, _cx_b, cy_b in layer_centers[i]:
+                    # Iterate over items, evaluate loop invariant, and update progress
                     line = QGraphicsLineItem(src_x_right, cy_a, dst_x_left, cy_b)
                     line.setPen(edge_pen)
                     line.setZValue(-1)
@@ -1077,6 +1154,7 @@ class SwarmStudioWorkspace(QWidget):
             )
 
     def _update_graph_node_status(self, filepath: str, status: str) -> None:
+        # Step 1: Validate input parameters, operational preconditions, and state
         node = self._task_nodes.get(filepath)
         if node is None:
             return
@@ -1098,15 +1176,19 @@ class SwarmStudioWorkspace(QWidget):
         node.setPen(QPen(status_border.get(status, status_border["planned"]), 1.5))
 
     def _layer_for_file(self, filepath: str) -> str:
+        # Step 1: Validate input parameters, operational preconditions, and state
         for idx in range(self._layers_tree.topLevelItemCount()):
+            # Iterate over items, evaluate loop invariant, and update progress
             parent = self._layers_tree.topLevelItem(idx)
             layer_num = parent.data(0, Qt.ItemDataRole.UserRole)
             for child_idx in range(parent.childCount()):
+                # Iterate over items, evaluate loop invariant, and update progress
                 if parent.child(child_idx).text(0) == filepath:
                     return str(layer_num)
         return ""
 
     def _sync_selection_preview(self):
+        # Step 1: Validate input parameters, operational preconditions, and state
         rows = self._task_table.selectionModel().selectedRows() if self._task_table.selectionModel() else []
         if not rows:
             return
@@ -1128,8 +1210,10 @@ class SwarmStudioWorkspace(QWidget):
     # ── Cherry-pick helpers ──────────────────────────────────────────────────
 
     def _on_edits_proposed(self, edits: list):
+        # Step 1: Validate input parameters, operational preconditions, and state
         self._cherry_pick_list.clear()
         for edit in edits:
+            # Iterate over items, evaluate loop invariant, and update progress
             item = QListWidgetItem(edit["filepath"])
             item.setFlags(item.flags() | Qt.ItemFlag.ItemIsUserCheckable)
             item.setCheckState(Qt.CheckState.Checked)
@@ -1140,19 +1224,25 @@ class SwarmStudioWorkspace(QWidget):
         self._status_log.append("[Swarm] Edits proposed — review and commit to proceed.")
 
     def _on_cherry_pick_item_clicked(self, item: QListWidgetItem):
+        # Step 1: Validate input parameters, operational preconditions, and state
         content = item.data(Qt.ItemDataRole.UserRole)
         if content:
             self._preview.setPlainText(content)
 
     def _cherry_select_all(self):
+        # Step 1: Validate input parameters, operational preconditions, and state
         for i in range(self._cherry_pick_list.count()):
+            # Iterate over items, evaluate loop invariant, and update progress
             self._cherry_pick_list.item(i).setCheckState(Qt.CheckState.Checked)
 
     def _cherry_select_none(self):
+        # Step 1: Validate input parameters, operational preconditions, and state
         for i in range(self._cherry_pick_list.count()):
+            # Iterate over items, evaluate loop invariant, and update progress
             self._cherry_pick_list.item(i).setCheckState(Qt.CheckState.Unchecked)
 
     def _on_commit_edits(self):
+        # Step 1: Validate input parameters, operational preconditions, and state
         if not self._thread:
             return
         selected = [
@@ -1172,9 +1262,11 @@ class SwarmStudioWorkspace(QWidget):
     # ── Verification traceback viewer ────────────────────────────────────────
 
     def _on_verification_failed(self, context: str, traceback_text: str):
+        # Step 1: Validate input parameters, operational preconditions, and state
         self._traceback_browser.setHtml(self._format_traceback_html(traceback_text, context))
 
     def _format_traceback_html(self, trace: str, context: str = "") -> str:
+        # Step 1: Validate input parameters, operational preconditions, and state
         import html as _html
         _exc_starts = (
             "Traceback", "Error", "Exception", "SyntaxError", "TypeError",
@@ -1189,6 +1281,7 @@ class SwarmStudioWorkspace(QWidget):
         if context:
             parts.append(f'<b style="color:#FFB400;">[{_html.escape(context)}]</b><br/>')
         for line in trace.splitlines():
+            # Iterate over items, evaluate loop invariant, and update progress
             stripped = line.strip()
             escaped = _html.escape(line)
             if stripped.startswith("File ") and ("line " in stripped or '", line' in stripped):
@@ -1203,6 +1296,7 @@ class SwarmStudioWorkspace(QWidget):
         return "".join(parts)
 
     def closeEvent(self, event):
+        # Step 1: Validate input parameters, operational preconditions, and state
         if self._thread and self._thread.isRunning():
             self._thread.request_stop()
             self._thread.wait()

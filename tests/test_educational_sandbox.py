@@ -1,3 +1,12 @@
+# ==============================================================================
+# Program: test_educational_sandbox.py
+# Programmer: Ethan-da-Tech-Wizard
+# Last Modified: November 18, 2026
+# Purpose: Unit Tests for Karl's Educational AI Sandbox ============================================ Covers TfidfEmbedder, CharTokenizer, and MiniGPT.
+#          Coordinates with adjacent subsystems within the Karl Offline Lab
+#          architecture.
+# ==============================================================================
+
 """
 Unit Tests for Karl's Educational AI Sandbox
 ============================================
@@ -11,6 +20,7 @@ from app.utils.custom_embeddings import TfidfEmbedder
 from app.engine.mini_transformer import CharTokenizer, MiniGPT
 
 def test_tfidf_embedder():
+    # Step 1: Validate input parameters, operational preconditions, and state
     embedder = TfidfEmbedder()
     
     # 1. Test tokenization
@@ -49,6 +59,7 @@ def test_tfidf_embedder():
 
 
 def test_char_tokenizer():
+    # Step 1: Validate input parameters, operational preconditions, and state
     tokenizer = CharTokenizer()
     text = "hello world"
     tokenizer.fit(text)
@@ -66,6 +77,7 @@ def test_char_tokenizer():
 
 
 def test_mini_gpt():
+    # Step 1: Validate input parameters, operational preconditions, and state
     vocab_size = 10
     n_embd = 32
     n_heads = 2

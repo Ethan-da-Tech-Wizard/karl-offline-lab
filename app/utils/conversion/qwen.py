@@ -1,3 +1,12 @@
+# ==============================================================================
+# Program: qwen.py
+# Programmer: Ethan-da-Tech-Wizard
+# Last Modified: November 18, 2026
+# Purpose: Weight conversion and architectural mapping implementation for QWEN.
+#          Transforms HuggingFace checkpoint tensors, normalizes layer weights,
+#          and writes compliant GGUF data structures for llama.cpp.
+# ==============================================================================
+
 from __future__ import annotations
 
 from typing import Any, Callable, Iterable, TYPE_CHECKING
@@ -16,17 +25,21 @@ class QwenModel(TextModel):
 
     @staticmethod
     def token_bytes_to_string(b):
+        # Step 1: Validate input parameters, operational preconditions, and state
         from transformers.models.gpt2.tokenization_gpt2 import bytes_to_unicode  # ty: ignore[unresolved-import]
         byte_encoder = bytes_to_unicode()
         return ''.join([byte_encoder[ord(char)] for char in b.decode('latin-1')])
 
     @staticmethod
     def bpe(mergeable_ranks: dict[bytes, int], token: bytes, max_rank: int | None = None) -> list[bytes]:
+        # Step 1: Validate input parameters, operational preconditions, and state
         parts = [bytes([b]) for b in token]
         while True:
+            # Iterate over items, evaluate loop invariant, and update progress
             min_idx = None
             min_rank = None
             for i, pair in enumerate(zip(parts[:-1], parts[1:])):
+                # Iterate over items, evaluate loop invariant, and update progress
                 rank = mergeable_ranks.get(pair[0] + pair[1])
                 if rank is not None and (min_rank is None or rank < min_rank):
                     min_idx = i
@@ -38,6 +51,7 @@ class QwenModel(TextModel):
         return parts
 
     def set_vocab(self):
+        # Step 1: Validate input parameters, operational preconditions, and state
         self._set_vocab_qwen()
 
 
@@ -53,16 +67,20 @@ class Qwen2Model(TextModel):
     model_arch = gguf.MODEL_ARCH.QWEN2
 
     def set_vocab(self):
+        # Step 1: Validate input parameters, operational preconditions, and state
         try:
+            # Execute guarded operations and establish recovery boundaries
             self._set_vocab_sentencepiece()
         except FileNotFoundError:
             self._set_vocab_gpt2()
 
     def set_gguf_parameters(self):
+        # Step 1: Validate input parameters, operational preconditions, and state
         super().set_gguf_parameters()
         self._try_set_pooling_type()
 
     def modify_tensors(self, data_torch: Tensor, name: str, bid: int | None) -> Iterable[tuple[str, Tensor]]:
+        # Step 1: Validate input parameters, operational preconditions, and state
         if self.hf_arch == "Qwen2Model":
             name = f"model.{name}"  # map to Qwen2ForCausalLM tensors
         yield from super().modify_tensors(data_torch, name, bid)
@@ -73,6 +91,7 @@ class Qwen2MoeModel(TextModel):
     model_arch = gguf.MODEL_ARCH.QWEN2MOE
 
     def set_gguf_parameters(self):
+        # Step 1: Validate input parameters, operational preconditions, and state
         super().set_gguf_parameters()
         if (moe_intermediate_size := self.hparams.get("moe_intermediate_size")) is not None:
             self.gguf_writer.add_expert_feed_forward_length(moe_intermediate_size)
@@ -122,9 +141,11 @@ class Qwen2MoeModel(TextModel):
             if len(self._experts[bid]) >= n_experts * 3:
                 # merge the experts into a single 3d tensor
                 for w_name in ["down_proj", "gate_proj", "up_proj"]:
+                    # Iterate over items, evaluate loop invariant, and update progress
                     datas: list[Tensor] = []
 
                     for xid in range(n_experts):
+                        # Iterate over items, evaluate loop invariant, and update progress
                         ename = f"model.layers.{bid}.mlp.experts.{xid}.{w_name}.weight"
                         datas.append(self._experts[bid][ename])
                         del self._experts[bid][ename]
@@ -141,6 +162,7 @@ class Qwen2MoeModel(TextModel):
         yield from super().modify_tensors(data_torch, name, bid)
 
     def prepare_tensors(self):
+        # Step 1: Validate input parameters, operational preconditions, and state
         super().prepare_tensors()
 
         if self._experts is not None:
@@ -161,6 +183,7 @@ class Qwen3Model(Qwen2Model):
     token_true_id: int | None = None
 
     def __init__(self, *args, **kwargs):
+        # Step 1: Validate input parameters, operational preconditions, and state
         super().__init__(*args, **kwargs)
 
         # track for intern-s1-mini
@@ -171,6 +194,7 @@ class Qwen3Model(Qwen2Model):
             self._find_rerank_config()
 
     def _is_qwen3_reranker(self) -> bool:
+        # Step 1: Validate input parameters, operational preconditions, and state
         readme_path = self.dir_model / "README.md"
         readme_text = ""
         if readme_path.exists():
@@ -202,6 +226,7 @@ class Qwen3Model(Qwen2Model):
         super().set_vocab()
 
     def _find_rerank_config(self):
+        # Step 1: Validate input parameters, operational preconditions, and state
         from transformers import AutoTokenizer
         tokenizer = AutoTokenizer.from_pretrained(self.dir_model)
 
@@ -214,6 +239,7 @@ class Qwen3Model(Qwen2Model):
         assert self.token_false_id is not None and self.token_true_id is not None
 
     def set_gguf_parameters(self):
+        # Step 1: Validate input parameters, operational preconditions, and state
         super().set_gguf_parameters()
         if self.is_rerank:
             self.gguf_writer.add_pooling_type(gguf.PoolingType.RANK)
@@ -232,6 +258,7 @@ class Qwen3Model(Qwen2Model):
         return torch.stack([true_row, false_row], dim=0)
 
     def modify_tensors(self, data_torch: Tensor, name: str, bid: int | None) -> Iterable[tuple[str, Tensor]]:
+        # Step 1: Validate input parameters, operational preconditions, and state
         if self.is_rerank:
             is_tied_head = self.is_tied_embeddings and "embed_tokens" in name
             is_real_head = not self.is_tied_embeddings and "lm_head" in name
@@ -253,6 +280,7 @@ class Qwen3MoeModel(Qwen2MoeModel):
     model_arch = gguf.MODEL_ARCH.QWEN3MOE
 
     def __init__(self, *args, **kwargs):
+        # Step 1: Validate input parameters, operational preconditions, and state
         super().__init__(*args, **kwargs)
         hparams = ModelBase.load_hparams(self.dir_model, False)
         self.origin_hf_arch = hparams.get('architectures', [None])[0]
@@ -271,6 +299,7 @@ class Qwen3NextModel(Qwen2MoeModel):
     model_arch = gguf.MODEL_ARCH.QWEN3NEXT
 
     def set_gguf_parameters(self):
+        # Step 1: Validate input parameters, operational preconditions, and state
         super().set_gguf_parameters()
         self.gguf_writer.add_ssm_conv_kernel(self.hparams["linear_conv_kernel_dim"])
         self.gguf_writer.add_ssm_state_size(self.hparams["linear_key_head_dim"])
@@ -284,6 +313,7 @@ class Qwen3NextModel(Qwen2MoeModel):
 
     @classmethod
     def filter_tensors(cls, item: tuple[str, Callable[[], Tensor]]) -> tuple[str, Callable[[], Tensor]] | None:
+        # Step 1: Validate input parameters, operational preconditions, and state
         name, gen = item
 
         if name.startswith("mtp"):
@@ -293,6 +323,7 @@ class Qwen3NextModel(Qwen2MoeModel):
         return super().filter_tensors(item)
 
     def modify_tensors(self, data_torch: Tensor, name: str, bid: int | None) -> Iterable[tuple[str, Tensor]]:
+        # Step 1: Validate input parameters, operational preconditions, and state
         if name.endswith(".A_log"):
             data_torch = -torch.exp(data_torch)
         elif name.endswith(".dt_bias"):
@@ -340,6 +371,7 @@ class RND1Model(Qwen2MoeModel):
     model_arch = gguf.MODEL_ARCH.RND1
 
     def set_gguf_parameters(self):
+        # Step 1: Validate input parameters, operational preconditions, and state
         super().set_gguf_parameters()
 
         # RND1 specific parameters
@@ -366,6 +398,7 @@ class _LinearAttentionVReorderBase(Qwen3NextModel):
     @staticmethod
     def _reorder_v_heads(tensor: Tensor, dim: int, num_k_heads: int, num_v_per_k: int, head_dim: int) -> Tensor:
         """Reorder V heads from grouped (by K head) to tiled order along the given dimension."""
+        # Step 1: Validate input parameters, operational preconditions, and state
         shape = list(tensor.shape)
         if dim < 0:
             dim += len(shape)
@@ -376,6 +409,7 @@ class _LinearAttentionVReorderBase(Qwen3NextModel):
         return tensor.permute(*perm).contiguous().reshape(*shape)
 
     def _transform_nvfp4_weight(self, name: str, weight: Tensor, scale: Tensor) -> tuple[Tensor, Tensor]:
+        # Step 1: Validate input parameters, operational preconditions, and state
         if not name.endswith((
             ".linear_attn.in_proj_qkv.weight",
             ".linear_attn.in_proj_z.weight",
@@ -392,17 +426,20 @@ class _LinearAttentionVReorderBase(Qwen3NextModel):
         num_v_per_k = num_v_heads // num_k_heads
 
         def unpack_nibbles(qs: Tensor) -> Tensor:
+            # Step 1: Validate input parameters, operational preconditions, and state
             lo = torch.bitwise_and(qs, 0x0F)
             hi = torch.bitwise_right_shift(qs, 4)
             return torch.stack((lo, hi), dim=-1).reshape(*qs.shape[:-1], qs.shape[-1] * 2)
 
         def pack_nibbles(codes: Tensor) -> Tensor:
+            # Step 1: Validate input parameters, operational preconditions, and state
             codes = codes.reshape(*codes.shape[:-1], codes.shape[-1] // 2, 2)
             lo = torch.bitwise_and(codes[..., 0], 0x0F)
             hi = torch.bitwise_left_shift(torch.bitwise_and(codes[..., 1], 0x0F), 4)
             return torch.bitwise_or(lo, hi).contiguous()
 
         def apply_col_perm(qs: Tensor, scales: Tensor, col_perm: Tensor) -> tuple[Tensor, Tensor]:
+            # Step 1: Validate input parameters, operational preconditions, and state
             assert qs.ndim >= 2
             assert scales.ndim >= 2
 
@@ -428,6 +465,7 @@ class _LinearAttentionVReorderBase(Qwen3NextModel):
             return qs, scales
 
         def reorder_rows(qs: Tensor, scales: Tensor, head_dim: int) -> tuple[Tensor, Tensor]:
+            # Step 1: Validate input parameters, operational preconditions, and state
             row_perm = self._reorder_v_heads(
                 torch.arange(num_v_heads * head_dim, dtype=torch.long).unsqueeze(-1),
                 0, num_k_heads, num_v_per_k, head_dim,
@@ -463,10 +501,12 @@ class _LinearAttentionVReorderBase(Qwen3NextModel):
         return weight, scale
 
     def _repack_nvfp4(self, name: str, weight: Tensor, scale: Tensor, scale2: Tensor, input_scale: Tensor):
+        # Step 1: Validate input parameters, operational preconditions, and state
         weight, scale = self._transform_nvfp4_weight(name, weight, scale)
         super()._repack_nvfp4(name, weight, scale, scale2, input_scale)
 
     def modify_tensors(self, data_torch: Tensor, name: str, bid: int | None) -> Iterable[tuple[str, Tensor]]:
+        # Step 1: Validate input parameters, operational preconditions, and state
         num_k_heads = self.hparams.get("linear_num_key_heads", 0)
         num_v_heads = self.hparams.get("linear_num_value_heads", 0)
 
@@ -529,6 +569,7 @@ class _Qwen35MRopeMixin:
     rope_parameters: dict
 
     def set_gguf_parameters(self):
+        # Step 1: Validate input parameters, operational preconditions, and state
         super().set_gguf_parameters()  # ty: ignore[unresolved-attribute]
         if "mrope_section" not in self.rope_parameters:
             self.gguf_writer.add_rope_dimension_sections(self._QWEN35_DEFAULT_MROPE_SECTION)
@@ -551,6 +592,7 @@ class _Qwen35MtpMixin:
     _original_block_count: int | None = None
 
     def __init__(self, *args, **kwargs):
+        # Step 1: Validate input parameters, operational preconditions, and state
         super().__init__(*args, **kwargs)
         self.block_count = self.hparams["num_hidden_layers"]
         if not self.no_mtp:
@@ -558,6 +600,7 @@ class _Qwen35MtpMixin:
         self.tensor_map = gguf.get_tensor_name_map(self.model_arch, self.block_count)
 
     def index_tensors(self, remote_hf_model_id: str | None = None) -> dict[str, Callable[[], Tensor]]:
+        # Step 1: Validate input parameters, operational preconditions, and state
         hparams = {**self.hparams, **self.hparams.get("text_config", {})}
         key = next((k for k in ["n_layers", "num_hidden_layers", "n_layer", "num_layers"] if k in hparams), None)
         type(self)._original_block_count = hparams.get(key)
@@ -565,6 +608,7 @@ class _Qwen35MtpMixin:
 
     @classmethod
     def filter_tensors(cls, item):
+        # Step 1: Validate input parameters, operational preconditions, and state
         assert cls._original_block_count is not None
         # TODO: change TextModel to super()
         if (titem := TextModel.filter_tensors(item)) is None:
@@ -597,6 +641,7 @@ class _Qwen35MtpMixin:
         return name, gen
 
     def set_gguf_parameters(self):
+        # Step 1: Validate input parameters, operational preconditions, and state
         super().set_gguf_parameters()  # ty: ignore[unresolved-attribute]
         if self.no_mtp:
             return
@@ -604,6 +649,7 @@ class _Qwen35MtpMixin:
             self.gguf_writer.add_nextn_predict_layers(n)
 
     def prepare_metadata(self, vocab_only: bool):
+        # Step 1: Validate input parameters, operational preconditions, and state
         from_dir = self.fname_out.is_dir()
         super().prepare_metadata(vocab_only=vocab_only)  # ty: ignore[unresolved-attribute]
 

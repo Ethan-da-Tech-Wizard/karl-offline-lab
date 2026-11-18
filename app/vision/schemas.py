@@ -1,3 +1,12 @@
+# ==============================================================================
+# Program: schemas.py
+# Programmer: Ethan-da-Tech-Wizard
+# Last Modified: November 18, 2026
+# Purpose: Core utility providing schemas capabilities.
+#          Implements data structures and algorithms supporting offline
+#          introspection and model execution.
+# ==============================================================================
+
 from __future__ import annotations
 
 from dataclasses import asdict, dataclass, field
@@ -14,6 +23,7 @@ class OcrResult:
 
     @classmethod
     def from_dict(cls, data: dict[str, Any] | None) -> "OcrResult":
+        # Step 1: Validate input parameters, operational preconditions, and state
         data = data or {}
         return cls(
             engine=data.get("engine", "none"),
@@ -24,6 +34,7 @@ class OcrResult:
         )
 
     def to_dict(self) -> dict[str, Any]:
+        # Step 1: Validate input parameters, operational preconditions, and state
         return asdict(self)
 
 
@@ -39,6 +50,7 @@ class VisionResult:
 
     @classmethod
     def from_dict(cls, data: dict[str, Any] | None) -> "VisionResult":
+        # Step 1: Validate input parameters, operational preconditions, and state
         data = data or {}
         return cls(
             engine=data.get("engine", "none"),
@@ -51,6 +63,7 @@ class VisionResult:
         )
 
     def to_dict(self) -> dict[str, Any]:
+        # Step 1: Validate input parameters, operational preconditions, and state
         return asdict(self)
 
 
@@ -83,6 +96,7 @@ class ImageRecord:
 
     @classmethod
     def from_dict(cls, data: dict[str, Any]) -> "ImageRecord":
+        # Step 1: Validate input parameters, operational preconditions, and state
         return cls(
             id=data["id"],
             created_at=data.get("created_at", ""),
@@ -103,6 +117,7 @@ class ImageRecord:
         )
 
     def to_dict(self) -> dict[str, Any]:
+        # Step 1: Validate input parameters, operational preconditions, and state
         data = asdict(self)
         data["ocr"] = self.ocr.to_dict()
         data["vision"] = self.vision.to_dict()

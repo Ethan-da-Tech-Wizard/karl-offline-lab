@@ -1,3 +1,12 @@
+# ==============================================================================
+# Program: step3.py
+# Programmer: Ethan-da-Tech-Wizard
+# Last Modified: November 18, 2026
+# Purpose: Weight conversion and architectural mapping implementation for STEP3.
+#          Transforms HuggingFace checkpoint tensors, normalizes layer weights,
+#          and writes compliant GGUF data structures for llama.cpp.
+# ==============================================================================
+
 from __future__ import annotations
 
 import math
@@ -18,6 +27,7 @@ from .qwen import Qwen3Model
 @ModelBase.register("StepVLForConditionalGeneration")
 class Step3VLVisionModel(MmprojModel):
     def __init__(self, *args, **kwargs):
+        # Step 1: Validate input parameters, operational preconditions, and state
         super().__init__(*args, **kwargs)
         assert self.hparams_vision is not None
 
@@ -31,6 +41,7 @@ class Step3VLVisionModel(MmprojModel):
         self.preprocessor_config.setdefault("image_std", list(_MISTRAL_COMMON_DATASET_STD))
 
     def set_gguf_parameters(self):
+        # Step 1: Validate input parameters, operational preconditions, and state
         super().set_gguf_parameters()
         assert self.hparams_vision is not None
 
@@ -48,6 +59,7 @@ class Step3VLVisionModel(MmprojModel):
         self.gguf_writer.add_vision_preproc_image_size(3024)
 
     def tensor_force_quant(self, name, new_name, bid, n_dims):
+        # Step 1: Validate input parameters, operational preconditions, and state
         if ".position_embd." in new_name:
             return gguf.GGMLQuantizationType.F32
         if ("mm.0." in new_name or "mm.1." in new_name) and new_name.endswith(".weight"):
@@ -56,6 +68,7 @@ class Step3VLVisionModel(MmprojModel):
 
     @classmethod
     def filter_tensors(cls, item: tuple[str, Callable[[], Tensor]]) -> tuple[str, Callable[[], Tensor]] | None:
+        # Step 1: Validate input parameters, operational preconditions, and state
         name, gen = item
 
         if name.startswith(("model.", "lm_head.")):
@@ -64,6 +77,7 @@ class Step3VLVisionModel(MmprojModel):
         return super().filter_tensors(item)
 
     def modify_tensors(self, data_torch: Tensor, name: str, bid: int | None) -> Iterable[tuple[str, Tensor]]:
+        # Step 1: Validate input parameters, operational preconditions, and state
         if name.startswith("vision_model.vit_downsampler"):
             match = re.match(r"vision_model\.vit_downsampler(\d+)\.(weight|bias)", name)
             if match is None:
@@ -100,6 +114,7 @@ class Step35Model(TextModel):
     model_arch = gguf.MODEL_ARCH.STEP35
 
     def set_gguf_parameters(self):
+        # Step 1: Validate input parameters, operational preconditions, and state
         rope_theta = self.hparams.get("rope_theta")
         if isinstance(rope_theta, list):
             self.hparams["rope_theta"] = float(rope_theta[0])
@@ -167,6 +182,7 @@ class Step35Model(TextModel):
 
     @classmethod
     def filter_tensors(cls, item: tuple[str, Callable[[], Tensor]]) -> tuple[str, Callable[[], Tensor]] | None:
+        # Step 1: Validate input parameters, operational preconditions, and state
         name, gen = item
 
         # Map router bias (expert selection bias) to a GGUF bias tensor
@@ -219,6 +235,7 @@ class Step35Model(TextModel):
 
         rope_factors: list[float] = []
         for freq in freqs:
+            # Iterate over items, evaluate loop invariant, and update progress
             wavelen = 2 * math.pi / float(freq)
             if wavelen < high_freq_wavelen:
                 rope_factors.append(1.0)

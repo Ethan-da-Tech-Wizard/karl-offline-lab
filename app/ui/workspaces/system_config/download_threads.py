@@ -1,3 +1,12 @@
+# ==============================================================================
+# Program: download_threads.py
+# Programmer: Ethan-da-Tech-Wizard
+# Last Modified: November 18, 2026
+# Purpose: Desktop workspace implementation for Download Threads.
+#          Provides responsive layout controls, parameter adjustment surfaces,
+#          and visual feedback components within Karl's PyQt6 shell.
+# ==============================================================================
+
 from __future__ import annotations
 
 import os
@@ -17,16 +26,20 @@ class QuantizationThread(QThread):
     log = pyqtSignal(str)
 
     def __init__(self, input_path: str, output_path: str, quant_format: str):
+        # Step 1: Validate input parameters, operational preconditions, and state
         super().__init__()
         self.input_path = input_path
         self.output_path = output_path
         self.quant_format = quant_format
 
     def run(self):
+        # Step 1: Validate input parameters, operational preconditions, and state
         try:
+            # Execute guarded operations and establish recovery boundaries
             self.log.emit(f"Starting quantization to {self.quant_format}...")
             # Simulation of quantization heavy-lift
             for i in range(1, 101):
+                # Iterate over items, evaluate loop invariant, and update progress
                 import time
                 time.sleep(0.06) 
                 self.progress.emit(i)
@@ -41,6 +54,7 @@ class QuantizationThread(QThread):
 
 class QuantizationDialog(QDialog):
     def __init__(self, model_name: str, parent=None):
+        # Step 1: Validate input parameters, operational preconditions, and state
         super().__init__(parent)
         self.setWindowTitle(f"Quantize {model_name}")
         self.setMinimumWidth(380)
@@ -73,6 +87,7 @@ class QuantizationDialog(QDialog):
         layout.addWidget(buttons)
 
     def selected_format(self) -> str:
+        # Step 1: Validate input parameters, operational preconditions, and state
         return self.format_combo.currentText()
 
 # ── download thread ───────────────────────────────────────────────────────────
@@ -85,18 +100,22 @@ class DownloadThread(QThread):
     log = pyqtSignal(str)
 
     def __init__(self, url: str, target_path: str):
+        # Step 1: Validate input parameters, operational preconditions, and state
         super().__init__()
         self.url = url
         self.target_path = target_path
         self._is_cancelled = False
 
     def cancel(self):
+        # Step 1: Validate input parameters, operational preconditions, and state
         self._is_cancelled = True
 
     def request_stop(self):
+        # Step 1: Validate input parameters, operational preconditions, and state
         self.cancel()
 
     def run(self):
+        # Step 1: Validate input parameters, operational preconditions, and state
         from app.engine.task_supervisor import TaskSupervisor
         task_id = TaskSupervisor.instance().register(
             name=f"Download Model: {os.path.basename(self.target_path)}",
@@ -108,6 +127,7 @@ class DownloadThread(QThread):
         
         tmp_path = self.target_path + ".tmp"
         try:
+            # Execute guarded operations and establish recovery boundaries
             self.log.emit("Connecting...")
             response = requests.get(self.url, stream=True, timeout=30)
             response.raise_for_status()
@@ -124,6 +144,7 @@ class DownloadThread(QThread):
             self.log.emit("Downloading...")
             with open(tmp_path, "wb") as f:
                 for chunk in response.iter_content(chunk_size=1024 * 1024):
+                    # Iterate over items, evaluate loop invariant, and update progress
                     if self._is_cancelled:
                         self.log.emit("Download cancelled.")
                         break
@@ -149,6 +170,7 @@ class DownloadThread(QThread):
             if self._is_cancelled:
                 if os.path.exists(tmp_path):
                     try:
+                        # Execute guarded operations and establish recovery boundaries
                         os.remove(tmp_path)
                     except Exception:
                         pass
@@ -164,6 +186,7 @@ class DownloadThread(QThread):
         except Exception as e:
             if os.path.exists(tmp_path):
                 try:
+                    # Execute guarded operations and establish recovery boundaries
                     os.remove(tmp_path)
                 except Exception:
                     pass

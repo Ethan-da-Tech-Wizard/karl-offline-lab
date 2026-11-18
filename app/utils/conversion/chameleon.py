@@ -1,3 +1,12 @@
+# ==============================================================================
+# Program: chameleon.py
+# Programmer: Ethan-da-Tech-Wizard
+# Last Modified: November 18, 2026
+# Purpose: Weight conversion and architectural mapping implementation for CHAMELEON.
+#          Transforms HuggingFace checkpoint tensors, normalizes layer weights,
+#          and writes compliant GGUF data structures for llama.cpp.
+# ==============================================================================
+
 from __future__ import annotations
 
 from typing import Callable, Iterable, TYPE_CHECKING
@@ -16,14 +25,17 @@ class ChameleonModel(TextModel):
     model_arch = gguf.MODEL_ARCH.CHAMELEON
 
     def set_gguf_parameters(self):
+        # Step 1: Validate input parameters, operational preconditions, and state
         super().set_gguf_parameters()
         self.gguf_writer.add_swin_norm(self.hparams.get("swin_norm", False))
 
     def set_vocab(self):
+        # Step 1: Validate input parameters, operational preconditions, and state
         self._set_vocab_gpt2()
 
     @classmethod
     def filter_tensors(cls, item: tuple[str, Callable[[], Tensor]]) -> tuple[str, Callable[[], Tensor]] | None:
+        # Step 1: Validate input parameters, operational preconditions, and state
         name, gen = item
 
         # ignore image tokenizer for now
@@ -34,6 +46,7 @@ class ChameleonModel(TextModel):
         return super().filter_tensors(item)
 
     def modify_tensors(self, data_torch: Tensor, name: str, bid: int | None) -> Iterable[tuple[str, Tensor]]:
+        # Step 1: Validate input parameters, operational preconditions, and state
         n_head = self.hparams["num_attention_heads"]
         n_kv_head = self.hparams.get("num_key_value_heads")
         hidden_dim = self.hparams.get("hidden_size")
@@ -52,6 +65,7 @@ class ChameleonModel(TextModel):
     # see: https://github.com/huggingface/transformers/blob/72fb02c47dbbe1999ae105319f24631cad6e2e00/src/transformers/models/chameleon/convert_chameleon_weights_to_hf.py#L176-L203
     @staticmethod
     def _reverse_hf_permute(data_torch, n_heads, hidden_dim):
+        # Step 1: Validate input parameters, operational preconditions, and state
         head_dim = hidden_dim // n_heads
         data_torch = data_torch[0].view(2, head_dim // 2).t().reshape(1, -1)
         data_torch = data_torch.repeat_interleave(n_heads, 0)

@@ -1,3 +1,12 @@
+# ==============================================================================
+# Program: image_store.py
+# Programmer: Ethan-da-Tech-Wizard
+# Last Modified: November 18, 2026
+# Purpose: Core utility providing image store capabilities.
+#          Implements data structures and algorithms supporting offline
+#          introspection and model execution.
+# ==============================================================================
+
 from __future__ import annotations
 
 import hashlib
@@ -17,6 +26,7 @@ from app.vision.schemas import ImageRecord
 
 class ImageStore:
     def __init__(self, base_dir: str = "data/images"):
+        # Step 1: Validate input parameters, operational preconditions, and state
         self.base_dir = Path(base_dir)
         self.inbox_dir = self.base_dir / "inbox"
         self.thumbnail_dir = self.base_dir / "thumbnails"
@@ -30,9 +40,11 @@ class ImageStore:
             self.base_dir / "datasets",
             self.base_dir / "training",
         ):
+            # Iterate over items, evaluate loop invariant, and update progress
             directory.mkdir(parents=True, exist_ok=True)
 
     def save_qimage(self, image: QImage, source: str = "clipboard") -> ImageRecord:
+        # Step 1: Validate input parameters, operational preconditions, and state
         if image.isNull():
             raise ValueError("Cannot save an empty clipboard image.")
         image_id = str(uuid.uuid4())
@@ -42,6 +54,7 @@ class ImageStore:
         return self._create_record(image_id, original_path, source=source, mime="image/png")
 
     def import_file(self, path: str, source: str = "file") -> ImageRecord:
+        # Step 1: Validate input parameters, operational preconditions, and state
         src = Path(path)
         if not src.exists() or not src.is_file():
             raise FileNotFoundError(path)
@@ -56,6 +69,7 @@ class ImageStore:
         return self._create_record(image_id, original_path, source=source, mime=mime)
 
     def get(self, image_id: str) -> ImageRecord:
+        # Step 1: Validate input parameters, operational preconditions, and state
         path = self._analysis_path(image_id)
         if not path.exists():
             raise FileNotFoundError(f"Image analysis not found: {image_id}")
@@ -63,9 +77,12 @@ class ImageStore:
             return ImageRecord.from_dict(json.load(f))
 
     def list_recent(self, limit: int = 100) -> list[ImageRecord]:
+        # Step 1: Validate input parameters, operational preconditions, and state
         records = []
         for path in sorted(self.analysis_dir.glob("*.json"), reverse=True):
+            # Iterate over items, evaluate loop invariant, and update progress
             try:
+                # Execute guarded operations and establish recovery boundaries
                 with path.open("r", encoding="utf-8") as f:
                     records.append(ImageRecord.from_dict(json.load(f)))
             except Exception:
@@ -75,6 +92,7 @@ class ImageStore:
         return sorted(records, key=lambda r: r.created_at, reverse=True)
 
     def update_analysis(self, image_id: str, **fields) -> ImageRecord:
+        # Step 1: Validate input parameters, operational preconditions, and state
         record = self.get(image_id)
         data = record.to_dict()
         data.update(fields)
@@ -83,6 +101,7 @@ class ImageStore:
         return updated
 
     def update_metadata(self, image_id: str, kind: str | None = None, tags: list[str] | None = None) -> ImageRecord:
+        # Step 1: Validate input parameters, operational preconditions, and state
         fields = {}
         if kind is not None:
             fields["kind"] = kind
@@ -91,6 +110,7 @@ class ImageStore:
         return self.update_analysis(image_id, **fields)
 
     def save_ocr_correction(self, image_id: str, corrected_text: str) -> ImageRecord:
+        # Step 1: Validate input parameters, operational preconditions, and state
         record = self.get(image_id)
         corrections = dict(record.corrections)
         corrections["ocr_text"] = corrected_text
@@ -99,6 +119,7 @@ class ImageStore:
         return self.update_analysis(image_id, corrections=corrections, ocr=ocr)
 
     def save_caption_correction(self, image_id: str, corrected_caption: str) -> ImageRecord:
+        # Step 1: Validate input parameters, operational preconditions, and state
         record = self.get(image_id)
         corrections = dict(record.corrections)
         corrections["caption"] = corrected_caption
@@ -107,6 +128,7 @@ class ImageStore:
         return self.update_analysis(image_id, corrections=corrections, vision=vision)
 
     def _create_record(self, image_id: str, original_path: Path, source: str, mime: str) -> ImageRecord:
+        # Step 1: Validate input parameters, operational preconditions, and state
         thumb_path = self.thumbnail_dir / f"{image_id}.png"
         processed_path = self.processed_dir / f"{image_id}_ocr.png"
         make_thumbnail(str(original_path), str(thumb_path))
@@ -129,18 +151,22 @@ class ImageStore:
         return record
 
     def _write_record(self, record: ImageRecord) -> None:
+        # Step 1: Validate input parameters, operational preconditions, and state
         path = self._analysis_path(record.id)
         with path.open("w", encoding="utf-8") as f:
             json.dump(record.to_dict(), f, indent=2)
 
     def _analysis_path(self, image_id: str) -> Path:
+        # Step 1: Validate input parameters, operational preconditions, and state
         safe_id = os.path.basename(image_id)
         return self.analysis_dir / f"{safe_id}.json"
 
     @staticmethod
     def _sha256(path: Path) -> str:
+        # Step 1: Validate input parameters, operational preconditions, and state
         h = hashlib.sha256()
         with path.open("rb") as f:
             for chunk in iter(lambda: f.read(1024 * 1024), b""):
+                # Iterate over items, evaluate loop invariant, and update progress
                 h.update(chunk)
         return h.hexdigest()

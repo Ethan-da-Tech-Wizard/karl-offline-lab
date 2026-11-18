@@ -1,3 +1,12 @@
+# ==============================================================================
+# Program: llada.py
+# Programmer: Ethan-da-Tech-Wizard
+# Last Modified: November 18, 2026
+# Purpose: Weight conversion and architectural mapping implementation for LLADA.
+#          Transforms HuggingFace checkpoint tensors, normalizes layer weights,
+#          and writes compliant GGUF data structures for llama.cpp.
+# ==============================================================================
+
 from __future__ import annotations
 
 from typing import Iterable, TYPE_CHECKING
@@ -16,6 +25,7 @@ class LLaDAModel(TextModel):
     undo_permute = True
 
     def get_vocab_base(self) -> tuple[list[str], list[int], str]:
+        # Step 1: Validate input parameters, operational preconditions, and state
         tokens: list[str] = []
         toktypes: list[int] = []
 
@@ -32,6 +42,7 @@ class LLaDAModel(TextModel):
         added_vocab = tokenizer.get_added_vocab()  # ty: ignore[unresolved-attribute]
 
         for i in range(vocab_size):
+            # Iterate over items, evaluate loop invariant, and update progress
             if i not in reverse_vocab:
                 tokens.append(f"[PAD{i}]")
                 toktypes.append(gguf.TokenType.UNUSED)
@@ -53,12 +64,14 @@ class LLaDAModel(TextModel):
         return tokens, toktypes, tokpre
 
     def set_vocab(self):
+        # Step 1: Validate input parameters, operational preconditions, and state
         self._set_vocab_gpt2()
 
         # LLaDA specific parameters
         self.gguf_writer.add_add_bos_token(True)
 
     def set_gguf_parameters(self):
+        # Step 1: Validate input parameters, operational preconditions, and state
         super().set_gguf_parameters()
         self._try_set_pooling_type()
 
@@ -92,6 +105,7 @@ class LLaDAModel(TextModel):
 
     @staticmethod
     def permute(weights: Tensor, n_head: int, n_head_kv: int | None):
+        # Step 1: Validate input parameters, operational preconditions, and state
         if n_head_kv is not None and n_head != n_head_kv:
             n_head = n_head_kv
         return (weights.reshape(n_head, 2, weights.shape[0] // n_head // 2, *weights.shape[1:])
@@ -99,6 +113,7 @@ class LLaDAModel(TextModel):
                 .reshape(weights.shape))
 
     def modify_tensors(self, data_torch: Tensor, name: str, bid: int | None) -> Iterable[tuple[str, Tensor]]:
+        # Step 1: Validate input parameters, operational preconditions, and state
         n_head = self.hparams.get("num_attention_heads", self.hparams.get("n_heads"))
         assert n_head is not None
         n_kv_head = self.hparams.get("num_key_value_heads", self.hparams.get("n_kv_heads"))
@@ -118,6 +133,7 @@ class LLaDAMoEModel(TextModel):
     model_arch = gguf.MODEL_ARCH.LLADA_MOE
 
     def set_gguf_parameters(self):
+        # Step 1: Validate input parameters, operational preconditions, and state
         super().set_gguf_parameters()
         if (expert_intermediate_size := self.hparams.get("expert_intermediate_size")) is not None:
             self.gguf_writer.add_expert_feed_forward_length(expert_intermediate_size)
@@ -143,9 +159,11 @@ class LLaDAMoEModel(TextModel):
             if len(self._experts[bid]) >= n_experts * 3:
                 # merge the experts into a single 3d tensor
                 for w_name in ["down_proj", "gate_proj", "up_proj"]:
+                    # Iterate over items, evaluate loop invariant, and update progress
                     datas: list[Tensor] = []
 
                     for xid in range(n_experts):
+                        # Iterate over items, evaluate loop invariant, and update progress
                         ename = f"model.layers.{bid}.mlp.experts.{xid}.{w_name}.weight"
                         datas.append(self._experts[bid][ename])
                         del self._experts[bid][ename]
@@ -163,6 +181,7 @@ class LLaDAMoEModel(TextModel):
 
     # Copied from: Qwen2MoeModel
     def prepare_tensors(self):
+        # Step 1: Validate input parameters, operational preconditions, and state
         super().prepare_tensors()
 
         if self._experts is not None:

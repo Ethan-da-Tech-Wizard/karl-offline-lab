@@ -1,3 +1,11 @@
+// ==============================================================================
+// Program: karl_state.js
+// Programmer: Ethan-da-Tech-Wizard
+// Last Modified: November 18, 2026
+// Purpose: State container tracking active conversation sessions, model settings, and workspace diffs.
+//          Coordinates editor events, client state, and backend RPC messaging.
+// ==============================================================================
+
 const vscode = acquireVsCodeApi();
 const boot = window.KARL_BOOTSTRAP || {};
 
@@ -42,6 +50,7 @@ let activeModelFilename = '';
 const $ = (id) => document.getElementById(id);
 
 function hydrate() {
+    // Step 1: Initialize function scope and validate execution context
     const persisted = boot.persisted || {};
     $('workspace').value = persisted.workspace || boot.workspaceFolder || '';
     $('bridgePort').value = persisted.port || boot.port || 8080;
@@ -79,6 +88,7 @@ function hydrate() {
 }
 
 function persist() {
+    // Step 1: Initialize function scope and validate execution context
     clearTimeout(persistTimer);
     persistTimer = setTimeout(() => {
         vscode.postMessage({
@@ -105,6 +115,7 @@ function persist() {
 }
 
 function initializeAppearance() {
+    // Step 1: Initialize function scope and validate execution context
     $('themeSelect').innerHTML = window.KARL_THEMES.map(theme => {
         return `<option value="${escapeHtml(theme.id)}">${escapeHtml(theme.name)}</option>`;
     }).join('');
@@ -115,16 +126,19 @@ function initializeAppearance() {
 }
 
 function themeById(id) {
+    // Step 1: Initialize function scope and validate execution context
     const themes = Array.isArray(window.KARL_THEMES) ? window.KARL_THEMES : [];
     return themes.find(theme => theme && theme.id === id) || themes[0] || { id: 'obsidian-core', vars: { '--karl-accent': '#00c2ff' }, name: 'Obsidian Core', description: '' };
 }
 
 function layoutById(id) {
+    // Step 1: Initialize function scope and validate execution context
     const layouts = Array.isArray(window.KARL_LAYOUTS) ? window.KARL_LAYOUTS : [];
     return layouts.find(layout => layout && layout.id === id) || layouts[0] || { id: 'cockpit', name: 'Cockpit', description: '' };
 }
 
 function applyAppearance() {
+    // Step 1: Initialize function scope and validate execution context
     const theme = themeById($('themeSelect').value);
     const layout = layoutById($('layoutSelect').value);
     const vars = theme.vars || {};
@@ -167,6 +181,7 @@ function applyAppearance() {
 }
 
 function switchWorkspace(wsId) {
+    // Step 1: Initialize function scope and validate execution context
     document.querySelectorAll('.workspace').forEach(section => section.classList.remove('active'));
     document.querySelectorAll('.tab').forEach(tab => tab.classList.toggle('active', tab.dataset.workspace === wsId));
     const section = $(`workspace-${wsId}`);

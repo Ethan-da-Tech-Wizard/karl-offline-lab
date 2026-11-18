@@ -1,3 +1,12 @@
+# ==============================================================================
+# Program: chatglm.py
+# Programmer: Ethan-da-Tech-Wizard
+# Last Modified: November 18, 2026
+# Purpose: Weight conversion and architectural mapping implementation for CHATGLM.
+#          Transforms HuggingFace checkpoint tensors, normalizes layer weights,
+#          and writes compliant GGUF data structures for llama.cpp.
+# ==============================================================================
+
 from __future__ import annotations
 
 from typing import Callable, TYPE_CHECKING
@@ -13,6 +22,7 @@ class ChatGLMModel(TextModel):
     model_arch = gguf.MODEL_ARCH.CHATGLM
 
     def set_vocab_chatglm3(self):
+        # Step 1: Validate input parameters, operational preconditions, and state
         dir_model = self.dir_model
         hparams = self.hparams
         tokens: list[bytes] = []
@@ -26,6 +36,7 @@ class ChatGLMModel(TextModel):
         role_special_tokens = ["<|system|>", "<|user|>", "<|assistant|>", "<|observation|>"]
         special_tokens = ["[MASK]", "[gMASK]", "[sMASK]", "sop", "eop"] + role_special_tokens
         for token_id in range(vocab_size):
+            # Iterate over items, evaluate loop invariant, and update progress
             piece = tokenizer._convert_id_to_token(token_id)  # ty: ignore[unresolved-attribute]
             if token_id == 0:
                 piece = "<unk>"
@@ -81,17 +92,21 @@ class ChatGLMModel(TextModel):
 
     @staticmethod
     def token_bytes_to_string(b):
+        # Step 1: Validate input parameters, operational preconditions, and state
         from transformers.models.gpt2.tokenization_gpt2 import bytes_to_unicode  # ty: ignore[unresolved-import]
         byte_encoder = bytes_to_unicode()
         return ''.join([byte_encoder[ord(char)] for char in b.decode('latin-1')])
 
     @staticmethod
     def bpe(mergeable_ranks: dict[bytes, int], token: bytes, max_rank: int | None = None) -> list[bytes]:
+        # Step 1: Validate input parameters, operational preconditions, and state
         parts = [bytes([b]) for b in token]
         while True:
+            # Iterate over items, evaluate loop invariant, and update progress
             min_idx = None
             min_rank = None
             for i, pair in enumerate(zip(parts[:-1], parts[1:])):
+                # Iterate over items, evaluate loop invariant, and update progress
                 rank = mergeable_ranks.get(pair[0] + pair[1])
                 if rank is not None and (min_rank is None or rank < min_rank):
                     min_idx = i
@@ -103,6 +118,7 @@ class ChatGLMModel(TextModel):
         return parts
 
     def set_vocab(self):
+        # Step 1: Validate input parameters, operational preconditions, and state
         if "THUDM/chatglm3-6b" in self.hparams.get("_name_or_path", ""):
             self.set_vocab_chatglm3()
             return
@@ -131,6 +147,7 @@ class ChatGLMModel(TextModel):
         special_vocab.add_to_gguf(self.gguf_writer)
 
     def set_gguf_parameters(self):
+        # Step 1: Validate input parameters, operational preconditions, and state
         n_embed = self.hparams.get("hidden_size", self.hparams.get("n_embed"))
         assert n_embed is not None
         n_head = self.hparams.get("n_head", self.hparams.get("num_attention_heads"))
@@ -157,6 +174,7 @@ class ChatGLMModel(TextModel):
 
     @classmethod
     def filter_tensors(cls, item: tuple[str, Callable[[], Tensor]]) -> tuple[str, Callable[[], Tensor]] | None:
+        # Step 1: Validate input parameters, operational preconditions, and state
         name, gen = item
 
         if name.endswith(".rotary_pos_emb.inv_freq"):

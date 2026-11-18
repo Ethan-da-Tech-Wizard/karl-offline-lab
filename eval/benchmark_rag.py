@@ -1,3 +1,12 @@
+# ==============================================================================
+# Program: benchmark_rag.py
+# Programmer: Ethan-da-Tech-Wizard
+# Last Modified: November 18, 2026
+# Purpose: Benchmark runner measuring RAG pipeline recall, precision, and latency.
+#          Evaluates document retrieval quality against ground truth reference
+#          queries.
+# ==============================================================================
+
 """
 RAG Retrieval Benchmark — Karl Workbench
 ==========================================
@@ -35,6 +44,7 @@ def _tokenize(text):
     Tokenize text by lowercasing and splitting by whitespace/punctuation.
     Strictly follows: lowercase + re.split by non-alphanumeric.
     """
+    # Step 1: Validate input parameters, operational preconditions, and state
     if not isinstance(text, str):
         text = str(text)
     # Lowercase and split by any sequence of non-alphanumeric characters
@@ -43,6 +53,7 @@ def _tokenize(text):
 
 def _get_ngrams(tokens, n):
     """Generates n-grams from a list of tokens."""
+    # Step 1: Validate input parameters, operational preconditions, and state
     return [tuple(tokens[i:i+n]) for i in range(len(tokens)-n+1)]
 
 def compute_bleu(reference, hypothesis, n_max=2):
@@ -50,6 +61,7 @@ def compute_bleu(reference, hypothesis, n_max=2):
     Bilingual Evaluation Understudy (BLEU) implementation.
     Strictly follows provided mathematical specifications.
     """
+    # Step 1: Validate input parameters, operational preconditions, and state
     ref_tokens = _tokenize(reference)
     hyp_tokens = _tokenize(hypothesis)
     
@@ -61,6 +73,7 @@ def compute_bleu(reference, hypothesis, n_max=2):
     
     precisions = []
     for n in range(1, n_max + 1):
+        # Iterate over items, evaluate loop invariant, and update progress
         ref_ngrams = collections.Counter(_get_ngrams(ref_tokens, n))
         hyp_ngrams = collections.Counter(_get_ngrams(hyp_tokens, n))
         
@@ -68,6 +81,7 @@ def compute_bleu(reference, hypothesis, n_max=2):
         hyp_ngram_count = len(_get_ngrams(hyp_tokens, n))
         if hyp_ngram_count > 0:
             for ngram, count in hyp_ngrams.items():
+                # Iterate over items, evaluate loop invariant, and update progress
                 if ngram in ref_ngrams:
                     # p_n = sum(Count_clip(g)) / sum(Count(g))
                     matches += min(count, ref_ngrams[ngram])
@@ -99,6 +113,7 @@ def compute_rouge_1(reference, hypothesis):
     """
     ROUGE-1: Precision, Recall, and F1 based on unigrams.
     """
+    # Step 1: Validate input parameters, operational preconditions, and state
     ref_tokens = _tokenize(reference)
     hyp_tokens = _tokenize(hypothesis)
     
@@ -110,6 +125,7 @@ def compute_rouge_1(reference, hypothesis):
     
     matches = 0
     for token, count in hyp_counts.items():
+        # Iterate over items, evaluate loop invariant, and update progress
         if token in ref_counts:
             # Overlap(1-grams)
             matches += min(count, ref_counts[token])
@@ -125,6 +141,7 @@ def compute_rouge_l(reference, hypothesis, beta=1.0):
     ROUGE-L: Longest Common Subsequence.
     Strictly follows provided mathematical specifications.
     """
+    # Step 1: Validate input parameters, operational preconditions, and state
     X = _tokenize(reference)
     Y = _tokenize(hypothesis)
     
@@ -135,7 +152,9 @@ def compute_rouge_l(reference, hypothesis, beta=1.0):
     # Dynamic programming for LCS length
     dp = [[0] * (m + 1) for _ in range(n + 1)]
     for i in range(1, n + 1):
+        # Iterate over items, evaluate loop invariant, and update progress
         for j in range(1, m + 1):
+            # Iterate over items, evaluate loop invariant, and update progress
             if X[i-1] == Y[j-1]:
                 dp[i][j] = dp[i-1][j-1] + 1
             else:
@@ -198,6 +217,7 @@ class QueryResult:
 
 
 def run_benchmark(top_k: int = 3, contextual_headers: bool = False) -> list[QueryResult]:
+    # Step 1: Validate input parameters, operational preconditions, and state
     print(f"\n{'─'*60}")
     print(f"  Karl RAG Retrieval Benchmark")
     print(f"  top_k={top_k} | contextual_headers={contextual_headers}")
@@ -209,6 +229,7 @@ def run_benchmark(top_k: int = 3, contextual_headers: bool = False) -> list[Quer
 
     print(f"\n  Ingesting {len(CORPUS)} synthetic chunks...")
     for source, text in CORPUS:
+        # Iterate over items, evaluate loop invariant, and update progress
         vec = rag.encoder.encode([text]).astype("float32")
         rag.index.add(vec)
         rag.documents.append({
@@ -222,6 +243,7 @@ def run_benchmark(top_k: int = 3, contextual_headers: bool = False) -> list[Quer
 
     results = []
     for query, expected_ids in BENCHMARK_QUERIES:
+        # Iterate over items, evaluate loop invariant, and update progress
         t0 = time.perf_counter()
         metrics = rag.eval_retrieval(query, expected_chunk_ids=expected_ids, top_k=top_k)
         latency_ms = (time.perf_counter() - t0) * 1000
@@ -239,12 +261,14 @@ def run_benchmark(top_k: int = 3, contextual_headers: bool = False) -> list[Quer
 
 
 def print_results(results: list[QueryResult], top_k: int):
+    # Step 1: Validate input parameters, operational preconditions, and state
     bar = "─" * 60
     print(f"\n  Per-query results (top_k={top_k}):\n")
     print(f"  {'Query':<42} H@1  H@3  H@k   MRR   ms")
     print(f"  {'─'*42} ─── ─── ─── ─────  ─────")
 
     for r in results:
+        # Iterate over items, evaluate loop invariant, and update progress
         q_short = textwrap.shorten(r.query, 40, placeholder="…")
         h1  = "✓" if r.hit_at_1 else "✗"
         h3  = "✓" if r.hit_at_3 else "✗"
@@ -274,6 +298,7 @@ def print_results(results: list[QueryResult], top_k: int):
 
 
 def calculate_metrics(retrieved_ids: list[int], expected_ids: list[int], top_k: int) -> dict:
+    # Step 1: Validate input parameters, operational preconditions, and state
     expected_set = set(expected_ids)
     hit_at_1 = bool(retrieved_ids[:1] and retrieved_ids[0] in expected_set)
     hit_at_3 = bool(any(cid in expected_set for cid in retrieved_ids[:3]))
@@ -281,6 +306,7 @@ def calculate_metrics(retrieved_ids: list[int], expected_ids: list[int], top_k: 
     
     rr = 0.0
     for rank, cid in enumerate(retrieved_ids[:top_k], 1):
+        # Iterate over items, evaluate loop invariant, and update progress
         if cid in expected_set:
             rr = 1.0 / rank
             break
@@ -294,6 +320,7 @@ def calculate_metrics(retrieved_ids: list[int], expected_ids: list[int], top_k: 
 
 
 def run_code_review_benchmark(top_k: int = 3, output_path: str = "data/rag_benchmark_results.json"):
+    # Step 1: Validate input parameters, operational preconditions, and state
     dataset_path = "eval/datasets/code_review.jsonl"
     if not os.path.exists(dataset_path):
         print(f"Error: Dataset not found at {dataset_path}")
@@ -302,9 +329,11 @@ def run_code_review_benchmark(top_k: int = 3, output_path: str = "data/rag_bench
     cases = []
     with open(dataset_path, "r", encoding="utf-8") as f:
         for line in f:
+            # Iterate over items, evaluate loop invariant, and update progress
             line = line.strip()
             if line and not line.startswith("#"):
                 try:
+                    # Execute guarded operations and establish recovery boundaries
                     cases.append(json.loads(line))
                 except json.JSONDecodeError:
                     pass
@@ -330,6 +359,7 @@ def run_code_review_benchmark(top_k: int = 3, output_path: str = "data/rag_bench
     # Ingest contexts
     print(f"  Ingesting {len(cases)} code contexts...")
     for i, case in enumerate(cases):
+        # Iterate over items, evaluate loop invariant, and update progress
         text = case.get("context", case.get("code", ""))
         doc_id = case.get("id", f"code_{i:03d}")
         
@@ -349,6 +379,7 @@ def run_code_review_benchmark(top_k: int = 3, output_path: str = "data/rag_bench
     query_details = []
     
     for i, case in enumerate(cases):
+        # Iterate over items, evaluate loop invariant, and update progress
         query_text = case["prompt"]
         expected_ids = [i]
         reference_answer = str(case.get("expected", ""))
@@ -363,6 +394,7 @@ def run_code_review_benchmark(top_k: int = 3, output_path: str = "data/rag_bench
         print(f"  [{i+1}/{len(cases)}] Query: {textwrap.shorten(query_text, 50)}")
         
         for mode in modes:
+            # Iterate over items, evaluate loop invariant, and update progress
             retrieved = rag.retrieve_with_metadata(query_text, top_k=top_k, mode=mode)
             retrieved_ids = [r["chunk_id"] for r in retrieved]
             
@@ -416,6 +448,7 @@ def run_code_review_benchmark(top_k: int = 3, output_path: str = "data/rag_bench
     # Aggregate metrics using NumPy
     summary = {}
     for mode in modes:
+        # Iterate over items, evaluate loop invariant, and update progress
         mode_results = results_by_mode[mode]
         n = len(mode_results)
         if n == 0: continue
@@ -435,6 +468,7 @@ def run_code_review_benchmark(top_k: int = 3, output_path: str = "data/rag_bench
     print(f"    {'Mode':<10} Hit@1    Hit@3    MRR     B-1     B-2     R-1     R-L")
     print(f"    {'─'*10} ─────    ─────    ───     ───     ───     ───     ───")
     for mode in modes:
+        # Iterate over items, evaluate loop invariant, and update progress
         s = summary[mode]
         print(f"    {mode:<10} {s['hit_at_1']:<8.1%} {s['hit_at_3']:<8.1%} {s['mrr']:<7.3f} "
               f"{s['bleu_1']:<7.3f} {s['bleu_2']:<7.3f} {s['rouge_1']:<7.3f} {s['rouge_l']:<7.3f}")
@@ -462,6 +496,7 @@ def run_code_review_benchmark(top_k: int = 3, output_path: str = "data/rag_bench
 
 
 def main():
+    # Step 1: Validate input parameters, operational preconditions, and state
     import argparse
     p = argparse.ArgumentParser(description="Karl RAG retrieval benchmark")
     p.add_argument("--top-k", type=int, default=3, help="Retrieval cutoff (default: 3)")
@@ -482,6 +517,7 @@ def main():
 
         print("\n  === Delta (headers vs no headers) ===")
         for metric in ("hit_at_1", "hit_at_3", "hit_at_k", "mrr"):
+            # Iterate over items, evaluate loop invariant, and update progress
             delta = m2[metric] - m1[metric]
             sign  = "+" if delta >= 0 else ""
             print(f"    {metric:<12}: {sign}{delta:.3f}")

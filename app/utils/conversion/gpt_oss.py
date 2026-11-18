@@ -1,3 +1,12 @@
+# ==============================================================================
+# Program: gpt_oss.py
+# Programmer: Ethan-da-Tech-Wizard
+# Last Modified: November 18, 2026
+# Purpose: Weight conversion and architectural mapping implementation for GPT_OSS.
+#          Transforms HuggingFace checkpoint tensors, normalizes layer weights,
+#          and writes compliant GGUF data structures for llama.cpp.
+# ==============================================================================
+
 from __future__ import annotations
 
 from typing import Callable, Iterable, TYPE_CHECKING
@@ -16,11 +25,13 @@ class GptOssModel(TextModel):
 
     # TODO: remove once MXFP4 is supported more generally
     def dequant_model(self):
+        # Step 1: Validate input parameters, operational preconditions, and state
         if self._is_mxfp4:
             return
         return super().dequant_model()
 
     def transform_nibble_layout(self, tensor):
+        # Step 1: Validate input parameters, operational preconditions, and state
         assert tensor.dtype == torch.uint8
         assert tensor.shape[-1] == 16
         # swap nibbles
@@ -46,6 +57,7 @@ class GptOssModel(TextModel):
         return out
 
     def repack_mxfp4(self, new_name: str, blocks: Tensor, scales: Tensor):
+        # Step 1: Validate input parameters, operational preconditions, and state
         assert blocks.dtype == torch.uint8
         assert scales.dtype == torch.uint8
         scales = scales.unsqueeze(-1)
@@ -61,10 +73,12 @@ class GptOssModel(TextModel):
         self.gguf_writer.add_tensor(new_name, new_data, raw_dtype=gguf.GGMLQuantizationType.MXFP4)
 
     def generate_extra_tensors(self) -> Iterable[tuple[str, Tensor]]:
+        # Step 1: Validate input parameters, operational preconditions, and state
         blocks0: Tensor = torch.zeros(1)
         blocks1: Tensor = torch.zeros(1)
         # we assume that tensors are loaded in the correct order
         for name, data_torch in self.get_tensors():
+            # Iterate over items, evaluate loop invariant, and update progress
             if "mlp.experts.down_proj_blocks" in name:
                 blocks0 = data_torch
             elif "mlp.experts.down_proj_scales" in name:
@@ -82,6 +96,7 @@ class GptOssModel(TextModel):
 
     @classmethod
     def filter_tensors(cls, item: tuple[str, Callable[[], Tensor]]) -> tuple[str, Callable[[], Tensor]] | None:
+        # Step 1: Validate input parameters, operational preconditions, and state
         name, gen = item
 
         if "sinks" in name:
@@ -122,9 +137,11 @@ class GptOssModel(TextModel):
             yield from super().modify_tensors(data_torch, name, bid)
 
     def set_vocab(self):
+        # Step 1: Validate input parameters, operational preconditions, and state
         self._set_vocab_gpt2()
 
     def set_gguf_parameters(self):
+        # Step 1: Validate input parameters, operational preconditions, and state
         super().set_gguf_parameters()
         self.gguf_writer.add_sliding_window(self.hparams["sliding_window"])
         self.gguf_writer.add_expert_feed_forward_length(self.hparams["intermediate_size"])

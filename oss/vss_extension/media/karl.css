@@ -1,3 +1,12 @@
+/* ============================================================================
+ * Program: karl.css
+ * Programmer: Ethan-da-Tech-Wizard
+ * Last Modified: November 18, 2026
+ * Purpose: Visual styling and token sheet for karl.css.
+ *          Defines theme variables, widget geometry, color palettes, and
+ *          component states.
+ * ============================================================================ */
+
 :root {
     /* Backgrounds — follow VS Code's own surfaces so dark/light themes both work */
     --karl-bg: var(--vscode-sideBar-background, #0d1117);

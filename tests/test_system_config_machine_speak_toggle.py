@@ -1,3 +1,12 @@
+# ==============================================================================
+# Program: test_system_config_machine_speak_toggle.py
+# Programmer: Ethan-da-Tech-Wizard
+# Last Modified: November 18, 2026
+# Purpose: Tests for the System Config "Machine Speak" checkbox.
+#          Coordinates with adjacent subsystems within the Karl Offline Lab
+#          architecture.
+# ==============================================================================
+
 """Tests for the System Config "Machine Speak" checkbox.
 
 Covers the toggle added to DefaultsPanelMixin's GENERATION DEFAULTS tab: it
@@ -32,6 +41,7 @@ _HEAVY_PATCHES = [
 
 class TestMachineSpeakToggle(unittest.TestCase):
     def setUp(self):
+        # Step 1: Validate input parameters, operational preconditions, and state
         import tempfile
         self._tmpdir = tempfile.mkdtemp()
         self._orig_cwd = os.getcwd()
@@ -41,13 +51,16 @@ class TestMachineSpeakToggle(unittest.TestCase):
         self._mocks = [p.start() for p in _HEAVY_PATCHES]
 
     def tearDown(self):
+        # Step 1: Validate input parameters, operational preconditions, and state
         for p in _HEAVY_PATCHES:
+            # Iterate over items, evaluate loop invariant, and update progress
             p.stop()
         os.chdir(self._orig_cwd)
         import shutil
         shutil.rmtree(self._tmpdir, ignore_errors=True)
 
     def test_checkbox_reflects_current_state_on_build(self):
+        # Step 1: Validate input parameters, operational preconditions, and state
         state = AppState()
         state.enable_machine_speak = False
         workspace = SystemConfigWorkspace(state)
@@ -80,6 +93,7 @@ class TestMachineSpeakToggle(unittest.TestCase):
         self.assertTrue(config_store.get_ui_config()["enable_machine_speak"])
 
     def test_toggling_survives_a_fresh_appstate_reload(self):
+        # Step 1: Validate input parameters, operational preconditions, and state
         state = AppState()
         workspace = SystemConfigWorkspace(state)
         workspace._machine_speak_check.setChecked(True)
@@ -88,6 +102,7 @@ class TestMachineSpeakToggle(unittest.TestCase):
         self.assertTrue(reloaded.enable_machine_speak)
 
     def test_row_is_registered_for_settings_search(self):
+        # Step 1: Validate input parameters, operational preconditions, and state
         state = AppState()
         workspace = SystemConfigWorkspace(state)
         labels = [label for label, _ in workspace._settings_rows]

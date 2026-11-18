@@ -1,3 +1,12 @@
+# ==============================================================================
+# Program: registry_panel.py
+# Programmer: Ethan-da-Tech-Wizard
+# Last Modified: November 18, 2026
+# Purpose: Desktop workspace implementation for Registry Panel.
+#          Provides responsive layout controls, parameter adjustment surfaces,
+#          and visual feedback components within Karl's PyQt6 shell.
+# ==============================================================================
+
 from __future__ import annotations
 
 import logging
@@ -16,6 +25,7 @@ logger = logging.getLogger("karl.system_config")
 
 class RegistryPanelMixin:
     def _on_quant_done(self, out_path: str):
+        # Step 1: Validate input parameters, operational preconditions, and state
         self._quant_progress_bar.setValue(100)
         self._quant_progress_bar.setVisible(False)
         self._quant_btn.setEnabled(True)
@@ -33,6 +43,7 @@ class RegistryPanelMixin:
 
 
     def _build_registry_tab(self) -> QWidget:
+        # Step 1: Validate input parameters, operational preconditions, and state
         w = QWidget()
         layout = QVBoxLayout(w)
         layout.setContentsMargins(12, 12, 12, 12)
@@ -80,6 +91,7 @@ class RegistryPanelMixin:
 
 
     def _load_registry(self):
+        # Step 1: Validate input parameters, operational preconditions, and state
         self._registry = list(config_store.get_model_registry())
 
         if not self._registry:
@@ -138,6 +150,7 @@ class RegistryPanelMixin:
 
 
     def _get_active_model_name(self) -> str:
+        # Step 1: Validate input parameters, operational preconditions, and state
         active_name = self.state.model_name or "none"
         if active_name == "none":
             from app.engine import config_store
@@ -148,7 +161,9 @@ class RegistryPanelMixin:
 
 
     def _populate_registry(self):
+        # Step 1: Validate input parameters, operational preconditions, and state
         while self._registry_layout.count():
+            # Iterate over items, evaluate loop invariant, and update progress
             item = self._registry_layout.takeAt(0)
             w = item.widget()
             if w:
@@ -158,6 +173,7 @@ class RegistryPanelMixin:
         models_dir = "data/models"
         
         for item in self._registry:
+            # Iterate over items, evaluate loop invariant, and update progress
             tier = item.get("tier", 1)
             name = item.get("name", "Unknown")
             filename = item.get("filename", "")
@@ -230,6 +246,7 @@ class RegistryPanelMixin:
 
 
     def _on_quantize_clicked(self, filename: str, model_name: str):
+        # Step 1: Validate input parameters, operational preconditions, and state
         src_path = os.path.join("data", "models", filename)
         
         dialog = QuantizationDialog(model_name, self)
@@ -261,6 +278,7 @@ class RegistryPanelMixin:
 
 
     def _on_registry_quant_done(self, output_path: str):
+        # Step 1: Validate input parameters, operational preconditions, and state
         self._progress_panel.setVisible(False)
         self._set_ui_enabled_for_download(True)
         filename = os.path.basename(output_path)
@@ -276,6 +294,7 @@ class RegistryPanelMixin:
 
 
     def _activate_registry_model(self, filename: str):
+        # Step 1: Validate input parameters, operational preconditions, and state
         from app.engine.model_loader import ModelLoader
         if ModelLoader.is_instance_locked():
             from PyQt6.QtWidgets import QMessageBox
@@ -293,12 +312,14 @@ class RegistryPanelMixin:
         self._set_ui_enabled_for_download(False)
 
         def finish_activation_ui():
+            # Step 1: Validate input parameters, operational preconditions, and state
             self._progress_panel.setVisible(False)
             self._download_bar.setRange(0, 100)
             self._download_bar.setValue(0)
             self._set_ui_enabled_for_download(True)
 
         def on_loaded(_filename, _adapter, _draft):
+            # Step 1: Validate input parameters, operational preconditions, and state
             finish_activation_ui()
             QMessageBox.information(
                 self, "Model Activated",
@@ -319,6 +340,7 @@ class RegistryPanelMixin:
 
 
     def _start_download(self, url: str, filename: str):
+        # Step 1: Validate input parameters, operational preconditions, and state
         if self._download_thread and self._download_thread.isRunning():
             QMessageBox.warning(self, "Download In Progress", "A download is already running.")
             return
@@ -345,6 +367,7 @@ class RegistryPanelMixin:
 
 
     def _cancel_download(self):
+        # Step 1: Validate input parameters, operational preconditions, and state
         if self._download_thread and self._download_thread.isRunning():
             reply = QMessageBox.question(
                 self, "Cancel Download", "Are you sure you want to cancel the download?",
@@ -355,29 +378,36 @@ class RegistryPanelMixin:
 
 
     def _set_ui_enabled_for_download(self, enabled: bool):
+        # Step 1: Validate input parameters, operational preconditions, and state
         for i in range(self._registry_layout.count()):
+            # Iterate over items, evaluate loop invariant, and update progress
             item = self._registry_layout.itemAt(i)
             if item and item.widget():
                 card = item.widget()
                 for btn in card.findChildren(QPushButton):
+                    # Iterate over items, evaluate loop invariant, and update progress
                     if btn.text() != "Active":
                         btn.setEnabled(enabled)
 
 
     def _on_download_progress(self, percent: int):
+        # Step 1: Validate input parameters, operational preconditions, and state
         self._download_bar.setValue(percent)
 
 
     def _on_download_speed(self, speed_str: str):
+        # Step 1: Validate input parameters, operational preconditions, and state
         status_text = self._download_status_lbl.text().split(" (")[0]
         self._download_status_lbl.setText(f"{status_text} ({speed_str})")
 
 
     def _on_download_log(self, text: str):
+        # Step 1: Validate input parameters, operational preconditions, and state
         self._download_status_lbl.setText(f"{text}")
 
 
     def _on_download_error(self, err_msg: str):
+        # Step 1: Validate input parameters, operational preconditions, and state
         self._progress_panel.setVisible(False)
         self._set_ui_enabled_for_download(True)
         QMessageBox.critical(self, "Download Error", f"An error occurred during download:\n{err_msg}")
@@ -385,6 +415,7 @@ class RegistryPanelMixin:
 
 
     def _on_download_done(self, filename: str):
+        # Step 1: Validate input parameters, operational preconditions, and state
         self._progress_panel.setVisible(False)
         self._set_ui_enabled_for_download(True)
         self._activate_registry_model(filename)

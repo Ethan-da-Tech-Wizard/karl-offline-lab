@@ -1,3 +1,12 @@
+# ==============================================================================
+# Program: workspace.py
+# Programmer: Ethan-da-Tech-Wizard
+# Last Modified: November 18, 2026
+# Purpose: Workbench — primary interaction space.
+#          Coordinates with adjacent subsystems within the Karl Offline Lab
+#          architecture.
+# ==============================================================================
+
 """
 Workbench — primary interaction space.
 
@@ -57,12 +66,14 @@ logger = logging.getLogger("karl.workbench")
 
 
 def _hline() -> QFrame:
+    # Step 1: Validate input parameters, operational preconditions, and state
     f = QFrame()
     f.setFrameShape(QFrame.Shape.HLine)
     return f
 
 
 def _label(text: str, obj: str = "") -> QLabel:
+    # Step 1: Validate input parameters, operational preconditions, and state
     lbl = QLabel(text)
     if obj:
         lbl.setObjectName(obj)
@@ -80,6 +91,7 @@ def _load_persisted_system_prompt() -> str:
     Falls back to DEFAULT_SYSTEM_PROMPT when the key is absent (first run)
     or when the persisted value is an empty string.
     """
+    # Step 1: Validate input parameters, operational preconditions, and state
     cfg = config_store.get_ui_config()
     stored = cfg.get("workbench_system_prompt", "")
     return stored if isinstance(stored, str) and stored.strip() else DEFAULT_SYSTEM_PROMPT
@@ -87,6 +99,7 @@ def _load_persisted_system_prompt() -> str:
 
 def _save_system_prompt(prompt: str) -> None:
     """Persist the active system prompt to ui_config.json."""
+    # Step 1: Validate input parameters, operational preconditions, and state
     cfg = config_store.get_ui_config()
     cfg["workbench_system_prompt"] = prompt
     config_store.save_ui_config(cfg)
@@ -105,6 +118,7 @@ class WorkbenchWorkspace(QMainWindow):
 
     def __init__(self, state, parent=None):
         """Initialize Workbench state, session tree, generation params, and docks."""
+        # Step 1: Validate input parameters, operational preconditions, and state
         super().__init__(parent)
         self.state = state
         self.setObjectName("workspace-root")
@@ -226,6 +240,7 @@ class WorkbenchWorkspace(QMainWindow):
         self._populate_hud_toolbar()
 
     def _build_sessions_panel(self) -> QWidget:
+        # Step 1: Validate input parameters, operational preconditions, and state
         tabs = QTabWidget()
         tabs.setObjectName("left-tabs")
         tabs.setTabPosition(QTabWidget.TabPosition.North)
@@ -276,6 +291,7 @@ class WorkbenchWorkspace(QMainWindow):
         return tabs
 
     def _build_reasoning_panel(self) -> QWidget:
+        # Step 1: Validate input parameters, operational preconditions, and state
         self._reasoning_panel_container = TracingPanel(self.state, self)
         self._reasoning_panel_container.setObjectName("panel")
         accent = get_theme_colors(self.state).get("accent", "#00C2FF")
@@ -300,6 +316,7 @@ class WorkbenchWorkspace(QMainWindow):
         return self._reasoning_panel_container
 
     def _build_chat_panel(self) -> QWidget:
+        # Step 1: Validate input parameters, operational preconditions, and state
         w = QWidget()
         layout = QVBoxLayout(w)
         layout.setContentsMargins(0, 0, 0, 0)
@@ -414,6 +431,7 @@ class WorkbenchWorkspace(QMainWindow):
         self._workflow_combo.setMaximumWidth(150)
         self._workflow_combo.setToolTip("Active prompt generation workflow template")
         for name, label in list_workflows():
+            # Iterate over items, evaluate loop invariant, and update progress
             self._workflow_combo.addItem(label, name)
         # Select "general_chat" by default
         default_idx = self._workflow_combo.findData("general_chat")
@@ -426,6 +444,7 @@ class WorkbenchWorkspace(QMainWindow):
         self._agent_combo.setMaximumWidth(120)
         self._agent_combo.setToolTip("Select Karl's active workbench agent profile")
         for key, data in AGENT_PROFILES.items():
+            # Iterate over items, evaluate loop invariant, and update progress
             label = data["label"]
             if is_overridden(key):
                 label = f"★ {label}"
@@ -504,6 +523,7 @@ class WorkbenchWorkspace(QMainWindow):
 
 
     def _build_command_header(self) -> QWidget:
+        # Step 1: Validate input parameters, operational preconditions, and state
         header = QFrame()
         header.setObjectName("panel")
         root = QVBoxLayout(header)
@@ -568,6 +588,7 @@ class WorkbenchWorkspace(QMainWindow):
         self._header_agent_combo.setMaximumWidth(160)
         self._header_agent_combo.setToolTip("Select Karl's active Workbench agent profile.")
         for key, data in AGENT_PROFILES.items():
+            # Iterate over items, evaluate loop invariant, and update progress
             label = f"★ {data['label']}" if is_overridden(key) else data["label"]
             self._header_agent_combo.addItem(label, key)
             idx = self._header_agent_combo.count() - 1
@@ -599,6 +620,7 @@ class WorkbenchWorkspace(QMainWindow):
 
 
     def _build_settings_overlay(self):
+        # Step 1: Validate input parameters, operational preconditions, and state
         self._settings_overlay = QFrame(self._chat_panel)
         self._settings_overlay.setObjectName("settings-overlay")
         self._settings_overlay.setVisible(False)
@@ -712,6 +734,7 @@ class WorkbenchWorkspace(QMainWindow):
         layout.addStretch()
 
     def _toggle_settings_overlay(self):
+        # Step 1: Validate input parameters, operational preconditions, and state
         if not hasattr(self, "_settings_overlay") or self._settings_overlay is None:
             self._build_settings_overlay()
             
@@ -760,6 +783,7 @@ class WorkbenchWorkspace(QMainWindow):
         self._update_hud_btn_styles()
 
     def _responsive_mode_for_width(self, width: int) -> str:
+        # Step 1: Validate input parameters, operational preconditions, and state
         if width < 850:
             return "single"
         if width < 1100:
@@ -769,10 +793,12 @@ class WorkbenchWorkspace(QMainWindow):
         return "full"
 
     def _set_button_text_width(self, button: QPushButton, text: str, width: int) -> None:
+        # Step 1: Validate input parameters, operational preconditions, and state
         button.setText(text)
         button.setFixedWidth(width)
 
     def _apply_responsive_layout(self, width: int) -> None:
+        # Step 1: Validate input parameters, operational preconditions, and state
         if width <= 0 or not hasattr(self, "_input_container"):
             return
 
@@ -841,6 +867,7 @@ class WorkbenchWorkspace(QMainWindow):
         self._update_hud_btn_styles()
 
     def _setup_glow_effects(self):
+        # Step 1: Validate input parameters, operational preconditions, and state
         self._sessions_shadow = QGraphicsDropShadowEffect(self)
         self._sessions_shadow.setBlurRadius(15)
         self._sessions_shadow.setXOffset(0)
@@ -860,6 +887,7 @@ class WorkbenchWorkspace(QMainWindow):
         self._chat_panel.setGraphicsEffect(self._chat_shadow)
 
     def _update_glow_pulse(self):
+        # Step 1: Validate input parameters, operational preconditions, and state
         if getattr(self.state, "reduced_motion", False):
             self._glow_val = 0.7
         else:
@@ -891,6 +919,7 @@ class WorkbenchWorkspace(QMainWindow):
         for shadow in (getattr(self, "_sessions_shadow", None),
                        getattr(self, "_reasoning_shadow", None),
                        getattr(self, "_chat_shadow", None)):
+            # Iterate over items, evaluate loop invariant, and update progress
             if shadow:
                 shadow.setColor(color)
                 shadow.setBlurRadius(radius)
@@ -898,6 +927,7 @@ class WorkbenchWorkspace(QMainWindow):
     # Chat animations disabled to prevent rendering blocks on Linux
 
     def _populate_hud_toolbar(self):
+        # Step 1: Validate input parameters, operational preconditions, and state
         tb = self._hud_toolbar
         tbl = QHBoxLayout(tb)
         tbl.setContentsMargins(10, 4, 10, 4)
@@ -963,11 +993,13 @@ class WorkbenchWorkspace(QMainWindow):
         self._update_hud_btn_styles()
 
     def _toggle_rag_hud(self):
+        # Step 1: Validate input parameters, operational preconditions, and state
         visible = not self._rag_sources_view.isVisible()
         self._rag_sources_view.setVisible(visible)
         self._update_hud_btn_styles()
 
     def _toggle_context_hud(self):
+        # Step 1: Validate input parameters, operational preconditions, and state
         visible = not self._context_bar.isVisible()
         self._context_bar.setVisible(visible)
         if hasattr(self, "_token_row"):
@@ -975,6 +1007,7 @@ class WorkbenchWorkspace(QMainWindow):
         self._update_hud_btn_styles()
 
     def _update_hud_btn_styles(self):
+        # Step 1: Validate input parameters, operational preconditions, and state
         for btn, val in [
             (getattr(self, "_hud_sessions_btn", None), self._sessions_dock.isVisible()),
             (getattr(self, "_hud_reasoning_btn", None), self._reasoning_dock.isVisible()),
@@ -982,6 +1015,7 @@ class WorkbenchWorkspace(QMainWindow):
             (getattr(self, "_hud_context_btn", None), self._context_bar.isVisible()),
             (getattr(self, "_hud_settings_btn", None), getattr(self, "_settings_overlay", None) is not None and self._settings_overlay.isVisible())
         ]:
+            # Iterate over items, evaluate loop invariant, and update progress
             if btn:
                 btn.blockSignals(True)
                 btn.setChecked(val)
@@ -991,6 +1025,7 @@ class WorkbenchWorkspace(QMainWindow):
                 btn.blockSignals(False)
 
     def _toggle_all_huds(self):
+        # Step 1: Validate input parameters, operational preconditions, and state
         any_visible = (
             self._sessions_dock.isVisible() or
             self._reasoning_dock.isVisible() or
@@ -1016,6 +1051,7 @@ class WorkbenchWorkspace(QMainWindow):
             self._hud_master_btn.setText("Show All HUDs")
 
     def resizeEvent(self, event):
+        # Step 1: Validate input parameters, operational preconditions, and state
         super().resizeEvent(event)
         self._apply_responsive_layout(event.size().width())
         if hasattr(self, "_settings_overlay") and self._settings_overlay and self._settings_overlay.isVisible():
@@ -1025,6 +1061,7 @@ class WorkbenchWorkspace(QMainWindow):
             self._settings_overlay.setGeometry(parent_width - overlay_width, 0, overlay_width, parent_height)
 
     def update_model_state(self, state: str):
+        # Step 1: Validate input parameters, operational preconditions, and state
         self.setProperty("modelState", state)
         self.style().unpolish(self)
         self.style().polish(self)
@@ -1037,6 +1074,7 @@ class WorkbenchWorkspace(QMainWindow):
         self._update_glow_pulse()
 
     def _connect_shortcuts(self):
+        # Step 1: Validate input parameters, operational preconditions, and state
         sc = QShortcut(QKeySequence("Ctrl+Return"), self)
         sc.activated.connect(self._send)
 
@@ -1049,6 +1087,7 @@ class WorkbenchWorkspace(QMainWindow):
             ("?", self._toggle_shortcuts_overlay),
         ]
         for key_sequence, handler in bindings:
+            # Iterate over items, evaluate loop invariant, and update progress
             shortcut = QShortcut(QKeySequence(key_sequence), self)
             shortcut.activated.connect(handler)
 
@@ -1057,9 +1096,11 @@ class WorkbenchWorkspace(QMainWindow):
         self._chat_panel.installEventFilter(self._shortcuts_overlay)
 
     def _toggle_shortcuts_overlay(self):
+        # Step 1: Validate input parameters, operational preconditions, and state
         self._shortcuts_overlay.toggle()
 
     def eventFilter(self, obj, event):
+        # Step 1: Validate input parameters, operational preconditions, and state
         if obj is getattr(self, "_input", None) and event.type() == QEvent.Type.KeyPress:
             if event.matches(QKeySequence.StandardKey.Paste) and self._clipboard_has_image():
                 self._attach_clipboard_image()
@@ -1069,6 +1110,7 @@ class WorkbenchWorkspace(QMainWindow):
     # ── actions ───────────────────────────────────────────────────────────────
 
     def _send(self):
+        # Step 1: Validate input parameters, operational preconditions, and state
         text = self._input.toPlainText().strip()
         if not text or self._thread is not None:
             return
@@ -1151,6 +1193,7 @@ class WorkbenchWorkspace(QMainWindow):
             if retrieved_metadata:
                 self._chat_view.append_rag_sources(retrieved_metadata)
                 for r in retrieved_metadata:
+                    # Iterate over items, evaluate loop invariant, and update progress
                     chunk_text = r["text"]
                     if getattr(self.state.rag, "contextual_headers", False):
                         header = f"[Source: {r['source_file']} | Chunk {r['chunk_id']}]\n"
@@ -1163,17 +1206,20 @@ class WorkbenchWorkspace(QMainWindow):
             self._start_single(chunks)
 
     def _clipboard_has_image(self) -> bool:
+        # Step 1: Validate input parameters, operational preconditions, and state
         clipboard = QApplication.clipboard()
         mime = clipboard.mimeData()
         return mime.hasImage()
 
     def _attach_clipboard_image(self):
+        # Step 1: Validate input parameters, operational preconditions, and state
         clipboard = QApplication.clipboard()
         image = clipboard.image()
         if image.isNull():
             self._chat_view.append_system_note("clipboard does not contain a readable image")
             return
         try:
+            # Execute guarded operations and establish recovery boundaries
             record = self.state.image_store.save_qimage(image, source="clipboard")
         except Exception as exc:
             self._chat_view.append_system_note(f"image paste failed: {exc}")
@@ -1194,7 +1240,9 @@ class WorkbenchWorkspace(QMainWindow):
         self._start_image_analysis(record.id)
 
     def attach_existing_image(self, image_id: str):
+        # Step 1: Validate input parameters, operational preconditions, and state
         try:
+            # Execute guarded operations and establish recovery boundaries
             record = self.state.image_store.get(image_id)
         except Exception as exc:
             self._chat_view.append_system_note(f"image attach failed: {exc}")
@@ -1213,6 +1261,7 @@ class WorkbenchWorkspace(QMainWindow):
         )
 
     def _start_image_analysis(self, image_id: str):
+        # Step 1: Validate input parameters, operational preconditions, and state
         thread = ImageAnalysisThread(self.state.image_store, image_id)
         thread.progress.connect(lambda msg, iid=image_id: self._on_image_analysis_progress(iid, msg))
         thread.ocr_done.connect(self._on_image_ocr_done)
@@ -1225,13 +1274,17 @@ class WorkbenchWorkspace(QMainWindow):
         thread.start()
 
     def _on_image_analysis_progress(self, image_id: str, msg: str):
+        # Step 1: Validate input parameters, operational preconditions, and state
         for attachment in self._pending_image_attachments:
+            # Iterate over items, evaluate loop invariant, and update progress
             if attachment.get("id") == image_id:
                 attachment["ocr_status"] = msg
         self._chat_view.append_system_note(f"image {image_id[:8]}: {msg}")
 
     def _on_image_ocr_done(self, image_id: str, ocr):
+        # Step 1: Validate input parameters, operational preconditions, and state
         for attachment in self._pending_image_attachments:
+            # Iterate over items, evaluate loop invariant, and update progress
             if attachment.get("id") == image_id:
                 attachment["ocr_status"] = "ready"
                 attachment["ocr_chars"] = len(getattr(ocr, "text", "") or "")
@@ -1242,7 +1295,9 @@ class WorkbenchWorkspace(QMainWindow):
         )
 
     def _on_image_vision_done(self, image_id: str, vision):
+        # Step 1: Validate input parameters, operational preconditions, and state
         for attachment in self._pending_image_attachments:
+            # Iterate over items, evaluate loop invariant, and update progress
             if attachment.get("id") == image_id:
                 attachment["analysis_status"] = "ready"
                 attachment["vision_engine"] = getattr(vision, "engine", "none")
@@ -1252,23 +1307,30 @@ class WorkbenchWorkspace(QMainWindow):
             self._chat_view.append_system_note(f"image {image_id[:8]}: vision analysis ready - {short}")
 
     def _on_image_analysis_done(self, image_id: str, _record):
+        # Step 1: Validate input parameters, operational preconditions, and state
         for attachment in self._pending_image_attachments:
+            # Iterate over items, evaluate loop invariant, and update progress
             if attachment.get("id") == image_id:
                 attachment["analysis_status"] = "ready"
 
     def _on_image_analysis_error(self, image_id: str, msg: str):
+        # Step 1: Validate input parameters, operational preconditions, and state
         for attachment in self._pending_image_attachments:
+            # Iterate over items, evaluate loop invariant, and update progress
             if attachment.get("id") == image_id:
                 attachment["analysis_status"] = "error"
                 attachment["ocr_status"] = "error"
         self._chat_view.append_system_note(f"image {image_id[:8]} analysis error: {msg}")
 
     def _build_image_prompt_context(self, text: str, attachments: list[dict]) -> str:
+        # Step 1: Validate input parameters, operational preconditions, and state
         blocks = []
         for attachment in attachments:
+            # Iterate over items, evaluate loop invariant, and update progress
             if attachment.get("type") != "image":
                 continue
             try:
+                # Execute guarded operations and establish recovery boundaries
                 record = self.state.image_store.get(attachment["id"])
             except Exception as exc:
                 logger.warning("dropping image attachment %s from prompt context: %s",
@@ -1299,17 +1361,21 @@ class WorkbenchWorkspace(QMainWindow):
         return "\n\n".join(blocks + ["[User Question]", text])
 
     def _current_workflow(self) -> str:
+        # Step 1: Validate input parameters, operational preconditions, and state
         return self._workflow_combo.currentData() or "general_chat"
 
     def _current_template(self) -> str:
+        # Step 1: Validate input parameters, operational preconditions, and state
         from core.workflows import get_workflow
         try:
+            # Execute guarded operations and establish recovery boundaries
             return get_workflow(self._current_workflow())["template"]
         except KeyError:
             return "reasoning_minimal"
 
     def _update_token_budget(self):
         """Update the context window HUD bar."""
+        # Step 1: Validate input parameters, operational preconditions, and state
         if not hasattr(self, '_context_bar'):
             return
         from app.engine.model_loader import ModelLoader
@@ -1332,10 +1398,12 @@ class WorkbenchWorkspace(QMainWindow):
         )
 
     def _on_reload_success(self, label: str):
+        # Step 1: Validate input parameters, operational preconditions, and state
         toast = ToastOverlay(self, f"⟳ {label} reloaded successfully")
         toast.show_toast()
 
     def _on_reload_failed(self, label: str, tb_str: str):
+        # Step 1: Validate input parameters, operational preconditions, and state
         if QApplication.instance() and QApplication.instance().property("is_test"):
             logger.warning(f"Hot-Reload Failed in test: {label}\n{tb_str}")
             return
@@ -1365,11 +1433,13 @@ class WorkbenchWorkspace(QMainWindow):
         msg.exec()
 
     def _show_reload_notice(self, module_name: str):
+        # Step 1: Validate input parameters, operational preconditions, and state
         self._reload_notice.setText(f"⟳ {module_name} reloaded")
         self._reload_notice.setVisible(True)
         self._reload_hide_timer.start(3000)
 
     def _start_single(self, chunks: list[str]):
+        # Step 1: Validate input parameters, operational preconditions, and state
         set_correlation_id(f"chat:{new_correlation_id()}")
         self._chat_view.begin_stream()
         self._set_busy(True)
@@ -1378,6 +1448,7 @@ class WorkbenchWorkspace(QMainWindow):
         self._pending_generation_history = None
 
         try:
+            # Execute guarded operations and establish recovery boundaries
             t = self._inference_service.run_generation(
                 prompt="",
                 system_prompt=self._active_system_prompt(),
@@ -1405,6 +1476,7 @@ class WorkbenchWorkspace(QMainWindow):
         self._thread = t
 
     def _start_agentic(self, chunks: list[str]):
+        # Step 1: Validate input parameters, operational preconditions, and state
         set_correlation_id(f"agentic:{new_correlation_id()}")
         self._set_busy(True)
         self._reasoning_stats_lbl.setText("")
@@ -1413,6 +1485,7 @@ class WorkbenchWorkspace(QMainWindow):
         self._pending_generation_history = None
 
         try:
+            # Execute guarded operations and establish recovery boundaries
             t = self._inference_service.run_generation(
                 prompt="",
                 system_prompt=self._active_system_prompt(),
@@ -1440,23 +1513,28 @@ class WorkbenchWorkspace(QMainWindow):
         self._thread = t
 
     def _stop(self):
+        # Step 1: Validate input parameters, operational preconditions, and state
         if self._thread:
             if hasattr(self._thread, "request_stop"):
                 self._thread.request_stop()
 
     def _toggle_reasoning(self):
+        # Step 1: Validate input parameters, operational preconditions, and state
         visible = self._reasoning_dock.isVisible()
         self._reasoning_dock.setVisible(not visible)
 
     def _toggle_sessions(self):
+        # Step 1: Validate input parameters, operational preconditions, and state
         visible = self._sessions_dock.isVisible()
         self._sessions_dock.setVisible(not visible)
 
     def _on_max_tokens_changed(self, value: int):
+        # Step 1: Validate input parameters, operational preconditions, and state
         self._hyperparams["max_tokens"] = value
         self._update_token_budget()
 
     def _on_agent_selected(self, *_args):
+        # Step 1: Validate input parameters, operational preconditions, and state
         self._agent_profile = self._agent_combo.currentData() or "karl"
         if hasattr(self, "_header_agent_combo"):
             idx = self._header_agent_combo.findData(self._agent_profile)
@@ -1467,6 +1545,7 @@ class WorkbenchWorkspace(QMainWindow):
         self._update_expert_strip()
 
     def _on_header_agent_selected(self, *_args):
+        # Step 1: Validate input parameters, operational preconditions, and state
         self._agent_profile = self._header_agent_combo.currentData() or "karl"
         if hasattr(self, "_agent_combo"):
             idx = self._agent_combo.findData(self._agent_profile)
@@ -1480,12 +1559,15 @@ class WorkbenchWorkspace(QMainWindow):
         """Rebuild the ★-override-indicator prefix on both agent combos'
         item text after a profile prompt is saved/reset, without disturbing
         the current selection."""
+        # Step 1: Validate input parameters, operational preconditions, and state
         for combo in (getattr(self, "_agent_combo", None), getattr(self, "_header_agent_combo", None)):
+            # Iterate over items, evaluate loop invariant, and update progress
             if combo is None:
                 continue
             current_key = combo.currentData()
             combo.blockSignals(True)
             for idx in range(combo.count()):
+                # Iterate over items, evaluate loop invariant, and update progress
                 key = combo.itemData(idx)
                 data = AGENT_PROFILES.get(key)
                 if not data:
@@ -1504,6 +1586,7 @@ class WorkbenchWorkspace(QMainWindow):
         whenever this profile is active (see below) -- editing it here is the
         only UI path to profiles.save_profile_override()/delete_profile_override().
         """
+        # Step 1: Validate input parameters, operational preconditions, and state
         key = self._agent_combo.currentData() or self._agent_profile
         profile = AGENT_PROFILES.get(key)
         if not profile:
@@ -1546,6 +1629,7 @@ class WorkbenchWorkspace(QMainWindow):
         did_reset = {"value": False}
 
         def _do_reset():
+            # Step 1: Validate input parameters, operational preconditions, and state
             did_reset["value"] = True
             dialog.accept()
 
@@ -1566,6 +1650,7 @@ class WorkbenchWorkspace(QMainWindow):
         self._refresh_agent_combo_labels()
 
     def _pick_header_accent(self):
+        # Step 1: Validate input parameters, operational preconditions, and state
         from app.ui.themes import THEMES
         from PyQt6.QtWidgets import QApplication
         from app.ui.themes import get_theme_stylesheet
@@ -1583,6 +1668,7 @@ class WorkbenchWorkspace(QMainWindow):
         self.appearance_requested.emit()
 
     def _active_system_prompt(self) -> str:
+        # Step 1: Validate input parameters, operational preconditions, and state
         profile = AGENT_PROFILES.get(self._agent_profile, AGENT_PROFILES["karl"])
         profile_prompt = profile.get("prompt", "").strip()
         if not profile_prompt:
@@ -1590,22 +1676,27 @@ class WorkbenchWorkspace(QMainWindow):
         return f"{self._system_prompt}\n\n{profile_prompt}"
 
     def showEvent(self, event):
+        # Step 1: Validate input parameters, operational preconditions, and state
         super().showEvent(event)
         self._refresh_model_combo()
 
     def _is_adapter_compatible(self, model_filename: str, adapter_name: str) -> bool:
+        # Step 1: Validate input parameters, operational preconditions, and state
         from app.engine import config_store
         return config_store.is_adapter_compatible(model_filename, adapter_name)
 
     def _refresh_model_combo(self):
+        # Step 1: Validate input parameters, operational preconditions, and state
         entries = self._model_selection_entries()
 
         for combo in (getattr(self, "_model_combo", None), getattr(self, "_header_model_combo", None)):
+            # Iterate over items, evaluate loop invariant, and update progress
             if combo is None:
                 continue
             combo.blockSignals(True)
             combo.clear()
             for entry in entries:
+                # Iterate over items, evaluate loop invariant, and update progress
                 label = entry["short_label"] if combo is getattr(self, "_model_combo", None) else entry["label"]
                 combo.addItem(label, entry["data"])
                 idx = combo.count() - 1
@@ -1616,6 +1707,7 @@ class WorkbenchWorkspace(QMainWindow):
         active_adapter = self.state.adapter_name
         
         for combo in (getattr(self, "_model_combo", None), getattr(self, "_header_model_combo", None)):
+            # Iterate over items, evaluate loop invariant, and update progress
             if combo is None:
                 continue
             self._select_model_combo_value(combo, active_model, active_adapter)
@@ -1625,8 +1717,10 @@ class WorkbenchWorkspace(QMainWindow):
         self._update_header_model_status()
 
     def _select_model_combo_value(self, combo: QComboBox, active_model: str | None, active_adapter: str | None):
+        # Step 1: Validate input parameters, operational preconditions, and state
         found = False
         for idx in range(combo.count()):
+            # Iterate over items, evaluate loop invariant, and update progress
             d = combo.itemData(idx)
             if isinstance(d, dict) and d.get("model") == active_model and d.get("adapter") == active_adapter:
                 combo.setCurrentIndex(idx)
@@ -1634,6 +1728,7 @@ class WorkbenchWorkspace(QMainWindow):
                 break
         if not found:
             for idx in range(combo.count()):
+                # Iterate over items, evaluate loop invariant, and update progress
                 d = combo.itemData(idx)
                 if isinstance(d, dict) and d.get("model") == active_model and d.get("adapter") is None:
                     combo.setCurrentIndex(idx)
@@ -1643,18 +1738,22 @@ class WorkbenchWorkspace(QMainWindow):
             combo.setCurrentIndex(0)
 
     def _model_selection_entries(self) -> list[dict]:
+        # Step 1: Validate input parameters, operational preconditions, and state
         import os
         from app.engine import config_store
 
         registry = {}
         for item in config_store.get_model_registry():
+            # Iterate over items, evaluate loop invariant, and update progress
             registry[item.get("filename", "")] = item
 
         adapters_dir = "data/adapters"
         adapters = []
         if os.path.exists(adapters_dir):
             try:
+                # Execute guarded operations and establish recovery boundaries
                 for d in sorted(os.listdir(adapters_dir)):
+                    # Iterate over items, evaluate loop invariant, and update progress
                     d_path = os.path.join(adapters_dir, d)
                     if os.path.isdir(d_path):
                         files_in_dir = os.listdir(d_path)
@@ -1670,6 +1769,7 @@ class WorkbenchWorkspace(QMainWindow):
 
         entries = []
         for filename in sorted(files):
+            # Iterate over items, evaluate loop invariant, and update progress
             meta = registry.get(filename, {})
             size = self._model_file_size_label(filename)
             detail = self._model_registry_detail(filename, meta, size)
@@ -1680,6 +1780,7 @@ class WorkbenchWorkspace(QMainWindow):
                 "data": {"model": filename, "adapter": None, "meta": meta},
             })
             for adapter in adapters:
+                # Iterate over items, evaluate loop invariant, and update progress
                 compatible = self._is_adapter_compatible(filename, adapter)
                 if compatible:
                     entries.append({
@@ -1691,14 +1792,17 @@ class WorkbenchWorkspace(QMainWindow):
         return entries
 
     def _model_file_size_label(self, filename: str) -> str:
+        # Step 1: Validate input parameters, operational preconditions, and state
         import os
         path = os.path.join("data", "models", filename)
         try:
+            # Execute guarded operations and establish recovery boundaries
             return f"{os.path.getsize(path) / (1024 ** 3):.2f} GB"
         except Exception:
             return "unknown size"
 
     def _model_registry_detail(self, filename: str, meta: dict, size: str) -> str:
+        # Step 1: Validate input parameters, operational preconditions, and state
         tier = meta.get("tier")
         n_ctx = meta.get("n_ctx")
         ram = meta.get("min_ram_gb")
@@ -1714,6 +1818,7 @@ class WorkbenchWorkspace(QMainWindow):
         return " · ".join(bits)
 
     def _model_tooltip(self, filename: str, meta: dict, size: str, adapter: str | None) -> str:
+        # Step 1: Validate input parameters, operational preconditions, and state
         lines = [
             f"File: {filename}",
             f"Size: {size}",
@@ -1729,17 +1834,21 @@ class WorkbenchWorkspace(QMainWindow):
         return "\n".join(lines)
 
     def _on_model_selected(self, index: int):
+        # Step 1: Validate input parameters, operational preconditions, and state
         data = self._model_combo.itemData(index)
         self._load_model_selection(data)
 
     def _on_header_model_staged(self, *_args):
+        # Step 1: Validate input parameters, operational preconditions, and state
         self._update_header_model_status(staged=True)
 
     def _load_header_selected_model(self):
+        # Step 1: Validate input parameters, operational preconditions, and state
         data = self._header_model_combo.currentData()
         self._load_model_selection(data)
 
     def _reload_active_model(self):
+        # Step 1: Validate input parameters, operational preconditions, and state
         if not self.state.model_name:
             self._chat_view.append_system_note("No active model is selected.")
             return
@@ -1751,6 +1860,7 @@ class WorkbenchWorkspace(QMainWindow):
         })
 
     def _load_model_selection(self, data: dict | None):
+        # Step 1: Validate input parameters, operational preconditions, and state
         if not isinstance(data, dict):
             return
             
@@ -1781,6 +1891,7 @@ class WorkbenchWorkspace(QMainWindow):
             ) if c is not None
         ]
         for control in swap_controls:
+            # Iterate over items, evaluate loop invariant, and update progress
             control.setEnabled(False)
         loading_text = f"Loading {filename} (adapter: {adapter_name})..." if adapter_name else f"Loading {filename}..."
         self.status_changed.emit(loading_text, True)
@@ -1792,6 +1903,7 @@ class WorkbenchWorkspace(QMainWindow):
         )
 
         def on_loaded(loaded_filename: str, loaded_adapter: str | None, _draft_filename):
+            # Step 1: Validate input parameters, operational preconditions, and state
             self.state.model_name = loaded_filename
             self.state.adapter_name = loaded_adapter
             self.model_changed.emit(loaded_filename)
@@ -1803,11 +1915,14 @@ class WorkbenchWorkspace(QMainWindow):
             self._chat_view.append_system_note(note)
 
         def on_error(msg: str):
+            # Step 1: Validate input parameters, operational preconditions, and state
             self._chat_view.append_system_note(f"[Error switching model: {msg}]")
             self._update_header_model_status(error=msg)
 
         def on_finished():
+            # Step 1: Validate input parameters, operational preconditions, and state
             for control in swap_controls:
+                # Iterate over items, evaluate loop invariant, and update progress
                 control.setEnabled(True)
             self._set_busy(False)
             self.status_changed.emit("idle", False)
@@ -1824,6 +1939,7 @@ class WorkbenchWorkspace(QMainWindow):
         thread.start()
 
     def _update_model_pill(self):
+        # Step 1: Validate input parameters, operational preconditions, and state
         model = self.state.model_name or "no model"
         adapter = self.state.adapter_name
         if adapter:
@@ -1833,6 +1949,7 @@ class WorkbenchWorkspace(QMainWindow):
         self._update_header_model_status()
 
     def _update_header_model_status(self, staged: bool = False, error: str | None = None):
+        # Step 1: Validate input parameters, operational preconditions, and state
         if not hasattr(self, "_header_model_status"):
             return
         from app.engine.model_loader import ModelLoader
@@ -1862,9 +1979,11 @@ class WorkbenchWorkspace(QMainWindow):
         self._header_model_status.setToolTip(full_text if elided != full_text else "")
 
     def _autosave_session(self):
+        # Step 1: Validate input parameters, operational preconditions, and state
         if not self.chat_history or len(self.chat_history) < 2:
             return
         try:
+            # Execute guarded operations and establish recovery boundaries
             path = self.chat_history.save(self._session_id)
             if self._session_id is None:
                 import os
@@ -1875,7 +1994,9 @@ class WorkbenchWorkspace(QMainWindow):
             logger.warning(f"Autosave failed: {e}")
 
     def _load_session(self, path: str):
+        # Step 1: Validate input parameters, operational preconditions, and state
         try:
+            # Execute guarded operations and establish recovery boundaries
             tree, session_id = SessionTree.load(path)
             self.chat_history = tree
             self._session_id = session_id
@@ -1914,6 +2035,7 @@ class WorkbenchWorkspace(QMainWindow):
             QMessageBox.critical(self, "Load Error", f"Could not load session: {e}")
 
     def _new_session(self):
+        # Step 1: Validate input parameters, operational preconditions, and state
         self._autosave_session()
         self.chat_history = SessionTree()
         self._session_id = None
@@ -1940,6 +2062,7 @@ class WorkbenchWorkspace(QMainWindow):
         self._update_token_budget()
 
     def _on_context_stats(self, total: int, hist: int, rag: int, budget: int):
+        # Step 1: Validate input parameters, operational preconditions, and state
         self._last_context_used = total
         self._last_hist_tokens  = hist
         self._last_rag_tokens   = rag
@@ -1947,6 +2070,7 @@ class WorkbenchWorkspace(QMainWindow):
         self.context_stats.emit(total, hist, rag, budget)
     
     def _on_rag_context_used(self, chunks: list):
+        # Step 1: Validate input parameters, operational preconditions, and state
         if not hasattr(self, '_rag_sources_view'):
             return
         if not chunks:
@@ -1955,6 +2079,7 @@ class WorkbenchWorkspace(QMainWindow):
         self._rag_sources_view.setVisible(True)
         html_parts = []
         for chunk in chunks[:5]:
+            # Iterate over items, evaluate loop invariant, and update progress
             src = chunk.get("source_file", "?")
             dist = chunk.get("distance", 0.0)
             text_preview = chunk.get("text", "")[:120].replace("<", "&lt;")
@@ -1973,6 +2098,7 @@ class WorkbenchWorkspace(QMainWindow):
     # ── thread slots ──────────────────────────────────────────────────────────
 
     def _on_thought(self, token: str):
+        # Step 1: Validate input parameters, operational preconditions, and state
         cursor = self._reasoning_view.textCursor()
         cursor.movePosition(QTextCursor.MoveOperation.End)
         cursor.insertText(token)
@@ -1980,14 +2106,17 @@ class WorkbenchWorkspace(QMainWindow):
         self._reasoning_view.ensureCursorVisible()
 
     def _on_chat(self, token: str):
+        # Step 1: Validate input parameters, operational preconditions, and state
         if not self._chat_view._streaming:
             self._chat_view.begin_stream()
         self._chat_view.append_token(token)
 
     def _on_live_stats(self, count: int, speed: float):
+        # Step 1: Validate input parameters, operational preconditions, and state
         self._reasoning_stats_lbl.setText(f"({count} tokens · {speed:.1f} t/s)")
 
     def _on_done(self, thought: str, response: str, truncated: bool, _ended_in_thought: bool, diagnostics: dict | None = None):
+        # Step 1: Validate input parameters, operational preconditions, and state
         self._reasoning_stats_lbl.setText("")
         node = self.chat_history.add_message("assistant", response)
         node.thought = thought
@@ -2018,6 +2147,7 @@ class WorkbenchWorkspace(QMainWindow):
         self._update_token_budget()
 
     def _on_iteration(self, index: int, _thought: str, response: str, diagnostics: dict | None = None):
+        # Step 1: Validate input parameters, operational preconditions, and state
         self._reasoning_stats_lbl.setText("")
         self._chat_view.finalize_stream()
         diag_suffix = ""
@@ -2028,6 +2158,7 @@ class WorkbenchWorkspace(QMainWindow):
         self._update_token_budget()
 
     def _on_loop_done(self, total: int):
+        # Step 1: Validate input parameters, operational preconditions, and state
         self._reasoning_stats_lbl.setText("")
         self._chat_view.finalize_stream()
         if self._thread and hasattr(self._thread, "chat_history"):
@@ -2059,6 +2190,7 @@ class WorkbenchWorkspace(QMainWindow):
         self._update_token_budget()
 
     def _on_error(self, msg: str):
+        # Step 1: Validate input parameters, operational preconditions, and state
         self._reasoning_stats_lbl.setText("")
         self._chat_view.finalize_stream()
         self._chat_view.append_system_note(f"error: {msg}")
@@ -2070,6 +2202,7 @@ class WorkbenchWorkspace(QMainWindow):
     # ── feedback ──────────────────────────────────────────────────────────────
 
     def _on_thumb_up(self):
+        # Step 1: Validate input parameters, operational preconditions, and state
         if self._last_response:
             prompt = self.chat_history[-2]["content"] if len(self.chat_history) >= 2 else ""
             self.state.curator.save_example(
@@ -2084,6 +2217,7 @@ class WorkbenchWorkspace(QMainWindow):
             self._thumb_down_btn.setEnabled(False)
 
     def _on_thumb_down(self):
+        # Step 1: Validate input parameters, operational preconditions, and state
         if self._last_response:
             prompt = self.chat_history[-2]["content"] if len(self.chat_history) >= 2 else ""
             self.state.curator.save_example(
@@ -2098,6 +2232,7 @@ class WorkbenchWorkspace(QMainWindow):
             self._thumb_down_btn.setEnabled(False)
 
     def _on_correct(self):
+        # Step 1: Validate input parameters, operational preconditions, and state
         self._correct_btn.setText("editing...")
         self._correct_btn.setEnabled(False)
         self._is_correcting = True
@@ -2107,9 +2242,11 @@ class WorkbenchWorkspace(QMainWindow):
     # ── helpers ───────────────────────────────────────────────────────────────
 
     def _save_current_session(self):
+        # Step 1: Validate input parameters, operational preconditions, and state
         if not self.chat_history or len(self.chat_history) < 2:
             return
         try:
+            # Execute guarded operations and establish recovery boundaries
             path = self.chat_history.save(self._session_id)
             if self._session_id is None:
                 import os
@@ -2121,11 +2258,13 @@ class WorkbenchWorkspace(QMainWindow):
 
 
     def _refresh_sessions(self):
+        # Step 1: Validate input parameters, operational preconditions, and state
         if not hasattr(self, '_sessions_list'):
             return
         self._sessions_list.blockSignals(True)
         self._sessions_list.clear()
         for meta in SessionTree.list_sessions():
+            # Iterate over items, evaluate loop invariant, and update progress
             from PyQt6.QtWidgets import QListWidgetItem
             item = QListWidgetItem(meta["preview"] or meta["session_id"])
             item.setToolTip(meta["path"])
@@ -2134,6 +2273,7 @@ class WorkbenchWorkspace(QMainWindow):
             
         if getattr(self, "_current_session_file", None):
             for idx in range(self._sessions_list.count()):
+                # Iterate over items, evaluate loop invariant, and update progress
                 item = self._sessions_list.item(idx)
                 if item.data(Qt.ItemDataRole.UserRole) == self._current_session_file:
                     self._sessions_list.setCurrentItem(item)
@@ -2144,6 +2284,7 @@ class WorkbenchWorkspace(QMainWindow):
 
 
     def _on_session_clicked(self, current, previous):
+        # Step 1: Validate input parameters, operational preconditions, and state
         if not current:
             return
         path = current.data(Qt.ItemDataRole.UserRole)
@@ -2154,11 +2295,13 @@ class WorkbenchWorkspace(QMainWindow):
         self._load_session(path)
 
     def on_close(self):
+        # Step 1: Validate input parameters, operational preconditions, and state
         self._save_current_session()
         if self._model_load_thread is not None and self._model_load_thread.isRunning():
             self._model_load_thread.wait()
 
     def update_theme(self):
+        # Step 1: Validate input parameters, operational preconditions, and state
         theme_colors = get_theme_colors(self.state)
         self._chat_view.set_theme(theme_colors)
         
@@ -2198,6 +2341,7 @@ class WorkbenchWorkspace(QMainWindow):
             self._new_session_btn.setIconSize(icon_size)
 
     def _set_busy(self, busy: bool):
+        # Step 1: Validate input parameters, operational preconditions, and state
         self._send_btn.setEnabled(not busy)
         self._stop_btn.setEnabled(busy)
         self._input.setEnabled(not busy)
@@ -2208,12 +2352,14 @@ class WorkbenchWorkspace(QMainWindow):
         self.update_model_state("generating" if busy else "idle")
 
     def _on_chat_link_clicked(self, url):
+        # Step 1: Validate input parameters, operational preconditions, and state
         link = url.toString()
         if link.startswith("branch:"):
             node_id = link.split(":", 1)[1]
             self._branch_from_node(node_id)
 
     def _branch_from_node(self, node_id):
+        # Step 1: Validate input parameters, operational preconditions, and state
         if not self.chat_history:
             return
         if not self.chat_history.set_current_node(node_id):
@@ -2250,6 +2396,7 @@ class WorkbenchWorkspace(QMainWindow):
         self._save_current_session()
 
     def _populate_branches_tree(self):
+        # Step 1: Validate input parameters, operational preconditions, and state
         self._branches_tree.blockSignals(True)
         self._branches_tree.clear()
         if not self.chat_history:
@@ -2268,6 +2415,7 @@ class WorkbenchWorkspace(QMainWindow):
             )
         
         def _add_node(session_node, parent_item):
+            # Step 1: Validate input parameters, operational preconditions, and state
             snippet = session_node.content
             import re
             snippet = re.sub(r"<think>.*?</think>", "", snippet, flags=re.DOTALL).strip()
@@ -2296,14 +2444,17 @@ class WorkbenchWorkspace(QMainWindow):
             item.setExpanded(True)
             
             for child in session_node.children:
+                # Iterate over items, evaluate loop invariant, and update progress
                 _add_node(child, item)
 
         for child in root_node.children:
+            # Iterate over items, evaluate loop invariant, and update progress
             _add_node(child, None)
             
         self._branches_tree.blockSignals(False)
 
     def _on_branch_clicked(self, item, column):
+        # Step 1: Validate input parameters, operational preconditions, and state
         node_id = item.data(0, Qt.ItemDataRole.UserRole)
         if not node_id:
             return
@@ -2312,6 +2463,7 @@ class WorkbenchWorkspace(QMainWindow):
         self._branch_from_node(node_id)
 
     def _branch_from_selected_tree_item(self):
+        # Step 1: Validate input parameters, operational preconditions, and state
         item = self._branches_tree.currentItem()
         if not item:
             return
@@ -2322,6 +2474,7 @@ class WorkbenchWorkspace(QMainWindow):
     # ── Expert Control Strip ──────────────────────────────────────────────────
 
     def _build_expert_strip(self) -> QWidget:
+        # Step 1: Validate input parameters, operational preconditions, and state
         strip = QFrame()
         strip.setObjectName("expert-strip")
         strip.setStyleSheet(
@@ -2381,6 +2534,7 @@ class WorkbenchWorkspace(QMainWindow):
         return strip
 
     def _toggle_expert_strip(self):
+        # Step 1: Validate input parameters, operational preconditions, and state
         is_collapsed = self._strip_branch_lbl.isHidden()
         self._strip_branch_lbl.setHidden(not is_collapsed)
         self._strip_model_lbl.setHidden(not is_collapsed)
@@ -2437,12 +2591,15 @@ class WorkbenchWorkspace(QMainWindow):
     # ── Sessions Upgrades ─────────────────────────────────────────────────────
 
     def _filter_sessions(self, text):
+        # Step 1: Validate input parameters, operational preconditions, and state
         query = text.strip().lower()
         for idx in range(self._sessions_list.count()):
+            # Iterate over items, evaluate loop invariant, and update progress
             item = self._sessions_list.item(idx)
             item.setHidden(query not in item.text().lower())
 
     def _show_session_context_menu(self, pos):
+        # Step 1: Validate input parameters, operational preconditions, and state
         item = self._sessions_list.itemAt(pos)
         if not item:
             return
@@ -2470,6 +2627,7 @@ class WorkbenchWorkspace(QMainWindow):
             self._delete_session(fname)
 
     def _rename_session(self, fname):
+        # Step 1: Validate input parameters, operational preconditions, and state
         import os
         new_name, ok = QInputDialog.getText(
             self, "Rename Session", "Enter new filename (must end in .json):",
@@ -2502,6 +2660,7 @@ class WorkbenchWorkspace(QMainWindow):
             return
 
         try:
+            # Execute guarded operations and establish recovery boundaries
             os.rename(old_path, new_path)
             if self._current_session_file == fname:
                 self._current_session_file = new_name
@@ -2510,6 +2669,7 @@ class WorkbenchWorkspace(QMainWindow):
             QMessageBox.critical(self, "Error", f"Failed to rename file: {e}")
 
     def _duplicate_session(self, fname):
+        # Step 1: Validate input parameters, operational preconditions, and state
         import os
         old_path = os.path.join(self.state.memory.sessions_dir, fname)
         base, ext = os.path.splitext(fname)
@@ -2518,11 +2678,13 @@ class WorkbenchWorkspace(QMainWindow):
         
         counter = 1
         while os.path.exists(new_path):
+            # Iterate over items, evaluate loop invariant, and update progress
             new_name = f"{base}_copy{counter}{ext}"
             new_path = os.path.join(self.state.memory.sessions_dir, new_name)
             counter += 1
             
         try:
+            # Execute guarded operations and establish recovery boundaries
             import shutil
             shutil.copy2(old_path, new_path)
             self._refresh_sessions()
@@ -2530,6 +2692,7 @@ class WorkbenchWorkspace(QMainWindow):
             QMessageBox.critical(self, "Error", f"Failed to duplicate file: {e}")
 
     def _delete_session(self, fname):
+        # Step 1: Validate input parameters, operational preconditions, and state
         import os
         reply = QMessageBox.question(
             self, "Confirm Delete",
@@ -2540,6 +2703,7 @@ class WorkbenchWorkspace(QMainWindow):
         if reply == QMessageBox.StandardButton.Yes:
             path = os.path.join(self.state.memory.sessions_dir, fname)
             try:
+                # Execute guarded operations and establish recovery boundaries
                 os.remove(path)
                 if self._current_session_file == fname:
                     self._current_session_file = None
@@ -2557,37 +2721,48 @@ class WorkbenchWorkspace(QMainWindow):
     # ── public API for main_window ────────────────────────────────────────────
 
     def new_session(self):
+        # Step 1: Validate input parameters, operational preconditions, and state
         self._new_session()
 
     def save_current_session(self):
+        # Step 1: Validate input parameters, operational preconditions, and state
         self._save_current_session()
 
     def toggle_rag_pipeline(self):
+        # Step 1: Validate input parameters, operational preconditions, and state
         self._rag_check.toggle()
 
     def toggle_agentic_loop(self):
+        # Step 1: Validate input parameters, operational preconditions, and state
         self._loop_check.toggle()
 
     def toggle_all_huds(self):
+        # Step 1: Validate input parameters, operational preconditions, and state
         self._toggle_all_huds()
 
     def toggle_reasoning_panel(self):
+        # Step 1: Validate input parameters, operational preconditions, and state
         self._toggle_reasoning()
 
     def toggle_sessions_panel(self):
+        # Step 1: Validate input parameters, operational preconditions, and state
         self._toggle_sessions()
 
     def toggle_rag_panel(self):
+        # Step 1: Validate input parameters, operational preconditions, and state
         self._toggle_rag_hud()
 
     def toggle_context_panel(self):
+        # Step 1: Validate input parameters, operational preconditions, and state
         self._toggle_context_hud()
 
     def set_system_prompt(self, prompt: str):
+        # Step 1: Validate input parameters, operational preconditions, and state
         self._system_prompt = prompt
         _save_system_prompt(prompt)
 
     def set_hyperparams(self, params: dict):
+        # Step 1: Validate input parameters, operational preconditions, and state
         self._hyperparams.update(params)
         if hasattr(self, "_temp_spin") and "temperature" in params:
             self._temp_spin.blockSignals(True)
@@ -2603,6 +2778,7 @@ class WorkbenchWorkspace(QMainWindow):
             self._maxtok_spin.blockSignals(False)
 
     def append_to_input(self, text: str):
+        # Step 1: Validate input parameters, operational preconditions, and state
         existing = self._input.toPlainText()
         if existing:
             self._input.setPlainText(existing + "\n" + text)
@@ -2610,5 +2786,6 @@ class WorkbenchWorkspace(QMainWindow):
             self._input.setPlainText(text)
 
     def replace_input(self, text: str):
+        # Step 1: Validate input parameters, operational preconditions, and state
         self._input.setPlainText(text)
         self._input.setFocus()

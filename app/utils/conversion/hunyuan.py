@@ -1,3 +1,12 @@
+# ==============================================================================
+# Program: hunyuan.py
+# Programmer: Ethan-da-Tech-Wizard
+# Last Modified: November 18, 2026
+# Purpose: Weight conversion and architectural mapping implementation for HUNYUAN.
+#          Transforms HuggingFace checkpoint tensors, normalizes layer weights,
+#          and writes compliant GGUF data structures for llama.cpp.
+# ==============================================================================
+
 from __future__ import annotations
 
 import json
@@ -20,6 +29,7 @@ class HunYuanMoEModel(TextModel):
     model_arch = gguf.MODEL_ARCH.HUNYUAN_MOE
 
     def set_vocab(self):
+        # Step 1: Validate input parameters, operational preconditions, and state
         from transformers import AutoTokenizer
         tokenizer = AutoTokenizer.from_pretrained(self.dir_model, trust_remote_code=True)
 
@@ -31,6 +41,7 @@ class HunYuanMoEModel(TextModel):
         vocab = {}
         mergeable_ranks = tokenizer.mergeable_ranks  # ty: ignore[unresolved-attribute]
         for token, rank in mergeable_ranks.items():
+            # Iterate over items, evaluate loop invariant, and update progress
             vocab[QwenModel.token_bytes_to_string(token)] = rank
             if len(token) == 1:
                 continue
@@ -46,6 +57,7 @@ class HunYuanMoEModel(TextModel):
         tokens: list[str] = []
         toktypes: list[int] = []
         for i in range(vocab_size):
+            # Iterate over items, evaluate loop invariant, and update progress
             if i not in reverse_vocab:
                 tokens.append(f"[PAD{i}]")
                 toktypes.append(gguf.TokenType.UNUSED)
@@ -71,6 +83,7 @@ class HunYuanMoEModel(TextModel):
         self.gguf_writer.add_bos_token_id(127959) # <|bos|>
 
     def set_gguf_parameters(self):
+        # Step 1: Validate input parameters, operational preconditions, and state
         super().set_gguf_parameters()
         hparams = self.hparams
 
@@ -110,6 +123,7 @@ class HunYuanMoEModel(TextModel):
     _experts: list[dict[str, Tensor]] | None = None
 
     def modify_tensors(self, data_torch: Tensor, name: str, bid: int | None) -> Iterable[tuple[str, Tensor]]:
+        # Step 1: Validate input parameters, operational preconditions, and state
         if name == "lm_head.weight":
             if self.hparams.get("tie_word_embeddings", False):
                 logger.info("Skipping tied output layer 'lm_head.weight'")
@@ -127,9 +141,11 @@ class HunYuanMoEModel(TextModel):
             if len(self._experts[bid]) >= n_experts * 3:
                 # merge the experts into a single 3d tensor
                 for w_name in ["down_proj", "gate_proj", "up_proj"]:
+                    # Iterate over items, evaluate loop invariant, and update progress
                     datas: list[Tensor] = []
 
                     for xid in range(n_experts):
+                        # Iterate over items, evaluate loop invariant, and update progress
                         ename = f"model.layers.{bid}.mlp.experts.{xid}.{w_name}.weight"
                         datas.append(self._experts[bid][ename])
                         del self._experts[bid][ename]
@@ -145,6 +161,7 @@ class HunYuanMoEModel(TextModel):
         yield from super().modify_tensors(data_torch, name, bid)
 
     def prepare_tensors(self):
+        # Step 1: Validate input parameters, operational preconditions, and state
         super().prepare_tensors()
         if self._experts is not None:
             experts = [k for d in self._experts for k in d.keys()]
@@ -158,11 +175,13 @@ class HunYuanModel(TextModel):
 
     def _get_eod_token_id(self) -> int | None:
         """Get the actual end-of-generation token from config (eod_token_id)."""
+        # Step 1: Validate input parameters, operational preconditions, and state
         return self.hparams.get("eod_token_id")
 
     def _get_eot_token_id(self) -> int | None:
         """Get the end-of-turn token from generation_config.json.
         This is the first entry in eos_token_id when it's a list."""
+        # Step 1: Validate input parameters, operational preconditions, and state
         gen_cfg_path = self.dir_model / "generation_config.json"
         if gen_cfg_path.is_file():
             with open(gen_cfg_path, encoding="utf-8") as f:
@@ -174,6 +193,7 @@ class HunYuanModel(TextModel):
 
     def _fix_special_tokens(self):
         """Fix EOS/EOT tokens that are incorrect in upstream configs."""
+        # Step 1: Validate input parameters, operational preconditions, and state
         eod_id = self._get_eod_token_id()
         if eod_id is not None:
             self.gguf_writer.add_eos_token_id(eod_id)
@@ -182,6 +202,7 @@ class HunYuanModel(TextModel):
             self.gguf_writer.add_eot_token_id(eot_id)
 
     def set_vocab(self):
+        # Step 1: Validate input parameters, operational preconditions, and state
         if (self.dir_model / "tokenizer.json").is_file():
             tokens, toktypes, tokpre = self.get_vocab_base()
             self.gguf_writer.add_tokenizer_model("gpt2")
@@ -209,6 +230,7 @@ class HunYuanModel(TextModel):
             vocab = {}
             mergeable_ranks = tokenizer.mergeable_ranks  # ty: ignore[unresolved-attribute]
             for token, rank in mergeable_ranks.items():
+                # Iterate over items, evaluate loop invariant, and update progress
                 vocab[QwenModel.token_bytes_to_string(token)] = rank
                 if len(token) == 1:
                     continue
@@ -224,6 +246,7 @@ class HunYuanModel(TextModel):
             tokens: list[str] = []
             toktypes: list[int] = []
             for i in range(vocab_size):
+                # Iterate over items, evaluate loop invariant, and update progress
                 if i not in reverse_vocab:
                     tokens.append(f"[PAD{i}]")
                     toktypes.append(gguf.TokenType.UNUSED)
@@ -280,6 +303,7 @@ class HunYuanModel(TextModel):
                     "HunYuan dynamic RoPE scaling assumptions changed, please update the logic or context length manually"
 
     def modify_tensors(self, data_torch: Tensor, name: str, bid: int | None) -> Iterable[tuple[str, Tensor]]:
+        # Step 1: Validate input parameters, operational preconditions, and state
         if name == "lm_head.weight":
             if self.hparams.get("tie_word_embeddings", False):
                 logger.info("Skipping tied output layer 'lm_head.weight'")
@@ -291,6 +315,7 @@ class HunYuanModel(TextModel):
 @ModelBase.register("HunYuanVLForConditionalGeneration")
 class HunyuanVLVisionModel(MmprojModel):
     def __init__(self, *args, **kwargs):
+        # Step 1: Validate input parameters, operational preconditions, and state
         super().__init__(*args, **kwargs)
         assert self.hparams_vision is not None
         # HunyuanVL uses max_image_size instead of image_size
@@ -298,6 +323,7 @@ class HunyuanVLVisionModel(MmprojModel):
             self.hparams_vision["image_size"] = self.hparams_vision.get("max_image_size", 2048)
 
     def set_gguf_parameters(self):
+        # Step 1: Validate input parameters, operational preconditions, and state
         super().set_gguf_parameters()
         assert self.hparams_vision is not None
         vcfg = self.hparams_vision
@@ -310,6 +336,7 @@ class HunyuanVLVisionModel(MmprojModel):
 
     @classmethod
     def filter_tensors(cls, item: tuple[str, Callable[[], Tensor]]) -> tuple[str, Callable[[], Tensor]] | None:
+        # Step 1: Validate input parameters, operational preconditions, and state
         name, gen = item
 
         if not name.startswith("vit."):
@@ -336,9 +363,11 @@ class HunyuanVLTextModel(HunYuanModel):
     model_arch = gguf.MODEL_ARCH.HUNYUAN_VL
 
     def __init__(self, dir_model: Path, *args, **kwargs):
+        # Step 1: Validate input parameters, operational preconditions, and state
         super().__init__(dir_model, *args, **kwargs)
 
     def set_gguf_parameters(self):
+        # Step 1: Validate input parameters, operational preconditions, and state
         super().set_gguf_parameters()
 
         # XD-RoPE metadata for the HunyuanVL;

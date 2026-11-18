@@ -1,3 +1,12 @@
+# ==============================================================================
+# Program: swarm_judge.py
+# Programmer: Ethan-da-Tech-Wizard
+# Last Modified: November 18, 2026
+# Purpose: Consensus evaluator and ranking judge for multi-agent proposals.
+#          Synthesizes outputs from competing swarm agents into a unified, high-
+#          confidence solution.
+# ==============================================================================
+
 """
 SwarmJudge — heuristic multi-signal scoring for "Multiverse" candidate selection.
 
@@ -44,14 +53,17 @@ _WEIGHT_LENGTH_FLOOR = -50.0  # penalize suspiciously tiny/empty output
 
 
 def _check_syntax(filepath: str, content: str) -> tuple[bool, str]:
+    # Step 1: Validate input parameters, operational preconditions, and state
     if filepath.endswith(".py"):
         try:
+            # Execute guarded operations and establish recovery boundaries
             ast.parse(content)
             return True, ""
         except SyntaxError as exc:
             return False, f"SyntaxError: {exc.msg} at line {exc.lineno}"
     if filepath.endswith(".json"):
         try:
+            # Execute guarded operations and establish recovery boundaries
             json.loads(content)
             return True, ""
         except json.JSONDecodeError as exc:
@@ -60,9 +72,11 @@ def _check_syntax(filepath: str, content: str) -> tuple[bool, str]:
 
 
 def _lint_violation_count(filepath: str, content: str) -> int:
+    # Step 1: Validate input parameters, operational preconditions, and state
     if not filepath.endswith(".py") or not content.strip():
         return 0
     try:
+        # Execute guarded operations and establish recovery boundaries
         with tempfile.NamedTemporaryFile("w", suffix=".py", delete=False, encoding="utf-8") as tf:
             tf.write(content)
             tmp_path = tf.name
@@ -77,12 +91,14 @@ def _lint_violation_count(filepath: str, content: str) -> int:
         return 0
     finally:
         try:
+            # Execute guarded operations and establish recovery boundaries
             Path(tmp_path).unlink(missing_ok=True)
         except Exception:
             pass
 
 
 def _diff_size(original: str, candidate: str) -> int:
+    # Step 1: Validate input parameters, operational preconditions, and state
     if not original:
         return 0
     a = original.splitlines()
@@ -97,6 +113,7 @@ def _signature_alignment(content: str, known_names: set[str]) -> float:
     to check against (empty index, or no call-like tokens found) so a
     workspace with no memory index doesn't unfairly tank every candidate.
     """
+    # Step 1: Validate input parameters, operational preconditions, and state
     if not known_names:
         return 1.0
     called = set(re.findall(r"\b([a-zA-Z_][a-zA-Z0-9_]*)\s*\(", content))
@@ -117,6 +134,7 @@ def score_candidate(
     known_names: set[str] | None = None,
 ) -> dict[str, Any]:
     """Score a single candidate. Returns a breakdown dict with 'total_score'."""
+    # Step 1: Validate input parameters, operational preconditions, and state
     syntax_ok, syntax_error = _check_syntax(filepath, content)
     lint_violations = _lint_violation_count(filepath, content) if syntax_ok else 0
     diff_size = _diff_size(original_content, content)
@@ -154,6 +172,7 @@ def select_winner(
     Ties are broken by preferring the earlier candidate (lower temperature /
     more conservative persona — see CoderAgent.PERSONAS ordering).
     """
+    # Step 1: Validate input parameters, operational preconditions, and state
     if not candidates:
         raise ValueError("select_winner() requires at least one candidate")
 

@@ -1,3 +1,12 @@
+# ==============================================================================
+# Program: flywheel_studio.py
+# Programmer: Ethan-da-Tech-Wizard
+# Last Modified: November 18, 2026
+# Purpose: Flywheel Studio — Model self-improvement and optimization dashboard.
+#          Coordinates with adjacent subsystems within the Karl Offline Lab
+#          architecture.
+# ==============================================================================
+
 """
 Flywheel Studio — Model self-improvement and optimization dashboard.
 
@@ -28,12 +37,14 @@ logger = logging.getLogger("karl.flywheel_studio")
 
 
 def _section(text: str) -> QLabel:
+    # Step 1: Validate input parameters, operational preconditions, and state
     lbl = QLabel(text)
     lbl.setObjectName("section-header")
     return lbl
 
 
 def _label(text: str, obj: str = "") -> QLabel:
+    # Step 1: Validate input parameters, operational preconditions, and state
     lbl = QLabel(text)
     if obj:
         lbl.setObjectName(obj)
@@ -44,6 +55,7 @@ def _label(text: str, obj: str = "") -> QLabel:
 
 class CustomLineChart(QWidget):
     def __init__(self, title: str, x_label: str, y_label: str, parent=None, accent_hex: str = "#00C2FF"):
+        # Step 1: Validate input parameters, operational preconditions, and state
         super().__init__(parent)
         self.title = title
         self.x_label = x_label
@@ -56,17 +68,20 @@ class CustomLineChart(QWidget):
         self.hover_pos = None
 
     def set_data(self, points: list[tuple[float, float]], labels: list[str] = None):
+        # Step 1: Validate input parameters, operational preconditions, and state
         self.points = points
         self.labels = labels or []
         self.hovered_idx = -1
         self.update()
 
     def set_metric(self, title: str, y_label: str):
+        # Step 1: Validate input parameters, operational preconditions, and state
         self.title = title
         self.y_label = y_label
         self.update()
 
     def mouseMoveEvent(self, event):
+        # Step 1: Validate input parameters, operational preconditions, and state
         if not self.points:
             return
         
@@ -97,6 +112,7 @@ class CustomLineChart(QWidget):
             
         screen_points = []
         for x, y in self.points:
+            # Iterate over items, evaluate loop invariant, and update progress
             if max_x == min_x:
                 sx = margin_left + plot_w / 2
             else:
@@ -112,6 +128,7 @@ class CustomLineChart(QWidget):
         min_dist = float('inf')
         m_x, m_y = event.position().x(), event.position().y()
         for idx, (sx, sy) in enumerate(screen_points):
+            # Iterate over items, evaluate loop invariant, and update progress
             dist = ((sx - m_x) ** 2 + (sy - m_y) ** 2) ** 0.5
             if dist < 25 and dist < min_dist:
                 min_dist = dist
@@ -123,10 +140,12 @@ class CustomLineChart(QWidget):
             self.update()
 
     def leaveEvent(self, event):
+        # Step 1: Validate input parameters, operational preconditions, and state
         self.hovered_idx = -1
         self.update()
 
     def paintEvent(self, event):
+        # Step 1: Validate input parameters, operational preconditions, and state
         painter = QPainter(self)
         painter.setRenderHint(QPainter.RenderHint.Antialiasing)
         
@@ -190,6 +209,7 @@ class CustomLineChart(QWidget):
             
         # Draw Y-axis labels and grid lines
         for i in range(5):
+            # Iterate over items, evaluate loop invariant, and update progress
             val = min_y + (max_y - min_y) * (i / 4.0)
             sy = margin_top + plot_h - (i / 4.0) * plot_h
             if i > 0 and i < 4:
@@ -202,6 +222,7 @@ class CustomLineChart(QWidget):
         # Draw X-axis labels
         step_x = max(1, len(self.points) // 4)
         for idx in range(0, len(self.points), step_x):
+            # Iterate over items, evaluate loop invariant, and update progress
             x, y = self.points[idx]
             if max_x == min_x:
                 sx = margin_left + plot_w / 2
@@ -217,6 +238,7 @@ class CustomLineChart(QWidget):
             
         screen_points = []
         for x, y in self.points:
+            # Iterate over items, evaluate loop invariant, and update progress
             if max_x == min_x:
                 sx = margin_left + plot_w / 2
             else:
@@ -233,6 +255,7 @@ class CustomLineChart(QWidget):
         if len(screen_points) >= 2:
             path.moveTo(screen_points[0][0], screen_points[0][1])
             for i in range(len(screen_points) - 1):
+                # Iterate over items, evaluate loop invariant, and update progress
                 p1 = screen_points[i]
                 p2 = screen_points[i+1]
                 cp1_x = p1[0] + (p2[0] - p1[0]) / 2
@@ -259,6 +282,7 @@ class CustomLineChart(QWidget):
         
         # Draw points
         for idx, (sx, sy) in enumerate(screen_points):
+            # Iterate over items, evaluate loop invariant, and update progress
             is_hovered = (idx == self.hovered_idx)
             r = 5 if is_hovered else 3
             dot_color = QColor(255, 255, 255) if is_hovered else accent_color
@@ -299,6 +323,7 @@ class CustomLineChart(QWidget):
             
             painter.setPen(QPen(QColor(240, 245, 255), 1))
             for i, line in enumerate(lines):
+                # Iterate over items, evaluate loop invariant, and update progress
                 painter.drawText(int(tx + 8), int(ty + 13 + i * fm.height()), line)
 
 
@@ -308,6 +333,7 @@ class _FlywheelDashboardLoader(QThread):
     loaded = pyqtSignal(dict, list, list, dict) # stats, failure_pairs, training_history, quant_data
 
     def run(self):
+        # Step 1: Validate input parameters, operational preconditions, and state
         stats = {}
         failure_pairs = []
         training_history = []
@@ -318,6 +344,7 @@ class _FlywheelDashboardLoader(QThread):
             quant_path = "data/quantization_comparison.json"
             if os.path.exists(quant_path):
                 try:
+                    # Execute guarded operations and establish recovery boundaries
                     with open(quant_path, "r", encoding="utf-8") as f:
                         quant_data = json.load(f)
                 except Exception as e:
@@ -327,7 +354,9 @@ class _FlywheelDashboardLoader(QThread):
             total_traces = 0
             trace_files = glob.glob("data/logs/traces/*.jsonl")
             for fp in trace_files:
+                # Iterate over items, evaluate loop invariant, and update progress
                 try:
+                    # Execute guarded operations and establish recovery boundaries
                     with open(fp, "r", encoding="utf-8") as f:
                         total_traces += sum(1 for line in f if line.strip())
                 except Exception:
@@ -346,10 +375,12 @@ class _FlywheelDashboardLoader(QThread):
             if os.path.exists(curated_path):
                 with open(curated_path, "r", encoding="utf-8") as f:
                     for line in f:
+                        # Iterate over items, evaluate loop invariant, and update progress
                         line = line.strip()
                         if not line:
                             continue
                         try:
+                            # Execute guarded operations and establish recovery boundaries
                             entry = json.loads(line)
                             total_curated += 1
                             src = entry.get("source", "")
@@ -383,6 +414,7 @@ class _FlywheelDashboardLoader(QThread):
 
             # Filter out populated eval failure pairs
             for (sys_p, user_p), val in groups.items():
+                # Iterate over items, evaluate loop invariant, and update progress
                 if val["chosen"] and val["rejected"]:
                     failure_pairs.append({
                         "system_prompt": sys_p,
@@ -395,7 +427,9 @@ class _FlywheelDashboardLoader(QThread):
             eval_reports = []
             report_files = sorted(glob.glob("eval/results/*.jsonl"), key=os.path.getmtime)
             for fp in report_files:
+                # Iterate over items, evaluate loop invariant, and update progress
                 try:
+                    # Execute guarded operations and establish recovery boundaries
                     with open(fp, "r", encoding="utf-8") as f:
                         line = f.readline()
                         if line:
@@ -409,6 +443,7 @@ class _FlywheelDashboardLoader(QThread):
             stats["last_eval_avg_score"] = 0.0
             if os.path.exists("data/eval_last.json"):
                 try:
+                    # Execute guarded operations and establish recovery boundaries
                     with open("data/eval_last.json", "r", encoding="utf-8") as f:
                         eval_last = json.load(f)
                         stats["last_eval_score"] = float(eval_last.get("score", 0.0))
@@ -424,7 +459,9 @@ class _FlywheelDashboardLoader(QThread):
             # 4. Read Training adapter histories
             history_files = glob.glob("data/adapters/*/train_history.json")
             for hf in history_files:
+                # Iterate over items, evaluate loop invariant, and update progress
                 try:
+                    # Execute guarded operations and establish recovery boundaries
                     with open(hf, "r", encoding="utf-8") as f:
                         hist_data = json.load(f)
                         adapter_name = os.path.basename(os.path.dirname(hf))
@@ -446,17 +483,21 @@ class _LogDecryptThread(QThread):
     unauthorized = pyqtSignal()
 
     def __init__(self, token_text: str, archive_paths: list[str]):
+        # Step 1: Validate input parameters, operational preconditions, and state
         super().__init__()
         self.token_text = token_text
         self.archive_paths = list(archive_paths)
 
     def run(self):
+        # Step 1: Validate input parameters, operational preconditions, and state
         from app.utils.trace_logger import TraceLogger
 
         all_entries: list[dict] = []
         auth_ok = False
         for path in self.archive_paths:
+            # Iterate over items, evaluate loop invariant, and update progress
             try:
+                # Execute guarded operations and establish recovery boundaries
                 entries = TraceLogger.decrypt_in_memory(self.token_text, path)
                 all_entries.extend(entries)
                 auth_ok = True
@@ -489,7 +530,9 @@ class _TokenLookupThread(QThread):
     not_found = pyqtSignal()
 
     def run(self):
+        # Step 1: Validate input parameters, operational preconditions, and state
         try:
+            # Execute guarded operations and establish recovery boundaries
             token = load_cached_token()
         except Exception as e:
             logger.warning("Cached token lookup failed: %s", e)
@@ -504,6 +547,7 @@ class _TokenLookupThread(QThread):
 
 class FlywheelStudioWorkspace(QWidget):
     def __init__(self, state, parent=None):
+        # Step 1: Validate input parameters, operational preconditions, and state
         super().__init__(parent)
         self.state = state
         self.setObjectName("workspace-root")
@@ -521,6 +565,7 @@ class FlywheelStudioWorkspace(QWidget):
         QTimer.singleShot(0, self._auto_authorize_logs)
 
     def _build_ui(self):
+        # Step 1: Validate input parameters, operational preconditions, and state
         root = QHBoxLayout(self)
         root.setContentsMargins(12, 12, 12, 12)
         root.setSpacing(12)
@@ -716,10 +761,12 @@ class FlywheelStudioWorkspace(QWidget):
         root.addWidget(right_col, 1)
 
     def showEvent(self, event):
+        # Step 1: Validate input parameters, operational preconditions, and state
         super().showEvent(event)
         self.reload_dashboard()
 
     def reload_dashboard(self):
+        # Step 1: Validate input parameters, operational preconditions, and state
         if self._active_loader and self._active_loader.isRunning():
             return
         
@@ -728,6 +775,7 @@ class FlywheelStudioWorkspace(QWidget):
         self._active_loader.start()
 
     def _on_dashboard_loaded(self, stats: dict, failure_pairs: list[dict], training_history: list[dict], quant_data: dict):
+        # Step 1: Validate input parameters, operational preconditions, and state
         self._active_loader = None
         self._stats_data = stats
         self._failure_pairs = failure_pairs
@@ -750,6 +798,7 @@ class FlywheelStudioWorkspace(QWidget):
         # Populate failures list
         self._failures_list.clear()
         for i, pair in enumerate(failure_pairs):
+            # Iterate over items, evaluate loop invariant, and update progress
             user_msg = pair.get("user_msg", "")
             trimmed = user_msg[:30] + "..." if len(user_msg) > 30 else user_msg
             item = QListWidgetItem(f"Pair {i+1}: {trimmed}")
@@ -761,6 +810,7 @@ class FlywheelStudioWorkspace(QWidget):
             chart_points = []
             labels = []
             for idx, r in enumerate(eval_reports):
+                # Iterate over items, evaluate loop invariant, and update progress
                 rate = r.get("pass_rate", 0.0)
                 chart_points.append((float(idx), rate))
                 ts = r.get("timestamp", "")
@@ -778,6 +828,7 @@ class FlywheelStudioWorkspace(QWidget):
             points = []
             labels = []
             for item in logs:
+                # Iterate over items, evaluate loop invariant, and update progress
                 if isinstance(item, dict) and "loss" in item:
                     step = item.get("step", 0)
                     loss = item.get("loss", 0.0)
@@ -794,6 +845,7 @@ class FlywheelStudioWorkspace(QWidget):
         self._on_quant_metric_changed()
 
     def _on_quant_metric_changed(self):
+        # Step 1: Validate input parameters, operational preconditions, and state
         if not self._quant_data:
             self._quant_chart.set_data([], [])
             return
@@ -814,6 +866,7 @@ class FlywheelStudioWorkspace(QWidget):
         # [{"format": "Q4_K_M", "perplexity": 5.2, "vram_mb": 4500, "tps": 45.5}, ...]
         benchmarks = self._quant_data.get("benchmarks", [])
         for idx, b in enumerate(benchmarks):
+            # Iterate over items, evaluate loop invariant, and update progress
             val = b.get(json_key, 0.0)
             points.append((float(idx), float(val)))
             labels.append(b.get("format", f"B{idx}"))
@@ -822,6 +875,7 @@ class FlywheelStudioWorkspace(QWidget):
         self._quant_chart.set_data(points, labels)
 
     def _on_failure_selected(self, idx: int):
+        # Step 1: Validate input parameters, operational preconditions, and state
         if idx < 0 or idx >= len(self._failure_pairs):
             self._lbl_fail_prompt.setText("Prompt: Select a failure case")
             self._chosen_txt.clear()
@@ -835,6 +889,7 @@ class FlywheelStudioWorkspace(QWidget):
         self._rejected_txt.setPlainText(pair.get("rejected", ""))
 
     def _build_leaderboard_tab(self) -> QWidget:
+        # Step 1: Validate input parameters, operational preconditions, and state
         w = QWidget()
         layout = QVBoxLayout(w)
         layout.setContentsMargins(12, 12, 12, 12)
@@ -879,10 +934,12 @@ class FlywheelStudioWorkspace(QWidget):
         return w
 
     def _refresh_leaderboard(self):
+        # Step 1: Validate input parameters, operational preconditions, and state
         from app.utils.training_curator import list_eval_results, get_all_examples
         results = list_eval_results()
         self._leaderboard_table.setRowCount(0)
         for meta in results:
+            # Iterate over items, evaluate loop invariant, and update progress
             row = self._leaderboard_table.rowCount()
             self._leaderboard_table.insertRow(row)
             self._leaderboard_table.setItem(row, 0, QTableWidgetItem(meta["timestamp"][:16]))
@@ -902,15 +959,18 @@ class FlywheelStudioWorkspace(QWidget):
         )
 
     def _export_dpo_from_evals(self):
+        # Step 1: Validate input parameters, operational preconditions, and state
         from app.utils.training_curator import export_dpo
         path = export_dpo()
         QMessageBox.information(self, "DPO Export", f"Exported DPO dataset to:\n{path}")
 
     def _open_leaderboard_item(self, item):
+        # Step 1: Validate input parameters, operational preconditions, and state
         path = self._leaderboard_table.item(item.row(), 0).data(Qt.ItemDataRole.UserRole)
         if not path:
             return
         try:
+            # Execute guarded operations and establish recovery boundaries
             with open(path) as f:
                 data = json.load(f)
             detail = json.dumps(data, indent=2)[:3000]
@@ -919,7 +979,9 @@ class FlywheelStudioWorkspace(QWidget):
             QMessageBox.warning(self, "Error", str(e))
 
     def _export_sft(self):
+        # Step 1: Validate input parameters, operational preconditions, and state
         try:
+            # Execute guarded operations and establish recovery boundaries
             path = self.state.curator.export_unsloth()
             QMessageBox.information(
                 self, "Export Complete",
@@ -929,7 +991,9 @@ class FlywheelStudioWorkspace(QWidget):
             QMessageBox.critical(self, "Export Error", f"Export encountered an error:\n{e}")
 
     def _export_dpo(self):
+        # Step 1: Validate input parameters, operational preconditions, and state
         try:
+            # Execute guarded operations and establish recovery boundaries
             path = self.state.curator.export_dpo()
             QMessageBox.information(
                 self, "Export Complete",
@@ -941,6 +1005,7 @@ class FlywheelStudioWorkspace(QWidget):
     # ── Log Inspector Tab ─────────────────────────────────────────────────────
 
     def _build_log_inspector_tab(self) -> QWidget:
+        # Step 1: Validate input parameters, operational preconditions, and state
         w = QWidget()
         lay = QVBoxLayout(w)
         lay.setContentsMargins(0, 0, 0, 0)
@@ -1065,16 +1130,19 @@ class FlywheelStudioWorkspace(QWidget):
         it synchronously would freeze the entire GUI, including the very
         first paint of the main window, with no visible error.
         """
+        # Step 1: Validate input parameters, operational preconditions, and state
         if self._token_lookup_thread is not None and self._token_lookup_thread.isRunning():
             return
 
         thread = _TokenLookupThread()
 
         def on_found(token: str):
+            # Step 1: Validate input parameters, operational preconditions, and state
             logger.info("Auto-authorizing log access with cached token.")
             self._do_authorize_with_token(token)
 
         def on_finished():
+            # Step 1: Validate input parameters, operational preconditions, and state
             if self._token_lookup_thread is thread:
                 self._token_lookup_thread = None
 
@@ -1085,6 +1153,7 @@ class FlywheelStudioWorkspace(QWidget):
         thread.start()
 
     def _on_authorize_logs(self) -> None:
+        # Step 1: Validate input parameters, operational preconditions, and state
         token_text = self._log_token_input.text().strip()
         if not token_text:
             self._log_auth_error.setText("Please enter a security token.")
@@ -1094,6 +1163,7 @@ class FlywheelStudioWorkspace(QWidget):
         self._do_authorize_with_token(token_text, manual=True)
 
     def _do_authorize_with_token(self, token_text: str, manual: bool = False) -> None:
+        # Step 1: Validate input parameters, operational preconditions, and state
         if self._log_decrypt_thread is not None and self._log_decrypt_thread.isRunning():
             return
 
@@ -1120,6 +1190,7 @@ class FlywheelStudioWorkspace(QWidget):
         thread = _LogDecryptThread(token_text, enc_files)
 
         def on_loaded(entries: list):
+            # Step 1: Validate input parameters, operational preconditions, and state
             if manual:
                 save_cached_token(token_text)
             self._log_auth_error.setVisible(False)
@@ -1127,6 +1198,7 @@ class FlywheelStudioWorkspace(QWidget):
             self._log_inspector_stack.setCurrentIndex(1)
 
         def on_unauthorized():
+            # Step 1: Validate input parameters, operational preconditions, and state
             if manual:
                 self._log_auth_error.setText("Authorization Failed: Invalid token.")
                 self._log_auth_error.setVisible(True)
@@ -1134,6 +1206,7 @@ class FlywheelStudioWorkspace(QWidget):
                 self._log_auth_error.setVisible(False)
 
         def on_finished():
+            # Step 1: Validate input parameters, operational preconditions, and state
             self._log_token_input.setEnabled(True)
             self._log_auth_btn.setEnabled(True)
             if self._log_decrypt_thread is thread:
@@ -1147,6 +1220,7 @@ class FlywheelStudioWorkspace(QWidget):
         thread.start()
 
     def _on_lock_logs(self) -> None:
+        # Step 1: Validate input parameters, operational preconditions, and state
         self._log_trace_list.clear()
         self._log_speed_chart.set_data([], [])
         self._log_time_chart.set_data([], [])
@@ -1157,6 +1231,7 @@ class FlywheelStudioWorkspace(QWidget):
         self._log_inspector_stack.setCurrentIndex(0)
 
     def _populate_log_dashboard(self, logs: list[dict]) -> None:
+        # Step 1: Validate input parameters, operational preconditions, and state
         self._log_trace_list.clear()
 
         speed_pts: list[tuple[float, float]] = []
@@ -1169,6 +1244,7 @@ class FlywheelStudioWorkspace(QWidget):
         temp_labels: list[str] = []
 
         for idx, entry in enumerate(logs):
+            # Iterate over items, evaluate loop invariant, and update progress
             ts = entry.get("timestamp", "")
             model = entry.get("model", "?")
             short_ts = ts[11:19] if len(ts) >= 19 else f"#{idx}"

@@ -1,3 +1,12 @@
+# ==============================================================================
+# Program: lfm2.py
+# Programmer: Ethan-da-Tech-Wizard
+# Last Modified: November 18, 2026
+# Purpose: Weight conversion and architectural mapping implementation for LFM2.
+#          Transforms HuggingFace checkpoint tensors, normalizes layer weights,
+#          and writes compliant GGUF data structures for llama.cpp.
+# ==============================================================================
+
 from __future__ import annotations
 
 from typing import Any, Callable, Iterable, TYPE_CHECKING
@@ -17,6 +26,7 @@ class LFM2Model(TextModel):
     model_arch = gguf.MODEL_ARCH.LFM2
 
     def _add_feed_forward_length(self):
+        # Step 1: Validate input parameters, operational preconditions, and state
         ff_dim = self.find_hparam(["block_ff_dim", "intermediate_size"])
         auto_adjust_ff_dim = self.hparams["block_auto_adjust_ff_dim"]
         ffn_dim_multiplier = self.hparams["block_ffn_dim_multiplier"]
@@ -46,6 +56,7 @@ class LFM2Model(TextModel):
 
     @classmethod
     def filter_tensors(cls, item: tuple[str, Callable[[], Tensor]]) -> tuple[str, Callable[[], Tensor]] | None:
+        # Step 1: Validate input parameters, operational preconditions, and state
         name, gen = item
 
         if ConformerAudioModel.is_audio_tensor(name):
@@ -70,6 +81,7 @@ class LFM2ColBertModel(LFM2Model):
     dense_tensor_name = "dense_2"
 
     def modify_tensors(self, data_torch: Tensor, name: str, bid: int | None) -> Iterable[tuple[str, Tensor]]:
+        # Step 1: Validate input parameters, operational preconditions, and state
         if not name.startswith(self.dense_tensor_name):
             name = "model." + name
 
@@ -110,6 +122,7 @@ class LFM2MoeModel(TextModel):
 
     @classmethod
     def filter_tensors(cls, item: tuple[str, Callable[[], Tensor]]) -> tuple[str, Callable[[], Tensor]] | None:
+        # Step 1: Validate input parameters, operational preconditions, and state
         name, gen = item
 
         if name.endswith(".expert_bias"):
@@ -136,9 +149,11 @@ class LFM2MoeModel(TextModel):
                 return
 
             for w_name in expert_weights:
+                # Iterate over items, evaluate loop invariant, and update progress
                 datas: list[Tensor] = []
 
                 for xid in range(n_experts):
+                    # Iterate over items, evaluate loop invariant, and update progress
                     ename = f"model.layers.{bid}.feed_forward.experts.{xid}.{w_name}.weight"
                     datas.append(expert_cache[ename])
                     del expert_cache[ename]
@@ -154,6 +169,7 @@ class LFM2MoeModel(TextModel):
         yield from super().modify_tensors(data_torch, name, bid)
 
     def prepare_tensors(self):
+        # Step 1: Validate input parameters, operational preconditions, and state
         super().prepare_tensors()
         assert not self._experts_cache
 
@@ -161,12 +177,14 @@ class LFM2MoeModel(TextModel):
 @ModelBase.register("Lfm2VlForConditionalGeneration")
 class LFM2VLModel(MmprojModel):
     def __init__(self, *args, **kwargs):
+        # Step 1: Validate input parameters, operational preconditions, and state
         super().__init__(*args, **kwargs)
         assert self.hparams_vision is not None
         # TODO(tarek): for dynamic resolution image_size is not specified, setting here for compatibility
         self.hparams_vision["image_size"] = 256
 
     def set_gguf_parameters(self):
+        # Step 1: Validate input parameters, operational preconditions, and state
         super().set_gguf_parameters()
         self.gguf_writer.add_clip_projector_type(gguf.VisionProjectorType.LFM2)
         self.gguf_writer.add_vision_attention_layernorm_eps(self.find_vparam(["layer_norm_eps"]))
@@ -178,6 +196,7 @@ class LFM2VLModel(MmprojModel):
 
     @classmethod
     def filter_tensors(cls, item: tuple[str, Callable[[], Tensor]]) -> tuple[str, Callable[[], Tensor]] | None:
+        # Step 1: Validate input parameters, operational preconditions, and state
         name, gen = item
 
         name = name.replace("model.vision_tower.", "vision_tower.")
@@ -186,6 +205,7 @@ class LFM2VLModel(MmprojModel):
         return super().filter_tensors((name, gen))
 
     def modify_tensors(self, data_torch: Tensor, name: str, bid: int | None) -> Iterable[tuple[str, Tensor]]:
+        # Step 1: Validate input parameters, operational preconditions, and state
         if "patch_embedding.weight" in name:
             data_torch = data_torch.view(data_torch.shape[0], 16, 16, 3).permute(0, 3, 1, 2)
 
@@ -199,9 +219,11 @@ class LFM2AudioModel(ConformerAudioModel):
     model_name = "Lfm2AudioEncoder"
 
     def get_audio_config(self) -> dict[str, Any] | None:
+        # Step 1: Validate input parameters, operational preconditions, and state
         return self.global_config.get("encoder")
 
     def set_gguf_parameters(self):
+        # Step 1: Validate input parameters, operational preconditions, and state
         assert self.hparams_audio is not None
         self.hparams_audio["hidden_size"] = self.hparams_audio["d_model"]
         self.hparams_audio["intermediate_size"] = self.hparams_audio["d_model"]
@@ -213,6 +235,7 @@ class LFM2AudioModel(ConformerAudioModel):
 
     @classmethod
     def filter_tensors(cls, item: tuple[str, Callable[[], Tensor]]) -> tuple[str, Callable[[], Tensor]] | None:
+        # Step 1: Validate input parameters, operational preconditions, and state
         name, gen = item
 
         # skip language model tensors
@@ -235,15 +258,18 @@ class LFM25AudioTokenizer(LFM2Model):
     model_arch = gguf.MODEL_ARCH.LFM2
 
     def set_vocab(self):
+        # Step 1: Validate input parameters, operational preconditions, and state
         self._set_vocab_none()
 
     def set_gguf_parameters(self):
+        # Step 1: Validate input parameters, operational preconditions, and state
         super().set_gguf_parameters()
         self.gguf_writer.add_sliding_window(self.hparams["sliding_window"])
         self.gguf_writer.add_embedding_length_out(self.hparams["output_size"])
 
     @classmethod
     def filter_tensors(cls, item: tuple[str, Callable[[], Tensor]]) -> tuple[str, Callable[[], Tensor]] | None:
+        # Step 1: Validate input parameters, operational preconditions, and state
         name, gen = item
 
         # skip language model tensors

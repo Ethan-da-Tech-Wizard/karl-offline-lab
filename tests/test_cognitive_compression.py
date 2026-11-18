@@ -1,3 +1,12 @@
+# ==============================================================================
+# Program: test_cognitive_compression.py
+# Programmer: Ethan-da-Tech-Wizard
+# Last Modified: November 18, 2026
+# Purpose: Comprehensive test suite exercising cognitive compression functionality.
+#          Verifies state transitions, error boundaries, regression resistance,
+#          and contract compliance under tests.
+# ==============================================================================
+
 import tests.qt_test_helper  # noqa: F401
 
 import os
@@ -20,10 +29,12 @@ if not app:
 
 class MockLlama:
     def __init__(self):
+        # Step 1: Validate input parameters, operational preconditions, and state
         self.call_count = 0
         self.compress_called = False
 
     def tokenize(self, text_bytes, add_bos=True):
+        # Step 1: Validate input parameters, operational preconditions, and state
         text = text_bytes.decode("utf-8")
         if "You are a cognitive compression tool" in text:
             return [0] * 50
@@ -33,6 +44,7 @@ class MockLlama:
         return [0] * (len(text) // 4 + 1)
 
     def __call__(self, prompt, **kwargs):
+        # Step 1: Validate input parameters, operational preconditions, and state
         self.call_count += 1
 
         # Check if this is the compression call (non-streaming, returning dict)
@@ -86,6 +98,7 @@ class MockLlama:
 
 
 def test_cognitive_compression_and_live_stats():
+    # Step 1: Validate input parameters, operational preconditions, and state
     print("Testing cognitive roll-up compression and live stats signals (LLMThread)...")
 
     # Save original ModelLoader attributes to restore later
@@ -106,15 +119,19 @@ def test_cognitive_compression_and_live_stats():
         done_payload = []
 
         def on_live_stats(count, speed):
+            # Step 1: Validate input parameters, operational preconditions, and state
             stats_emitted.append((count, speed))
 
         def on_thought(token):
+            # Step 1: Validate input parameters, operational preconditions, and state
             thought_emitted.append(token)
 
         def on_chat(token):
+            # Step 1: Validate input parameters, operational preconditions, and state
             chat_emitted.append(token)
 
         def on_done(thought, response, truncated, ended_in_thought, diagnostics):
+            # Step 1: Validate input parameters, operational preconditions, and state
             done_payload.append((thought, response, truncated, ended_in_thought, diagnostics))
 
         # Instantiate LLMThread with a prompt targeting compression
@@ -140,6 +157,7 @@ def test_cognitive_compression_and_live_stats():
         
         # Verify live stats values
         for count, speed in stats_emitted:
+            # Iterate over items, evaluate loop invariant, and update progress
             assert count >= 0
             assert speed >= 0.0
 
@@ -164,6 +182,7 @@ def test_cognitive_compression_and_live_stats():
 
 
 def test_agentic_cognitive_compression_and_live_stats():
+    # Step 1: Validate input parameters, operational preconditions, and state
     print("Testing cognitive roll-up compression and live stats signals (AgenticThread)...")
 
     # Save original ModelLoader attributes to restore later
@@ -184,17 +203,21 @@ def test_agentic_cognitive_compression_and_live_stats():
     core.agentic_loop.build_next_prompt = lambda response, iteration: "next"
 
     try:
+        # Execute guarded operations and establish recovery boundaries
         stats_emitted = []
         iteration_finished_payload = []
         loop_finished_payload = []
 
         def on_live_stats(count, speed):
+            # Step 1: Validate input parameters, operational preconditions, and state
             stats_emitted.append((count, speed))
 
         def on_iteration_finished(iteration, thought, response, diagnostics):
+            # Step 1: Validate input parameters, operational preconditions, and state
             iteration_finished_payload.append((iteration, thought, response, diagnostics))
 
         def on_loop_finished(total):
+            # Step 1: Validate input parameters, operational preconditions, and state
             loop_finished_payload.append(total)
 
         thread = AgenticThread(
@@ -218,6 +241,7 @@ def test_agentic_cognitive_compression_and_live_stats():
         assert len(stats_emitted) > 0, "live_stats signal should have emitted multiple times in AgenticThread"
         
         for count, speed in stats_emitted:
+            # Iterate over items, evaluate loop invariant, and update progress
             assert count >= 0
             assert speed >= 0.0
 

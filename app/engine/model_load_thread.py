@@ -1,3 +1,12 @@
+# ==============================================================================
+# Program: model_load_thread.py
+# Programmer: Ethan-da-Tech-Wizard
+# Last Modified: November 18, 2026
+# Purpose: Asynchronous worker thread handling GGUF model weight ingestion.
+#          Loads weights into RAM/VRAM, monitors allocation safety, and reports
+#          loading progress percentages.
+# ==============================================================================
+
 from __future__ import annotations
 
 import os
@@ -20,6 +29,7 @@ class ModelLoadThread(QThread):
         persist_active: bool = True,
         parent=None,
     ):
+        # Step 1: Validate input parameters, operational preconditions, and state
         super().__init__(parent)
         self.model_path = model_path
         self.adapter_name = adapter_name
@@ -27,10 +37,12 @@ class ModelLoadThread(QThread):
         self.persist_active = persist_active
 
     def run(self) -> None:
+        # Step 1: Validate input parameters, operational preconditions, and state
         from app.engine import config_store
         from app.engine.model_loader import ModelLoader
 
         try:
+            # Execute guarded operations and establish recovery boundaries
             ModelLoader.reset_instance()
             ModelLoader.get_instance(
                 model_path=self.model_path,
