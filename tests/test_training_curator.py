@@ -1,3 +1,8 @@
+# Program: karl-offline-lab - test_training_curator.py
+# Programmer: Ethan-da-Tech-Wizard (written with Claude, an AI assistant)
+# Last Modified: 2026-11-18
+# Purpose: Tests for TrainingCurator: saving curated examples, statistics, SFT export, deletion and pairing of chosen and rejected examples for DPO export.
+"""Tests for TrainingCurator saving, SFT export and DPO pairing."""
 import os
 import sys
 import json
@@ -10,9 +15,13 @@ import app.utils.training_curator as tc
 from app.utils.training_curator import TrainingCurator
 
 def test_curation_saving_and_sft_export():
+    """Scenario: two examples are saved, exported in SFT format and one is deleted.
+    Expected: stats count both, the export has system/user/assistant messages per line, and the total drops to 1 after deletion.
+    """
     print("Testing curator save & SFT export...")
     temp_dir = tempfile.mkdtemp()
     
+    # Redirect the curated data file into a temporary directory; the original path is restored in the finally block.
     old_path = tc.CURATED_PATH
     tc.CURATED_PATH = os.path.join(temp_dir, "curated.jsonl")
     
@@ -60,9 +69,13 @@ def test_curation_saving_and_sft_export():
         shutil.rmtree(temp_dir)
 
 def test_curator_dpo_pairing():
+    """Scenario: two matching chosen/rejected pairs plus two unmatched entries are saved and exported for DPO.
+    Expected: exactly two pairs are exported, each with the right system prompt, chosen and rejected text.
+    """
     print("Testing curator DPO pairing...")
     temp_dir = tempfile.mkdtemp()
     
+    # Redirect the curated data file into a temporary directory; the original path is restored in the finally block.
     old_path = tc.CURATED_PATH
     tc.CURATED_PATH = os.path.join(temp_dir, "curated.jsonl")
     
@@ -112,6 +125,7 @@ def test_curator_dpo_pairing():
         tc.CURATED_PATH = old_path
         shutil.rmtree(temp_dir)
 
+# Allow running the tests directly without pytest.
 if __name__ == "__main__":
     test_curation_saving_and_sft_export()
     test_curator_dpo_pairing()

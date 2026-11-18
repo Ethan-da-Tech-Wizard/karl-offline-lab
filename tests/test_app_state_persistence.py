@@ -1,3 +1,7 @@
+# Program: karl-offline-lab - test_app_state_persistence.py
+# Programmer: Ethan-da-Tech-Wizard (written with Claude, an AI assistant)
+# Last Modified: 2026-11-18
+# Purpose: Tests for AppState saving and loading its UI config, including defaults, type coercion, corrupt file quarantine, versioning and per-field validation.
 """Focused tests for AppState.load_from_disk() and AppState.save_to_disk()."""
 
 import tests.qt_test_helper  # noqa: F401  — must come first to init QApplication
@@ -18,6 +22,7 @@ from app.engine import config_store
 # Helpers
 # ---------------------------------------------------------------------------
 
+# Replace expensive components with mocks so tests stay fast and isolated
 _HEAVY_PATCHES = [
     patch("app.state.RAGPipeline", return_value=MagicMock()),
     patch("app.state.MemoryManager", return_value=MagicMock()),
@@ -28,11 +33,13 @@ _HEAVY_PATCHES = [
 
 
 def _start_patches():
+    """Start all heavy-dependency patches and return the mock objects."""
     mocks = [p.start() for p in _HEAVY_PATCHES]
     return mocks
 
 
 def _stop_patches():
+    """Stop all heavy-dependency patches."""
     for p in _HEAVY_PATCHES:
         p.stop()
 
@@ -45,9 +52,11 @@ class TestAppStatePersistence(unittest.TestCase):
     """AppState.load_from_disk / save_to_disk — isolated from disk and heavy deps."""
 
     def setUp(self):
+        """Work in a fresh temporary folder, clear the registry cache and start the patches."""
         import tempfile
         self._tmpdir = tempfile.mkdtemp()
         self._orig_cwd = os.getcwd()
+        # Run inside a temporary folder so the real data folder is never touched
         os.chdir(self._tmpdir)
         # Reset config_store registry cache (unrelated but avoids stale state)
         config_store._registry_cache = None
@@ -55,6 +64,7 @@ class TestAppStatePersistence(unittest.TestCase):
         _start_patches()
 
     def tearDown(self):
+        """Stop any patches, return to the original folder and delete the temporary one."""
         _stop_patches()
         os.chdir(self._orig_cwd)
         import shutil
@@ -92,6 +102,7 @@ class TestAppStatePersistence(unittest.TestCase):
     # previously-persisted "enabled" setting underneath it.
 
     def test_remote_engine_defaults_when_no_file(self):
+        """Scenario: no engine config on disk. Expected: the remote engine is disabled by default."""
         state = AppState()
         self.assertFalse(state.remote_engine_enabled)
         self.assertEqual(state.remote_engine_url, "")
@@ -110,6 +121,7 @@ class TestAppStatePersistence(unittest.TestCase):
         self.assertEqual(state.remote_engine_token, "sekret-token")
 
     def test_remote_engine_disabled_persists_correctly(self):
+        """Scenario: enable then disable the remote engine. Expected: the state is disabled while the saved address is kept."""
         config_store.set_remote_engine_config(True, "wss://x:1", "t")
         config_store.set_remote_engine_config(False)
         state = AppState()
@@ -121,6 +133,7 @@ class TestAppStatePersistence(unittest.TestCase):
     # ── save / load roundtrip ─────────────────────────────────────────────
 
     def test_save_to_disk_creates_file(self):
+        """Scenario: save a fresh state. Expected: the save reports success and the config file exists."""
         state = AppState()
         result = state.save_to_disk()
         self.assertTrue(result)
@@ -312,6 +325,7 @@ class TestConfigCorruptionRecovery(unittest.TestCase):
     """Corrupt ui_config.json is quarantined and replaced with fresh defaults."""
 
     def setUp(self):
+        """Work in a fresh temporary folder, clear the registry cache and start the patches."""
         import tempfile
         self._tmpdir = tempfile.mkdtemp()
         self._orig_cwd = os.getcwd()
@@ -321,12 +335,14 @@ class TestConfigCorruptionRecovery(unittest.TestCase):
         _start_patches()
 
     def tearDown(self):
+        """Stop any patches, return to the original folder and delete the temporary one."""
         _stop_patches()
         os.chdir(self._orig_cwd)
         import shutil
         shutil.rmtree(self._tmpdir, ignore_errors=True)
 
     def _data_dir_files(self):
+        """Return the names of files in the data folder, or an empty list if it is missing."""
         return os.listdir("data") if os.path.isdir("data") else []
 
     def test_corrupt_json_quarantines_file(self):
@@ -405,6 +421,7 @@ class TestConfigVersioning(unittest.TestCase):
     """Schema version key is written on every save and triggers migration on load."""
 
     def setUp(self):
+        """Work in a fresh temporary folder, clear the registry cache and start the patches."""
         import tempfile
         self._tmpdir = tempfile.mkdtemp()
         self._orig_cwd = os.getcwd()
@@ -414,6 +431,7 @@ class TestConfigVersioning(unittest.TestCase):
         _start_patches()
 
     def tearDown(self):
+        """Stop any patches, return to the original folder and delete the temporary one."""
         _stop_patches()
         os.chdir(self._orig_cwd)
         import shutil
@@ -476,6 +494,7 @@ class TestConfigFieldValidation(unittest.TestCase):
     """Per-field type and range validation in get_ui_config()."""
 
     def setUp(self):
+        """Work in a fresh temporary folder, clear the registry cache."""
         import tempfile
         self._tmpdir = tempfile.mkdtemp()
         self._orig_cwd = os.getcwd()
@@ -484,11 +503,13 @@ class TestConfigFieldValidation(unittest.TestCase):
         config_store._registry_cache_mtime = None
 
     def tearDown(self):
+        """Stop any patches, return to the original folder and delete the temporary one."""
         os.chdir(self._orig_cwd)
         import shutil
         shutil.rmtree(self._tmpdir, ignore_errors=True)
 
     def _write_config(self, data: dict):
+        """Write the given dict as the UI config file."""
         os.makedirs("data", exist_ok=True)
         with open(config_store.UI_CONFIG_PATH, "w") as f:
             json.dump(data, f)

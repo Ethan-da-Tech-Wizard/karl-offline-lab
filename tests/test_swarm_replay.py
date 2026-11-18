@@ -1,3 +1,7 @@
+# Program: karl-offline-lab - test_swarm_replay.py
+# Programmer: Ethan-da-Tech-Wizard (written with Claude, an AI assistant)
+# Last Modified: 2026-11-18
+# Purpose: Unit tests for SwarmReplayManager, checking run listing, ordering, malformed-file handling and the step timeline with diffs built from saved run traces.
 """Tests for app/utils/swarm_replay.py — SwarmReplayManager."""
 
 from __future__ import annotations
@@ -11,25 +15,35 @@ from app.utils.swarm_replay import SwarmReplayManager
 
 
 def _write_run(cognition_dir: Path, run_id: str, nodes: list[dict]) -> Path:
+    """Write a list of trace nodes to a run file named after the run id and return its path."""
     path = cognition_dir / f"run_{run_id}.json"
     path.write_text(json.dumps(nodes), encoding="utf-8")
     return path
 
 
 class TestListPastRuns(unittest.TestCase):
+    """Tests for summarizing every saved run in the trace directory."""
     def setUp(self):
+        """Create a temporary trace directory and a replay manager that reads it."""
         self._tmp = tempfile.TemporaryDirectory()
         self.cognition_dir = Path(self._tmp.name)
         self.manager = SwarmReplayManager(trace_dir=str(self.cognition_dir))
 
     def tearDown(self):
+        """Remove the temporary directory after each test."""
         self._tmp.cleanup()
 
     def test_returns_empty_list_when_dir_missing(self):
+        """Scenario: the trace directory does not exist.
+        Expected: an empty list of runs.
+        """
         manager = SwarmReplayManager(trace_dir=str(self.cognition_dir / "does_not_exist"))
         self.assertEqual(manager.list_past_runs(), [])
 
     def test_summarizes_run_started_and_swarm_finished(self):
+        """Scenario: a run with start, plan and finish nodes.
+        Expected: one summary with the run id, objective, success flag and a step count of 3.
+        """
         _write_run(self.cognition_dir, "abc123", [
             {"type": "run_started", "timestamp": 1000.0, "objective": "Add math_utils.add", "workspace_path": "/ws"},
             {"type": "architect_plan", "timestamp": 1001.0, "explanation": "plan", "tasks": []},
@@ -46,6 +60,9 @@ class TestListPastRuns(unittest.TestCase):
         self.assertEqual(run["steps_count"], 3)
 
     def test_run_without_finished_node_reports_not_successful(self):
+        """Scenario: a run that never wrote a finish node.
+        Expected: the run is reported as not successful.
+        """
         _write_run(self.cognition_dir, "unfinished", [
             {"type": "run_started", "timestamp": 1000.0, "objective": "x", "workspace_path": "/ws"},
         ])
@@ -55,6 +72,9 @@ class TestListPastRuns(unittest.TestCase):
         self.assertEqual(runs[0]["success"], False)
 
     def test_sorted_newest_first(self):
+        """Scenario: two runs with different start timestamps.
+        Expected: the run with the later timestamp is listed first.
+        """
         _write_run(self.cognition_dir, "older", [
             {"type": "run_started", "timestamp": 1000.0, "objective": "old run", "workspace_path": "/ws"},
         ])
@@ -67,6 +87,9 @@ class TestListPastRuns(unittest.TestCase):
         self.assertEqual([r["run_id"] for r in runs], ["newer", "older"])
 
     def test_skips_malformed_json(self):
+        """Scenario: one run file holds invalid JSON next to a valid one.
+        Expected: only the valid run is listed.
+        """
         bad_path = self.cognition_dir / "run_broken.json"
         bad_path.write_text("{not valid json", encoding="utf-8")
         _write_run(self.cognition_dir, "good", [
@@ -79,7 +102,9 @@ class TestListPastRuns(unittest.TestCase):
 
 
 class TestGetRunDetails(unittest.TestCase):
+    """Tests for rebuilding a single run as a timeline of steps with diffs."""
     def setUp(self):
+        """Create temporary trace and workspace directories and a replay manager."""
         self._tmp = tempfile.TemporaryDirectory()
         self.cognition_dir = Path(self._tmp.name) / "cognition"
         self.cognition_dir.mkdir()
@@ -88,18 +113,27 @@ class TestGetRunDetails(unittest.TestCase):
         self.manager = SwarmReplayManager(trace_dir=str(self.cognition_dir))
 
     def tearDown(self):
+        """Remove the temporary directories after each test."""
         self._tmp.cleanup()
 
     def test_missing_run_returns_empty_steps(self):
+        """Scenario: the requested run id has no saved file.
+        Expected: a result with the id, an empty objective and no steps.
+        """
         details = self.manager.get_run_details("nope")
         self.assertEqual(details, {"run_id": "nope", "objective": "", "steps": []})
 
     def test_builds_step_timeline_with_diff_and_drift_flag(self):
+        """Scenario: a run with a plan, a drift event, a file write with a backup, and a test result.
+        Expected: steps in order architect, coder, coder, tester; coder steps flagged as drift; the write step carries a unified diff; the tester step carries the test output.
+        """
         # Current on-disk content (the "after" state)
+        # Current on-disk content: this is the "after" state of the edit.
         current_file = self.workspace_dir / "math_utils.py"
         current_file.write_text("def add(a, b):\n    return a + b\n", encoding="utf-8")
 
         # Pre-edit backup (the "before" state)
+        # Pre-edit backup: this is the "before" state used to build the diff.
         backup_file = Path(self._tmp.name) / "backup" / "math_utils.py"
         backup_file.parent.mkdir(parents=True)
         backup_file.write_text("def add(a, b):\n    return a - b\n", encoding="utf-8")
@@ -121,6 +155,7 @@ class TestGetRunDetails(unittest.TestCase):
         self.assertEqual(details["run_id"], "run1")
         self.assertEqual(details["objective"], "Fix add()")
 
+        # The drift node is shown as a coder step, so two coder steps appear between architect and tester.
         step_types = [s["type"] for s in details["steps"]]
         self.assertEqual(step_types, ["architect", "coder", "coder", "tester"])
 
@@ -137,6 +172,9 @@ class TestGetRunDetails(unittest.TestCase):
         self.assertEqual(tester_step["test_output"], "TESTS PASSED")
 
     def test_new_file_diff_shows_full_content_as_added(self):
+        """Scenario: a file was written whose backup does not exist (a brand-new file).
+        Expected: the diff shows the whole file as added, compared against /dev/null.
+        """
         current_file = self.workspace_dir / "new_module.py"
         current_file.write_text("def hello():\n    return 'hi'\n", encoding="utf-8")
 
@@ -154,5 +192,6 @@ class TestGetRunDetails(unittest.TestCase):
         self.assertIn("/dev/null", write_step["diff"])
 
 
+# Allow running this file directly with the unittest runner.
 if __name__ == "__main__":
     unittest.main()

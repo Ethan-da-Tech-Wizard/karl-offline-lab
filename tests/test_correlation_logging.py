@@ -1,3 +1,7 @@
+# Program: karl-offline-lab - test_correlation_logging.py
+# Programmer: Ethan-da-Tech-Wizard (written with Claude, an AI assistant)
+# Last Modified: 2026-11-18
+# Purpose: Tests for correlation ID logging: defaults, thread and task isolation, filter injection and reset behaviour.
 """
 Correlation ID logging tests.
 
@@ -32,11 +36,13 @@ class _CaptureHandler(logging.Handler):
     """Thread-safe log-record collector."""
 
     def __init__(self):
+        """Set up the lock and the list of captured records."""
         super().__init__()
         self._lock = threading.Lock()
         self.records: List[logging.LogRecord] = []
 
     def emit(self, record: logging.LogRecord) -> None:
+        """Store the record under the lock."""
         with self._lock:
             self.records.append(record)
 
@@ -49,6 +55,7 @@ def _make_logger(name: str) -> tuple[logging.Logger, _CaptureHandler]:
     # Remove any handlers left over from previous test runs
     lgr.handlers.clear()
     handler = _CaptureHandler()
+    # The filter adds correlation_id to every record
     handler.addFilter(CorrelationFilter())
     lgr.addHandler(handler)
     return lgr, handler
@@ -62,6 +69,7 @@ def test_default_correlation_id_is_system():
     result: list[str] = []
 
     def _check():
+        """Record the correlation ID seen by this thread."""
         result.append(get_correlation_id())
 
     t = threading.Thread(target=_check)
@@ -82,12 +90,14 @@ def test_concurrent_threads_have_isolated_correlation_ids():
     barrier = threading.Barrier(2)
 
     def thread_a():
+        """Set CID task-A, log, wait at the barrier, then log again."""
         set_correlation_id("task-A")
         lgr.info("A: before barrier")
         barrier.wait()
         lgr.info("A: after barrier")
 
     def thread_b():
+        """Set CID task-B, log, wait at the barrier, then log again."""
         set_correlation_id("task-B")
         lgr.info("B: before barrier")
         barrier.wait()
@@ -184,12 +194,15 @@ def test_asyncio_tasks_have_isolated_correlation_ids():
     results: dict[str, str] = {}
 
     async def _run():
+        """Start two tasks concurrently and wait for both."""
         async def task_x():
+            """Set CID async-X, yield, then record the CID seen."""
             set_correlation_id("async-X")
             await asyncio.sleep(0)   # yield to let task_y run
             results["x"] = get_correlation_id()
 
         async def task_y():
+            """Set CID async-Y, yield, then record the CID seen."""
             set_correlation_id("async-Y")
             await asyncio.sleep(0)
             results["y"] = get_correlation_id()
@@ -218,6 +231,7 @@ def test_thread_default_is_system_even_after_main_thread_sets_id():
     child_result: list[str] = []
 
     def _child():
+        """Record the CID seen by the child thread."""
         child_result.append(get_correlation_id())
 
     t = threading.Thread(target=_child)

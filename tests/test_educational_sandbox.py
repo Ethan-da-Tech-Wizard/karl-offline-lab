@@ -1,3 +1,7 @@
+# Program: karl-offline-lab - test_educational_sandbox.py
+# Programmer: Ethan-da-Tech-Wizard (written with Claude, an AI assistant)
+# Last Modified: 2026-11-18
+# Purpose: Tests for the educational sandbox components: TF-IDF embedder, character tokenizer and the tiny GPT model.
 """
 Unit Tests for Karl's Educational AI Sandbox
 ============================================
@@ -11,6 +15,7 @@ from app.utils.custom_embeddings import TfidfEmbedder
 from app.engine.mini_transformer import CharTokenizer, MiniGPT
 
 def test_tfidf_embedder():
+    """Scenario: tokenize, fit, transform and compare texts. Expected: stop words dropped, vocabulary and document count set, vectors unit length, identical texts score 1.0 similarity and different texts less."""
     embedder = TfidfEmbedder()
     
     # 1. Test tokenization
@@ -49,6 +54,7 @@ def test_tfidf_embedder():
 
 
 def test_char_tokenizer():
+    """Scenario: fit on "hello world", encode and decode. Expected: vocab equals distinct characters, round trip works, unknown characters map to index 0."""
     tokenizer = CharTokenizer()
     text = "hello world"
     tokenizer.fit(text)
@@ -66,6 +72,7 @@ def test_char_tokenizer():
 
 
 def test_mini_gpt():
+    """Scenario: forward pass with and without targets and text generation. Expected: logits have the right shape, loss is None without targets and a tensor with them, and generation adds the requested tokens."""
     vocab_size = 10
     n_embd = 32
     n_heads = 2
@@ -82,6 +89,7 @@ def test_mini_gpt():
     )
     
     # Test forward pass without targets
+    # Random token ids shaped (batch, sequence)
     idx = torch.randint(0, vocab_size, (2, 8))  # Batch size 2, Context length 8
     logits, loss = model(idx)
     
@@ -98,5 +106,6 @@ def test_mini_gpt():
     
     # Test generation
     idx_start = torch.zeros((1, 1), dtype=torch.long)
+    # Sample five new tokens starting from a single zero token
     gen = model.generate(idx_start, max_new_tokens=5, temperature=1.0, top_k=2)
     assert gen.shape == (1, 6)

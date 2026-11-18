@@ -1,21 +1,35 @@
+# Program: karl-offline-lab - symbolic_icon.py
+# Programmer: Ethan-da-Tech-Wizard (written with Claude, an AI assistant)
+# Last Modified: 2026-11-18
+# Purpose: Defines theme-aware, custom-painted vector icon widgets (menu, brain, thumbs, document, check, cross, gear) and the IconBtn button that hosts them.
+
+"""Custom painted symbolic icons used by buttons and toolbars."""
 from PyQt6.QtWidgets import QWidget, QPushButton, QHBoxLayout
 from PyQt6.QtCore import Qt, QSize
 from PyQt6.QtGui import QPainter, QPen, QColor, QBrush, QIcon
 from app.ui.themes import get_theme_colors
 
 
+# ---------------------------------------------------------------------------
+# Icon helpers
+# ---------------------------------------------------------------------------
 def symbol_to_qicon(icon_widget_class, state, color_role="accent", size=16) -> QIcon:
     """Render a BaseSymbol subclass to a QIcon, for buttons that need an icon
     alongside a text label rather than a standalone icon-only button (see
     IconBtn for that case)."""
+    # Instantiate the icon off-screen, snapshot it to a pixmap, then free the widget
     icon_widget = icon_widget_class(state, color_role=color_role, size=size)
     pixmap = icon_widget.grab()
     icon_widget.deleteLater()
     return QIcon(pixmap)
 
+# ---------------------------------------------------------------------------
+# Base class
+# ---------------------------------------------------------------------------
 class BaseSymbol(QWidget):
     """Base class for theme-aware custom painted icons."""
     def __init__(self, state, color_role="accent", size=16, parent=None):
+        """Create a fixed-size square icon widget whose colour comes from the theme role."""
         super().__init__(parent)
         self.state = state
         self.color_role = color_role
@@ -23,18 +37,24 @@ class BaseSymbol(QWidget):
         self.setFixedSize(QSize(size, size))
 
     def set_color_role(self, role: str):
+        """Change which theme colour role the icon uses and repaint."""
         self.color_role = role
         self.update()
 
     def get_color(self) -> QColor:
+        """Return the theme colour for the current role, falling back to the accent colour."""
         colors = get_theme_colors(self.state)
         hex_color = colors.get(self.color_role, colors.get("accent", "#00C2FF"))
         return QColor(hex_color)
 
 
+# ---------------------------------------------------------------------------
+# Individual icons (each paints itself with QPainter in paintEvent)
+# ---------------------------------------------------------------------------
 class HamburgerIcon(BaseSymbol):
     """Draws a clean, futuristic 3-line menu bar icon."""
     def paintEvent(self, event):
+        """Paint three horizontal lines."""
         painter = QPainter(self)
         painter.setRenderHint(QPainter.RenderHint.Antialiasing)
         
@@ -54,6 +74,7 @@ class HamburgerIcon(BaseSymbol):
 class BrainIcon(BaseSymbol):
     """Draws an abstract neural network node schema representing cognitive reasoning."""
     def paintEvent(self, event):
+        """Paint three connected nodes around a central node."""
         painter = QPainter(self)
         painter.setRenderHint(QPainter.RenderHint.Antialiasing)
         
@@ -91,6 +112,7 @@ class BrainIcon(BaseSymbol):
 class ThumbsUpIcon(BaseSymbol):
     """Draws a clean vector thumbs-up glyph."""
     def paintEvent(self, event):
+        """Paint the thumbs-up outline plus a cuff line."""
         painter = QPainter(self)
         painter.setRenderHint(QPainter.RenderHint.Antialiasing)
         
@@ -124,6 +146,7 @@ class ThumbsUpIcon(BaseSymbol):
 class ThumbsDownIcon(BaseSymbol):
     """Draws a clean vector thumbs-down glyph."""
     def paintEvent(self, event):
+        """Paint the thumbs-down outline plus a cuff line."""
         painter = QPainter(self)
         painter.setRenderHint(QPainter.RenderHint.Antialiasing)
         
@@ -154,6 +177,7 @@ class ThumbsDownIcon(BaseSymbol):
 class DocIcon(BaseSymbol):
     """Draws a document outline sheet with a clean folded top corner."""
     def paintEvent(self, event):
+        """Paint a document outline with a folded top-right corner."""
         painter = QPainter(self)
         painter.setRenderHint(QPainter.RenderHint.Antialiasing)
         
@@ -186,6 +210,7 @@ class DocIcon(BaseSymbol):
 class CheckIcon(BaseSymbol):
     """Draws a vector checkmark path."""
     def paintEvent(self, event):
+        """Paint a checkmark as two rounded lines."""
         painter = QPainter(self)
         painter.setRenderHint(QPainter.RenderHint.Antialiasing)
         
@@ -203,6 +228,7 @@ class CheckIcon(BaseSymbol):
 class CrossIcon(BaseSymbol):
     """Draws a vector cancel cross."""
     def paintEvent(self, event):
+        """Paint an X as two crossing rounded lines."""
         painter = QPainter(self)
         painter.setRenderHint(QPainter.RenderHint.Antialiasing)
         
@@ -220,6 +246,7 @@ class CrossIcon(BaseSymbol):
 class GearIcon(BaseSymbol):
     """Draws a clean, futuristic gear/settings icon."""
     def paintEvent(self, event):
+        """Paint a gear: two concentric circles with eight teeth around them."""
         painter = QPainter(self)
         painter.setRenderHint(QPainter.RenderHint.Antialiasing)
         
@@ -249,11 +276,15 @@ class GearIcon(BaseSymbol):
             painter.drawLine(int(x1), int(y1), int(x2), int(y2))
 
 
+# ---------------------------------------------------------------------------
+# Icon button
+# ---------------------------------------------------------------------------
 class IconBtn(QPushButton):
     """A QPushButton that hosts a theme-aware custom symbolic icon."""
 
     def __init__(self, icon_widget_class, state, color_role="accent", tooltip="", size=28, parent=None):
         """Create a fixed-size icon button from a BaseSymbol subclass."""
+        # Ghost-style button; the icon widget sits centred inside it and ignores the mouse so clicks reach the button
         super().__init__(parent)
         self.setObjectName("btn-ghost")
         self.setFixedSize(size, size)

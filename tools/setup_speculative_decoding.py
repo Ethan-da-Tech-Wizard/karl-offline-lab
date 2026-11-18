@@ -1,4 +1,8 @@
 #!/usr/bin/env python3
+# Program: karl-offline-lab - setup_speculative_decoding.py
+# Programmer: Ethan-da-Tech-Wizard (written with Claude, an AI assistant)
+# Last Modified: 2026-11-18
+# Purpose: Command-line tool that downloads a small draft GGUF model with a progress display and writes the configuration file used for speculative decoding.
 """Download and configure Karl's speculative-decoding draft model."""
 
 from __future__ import annotations
@@ -11,16 +15,19 @@ import urllib.request
 from pathlib import Path
 
 
+# Download location, destination file and config file for the draft model.
 URL = (
     "https://huggingface.co/Qwen/Qwen2.5-0.5B-Instruct-GGUF/resolve/main/"
     "qwen2.5-0.5b-instruct-q8_0.gguf"
 )
 TARGET = Path("data/models/qwen2.5-0.5b-instruct-q8_0.gguf")
 CONFIG = Path("data/draft_model.json")
+# Read the download in one-megabyte chunks.
 CHUNK_SIZE = 1024 * 1024
 
 
 def _format_bytes(value: float) -> str:
+    """Format a byte count as a short human-readable string such as 1.5 MB."""
     units = ["B", "KB", "MB", "GB", "TB"]
     size = float(value)
     for unit in units:
@@ -31,6 +38,7 @@ def _format_bytes(value: float) -> str:
 
 
 def _format_eta(seconds: float | None) -> str:
+    """Format remaining seconds as MM:SS or H:MM:SS, or dashes when unknown."""
     if seconds is None or seconds < 0:
         return "--:--"
     seconds = int(seconds)
@@ -42,17 +50,20 @@ def _format_eta(seconds: float | None) -> str:
 
 
 def download(url: str, target: Path, force: bool = False) -> None:
+    """Download the file to a temporary part file with a live progress line, then move it into place; skip when the target already exists unless forced."""
     target.parent.mkdir(parents=True, exist_ok=True)
     if target.exists() and target.stat().st_size > 0 and not force:
         print(f"Draft model already exists: {target}")
         return
 
+    # Download to a temporary name so a partial file is never mistaken for a finished model.
     tmp = target.with_suffix(target.suffix + ".part")
     req = urllib.request.Request(url, headers={"User-Agent": "Karl/SpeculativeSetup"})
     start = time.monotonic()
     downloaded = 0
 
     with urllib.request.urlopen(req) as response, tmp.open("wb") as out:
+        # The total size is only known when the server sends a content length.
         total_header = response.headers.get("Content-Length")
         total = int(total_header) if total_header and total_header.isdigit() else None
         while True:
@@ -62,6 +73,7 @@ def download(url: str, target: Path, force: bool = False) -> None:
             out.write(chunk)
             downloaded += len(chunk)
             elapsed = max(time.monotonic() - start, 0.001)
+            # Average download speed so far, used to estimate time remaining.
             rate = downloaded / elapsed
             remaining = ((total - downloaded) / rate) if total and rate > 0 else None
             if total:
@@ -75,11 +87,13 @@ def download(url: str, target: Path, force: bool = False) -> None:
             print(status, end="", flush=True)
 
     print()
+    # Atomically rename the finished download to its final name.
     tmp.replace(target)
     print(f"Saved draft model to {target}")
 
 
 def write_config(target: Path, config_path: Path) -> None:
+    """Write the JSON configuration naming the draft model path, context size and GPU layer setting."""
     config_path.parent.mkdir(parents=True, exist_ok=True)
     payload = {
         "draft_model_path": str(target),
@@ -93,6 +107,7 @@ def write_config(target: Path, config_path: Path) -> None:
 
 
 def main() -> int:
+    """Parse options, download the model, write the config and return an exit code (130 when interrupted, 1 on error)."""
     parser = argparse.ArgumentParser(description="Download Karl's Qwen 0.5B draft GGUF.")
     parser.add_argument("--url", default=URL)
     parser.add_argument("--target", default=str(TARGET))
@@ -104,6 +119,7 @@ def main() -> int:
     try:
         download(args.url, target, force=args.force)
         write_config(target, Path(args.config))
+    # Use the conventional exit status for an interrupt.
     except KeyboardInterrupt:
         print("\nInterrupted.", file=sys.stderr)
         return 130
@@ -113,5 +129,6 @@ def main() -> int:
     return 0
 
 
+# Run main() and use its return value as the exit code.
 if __name__ == "__main__":
     raise SystemExit(main())

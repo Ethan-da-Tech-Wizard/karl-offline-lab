@@ -1,3 +1,7 @@
+# Program: karl-offline-lab - test_auto_train.py
+# Programmer: Ethan-da-Tech-Wizard (written with Claude, an AI assistant)
+# Last Modified: 2026-11-18
+# Purpose: Unit and RPC tests for the auto-train flow: fallback tasks, solution verification, the training thread and the start_auto_train call.
 """
 Unit Tests for Karl One-Click Auto-Train Flywheel
 =================================================
@@ -26,7 +30,9 @@ from app.engine.websocket_server import WebSocketServerManager
 
 
 def _running_under_bwrap() -> bool:
+    """Return True when running inside the bwrap sandbox, detected from the init process name."""
     try:
+        # The init process name reveals the bwrap sandbox
         with open("/proc/1/comm", "r", encoding="utf-8") as f:
             return f.read().strip() == "bwrap"
     except OSError:
@@ -34,7 +40,9 @@ def _running_under_bwrap() -> bool:
 
 
 class TestAutoTrain(unittest.TestCase):
+    """Tests for task generation, verification, thread setup and the websocket start RPC."""
     def test_generate_fallback_tasks(self):
+        """Scenario: request 5 fallback tasks. Expected: five well-formed unit-test tasks for the topic."""
         topic = "regex_parsing"
         count = 5
         tasks = generate_fallback_tasks(topic, count)
@@ -49,6 +57,7 @@ class TestAutoTrain(unittest.TestCase):
 
     @patch("auto_train.SafePythonSandbox")
     def test_verify_solution_passing(self, mock_sandbox_class):
+        """Scenario: the mocked sandbox reports success. Expected: verify_solution returns passed and the sandbox output."""
         mock_sandbox = MagicMock()
         mock_sandbox.run_code.return_value = (True, "output match")
         mock_sandbox_class.return_value = mock_sandbox
@@ -63,6 +72,7 @@ class TestAutoTrain(unittest.TestCase):
 
     @patch("auto_train.SafePythonSandbox")
     def test_verify_solution_failing(self, mock_sandbox_class):
+        """Scenario: the mocked sandbox reports failure. Expected: verify_solution returns not passed with the error trace."""
         mock_sandbox = MagicMock()
         mock_sandbox.run_code.return_value = (False, "AssertionError: verification failed")
         mock_sandbox_class.return_value = mock_sandbox
@@ -76,6 +86,7 @@ class TestAutoTrain(unittest.TestCase):
         self.assertEqual(trace, "AssertionError: verification failed")
 
     def test_auto_train_thread_init(self):
+        """Scenario: construct the training thread. Expected: topic, adapter name and config are stored unchanged."""
         topic = "binary_search"
         adapter_name = "binary_search_specialist"
         config = {
@@ -94,6 +105,7 @@ class TestAutoTrain(unittest.TestCase):
     @pytest.mark.integration
     @pytest.mark.websocket
     def test_websocket_start_auto_train_rpc(self):
+        """Scenario: call start_auto_train over a real local websocket with the subprocess mocked. Expected: the reply echoes the request id with status started."""
         if _running_under_bwrap():
             self.skipTest("Codex sandbox blocks reliable localhost WebSocket tests")
 
@@ -111,12 +123,14 @@ class TestAutoTrain(unittest.TestCase):
         if os.path.exists(manager._SSL_CERT_PATH):
             proto = "wss"
             import ssl
+            # Test-only client context that skips certificate checks for the local self-signed certificate
             ssl_context = ssl.SSLContext(ssl.PROTOCOL_TLS_CLIENT)
             ssl_context.check_hostname = False
             ssl_context.verify_mode = ssl.CERT_NONE
         uri = f"{proto}://localhost:{port}/?token={token}"
 
         async def run_client():
+            """Connect, send the start_auto_train request and assert on the reply."""
             async with websockets.connect(uri, ssl=ssl_context, close_timeout=2) as ws:
                 # Mock Popen inside websocket_server to run a dummy/no-op python command
                 with patch("subprocess.Popen") as mock_popen:
@@ -146,6 +160,7 @@ class TestAutoTrain(unittest.TestCase):
                     self.assertIn("result", resp)
                     self.assertEqual(resp["result"]["status"], "started")
 
+        # Run the async client on a private event loop and always reset the server singleton afterwards
         loop = asyncio.new_event_loop()
         try:
             loop.run_until_complete(run_client())

@@ -1,3 +1,9 @@
+# Program: karl-offline-lab - test_eval_harness.py
+# Programmer: Ethan-da-Tech-Wizard (written with Claude, an AI assistant)
+# Last Modified: 2026-11-18
+# Purpose: Tests for the evaluation harness: model and adapter selection, failure curation into training data, and timeout handling of the worker process.
+"""Tests for eval.harness.EvalHarness using scripted fake models."""
+
 import os
 import sys
 import json
@@ -5,16 +11,20 @@ import tempfile
 import shutil
 import time
 
+# Make the repository root importable
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from app.engine.model_loader import ModelLoader
 from eval.harness import EvalHarness
 
 class MockLlama:
+    """Fake model that answers based on keywords in the prompt."""
     def tokenize(self, text_bytes, add_bos=True):
+        """Fake token counter at roughly four bytes per token."""
         return [0] * (len(text_bytes) // 4 + 1)
         
     def __call__(self, prompt, **kwargs):
+        """Return a canned thinking-plus-answer completion matching the question, or an unrelated reply."""
         if "electronics" in prompt:
             return {"choices": [{"text": "<think>thinking</think>The return window is 15 days."}]}
         if "CEO of Meridian" in prompt:
@@ -23,11 +33,13 @@ class MockLlama:
 
 
 def _sleeping_eval_worker(queue, *args):
+    """Worker stand-in that sleeps past the timeout before reporting a late result."""
     time.sleep(10)
     queue.put({"ok": True, "output": "late", "latency": 10.0})
 
 
 def test_eval_harness_model_and_adapter_selection():
+    """Scenario: run two cases with an explicit model and adapter. Expected: every model load uses that model and adapter and both cases pass."""
     print("Testing EvalHarness model and adapter selection...")
     
     # Save original ModelLoader attributes to restore later
@@ -39,9 +51,11 @@ def test_eval_harness_model_and_adapter_selection():
     get_instance_calls = []
 
     def mock_get_instance(model_path=None, adapter_name=None):
+        """Record the requested model path and adapter, then return the fake model."""
         get_instance_calls.append((model_path, adapter_name))
         return mock_llama
 
+    # Swap in the fake loader; originals are restored in the finally block
     ModelLoader.get_instance = mock_get_instance
     ModelLoader.model_name = lambda: "mock-model.gguf"
     ModelLoader.n_ctx = lambda: 4096
@@ -101,6 +115,7 @@ def test_eval_harness_model_and_adapter_selection():
 
 
 def test_eval_harness_failure_curation():
+    """Scenario: a case fails. Expected: the harness records a chosen and a rejected example, and the preference export holds the pair."""
     print("Testing EvalHarness failure curation...")
     from eval.harness import EvalHarness
     from app.engine.model_loader import ModelLoader
@@ -113,13 +128,17 @@ def test_eval_harness_failure_curation():
     orig_curated_path = tc.CURATED_PATH
     
     temp_dir = tempfile.mkdtemp()
+    # Point the curated store at a temporary file
     tc.CURATED_PATH = os.path.join(temp_dir, "curated_eval_test.jsonl")
     dataset_path = os.path.join(temp_dir, "dataset.jsonl")
     
     class FailingMockLlama:
+        """Fake model that always gives a wrong answer."""
         def tokenize(self, text_bytes, add_bos=True):
+            """Fake token counter returning one token."""
             return [0]
         def __call__(self, prompt, **kwargs):
+            """Return the same wrong answer for any prompt."""
             return {"choices": [{"text": "<think>thinking</think>bad response output"}]}
             
     ModelLoader.get_instance = lambda **kwargs: FailingMockLlama()
@@ -177,6 +196,7 @@ def test_eval_harness_failure_curation():
 
 
 def test_eval_harness_process_timeout_terminates_worker():
+    """Scenario: the worker process outlives a very short timeout. Expected: a TimeoutError saying it was terminated, returned quickly (under three seconds)."""
     harness = EvalHarness()
     harness._worker_target = _sleeping_eval_worker
 

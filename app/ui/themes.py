@@ -1,10 +1,16 @@
+# Program: karl-offline-lab - themes.py
+# Programmer: Ethan-da-Tech-Wizard (written with Claude, an AI assistant)
+# Last Modified: 2026-11-18
+# Purpose: Theme palettes and the compiler that turns a palette into the application stylesheet.
 """
 Karl design system — customizable theme engine.
 Palettes are compiled dynamically into QSS.
 """
 
+# Default accent color (cyan) used when no custom accent is chosen.
 ACCENT_DEFAULT = "#00E5FF"
 
+# Named theme presets: each maps palette keys (accent, backgrounds, borders, text) to hex colors.
 THEMES = {
     "Karl Obsidian Core": {
         "description": "Default cybernetic dark navy and black interface with sharp neon cyan outlines.",
@@ -422,13 +428,16 @@ THEMES = {
     }
 }
 
+# Module-level default palette (the Obsidian Core theme).
 PALETTE = THEMES["Karl Obsidian Core"]
 
+# CSS font stack for monospace text, ordered by preference.
 MONO = (
     "'JetBrains Mono', 'Fira Code', 'Cascadia Code', "
     "'Consolas', 'Courier New', monospace"
 )
 
+# CSS font stack for interface text, ordered by preference.
 SANS = (
     "'Inter', 'Segoe UI', 'Ubuntu', 'SF Pro Display', "
     "'Helvetica Neue', 'Arial', sans-serif"
@@ -496,6 +505,7 @@ def get_theme_colors(state_or_name, custom_accent=None, bg_tone="Default", mode:
             mode = "midnight"
         tone = bg_tone
         
+    # Copy the chosen preset (falling back to Obsidian Core) so the overrides below never change the shared table.
     raw = dict(THEMES.get(theme_name, THEMES["Karl Obsidian Core"]))
 
     # Theme mode overrides
@@ -515,6 +525,7 @@ def get_theme_colors(state_or_name, custom_accent=None, bg_tone="Default", mode:
             raw["accent"] = "#FF8C00"
             raw["accent_alt"] = "#B35F00"
 
+    # A custom accent replaces the preset accent; its alternate is a darkened shade.
     if custom_accent:
         raw["accent"] = custom_accent
         raw["accent_alt"] = darken_hex_color(custom_accent, 0.7)
@@ -535,6 +546,7 @@ def get_theme_colors(state_or_name, custom_accent=None, bg_tone="Default", mode:
         raw["bg_surface"] = "#151C2C"
         raw["bg_raised"] = "#202A3E"
         
+    # Build the final palette dictionary used to fill the stylesheet template.
     p = {
         "bg_deep":     raw["bg_deep"],
         "bg_base":     raw["bg_deep"],
@@ -605,6 +617,7 @@ def get_theme_stylesheet(state_or_name, custom_accent=None, bg_tone="Default", m
     if cached is not None:
         return cached
 
+    # Resolve the palette, then add fonts and layout spacing values for the template.
     p = get_theme_colors(state_or_name, custom_accent, bg_tone, mode=theme_mode)
     p["mono"] = MONO
     p["sans"] = SANS
@@ -630,12 +643,14 @@ def get_theme_stylesheet(state_or_name, custom_accent=None, bg_tone="Default", m
     p["spacing"] = str(spacing)
     p["font_size"] = str(font_size)
 
+    # Fill the template placeholders with palette values and cache the result.
     sheet = _SHEET.format(**p)
     if len(_STYLESHEET_CACHE) >= _STYLESHEET_CACHE_MAX:
         _STYLESHEET_CACHE.clear()
     _STYLESHEET_CACHE[cache_key] = sheet
     return sheet
 
+# QSS template; doubled braces are literal CSS braces and single-brace names are filled from the palette.
 _SHEET = """\
 /* ── Reset ───────────────────────────────────────────────── */
 * {{ outline: none; }}
@@ -1289,6 +1304,7 @@ QScrollBar::add-page:horizontal, QScrollBar::sub-page:horizontal {{
 def stylesheet(accent: str = ACCENT_DEFAULT, mode: str = "midnight") -> str:
     """Backward-compatible helper returning QSS for the default theme."""
     class DummyState:
+        """Minimal stand-in state object providing the theme fields the stylesheet builder reads."""
         theme_preset = "Karl Obsidian Core"
         custom_accent = accent
         layout_preset = "Focused Workbench"

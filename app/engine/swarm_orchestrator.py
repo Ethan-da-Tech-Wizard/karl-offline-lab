@@ -1,3 +1,7 @@
+# Program: karl-offline-lab - swarm_orchestrator.py
+# Programmer: Ethan-da-Tech-Wizard (written with Claude, an AI assistant)
+# Last Modified: 2026-11-18
+# Purpose: Background thread that runs the Architect/Coder/Tester swarm loop: plans tasks, builds dependency layers, verifies and applies edits, and reports progress via Qt signals.
 """
 Swarm Orchestrator — Karl Workbench
 ====================================
@@ -59,6 +63,7 @@ def get_python_imports(content: str) -> List[str]:
 class SwarmSessionState:
     """The shared Blackboard container holding task queues and results."""
     def __init__(self, workspace_path: str, objective: str, test_command: str):
+        """Store the objective, test command, plan, per-file status, diffs and test runs for one swarm run."""
         self.workspace_path = workspace_path
         self.objective = objective
         self.test_command = test_command
@@ -129,6 +134,10 @@ def rollback_swarm_run(workspace_path: str, run_id: str | None = None) -> dict:
 
 
 class SwarmOrchestratorThread(QThread):
+    """Qt thread that drives a whole swarm run (plan, code, review, verify, write) and emits progress signals to the UI.
+
+    Live-steering inputs (guidance, overrides, pause/step) are thread-safe and may be called from the GUI thread.
+    """
     status_update = pyqtSignal(str)              # General log message
     task_plan_created = pyqtSignal(dict)          # The Architect's JSON plan
     dependency_layers_built = pyqtSignal(list)    # list[list[task]]
@@ -161,6 +170,7 @@ class SwarmOrchestratorThread(QThread):
     telemetry_update = pyqtSignal(dict)                 # {tokens_per_second, cumulative_tokens, elapsed_seconds}
 
     def __init__(self, workspace_path: str, objective: str, test_command: str, hyperparams: dict = None):
+        """Create the agents and shared state, then apply optional hyperparameters (temperature, token limits, feature toggles, timeouts)."""
         super().__init__()
         self.state = SwarmSessionState(workspace_path, objective, test_command)
         self.architect = ArchitectAgent()
@@ -226,6 +236,7 @@ class SwarmOrchestratorThread(QThread):
             self.pause_on_step = bool(hyperparams.get("pause_on_step", False))
 
     def _apply_agent_profiles(self, selected_profiles: dict[str, str]) -> None:
+        """Copy system prompts, temperature, context limits and tool permissions from the selected agent profiles onto the agents."""
         profiles = active_profile_map(selected_profiles)
         architect = profiles.get("architect", {})
         coder = profiles.get("coder", {})
@@ -249,6 +260,7 @@ class SwarmOrchestratorThread(QThread):
 
     @staticmethod
     def _tool_permissions_to_names(tools: dict) -> set[str]:
+        """Translate a profile's tool-permission flags into the set of tool names the Coder agent may call."""
         allowed: set[str] = set()
         if tools.get("read_files"):
             allowed.update({"read_file", "grep_workspace"})
@@ -273,6 +285,7 @@ class SwarmOrchestratorThread(QThread):
         self._emit_cognition("guidance_injected", filepath=filepath, message=message.strip())
 
     def _drain_guidance(self, filepath: str) -> list[str]:
+        """Remove and return any queued guidance messages for the file (empty list if none)."""
         with self._guidance_lock:
             return self._guidance.pop(filepath, [])
 
@@ -303,6 +316,7 @@ class SwarmOrchestratorThread(QThread):
             self._task_overrides[filepath] = instructions.strip()
 
     def _apply_task_override(self, task: dict) -> dict:
+        """Return the task with its instructions replaced by a pending user override, consuming the override; unchanged if none."""
         with self._guidance_lock:
             override = self._task_overrides.pop(task["filepath"], None)
         if not override:
@@ -314,6 +328,7 @@ class SwarmOrchestratorThread(QThread):
     # ── Interactive debugger: live token telemetry ──────────────────────────
 
     def _record_token_telemetry(self) -> None:
+        """Count one generated token and publish updated cumulative and per-second telemetry (thread-safe)."""
         now = time.monotonic()
         with self._telemetry_lock:
             if self._telemetry_start_time is None:
@@ -360,6 +375,7 @@ class SwarmOrchestratorThread(QThread):
         source = Path(self.state.workspace_path).resolve()
 
         def ignore(_dir: str, names: list[str]) -> set[str]:
+            """Copytree filter: return the names that should not be copied into the temporary workspace (VCS, cache and similar folders)."""
             blocked = {
                 ".git",
                 ".hg",
@@ -480,6 +496,7 @@ class SwarmOrchestratorThread(QThread):
         return str(marker)
 
     def _record_backup_manifest(self, relpath: str, backup_path: str, existed: bool) -> None:
+        """Append a backup entry to the in-memory manifest and rewrite the manifest JSON file in the backup folder."""
         self._backup_manifest.append({
             "filepath": relpath,
             "backup_path": backup_path,
@@ -518,6 +535,7 @@ class SwarmOrchestratorThread(QThread):
         history[bucket] = digest
 
     def _trigger_drift_alert(self, filepath: str, task: dict, reason: str, trace_text: str) -> None:
+        """React to a repeated failure: log a drift cognition node and, if auto-steering is on, inject corrective guidance for the file."""
         trace_lines = (trace_text or "").strip().splitlines()
         trace_snippet = trace_lines[-1].strip() if trace_lines else "unknown error"
         focus = (task.get("instructions", "") or "").strip()[:200] or f"the requirements for {filepath}"
@@ -542,11 +560,13 @@ class SwarmOrchestratorThread(QThread):
     # ── Cognitive trace graph ────────────────────────────────────────────────
 
     def _emit_cognition(self, node_type: str, **data) -> None:
+        """Record a cognition-graph node with a timestamp and emit it to the UI."""
         node = {"type": node_type, "timestamp": time.time(), **data}
         self._cognition_nodes.append(node)
         self.cognitive_node.emit(node)
 
     def _persist_cognition_graph(self) -> None:
+        """Write the collected cognition nodes to a per-run JSON log file; failures are logged and ignored."""
         try:
             out_dir = Path("data/logs/swarm_cognition")
             out_dir.mkdir(parents=True, exist_ok=True)
@@ -624,6 +644,7 @@ class SwarmOrchestratorThread(QThread):
         return max(0.05, min(1.2, round(base * factor, 3)))
 
     def _process_events_if_main_thread(self):
+        """Let Qt process pending events, but only when called from the main thread."""
         import threading
         from PyQt6.QtWidgets import QApplication
         if threading.current_thread() is threading.main_thread():
@@ -632,9 +653,11 @@ class SwarmOrchestratorThread(QThread):
                 app.processEvents()
 
     def _timed_out(self) -> bool:
+        """Return True once the run deadline has passed."""
         return self._run_deadline is not None and time.monotonic() >= self._run_deadline
 
     def request_stop(self):
+        """Ask the run to stop and wake any wait for the cherry-pick decision so the thread can exit."""
         self._stop_requested = True
         # Unblock any pending cherry-pick wait so the thread can exit cleanly.
         self._cherry_pick_event.set()
@@ -645,9 +668,14 @@ class SwarmOrchestratorThread(QThread):
         self._cherry_pick_event.set()
 
     def _workspace_root(self) -> Path:
+        """Return the resolved absolute workspace directory."""
         return Path(self.state.workspace_path).expanduser().resolve()
 
     def _resolve_task_path(self, filepath: str) -> tuple[str, Path]:
+        """Validate a task path and return (workspace-relative posix path, absolute path).
+
+        Rejects empty, absolute, parent-traversing or workspace-escaping paths with ValueError.
+        """
         if not isinstance(filepath, str) or not filepath.strip():
             raise ValueError("filepath must be a non-empty string")
 
@@ -668,6 +696,7 @@ class SwarmOrchestratorThread(QThread):
         return full_path.relative_to(root).as_posix(), full_path
 
     def _validate_task(self, task: dict[str, Any]) -> dict[str, str]:
+        """Validate one plan task (needs instructions and a safe filepath) and return a cleaned copy."""
         if not isinstance(task, dict):
             raise ValueError("task must be an object")
         if not isinstance(task.get("instructions"), str) or not task["instructions"].strip():
@@ -680,6 +709,7 @@ class SwarmOrchestratorThread(QThread):
         }
 
     def _validate_tasks(self, raw_tasks: Any) -> list[dict[str, str]]:
+        """Validate every task in the plan, rejecting non-lists and duplicate filepaths, and return the cleaned list."""
         if not isinstance(raw_tasks, list):
             raise ValueError("plan.tasks must be a list")
 
@@ -770,6 +800,10 @@ class SwarmOrchestratorThread(QThread):
         return layers
 
     def _run_layer(self, layer_tasks: list, layer_index: int, total_layers: int, layer_failure_traces: dict) -> bool:
+        """Run one dependency layer: generate candidates in parallel, review them, dry-run the edits, let the user cherry-pick, write the approved files and run the tests.
+
+        Returns True when the layer succeeded.
+        """
         self.layer_started.emit(layer_index, total_layers, layer_tasks)
         self._emit_cognition(
             "layer_started",
@@ -777,7 +811,9 @@ class SwarmOrchestratorThread(QThread):
             total_layers=total_layers,
             tasks=[t["filepath"] for t in layer_tasks],
         )
+        # Snapshot the workspace once so every task in the layer sees the same context.
         workspace_ctx = self.scan_workspace()
+        # Decide how many tasks may run in parallel for this layer.
         max_workers, worker_reason = self._compute_max_workers(len(layer_tasks))
         if self.pause_on_step:
             # Serialize execution so pause/step semantics are unambiguous —
@@ -785,15 +821,18 @@ class SwarmOrchestratorThread(QThread):
             max_workers, worker_reason = 1, "serialized: pause_on_step debugging mode active"
         self.concurrency_adjusted.emit(max_workers, worker_reason)
         self._emit_cognition("concurrency_adjusted", workers=max_workers, reason=worker_reason, layer_index=layer_index)
+        # Per-file outcome (ok flag, detail) filled in as each task finishes.
         results: dict[str, tuple[bool, str]] = {}
 
         def _finish_layer(success: bool, summary: str) -> bool:
+            """Emit the layer-finished signal and cognition node, then return the success flag."""
             self.layer_finished.emit(layer_index, success, summary)
             self._emit_cognition("layer_finished", layer_index=layer_index, success=success, summary=summary)
             self._process_events_if_main_thread()
             return success
 
         def _record_failure(filepath: str, task: dict, detail: str) -> None:
+            """Record a failure fingerprint in swarm memory for later recall; errors are logged and ignored."""
             try:
                 fp_hash = self.memory.record_failure(filepath, task.get("instructions", ""), detail)
                 self._task_failure_fps.setdefault(filepath, []).append(fp_hash)
@@ -823,6 +862,7 @@ class SwarmOrchestratorThread(QThread):
             self.task_status_changed.emit(filepath, "in_progress", f"Layer {layer_index} coding")
 
             def _tok_cb(tok: str):
+                """Forward a streamed token to the UI and update token telemetry."""
                 self.coder_token.emit(filepath, tok)
                 self._record_token_telemetry()
 
@@ -847,6 +887,7 @@ class SwarmOrchestratorThread(QThread):
                     self._emit_cognition("memory_recalled", filepath=filepath, text=memory_hint)
 
             def guidance_getter(fp=filepath):
+                """Return the guidance messages queued for the file (defaults to the enclosing task's file)."""
                 return self._drain_guidance(fp)
 
             n = self.candidates_per_task
@@ -990,6 +1031,7 @@ class SwarmOrchestratorThread(QThread):
         if not proposals:
             return _finish_layer(True, f"Layer {layer_index} had no file edits")
 
+        # Dry-run the proposed edits in a temporary copy of the workspace before touching real files.
         dry_run_passed, dry_run_trace = self._verify_proposals_in_temp_workspace(proposals, layer_index)
         if not dry_run_passed:
             self.traceback_captured.emit(f"Layer {layer_index} dry-run", dry_run_trace)
@@ -1005,6 +1047,7 @@ class SwarmOrchestratorThread(QThread):
                     logger.debug("SwarmMemory.record_failure failed (non-fatal): %s", exc)
             return _finish_layer(False, f"Layer {layer_index} dry-run verification failed")
 
+        # Reset the wait flag; the UI sets it again when the user has chosen which edits to keep.
         self._cherry_pick_event.clear()
         self._cherry_pick_selected = [p["filepath"] for p in proposals]  # default: all selected
         self._emit_cognition(
@@ -1065,6 +1108,7 @@ class SwarmOrchestratorThread(QThread):
         if write_failed:
             return _finish_layer(False, f"Layer {layer_index} had write failures")
 
+        # Run the configured test command against the real workspace after writing the approved files.
         cmd = self.state.test_command
         if cmd:
             if not self.tester_execute_sandbox:
@@ -1117,6 +1161,7 @@ class SwarmOrchestratorThread(QThread):
             return _finish_layer(True, f"Layer {layer_index} complete")
 
     def run(self):
+        """Thread entry point: plan with the Architect, build dependency layers, run each layer with retries, and emit the final result."""
         with Span("Swarm Run", {
             "workspace_path": self.state.workspace_path,
             "objective": self.state.objective,

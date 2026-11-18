@@ -1,7 +1,15 @@
+# Program: karl-offline-lab - test_streaming_parser.py
+# Programmer: Ethan-da-Tech-Wizard (written with Claude, an AI assistant)
+# Last Modified: 2026-11-18
+# Purpose: Tests StreamingThoughtParser handling of split tags, deferred answers and leaked stop tokens.
+
+"""Tests StreamingThoughtParser handling of split tags, deferred answers and leaked stop tokens."""
+
 from app.engine.streaming_parser import StreamingThoughtParser
 
 
 def test_streaming_parser_handles_split_close_tag():
+    """Scenario: streaming parser handles split close tag. Expected: the assertions in this test hold."""
     thought_tokens = []
     chat_tokens = []
     parser = StreamingThoughtParser(
@@ -22,6 +30,7 @@ def test_streaming_parser_handles_split_close_tag():
 
 
 def test_streaming_parser_can_defer_answer_after_think_close():
+    """Scenario: streaming parser can defer answer after think close. Expected: the assertions in this test hold."""
     thought_tokens = []
     chat_tokens = []
     parser = StreamingThoughtParser(
@@ -44,6 +53,7 @@ def test_streaming_parser_can_defer_answer_after_think_close():
 
 
 def test_streaming_parser_detects_adapter_think_block_after_chat_prefix():
+    """Scenario: streaming parser detects adapter think block after chat prefix. Expected: the assertions in this test hold."""
     thought_tokens = []
     chat_tokens = []
     parser = StreamingThoughtParser(

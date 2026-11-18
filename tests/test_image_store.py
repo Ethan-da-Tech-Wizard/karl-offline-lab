@@ -1,6 +1,13 @@
+# Program: karl-offline-lab - test_image_store.py
+# Programmer: Ethan-da-Tech-Wizard (written with Claude, an AI assistant)
+# Last Modified: 2026-11-18
+# Purpose: Tests for the vision image store: saving, importing, analysis updates and metadata corrections.
+"""Tests for app.vision.image_store.ImageStore."""
+
 import os
 import sys
 
+# Make the repository root importable
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from PyQt6.QtGui import QColor, QImage
@@ -10,12 +17,14 @@ from app.vision.image_store import ImageStore
 
 
 def _sample_image(width=80, height=48):
+    """Create a small solid-colour image for tests."""
     image = QImage(width, height, QImage.Format.Format_RGB32)
     image.fill(QColor("#00C2FF"))
     return image
 
 
 def test_save_qimage_creates_record_and_files(tmp_path):
+    """Scenario: save an in-memory image. Expected: a record with id, size, type and hash, three files on disk, and it can be loaded back."""
     store = ImageStore(base_dir=str(tmp_path / "images"))
     record = store.save_qimage(_sample_image(), source="test")
 
@@ -35,6 +44,7 @@ def test_save_qimage_creates_record_and_files(tmp_path):
 
 
 def test_import_file_copies_image(tmp_path):
+    """Scenario: import a PNG from disk. Expected: the record has the right size and points at a copy, not the source."""
     source = tmp_path / "source.png"
     assert _sample_image(32, 24).save(str(source), "PNG")
 
@@ -48,6 +58,7 @@ def test_import_file_copies_image(tmp_path):
 
 
 def test_update_analysis_round_trip(tmp_path):
+    """Scenario: update kind and tags. Expected: the returned record and the stored one both show them."""
     store = ImageStore(base_dir=str(tmp_path / "images"))
     record = store.save_qimage(_sample_image(), source="test")
 
@@ -59,6 +70,7 @@ def test_update_analysis_round_trip(tmp_path):
 
 
 def test_update_analysis_accepts_ocr_dict(tmp_path):
+    """Scenario: update with OCR results as a dict. Expected: text, confidence and engine are stored."""
     store = ImageStore(base_dir=str(tmp_path / "images"))
     record = store.save_qimage(_sample_image(), source="test")
     ocr = OcrResult(engine="tesseract", text="NameError at line 3", confidence=0.9)
@@ -71,6 +83,7 @@ def test_update_analysis_accepts_ocr_dict(tmp_path):
 
 
 def test_image_metadata_and_corrections_round_trip(tmp_path):
+    """Scenario: update metadata and save OCR and caption corrections. Expected: the reloaded record shows all of them."""
     store = ImageStore(base_dir=str(tmp_path / "images"))
     record = store.save_qimage(_sample_image(), source="test")
 

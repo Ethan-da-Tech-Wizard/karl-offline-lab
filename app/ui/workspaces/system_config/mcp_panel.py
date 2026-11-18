@@ -1,3 +1,9 @@
+# Program: karl-offline-lab - mcp_panel.py
+# Programmer: Ethan-da-Tech-Wizard (written with Claude, an AI assistant)
+# Last Modified: 2026-11-18
+# Purpose: Settings mixin that builds the MCP tab for listing, adding, removing and restarting MCP server configurations.
+"""Settings mixin that builds the MCP tab for listing, adding, removing and restarting MCP server configurations."""
+
 from __future__ import annotations
 
 import logging
@@ -13,7 +19,9 @@ from .common import _section
 logger = logging.getLogger("karl.system_config")
 
 class McpPanelMixin:
+    """Mixin providing the MCP servers tab and its add, remove, refresh and restart actions."""
     def _build_mcp_tab(self) -> QWidget:
+        """Build and return the MCP tab widget with the server list and add/remove/restart controls."""
         w = QWidget()
         layout = QVBoxLayout(w)
         layout.setContentsMargins(12, 12, 12, 12)
@@ -78,6 +86,7 @@ class McpPanelMixin:
 
 
     def _refresh_mcp_display(self):
+        """Reload the MCP config and show each server and its command in the list view."""
         cfg = config_store.get_mcp_config()
         servers = cfg.get("mcpServers", {})
         if not servers:
@@ -96,6 +105,7 @@ class McpPanelMixin:
 
 
     def _add_mcp_server(self):
+        """Read the name and command inputs, save a new MCP server and refresh the list; warns if either is empty."""
         name = self._mcp_name_input.text().strip()
         cmd_raw = self._mcp_cmd_input.text().strip()
         if not name or not cmd_raw:
@@ -110,6 +120,7 @@ class McpPanelMixin:
     
 
     def _remove_mcp_server(self):
+        """Ask for a server name, remove it from the saved MCP config and refresh the list."""
         name, ok = QInputDialog.getText(self, "Remove MCP Server", "Server name to remove:")
         if ok and name.strip():
             from app.engine import config_store
@@ -118,6 +129,7 @@ class McpPanelMixin:
     
 
     def _restart_mcp_client(self):
+        """Reset and restart the MCP client manager, clear its cache and report success or failure."""
         try:
             from app.engine.mcp_client import MCPClientManager
             MCPClientManager.reset_instance()

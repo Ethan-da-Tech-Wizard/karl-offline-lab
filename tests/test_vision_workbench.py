@@ -1,3 +1,8 @@
+# Program: karl-offline-lab - test_vision_workbench.py
+# Programmer: Ethan-da-Tech-Wizard (written with Claude, an AI assistant)
+# Last Modified: 2026-11-18
+# Purpose: Tests for the vision workbench workspace listing saved images and saving metadata, OCR text and caption corrections.
+"""Tests for the vision workbench library listing and correction saving."""
 import os
 import sys
 
@@ -11,7 +16,11 @@ from app.ui.workspaces.vision_workbench import VisionWorkbench
 
 
 def test_vision_workbench_lists_saved_images(tmp_path):
+    """Scenario: an image is saved to a temporary image store and the workspace refreshes.
+    Expected: the image id appears in the library list.
+    """
     state = AppState()
+    # Point the image store at a temporary directory so real images are untouched.
     state.image_store = state.image_store.__class__(base_dir=str(tmp_path / "images"))
 
     image = QImage(40, 30, QImage.Format.Format_RGB32)
@@ -29,6 +38,9 @@ def test_vision_workbench_lists_saved_images(tmp_path):
 
 
 def test_vision_workbench_saves_metadata_and_corrections(tmp_path):
+    """Scenario: kind, tags, OCR text and caption are edited and saved.
+    Expected: the stored record has the new kind, tags, OCR text and caption.
+    """
     state = AppState()
     state.image_store = state.image_store.__class__(base_dir=str(tmp_path / "images"))
 
@@ -37,6 +49,7 @@ def test_vision_workbench_saves_metadata_and_corrections(tmp_path):
     record = state.image_store.save_qimage(image, source="test")
 
     workspace = VisionWorkbench(state)
+    # Select the saved record and show it in the form.
     workspace._selected_id = record.id
     workspace._render_record(record)
 

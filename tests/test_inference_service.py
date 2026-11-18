@@ -1,3 +1,8 @@
+# Program: karl-offline-lab - test_inference_service.py
+# Programmer: Ethan-da-Tech-Wizard (written with Claude, an AI assistant)
+# Last Modified: 2026-11-18
+# Purpose: Tests InferenceService thread selection (single-shot vs agentic), callback routing and thread lifecycle using fake Qt threads.
+
 """
 Tests for InferenceService — thread selection, callback routing, and lifecycle.
 
@@ -38,11 +43,13 @@ class _FakeLLMThread(QThread):
     DIAGS = {"generation_tokens": 2}
 
     def __init__(self, **kwargs):
+        """Initialise this helper object with its starting state."""
         super().__init__()
         self.init_kwargs = kwargs
         self._should_error = kwargs.pop("_should_error", False)
 
     def run(self):
+        """Run the fake thread body in place of real work."""
         if self._should_error:
             self.error_occurred.emit("boom")
             return
@@ -72,12 +79,14 @@ class _FakeAgenticThread(QThread):
     RESPONSE = "agentic response"
 
     def __init__(self, **kwargs):
+        """Initialise this helper object with its starting state."""
         super().__init__()
         self.init_kwargs = kwargs
         # Simulate what AgenticThread stores after running
         self.chat_history = [{"role": "assistant", "content": self.RESPONSE}]
 
     def run(self):
+        """Run the fake thread body in place of real work."""
         self.new_chat_token.emit(self.RESPONSE)
         self.loop_finished.emit(1)
 
@@ -113,7 +122,9 @@ def test_single_shot_creates_llm_thread(service, monkeypatch):
     _OrigFake = svc_mod.LLMThread
 
     class _Spy(_OrigFake):
+        """Test group or helper class: spy."""
         def __init__(self, **kw):
+            """Initialise this helper object with its starting state."""
             created.append(type(self).__name__)
             super().__init__(**kw)
 
@@ -137,7 +148,9 @@ def test_agentic_flag_creates_agentic_thread(service, monkeypatch):
     _OrigFake = svc_mod.AgenticThread
 
     class _Spy(_OrigFake):
+        """Test group or helper class: spy."""
         def __init__(self, **kw):
+            """Initialise this helper object with its starting state."""
             created.append(type(self).__name__)
             super().__init__(**kw)
 
@@ -162,7 +175,9 @@ def test_hyperparams_agentic_flag_selects_agentic_thread(service, monkeypatch):
     _OrigFake = svc_mod.AgenticThread
 
     class _Spy(_OrigFake):
+        """Test group or helper class: spy."""
         def __init__(self, **kw):
+            """Initialise this helper object with its starting state."""
             created.append(type(self).__name__)
             super().__init__(**kw)
 
@@ -186,7 +201,9 @@ def test_agentic_thread_receives_model_name_override(service, monkeypatch):
     _OrigFake = svc_mod.AgenticThread
 
     class _Spy(_OrigFake):
+        """Test group or helper class: spy."""
         def __init__(self, **kw):
+            """Initialise this helper object with its starting state."""
             created_kwargs.append(kw)
             super().__init__(**kw)
 
@@ -247,6 +264,7 @@ def test_on_finished_cb_called_with_normalised_args_for_llm(service):
     finished: list[tuple] = []
 
     def _cb(thought, response, diagnostics):
+        """Test helper: cb."""
         finished.append((thought, response, diagnostics))
 
     t = service.run_generation(
@@ -271,6 +289,7 @@ def test_on_finished_cb_called_for_agentic_thread(service):
     finished: list[tuple] = []
 
     def _cb(thought, response, diagnostics):
+        """Test helper: cb."""
         finished.append((thought, response, diagnostics))
 
     t = service.run_generation(
@@ -295,7 +314,9 @@ def test_on_error_cb_called_on_error(service, monkeypatch):
     import app.engine.inference_service as svc_mod
 
     class _ErrorThread(_FakeLLMThread):
+        """Test group or helper class: error thread."""
         def run(self):
+            """Run the fake thread body in place of real work."""
             self.error_occurred.emit("boom")
 
     monkeypatch.setattr(svc_mod, "LLMThread", _ErrorThread)
@@ -336,9 +357,11 @@ def test_thread_added_to_active_set_while_running(service):
     captured_mid_run: list[bool] = []
 
     class _TrackThread(_FakeLLMThread):
+        """Test group or helper class: track thread."""
         def run(self):
             # Called on worker thread; DirectConnection means discard() will also
             # run on the worker thread (via finished signal) before wait() returns.
+            """Run the fake thread body in place of real work."""
             captured_mid_run.append(self in service._active_threads)
             super().run()
 

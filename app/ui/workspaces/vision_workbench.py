@@ -1,3 +1,8 @@
+# Program: karl-offline-lab - vision_workbench.py
+# Programmer: Ethan-da-Tech-Wizard (written with Claude, an AI assistant)
+# Last Modified: 2026-11-18
+# Purpose: Qt workspace for browsing saved images, running local OCR and vision-model analysis on them, editing metadata and corrections, and sending images to the Workbench.
+"""Vision Workbench workspace: image library, analysis and correction tools."""
 from __future__ import annotations
 
 from pathlib import Path
@@ -27,18 +32,22 @@ from app.vision.vision_model_loader import VisionModelLoader, installed_vision_m
 
 
 class VisionWorkbench(QWidget):
+    """Workspace with an image library, preview, analysis controls and editable OCR, caption and metadata fields."""
     def __init__(self, state, parent=None):
+        """Store state, set up selection and thread tracking, build the UI and load the library."""
         super().__init__(parent)
         self.state = state
         self.setObjectName("workspace-root")
         self._records = []
         self._selected_id = ""
         self._active_threads = set()
+        # True when vision analysis cannot run (no backend or no complete model pair); OCR-only still works.
         self._vision_analysis_blocked = False
         self._build_ui()
         self.refresh()
 
     def _build_ui(self):
+        """Create the three-pane layout: library list, preview with actions, and a scrollable analysis and editing panel."""
         root = QVBoxLayout(self)
         root.setContentsMargins(12, 12, 12, 12)
         root.setSpacing(10)
@@ -68,6 +77,7 @@ class VisionWorkbench(QWidget):
         tl.addWidget(self._rerun_analysis_btn)
         root.addWidget(title_row)
 
+        # Three panes: library, preview, details.
         splitter = QSplitter(Qt.Orientation.Horizontal)
         splitter.setHandleWidth(1)
 
@@ -138,6 +148,7 @@ class VisionWorkbench(QWidget):
         self._vision_status.setWordWrap(True)
         apl.addWidget(self._vision_status)
 
+        # Analysis mode: OCR plus vision, OCR only, or vision only.
         self._mode_combo = QComboBox()
         self._mode_combo.addItem("OCR + Vision", "ocr_vision")
         self._mode_combo.addItem("OCR Only", "ocr_only")
@@ -166,6 +177,7 @@ class VisionWorkbench(QWidget):
         apl.addWidget(self._registry_label)
         rl.addWidget(analysis_panel)
 
+        # Editable image classification and tags.
         self._kind_combo = QComboBox()
         for kind in ("unknown", "code_screenshot", "error", "document", "diagram", "ui_mockup", "photo"):
             self._kind_combo.addItem(kind.replace("_", " ").title(), kind)
@@ -183,6 +195,7 @@ class VisionWorkbench(QWidget):
         ml.addWidget(self._save_meta_btn)
         rl.addWidget(meta_row)
 
+        # Editable so OCR mistakes can be corrected and saved.
         self._ocr = QTextEdit()
         self._ocr.setReadOnly(False)
         self._ocr.setPlaceholderText("OCR text will appear here after analysis. Edit and save corrections here.")
@@ -229,8 +242,10 @@ class VisionWorkbench(QWidget):
         self._update_vision_status()
 
     def refresh(self):
+        """Reload recent images from the store, keep the current selection where possible and update the list."""
         self._records = self.state.image_store.list_recent(limit=500)
         current = self._selected_id
+        # Block selection signals while the list is rebuilt, then restore the previous selection.
         self._library.blockSignals(True)
         self._library.clear()
         selected_item = None
@@ -251,6 +266,7 @@ class VisionWorkbench(QWidget):
             self._clear_details()
 
     def _on_selected(self, current, _previous):
+        """Show details for the newly selected library item, or clear them when nothing is selected."""
         if not current:
             self._clear_details()
             return
@@ -259,6 +275,8 @@ class VisionWorkbench(QWidget):
         self._render_record(self.state.image_store.get(image_id))
 
     def _render_record(self, record):
+        # Scale the preview to the label while keeping the aspect ratio.
+        """Show the image preview, metadata summary and saved OCR and caption text for a record."""
         pix = QPixmap(record.original_path)
         if not pix.isNull():
             scaled = pix.scaled(
@@ -291,6 +309,7 @@ class VisionWorkbench(QWidget):
         self._update_vision_status()
 
     def _clear_details(self):
+        """Reset the preview and all detail fields to the empty state."""
         self._selected_id = ""
         self._preview.setText("No image selected.")
         self._preview.setPixmap(QPixmap())
@@ -302,11 +321,13 @@ class VisionWorkbench(QWidget):
         self._update_vision_status()
 
     def _selected_record(self):
+        """Return the selected image record, or None when nothing is selected."""
         if not self._selected_id:
             return None
         return self.state.image_store.get(self._selected_id)
 
     def _import_image(self):
+        """Import an image file chosen by the user and analyse it."""
         path, _ = QFileDialog.getOpenFileName(
             self,
             "Import image into Karl Vision",
@@ -325,24 +346,29 @@ class VisionWorkbench(QWidget):
         self._run_analysis()
 
     def _open_file(self):
+        """Open the selected image in the system default viewer."""
         record = self._selected_record()
         if record:
             QDesktopServices.openUrl(QUrl.fromLocalFile(str(Path(record.original_path).resolve())))
 
     def _send_to_workbench(self):
+        """Switch to the Workbench and attach the selected image to its composer."""
         record = self._selected_record()
         if not record:
             return
+        # Workspace index 0 is the Workbench; then ask it to attach the image.
         self.state.change_workspace_requested.emit(0)
         self.state.attach_image_to_workbench.emit(record.id)
         QMessageBox.information(self, "Image Sent", "Image attached to the Workbench composer.")
 
     def _run_analysis(self):
+        """Start a background OCR and/or vision analysis of the selected image in the chosen mode."""
         record = self._selected_record()
         if not record:
             return
         self._update_vision_status()
         mode = self._mode_combo.currentData() or "ocr_vision"
+        # Vision modes need a working vision model; OCR-only is always allowed.
         if mode != "ocr_only" and self._vision_analysis_blocked:
             QMessageBox.warning(
                 self,
@@ -352,6 +378,7 @@ class VisionWorkbench(QWidget):
             return
         prompt = self._analysis_prompt.toPlainText().strip() or None
         self._meta.setText(self._meta.text() + f"\nAnalysis: running ({mode})")
+        # Analysis runs on a worker thread; its signals update the UI as results arrive.
         thread = ImageAnalysisThread(self.state.image_store, record.id, mode=mode, prompt=prompt)
         thread.progress.connect(self._on_analysis_progress)
         thread.ocr_done.connect(self._on_ocr_done)
@@ -364,28 +391,34 @@ class VisionWorkbench(QWidget):
         thread.start()
 
     def _on_analysis_progress(self, msg: str):
+        """Append a progress message to the metadata summary."""
         if self._selected_id:
             self._meta.setText(self._meta.text() + f"\nAnalysis: {msg}")
 
     def _on_ocr_done(self, image_id: str, ocr):
+        """Show the OCR text if the analysed image is still selected."""
         if image_id == self._selected_id:
             self._ocr.setPlainText(ocr.text or "(OCR unavailable or no text detected.)")
 
     def _on_vision_done(self, image_id: str, vision):
+        """Show the caption if the analysed image is still selected and refresh the status."""
         if image_id == self._selected_id:
             self._caption.setPlainText(vision.caption or "")
             self._update_vision_status()
 
     def _on_analysis_done(self, image_id: str, _record):
+        """Re-render the record if still selected and refresh the library."""
         if image_id == self._selected_id:
             self._render_record(self.state.image_store.get(image_id))
         self.refresh()
 
     def _on_analysis_error(self, msg: str):
+        """Warn the user that analysis failed and refresh the status."""
         QMessageBox.warning(self, "Image Analysis Failed", msg)
         self._update_vision_status()
 
     def _save_metadata(self):
+        """Save the chosen kind and parsed tags for the selected image."""
         record = self._selected_record()
         if not record:
             return
@@ -399,6 +432,7 @@ class VisionWorkbench(QWidget):
         self.refresh()
 
     def _save_ocr_correction(self):
+        """Save the edited OCR text for the selected image."""
         record = self._selected_record()
         if not record:
             return
@@ -407,6 +441,7 @@ class VisionWorkbench(QWidget):
         self.refresh()
 
     def _save_caption_correction(self):
+        """Save the edited caption for the selected image."""
         record = self._selected_record()
         if not record:
             return
@@ -415,6 +450,7 @@ class VisionWorkbench(QWidget):
         self.refresh()
 
     def _update_vision_status(self):
+        """Refresh the runtime status, installed model list and warning, and decide whether vision analysis is blocked."""
         status = VisionModelLoader.status()
         backend = "ready" if status["backend_available"] else "blocked"
         active = status.get("active_name") or "none"
@@ -426,6 +462,7 @@ class VisionWorkbench(QWidget):
             lines.append(status["last_error"])
         self._vision_status.setText("\n".join(lines))
 
+        # A model counts as installed only when both the model and projector files exist.
         rows = installed_vision_models()
         installed = [
             row["name"]
@@ -441,6 +478,7 @@ class VisionWorkbench(QWidget):
             registry += f"\nRegistry entries waiting for local files: {missing_count}"
         self._registry_label.setText(registry)
 
+        # Build the warning: blocked when there is no backend or no installed pair, informational when a pair is installed but not loaded.
         needs_warning = False
         blocks_analysis = False
         warning_lines = []

@@ -1,3 +1,8 @@
+# Program: karl-offline-lab - test_vision_model_loader.py
+# Programmer: Ethan-da-Tech-Wizard (written with Claude, an AI assistant)
+# Last Modified: 2026-11-18
+# Purpose: Tests that the vision model registry can be read and that installed vision model rows report file paths and install state.
+"""Tests for reading the vision model registry and reporting installed models."""
 import os
 import sys
 
@@ -7,6 +12,9 @@ from app.vision.vision_model_loader import installed_vision_models, read_vision_
 
 
 def test_vision_registry_is_readable():
+    """Scenario: the registry is read.
+    Expected: it has entries, each with an id and model and projector file names ending in .gguf.
+    """
     entries = read_vision_registry()
 
     assert entries
@@ -16,6 +24,9 @@ def test_vision_registry_is_readable():
 
 
 def test_installed_vision_models_reports_paths_and_install_state():
+    """Scenario: installed vision models are listed.
+    Expected: rows exist and each includes model and projector paths and their installed flags.
+    """
     rows = installed_vision_models()
 
     assert rows

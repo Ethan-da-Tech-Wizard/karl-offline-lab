@@ -1,4 +1,8 @@
 #!/usr/bin/env python3
+# Program: karl-offline-lab - auto_train.py
+# Programmer: Ethan-da-Tech-Wizard (written with Claude, an AI assistant)
+# Last Modified: 2026-11-18
+# Purpose: Command-line pipeline that generates tasks with the local model, solves and verifies them in a sandbox, trains a LoRA adapter on the verified examples, and converts it to GGUF.
 """
 Karl One-Click Auto-Train Pipeline
 ==================================
@@ -36,6 +40,7 @@ logger = logging.getLogger("karl.auto_train")
 _SAFE_ADAPTER_NAME_RE = re.compile(r"^[A-Za-z0-9_\-]{1,64}$")
 
 # Project paths
+# The repository root is the folder that holds this script.
 ROOT_DIR = Path(__file__).resolve().parent
 QUEUE_DIR = ROOT_DIR / "data" / "flywheel" / "queue"
 EXECUTION_DIR = ROOT_DIR / "data" / "flywheel" / "execution"
@@ -48,6 +53,7 @@ for d in [QUEUE_DIR, EXECUTION_DIR, TRAINING_DIR, ADAPTERS_DIR, HF_MODELS_DIR]:
     d.mkdir(parents=True, exist_ok=True)
 
 # Add ROOT_DIR to path for internal imports
+# Put the repository root first on the import path so app/core/data packages resolve when run as a script.
 sys.path.insert(0, str(ROOT_DIR))
 
 try:
@@ -90,6 +96,7 @@ Example:
 Return ONLY the raw JSON list starting with [ and ending with ]. Do not include any reasoning, markdown blocks, or other text outside the JSON list.
 """
     # Instruct model to reason first
+    # Ending the prompt with an open think tag makes the model begin with its reasoning.
     prompt = f"User: {meta_prompt}\nAssistant: <think>\n"
 
     try:
@@ -104,6 +111,7 @@ Return ONLY the raw JSON list starting with [ and ending with ]. Do not include 
             text = chunk["choices"][0]["text"]
             output_chunks.append(text)
             
+        # Join the streamed text pieces into one string.
         full_output = "".join(output_chunks)
         _, response = parse_thought_stream(full_output, start_in_thought=True)
 
@@ -192,9 +200,11 @@ def verify_solution(task: dict, solution: str) -> tuple[bool, str]:
     if not script:
         return False, "No verification script found."
 
+    # Run untrusted generated code under CPU-time and memory limits.
     sandbox = SafePythonSandbox(cpu_timeout_sec=5.0, memory_limit_mb=256)
     test_code = (
         "import sys as _sys, json as _json\n"
+        # The solution is JSON-encoded twice so it embeds safely as a string literal in the generated test code.
         f"_resp = _json.loads({json.dumps(json.dumps(solution))})\n"
         "try:\n"
         "    _result = verify(_resp)\n"
@@ -203,6 +213,7 @@ def verify_solution(task: dict, solution: str) -> tuple[bool, str]:
         "    print('verify() raised:', _e, file=_sys.stderr)\n"
         "    _sys.exit(2)\n"
     )
+    # The verifier exits 0 on pass, 1 on fail and 2 if verify() raised; the trace text is used for self-correction.
     passed, trace = sandbox.run_code(script, test_code)
     return passed, trace
 
@@ -263,6 +274,7 @@ def train_adapter(dataset_path: str, base_model_path: str, adapter_name: str, ar
     if tokenizer.pad_token is None:
         tokenizer.pad_token = tokenizer.eos_token
 
+    # Use half precision only when a GPU is present; CPU training stays in float32.
     torch_dtype = torch.float16 if torch.cuda.is_available() else torch.float32
     device_map = {"": 0} if torch.cuda.is_available() else "auto"
 
@@ -286,6 +298,7 @@ def train_adapter(dataset_path: str, base_model_path: str, adapter_name: str, ar
             device_map=device_map
         )
 
+    # LoRA trains small adapter matrices on the attention and MLP projection layers instead of the full model.
     lora_config = LoraConfig(
         r=args.rank,
         lora_alpha=args.alpha,
@@ -324,6 +337,7 @@ def train_adapter(dataset_path: str, base_model_path: str, adapter_name: str, ar
     )
 
     logger.info("SFT Trainer started. Training for %d epochs...", args.epochs)
+    # Run the fine-tuning loop.
     trainer.train()
 
     # Save
@@ -353,6 +367,7 @@ def convert_adapter_to_gguf(base_model_path: str, adapter_name: str):
         str(adapter_path)
     ]
     
+    # Run the converter in a separate process so its errors can be captured and reported.
     res = subprocess.run(cmd, capture_output=True, text=True)
     if res.returncode != 0:
         logger.error("GGUF Conversion failed: %s", res.stderr)
@@ -362,6 +377,7 @@ def convert_adapter_to_gguf(base_model_path: str, adapter_name: str):
 
 
 def main():
+    """Parse arguments, run the generate/solve/verify/train/convert pipeline, and exit non-zero on fatal problems."""
     # This script is spawned as an independent subprocess (e.g. from the
     # start_auto_train WebSocket RPC), so main.py's startup privilege check
     # does not cover it — assert it separately. Sandbox resource limits in
@@ -463,6 +479,7 @@ def main():
 
     # 5. Run SFT Trainer
     logger.info("Releasing GPU VRAM from active GGUF inference engine...")
+    # Free the inference model so its memory is available to the trainer.
     ModelLoader.reset_instance()
     train_adapter(str(dataset_file), base_model, args.adapter_name, args)
 

@@ -1,3 +1,7 @@
+# Program: karl-offline-lab - workspace.py
+# Programmer: Ethan-da-Tech-Wizard (written with Claude, an AI assistant)
+# Last Modified: 2026-11-18
+# Purpose: Main Workbench workspace: chat view, model and agent selection, session tree and branching, prompt composer, streaming generation with feedback and curation, and dockable sessions, reasoning and context panels.
 """
 Workbench — primary interaction space.
 
@@ -53,16 +57,19 @@ from core.default_prompts import DEFAULT_SYSTEM_PROMPT
 from app.engine import config_store
 
 
+# ----- Module setup -----
 logger = logging.getLogger("karl.workbench")
 
 
 def _hline() -> QFrame:
+    """Return a horizontal divider line."""
     f = QFrame()
     f.setFrameShape(QFrame.Shape.HLine)
     return f
 
 
 def _label(text: str, obj: str = "") -> QLabel:
+    """Return a QLabel with the given text and an optional object name for styling."""
     lbl = QLabel(text)
     if obj:
         lbl.setObjectName(obj)
@@ -109,6 +116,7 @@ class WorkbenchWorkspace(QMainWindow):
         self.state = state
         self.setObjectName("workspace-root")
 
+        # Core collaborators: the inference service and the conversation tree.
         self._inference_service = InferenceService(state)
         self.chat_history = SessionTree()
         self._thread = None
@@ -116,6 +124,7 @@ class WorkbenchWorkspace(QMainWindow):
         self._model_load_thread = None
         self._last_response = ""
         self._last_thought = ""
+        # Live sampling settings, edited from the Control Center.
         self._hyperparams = {
             "temperature": 0.3,
             "top_p": 0.95,
@@ -129,6 +138,7 @@ class WorkbenchWorkspace(QMainWindow):
         self._current_session_file: str | None = None
         self._session_id: str | None = None
         self._autosave_timer = QTimer(self)
+        # Autosave the current session every 30 seconds.
         self._autosave_timer.setInterval(30_000)  # 30s
         self._autosave_timer.timeout.connect(self._autosave_session)
         self._autosave_timer.start()
@@ -138,6 +148,7 @@ class WorkbenchWorkspace(QMainWindow):
         self._image_threads = set()
 
         # Connect decoupled AppState communication signals
+        # Other workspaces talk to the Workbench through shared state signals.
         self.state.append_to_workbench_input.connect(self.append_to_input)
         self.state.replace_workbench_input.connect(self.replace_input)
         self.state.attach_image_to_workbench.connect(self.attach_existing_image)
@@ -172,6 +183,7 @@ class WorkbenchWorkspace(QMainWindow):
         self._refresh_model_combo()
         self._update_expert_strip()
         self._update_token_budget()
+        # Apply the responsive layout once the event loop starts.
         QTimer.singleShot(0, lambda: self._apply_responsive_layout(self.width()))
 
         # Hot-reload global signals
@@ -216,6 +228,7 @@ class WorkbenchWorkspace(QMainWindow):
         self.addDockWidget(Qt.DockWidgetArea.LeftDockWidgetArea, self._sessions_dock)
         self.splitDockWidget(self._sessions_dock, self._reasoning_dock, Qt.Orientation.Horizontal)
         self.resizeDocks([self._sessions_dock, self._reasoning_dock], [200, 280], Qt.Orientation.Horizontal)
+        # Both docks start hidden and are shown from the toolbar.
         self._sessions_dock.hide()
         self._reasoning_dock.hide()
 
@@ -226,6 +239,7 @@ class WorkbenchWorkspace(QMainWindow):
         self._populate_hud_toolbar()
 
     def _build_sessions_panel(self) -> QWidget:
+        """Build the left tab set with the searchable Sessions list and the Branches tree."""
         tabs = QTabWidget()
         tabs.setObjectName("left-tabs")
         tabs.setTabPosition(QTabWidget.TabPosition.North)
@@ -252,6 +266,7 @@ class WorkbenchWorkspace(QMainWindow):
         sl.addWidget(self._sessions_list, 1)
         tabs.addTab(sessions_tab, "Sessions")
         
+        # Branch tree of the conversation.
         # Tab 2: Branches
 
         branches_tab = QWidget()
@@ -276,6 +291,7 @@ class WorkbenchWorkspace(QMainWindow):
         return tabs
 
     def _build_reasoning_panel(self) -> QWidget:
+        """Build the tracing panel that shows live reasoning tokens and a stats label."""
         self._reasoning_panel_container = TracingPanel(self.state, self)
         self._reasoning_panel_container.setObjectName("panel")
         accent = get_theme_colors(self.state).get("accent", "#00C2FF")
@@ -300,6 +316,7 @@ class WorkbenchWorkspace(QMainWindow):
         return self._reasoning_panel_container
 
     def _build_chat_panel(self) -> QWidget:
+        """Build the central column: expert strip, command header, HUD toolbar, chat view, status bars and the prompt composer with its controls."""
         w = QWidget()
         layout = QVBoxLayout(w)
         layout.setContentsMargins(0, 0, 0, 0)
@@ -413,6 +430,7 @@ class WorkbenchWorkspace(QMainWindow):
         self._workflow_combo.setMinimumWidth(116)
         self._workflow_combo.setMaximumWidth(150)
         self._workflow_combo.setToolTip("Active prompt generation workflow template")
+        # Fill the workflow drop-down from the available workflow templates.
         for name, label in list_workflows():
             self._workflow_combo.addItem(label, name)
         # Select "general_chat" by default
@@ -425,6 +443,7 @@ class WorkbenchWorkspace(QMainWindow):
         self._agent_combo.setMinimumWidth(96)
         self._agent_combo.setMaximumWidth(120)
         self._agent_combo.setToolTip("Select Karl's active workbench agent profile")
+        # Agent profiles; a star marks a profile with a user override.
         for key, data in AGENT_PROFILES.items():
             label = data["label"]
             if is_overridden(key):
@@ -492,6 +511,7 @@ class WorkbenchWorkspace(QMainWindow):
         self._send_btn.setObjectName("btn-primary")
         self._send_btn.setFixedWidth(86)
         self._send_btn.setToolTip("Send prompt to Karl (Ctrl+Enter)")
+        # Send submits the prompt; Stop interrupts a running generation.
         self._send_btn.clicked.connect(self._send)
         self._send_btn.setAccessibleName("Send Prompt")
         self._send_btn.setAccessibleDescription("Submit the text in the prompt input field to Karl")
@@ -504,6 +524,7 @@ class WorkbenchWorkspace(QMainWindow):
 
 
     def _build_command_header(self) -> QWidget:
+        """Build the header with model selection and loading controls and the agent, theme and accent controls."""
         header = QFrame()
         header.setObjectName("panel")
         root = QVBoxLayout(header)
@@ -599,6 +620,7 @@ class WorkbenchWorkspace(QMainWindow):
 
 
     def _build_settings_overlay(self):
+        """Build the slide-in Control Center with model, sampling parameters and feedback or session actions."""
         self._settings_overlay = QFrame(self._chat_panel)
         self._settings_overlay.setObjectName("settings-overlay")
         self._settings_overlay.setVisible(False)
@@ -712,6 +734,7 @@ class WorkbenchWorkspace(QMainWindow):
         layout.addStretch()
 
     def _toggle_settings_overlay(self):
+        """Slide the settings overlay in or out of view (instantly when reduced motion is on)."""
         if not hasattr(self, "_settings_overlay") or self._settings_overlay is None:
             self._build_settings_overlay()
             
@@ -725,6 +748,7 @@ class WorkbenchWorkspace(QMainWindow):
             parent_height = self._chat_panel.height()
             overlay_width = min(300, max(240, parent_width - 24))
             
+            # The overlay slides in from the right edge of the chat panel.
             start_rect = QRect(parent_width, 0, overlay_width, parent_height)
             end_rect = QRect(parent_width - overlay_width, 0, overlay_width, parent_height)
             
@@ -760,6 +784,8 @@ class WorkbenchWorkspace(QMainWindow):
         self._update_hud_btn_styles()
 
     def _responsive_mode_for_width(self, width: int) -> str:
+        # Width breakpoints for the four layout modes.
+        """Map the window width to a layout mode: single, focus, compact or full."""
         if width < 850:
             return "single"
         if width < 1100:
@@ -769,10 +795,12 @@ class WorkbenchWorkspace(QMainWindow):
         return "full"
 
     def _set_button_text_width(self, button: QPushButton, text: str, width: int) -> None:
+        """Set a button label and fixed width together."""
         button.setText(text)
         button.setFixedWidth(width)
 
     def _apply_responsive_layout(self, width: int) -> None:
+        """Show, hide and resize controls to suit the layout mode for the given width."""
         if width <= 0 or not hasattr(self, "_input_container"):
             return
 
@@ -812,6 +840,7 @@ class WorkbenchWorkspace(QMainWindow):
         self._header_load_model_btn.setText("Load" if is_focus else "Load Model")
         self._header_agent_combo.setMaximumWidth(130 if is_focus else 160)
 
+        # Smaller layouts get a shorter composer.
         composer_h = 104 if is_single else 112 if is_focus else 118 if is_compact else 124
         input_h = 48 if is_single else 52 if is_focus else 56 if is_compact else 58
         self._input_container.setFixedHeight(composer_h)
@@ -841,6 +870,7 @@ class WorkbenchWorkspace(QMainWindow):
         self._update_hud_btn_styles()
 
     def _setup_glow_effects(self):
+        """Attach a drop-shadow effect to the sessions dock, reasoning dock and chat panel."""
         self._sessions_shadow = QGraphicsDropShadowEffect(self)
         self._sessions_shadow.setBlurRadius(15)
         self._sessions_shadow.setXOffset(0)
@@ -860,6 +890,7 @@ class WorkbenchWorkspace(QMainWindow):
         self._chat_panel.setGraphicsEffect(self._chat_shadow)
 
     def _update_glow_pulse(self):
+        """Timer step that pulses the glow colour and radius according to the model state (generating, error or idle)."""
         if getattr(self.state, "reduced_motion", False):
             self._glow_val = 0.7
         else:
@@ -898,6 +929,7 @@ class WorkbenchWorkspace(QMainWindow):
     # Chat animations disabled to prevent rendering blocks on Linux
 
     def _populate_hud_toolbar(self):
+        """Fill the HUD toolbar with toggle buttons for the docks, RAG sources, context bar and settings, plus show/hide-all and help buttons."""
         tb = self._hud_toolbar
         tbl = QHBoxLayout(tb)
         tbl.setContentsMargins(10, 4, 10, 4)
@@ -907,6 +939,7 @@ class WorkbenchWorkspace(QMainWindow):
         lbl.setStyleSheet("font-size: 8pt; font-weight: bold; color: #6A7B95; letter-spacing: 1.5px;")
         tbl.addWidget(lbl)
         
+        # Each HUD button toggles one panel and mirrors its visibility.
         self._hud_sessions_btn = QPushButton("Sessions")
         self._hud_sessions_btn.setObjectName("hud-btn")
         self._hud_sessions_btn.setCheckable(True)
@@ -963,11 +996,13 @@ class WorkbenchWorkspace(QMainWindow):
         self._update_hud_btn_styles()
 
     def _toggle_rag_hud(self):
+        """Show or hide the RAG sources view."""
         visible = not self._rag_sources_view.isVisible()
         self._rag_sources_view.setVisible(visible)
         self._update_hud_btn_styles()
 
     def _toggle_context_hud(self):
+        """Show or hide the context bar and token row together."""
         visible = not self._context_bar.isVisible()
         self._context_bar.setVisible(visible)
         if hasattr(self, "_token_row"):
@@ -975,6 +1010,7 @@ class WorkbenchWorkspace(QMainWindow):
         self._update_hud_btn_styles()
 
     def _update_hud_btn_styles(self):
+        """Sync each HUD button's checked and active state with the visibility of its panel."""
         for btn, val in [
             (getattr(self, "_hud_sessions_btn", None), self._sessions_dock.isVisible()),
             (getattr(self, "_hud_reasoning_btn", None), self._reasoning_dock.isVisible()),
@@ -991,6 +1027,7 @@ class WorkbenchWorkspace(QMainWindow):
                 btn.blockSignals(False)
 
     def _toggle_all_huds(self):
+        """Hide every HUD panel if any is visible, otherwise show them all, and update the master button text."""
         any_visible = (
             self._sessions_dock.isVisible() or
             self._reasoning_dock.isVisible() or
@@ -1016,6 +1053,7 @@ class WorkbenchWorkspace(QMainWindow):
             self._hud_master_btn.setText("Show All HUDs")
 
     def resizeEvent(self, event):
+        """Apply the responsive layout for the new width and keep an open settings overlay docked to the right edge."""
         super().resizeEvent(event)
         self._apply_responsive_layout(event.size().width())
         if hasattr(self, "_settings_overlay") and self._settings_overlay and self._settings_overlay.isVisible():
@@ -1025,6 +1063,7 @@ class WorkbenchWorkspace(QMainWindow):
             self._settings_overlay.setGeometry(parent_width - overlay_width, 0, overlay_width, parent_height)
 
     def update_model_state(self, state: str):
+        """Store the model state (idle, generating, error) as a style property, restyle widgets and refresh the glow."""
         self.setProperty("modelState", state)
         self.style().unpolish(self)
         self.style().polish(self)
@@ -1037,6 +1076,7 @@ class WorkbenchWorkspace(QMainWindow):
         self._update_glow_pulse()
 
     def _connect_shortcuts(self):
+        """Register keyboard shortcuts and create the shortcuts help overlay."""
         sc = QShortcut(QKeySequence("Ctrl+Return"), self)
         sc.activated.connect(self._send)
 
@@ -1057,9 +1097,11 @@ class WorkbenchWorkspace(QMainWindow):
         self._chat_panel.installEventFilter(self._shortcuts_overlay)
 
     def _toggle_shortcuts_overlay(self):
+        """Show or hide the keyboard shortcuts overlay."""
         self._shortcuts_overlay.toggle()
 
     def eventFilter(self, obj, event):
+        """Intercept paste in the input box so a clipboard image is attached instead of pasted as text."""
         if obj is getattr(self, "_input", None) and event.type() == QEvent.Type.KeyPress:
             if event.matches(QKeySequence.StandardKey.Paste) and self._clipboard_has_image():
                 self._attach_clipboard_image()
@@ -1069,6 +1111,7 @@ class WorkbenchWorkspace(QMainWindow):
     # ── actions ───────────────────────────────────────────────────────────────
 
     def _send(self):
+        """Handle the Send action: apply a pending correction, or build the prompt with attachments and optional RAG context and start generation (single or agentic loop)."""
         text = self._input.toPlainText().strip()
         if not text or self._thread is not None:
             return
@@ -1082,6 +1125,7 @@ class WorkbenchWorkspace(QMainWindow):
 
             self._input.clear()
 
+            # A pending correction replaces the last assistant reply, saves it as a corrected training example and updates the trace log; no new generation is started.
             # Update the last assistant message in history
             if self.chat_history:
                 self.chat_history.update_current_node_content(text)
@@ -1116,6 +1160,7 @@ class WorkbenchWorkspace(QMainWindow):
 
         attachments = list(self._pending_image_attachments)
         self._pending_image_attachments = []
+        # The model sees image details in its prompt; the chat history keeps only the user's own text.
         prompt_text = self._build_image_prompt_context(text, attachments) if attachments else text
         user_node = self.chat_history.add_message("user", text, attachments=attachments)
         self._update_token_budget()
@@ -1127,6 +1172,7 @@ class WorkbenchWorkspace(QMainWindow):
                 "content": prompt_text,
             }
 
+        # Optional RAG: retrieve context chunks from the main and code knowledge bases.
         chunks = []
         if self._rag_check.isChecked():
             top_k = getattr(self.state, "rag_top_k", 3)
@@ -1141,6 +1187,7 @@ class WorkbenchWorkspace(QMainWindow):
                 retrieved_metadata.extend(self.state.codex_rag.retrieve_with_metadata(prompt_text, top_k=top_k, threshold=threshold, mode=rag_mode))
                 
             # Sort combined results by distance (lower distance = closer match)
+            # Merge results from both sources, closest first, then keep only the top_k.
             retrieved_metadata.sort(key=lambda x: x.get("distance", 999.0))
             # Slice down to requested top_k limit
             retrieved_metadata = retrieved_metadata[:top_k]
@@ -1157,17 +1204,20 @@ class WorkbenchWorkspace(QMainWindow):
                         chunk_text = header + chunk_text
                     chunks.append(chunk_text)
 
+        # Loop mode runs the agentic loop; otherwise a single generation.
         if self._loop_check.isChecked():
             self._start_agentic(chunks)
         else:
             self._start_single(chunks)
 
     def _clipboard_has_image(self) -> bool:
+        """Return True if the clipboard currently holds an image."""
         clipboard = QApplication.clipboard()
         mime = clipboard.mimeData()
         return mime.hasImage()
 
     def _attach_clipboard_image(self):
+        """Save the clipboard image to the image store, queue it as an attachment and start its analysis."""
         clipboard = QApplication.clipboard()
         image = clipboard.image()
         if image.isNull():
@@ -1194,6 +1244,7 @@ class WorkbenchWorkspace(QMainWindow):
         self._start_image_analysis(record.id)
 
     def attach_existing_image(self, image_id: str):
+        """Attach an image already saved in the image store to the next message."""
         try:
             record = self.state.image_store.get(image_id)
         except Exception as exc:
@@ -1213,6 +1264,7 @@ class WorkbenchWorkspace(QMainWindow):
         )
 
     def _start_image_analysis(self, image_id: str):
+        """Run OCR and vision analysis for an image on a worker thread and wire the status callbacks."""
         thread = ImageAnalysisThread(self.state.image_store, image_id)
         thread.progress.connect(lambda msg, iid=image_id: self._on_image_analysis_progress(iid, msg))
         thread.ocr_done.connect(self._on_image_ocr_done)
@@ -1225,12 +1277,14 @@ class WorkbenchWorkspace(QMainWindow):
         thread.start()
 
     def _on_image_analysis_progress(self, image_id: str, msg: str):
+        """Record a progress message on the matching attachment and show it as a system note."""
         for attachment in self._pending_image_attachments:
             if attachment.get("id") == image_id:
                 attachment["ocr_status"] = msg
         self._chat_view.append_system_note(f"image {image_id[:8]}: {msg}")
 
     def _on_image_ocr_done(self, image_id: str, ocr):
+        """Mark the attachment's OCR as ready and report the character count and confidence."""
         for attachment in self._pending_image_attachments:
             if attachment.get("id") == image_id:
                 attachment["ocr_status"] = "ready"
@@ -1242,6 +1296,7 @@ class WorkbenchWorkspace(QMainWindow):
         )
 
     def _on_image_vision_done(self, image_id: str, vision):
+        """Mark the attachment's vision analysis as ready and show a short caption note."""
         for attachment in self._pending_image_attachments:
             if attachment.get("id") == image_id:
                 attachment["analysis_status"] = "ready"
@@ -1252,11 +1307,13 @@ class WorkbenchWorkspace(QMainWindow):
             self._chat_view.append_system_note(f"image {image_id[:8]}: vision analysis ready - {short}")
 
     def _on_image_analysis_done(self, image_id: str, _record):
+        """Mark the attachment's analysis as complete."""
         for attachment in self._pending_image_attachments:
             if attachment.get("id") == image_id:
                 attachment["analysis_status"] = "ready"
 
     def _on_image_analysis_error(self, image_id: str, msg: str):
+        """Mark the attachment as failed and show the error."""
         for attachment in self._pending_image_attachments:
             if attachment.get("id") == image_id:
                 attachment["analysis_status"] = "error"
@@ -1264,6 +1321,7 @@ class WorkbenchWorkspace(QMainWindow):
         self._chat_view.append_system_note(f"image {image_id[:8]} analysis error: {msg}")
 
     def _build_image_prompt_context(self, text: str, attachments: list[dict]) -> str:
+        """Prepend text blocks describing each attached image (metadata, OCR, vision summary) to the user's question."""
         blocks = []
         for attachment in attachments:
             if attachment.get("type") != "image":
@@ -1299,9 +1357,11 @@ class WorkbenchWorkspace(QMainWindow):
         return "\n\n".join(blocks + ["[User Question]", text])
 
     def _current_workflow(self) -> str:
+        """Return the selected workflow name, defaulting to general_chat."""
         return self._workflow_combo.currentData() or "general_chat"
 
     def _current_template(self) -> str:
+        """Return the prompt template of the selected workflow, falling back to a minimal reasoning template."""
         from core.workflows import get_workflow
         try:
             return get_workflow(self._current_workflow())["template"]
@@ -1317,6 +1377,7 @@ class WorkbenchWorkspace(QMainWindow):
         used = getattr(self, '_last_context_used', 0)
         rag = getattr(self, '_last_rag_tokens', 0)
         hist = getattr(self, '_last_hist_tokens', 0)
+        # Colour the bar by usage: yellow from 80% and red from 92%.
         pct = int((used / max(budget, 1)) * 100)
     
         self._context_bar.setValue(pct)
@@ -1332,10 +1393,12 @@ class WorkbenchWorkspace(QMainWindow):
         )
 
     def _on_reload_success(self, label: str):
+        """Show a toast confirming that a hot-reloaded module loaded successfully."""
         toast = ToastOverlay(self, f"⟳ {label} reloaded successfully")
         toast.show_toast()
 
     def _on_reload_failed(self, label: str, tb_str: str):
+        """Report a failed hot reload with its traceback (log only under tests); the last stable script keeps running."""
         if QApplication.instance() and QApplication.instance().property("is_test"):
             logger.warning(f"Hot-Reload Failed in test: {label}\n{tb_str}")
             return
@@ -1347,6 +1410,7 @@ class WorkbenchWorkspace(QMainWindow):
         msg.setDetailedText(tb_str)
         msg.setStandardButtons(QMessageBox.StandardButton.Ok)
         
+        # Build the dialog style from the active theme colours.
         # Style the dialog to match Karl's theme
         colors = get_theme_colors(self.state)
         msg.setStyleSheet(f"""
@@ -1365,11 +1429,13 @@ class WorkbenchWorkspace(QMainWindow):
         msg.exec()
 
     def _show_reload_notice(self, module_name: str):
+        """Show the reload banner for 3 seconds."""
         self._reload_notice.setText(f"⟳ {module_name} reloaded")
         self._reload_notice.setVisible(True)
         self._reload_hide_timer.start(3000)
 
     def _start_single(self, chunks: list[str]):
+        """Start a single (non-looping) generation and wire its signals to the chat and reasoning views."""
         set_correlation_id(f"chat:{new_correlation_id()}")
         self._chat_view.begin_stream()
         self._set_busy(True)
@@ -1393,9 +1459,11 @@ class WorkbenchWorkspace(QMainWindow):
                 template=self._current_template(),
                 adapter_name=self.state.adapter_name,
             )
+        # The circuit breaker is open after repeated failures: report the reason instead of starting.
         except CircuitBreakerOpenException as exc:
             self._on_error(str(exc))
             return
+        # The first copy belongs to single generation; the agentic loop below connects its own signals.
         # UI-specific signals not covered by the standard callback set
         t.generation_finished.connect(self._on_done)
         t.reload_notice.connect(self._show_reload_notice)
@@ -1405,6 +1473,7 @@ class WorkbenchWorkspace(QMainWindow):
         self._thread = t
 
     def _start_agentic(self, chunks: list[str]):
+        """Start an iterative agentic generation loop and wire its signals."""
         set_correlation_id(f"agentic:{new_correlation_id()}")
         self._set_busy(True)
         self._reasoning_stats_lbl.setText("")
@@ -1440,23 +1509,28 @@ class WorkbenchWorkspace(QMainWindow):
         self._thread = t
 
     def _stop(self):
+        """Ask the running generation thread to stop."""
         if self._thread:
             if hasattr(self._thread, "request_stop"):
                 self._thread.request_stop()
 
     def _toggle_reasoning(self):
+        """Show or hide the reasoning dock."""
         visible = self._reasoning_dock.isVisible()
         self._reasoning_dock.setVisible(not visible)
 
     def _toggle_sessions(self):
+        """Show or hide the sessions dock."""
         visible = self._sessions_dock.isVisible()
         self._sessions_dock.setVisible(not visible)
 
     def _on_max_tokens_changed(self, value: int):
+        """Store the new max-token setting and refresh the token budget display."""
         self._hyperparams["max_tokens"] = value
         self._update_token_budget()
 
     def _on_agent_selected(self, *_args):
+        """Switch the agent profile from the composer drop-down and mirror it in the header drop-down."""
         self._agent_profile = self._agent_combo.currentData() or "karl"
         if hasattr(self, "_header_agent_combo"):
             idx = self._header_agent_combo.findData(self._agent_profile)
@@ -1467,6 +1541,7 @@ class WorkbenchWorkspace(QMainWindow):
         self._update_expert_strip()
 
     def _on_header_agent_selected(self, *_args):
+        """Switch the agent profile from the header drop-down and mirror it in the composer drop-down."""
         self._agent_profile = self._header_agent_combo.currentData() or "karl"
         if hasattr(self, "_agent_combo"):
             idx = self._agent_combo.findData(self._agent_profile)
@@ -1543,9 +1618,11 @@ class WorkbenchWorkspace(QMainWindow):
         btn_row.addWidget(buttons)
         dl.addLayout(btn_row)
 
+        # A dict lets the nested handler change the flag.
         did_reset = {"value": False}
 
         def _do_reset():
+            """Flag that the user chose Reset to Default and close the dialog."""
             did_reset["value"] = True
             dialog.accept()
 
@@ -1566,10 +1643,12 @@ class WorkbenchWorkspace(QMainWindow):
         self._refresh_agent_combo_labels()
 
     def _pick_header_accent(self):
+        """Open a colour picker and apply the chosen accent colour to the whole app theme."""
         from app.ui.themes import THEMES
         from PyQt6.QtWidgets import QApplication
         from app.ui.themes import get_theme_stylesheet
 
+        # Start the picker from the current accent, or the theme's accent when none is set.
         default_color = self.state.custom_accent
         if not default_color:
             theme_name = getattr(self.state, "theme_preset", "Karl Obsidian Core")
@@ -1583,6 +1662,7 @@ class WorkbenchWorkspace(QMainWindow):
         self.appearance_requested.emit()
 
     def _active_system_prompt(self) -> str:
+        """Return the system prompt with the active agent profile's extra instructions appended."""
         profile = AGENT_PROFILES.get(self._agent_profile, AGENT_PROFILES["karl"])
         profile_prompt = profile.get("prompt", "").strip()
         if not profile_prompt:
@@ -1590,14 +1670,17 @@ class WorkbenchWorkspace(QMainWindow):
         return f"{self._system_prompt}\n\n{profile_prompt}"
 
     def showEvent(self, event):
+        """Refresh the model drop-downs whenever the workspace is shown."""
         super().showEvent(event)
         self._refresh_model_combo()
 
     def _is_adapter_compatible(self, model_filename: str, adapter_name: str) -> bool:
+        """Return whether an adapter is compatible with a model file, via the config store."""
         from app.engine import config_store
         return config_store.is_adapter_compatible(model_filename, adapter_name)
 
     def _refresh_model_combo(self):
+        """Rebuild both model drop-downs from the installed models and adapters and select the active combination."""
         entries = self._model_selection_entries()
 
         for combo in (getattr(self, "_model_combo", None), getattr(self, "_header_model_combo", None)):
@@ -1625,6 +1708,7 @@ class WorkbenchWorkspace(QMainWindow):
         self._update_header_model_status()
 
     def _select_model_combo_value(self, combo: QComboBox, active_model: str | None, active_adapter: str | None):
+        """Select the entry matching the active model and adapter, else the model without an adapter, else the first entry."""
         found = False
         for idx in range(combo.count()):
             d = combo.itemData(idx)
@@ -1643,6 +1727,7 @@ class WorkbenchWorkspace(QMainWindow):
             combo.setCurrentIndex(0)
 
     def _model_selection_entries(self) -> list[dict]:
+        """Build one entry per installed GGUF model, plus one per compatible adapter, with labels, tooltips and data."""
         import os
         from app.engine import config_store
 
@@ -1691,6 +1776,7 @@ class WorkbenchWorkspace(QMainWindow):
         return entries
 
     def _model_file_size_label(self, filename: str) -> str:
+        """Return a model file's size in GB as text, or unknown size."""
         import os
         path = os.path.join("data", "models", filename)
         try:
@@ -1699,6 +1785,7 @@ class WorkbenchWorkspace(QMainWindow):
             return "unknown size"
 
     def _model_registry_detail(self, filename: str, meta: dict, size: str) -> str:
+        """Return a one-line description (file, size, tier, context, RAM, active marker) of a model."""
         tier = meta.get("tier")
         n_ctx = meta.get("n_ctx")
         ram = meta.get("min_ram_gb")
@@ -1714,6 +1801,7 @@ class WorkbenchWorkspace(QMainWindow):
         return " · ".join(bits)
 
     def _model_tooltip(self, filename: str, meta: dict, size: str, adapter: str | None) -> str:
+        """Return multi-line tooltip text describing a model, its adapter and registry details."""
         lines = [
             f"File: {filename}",
             f"Size: {size}",
@@ -1729,17 +1817,21 @@ class WorkbenchWorkspace(QMainWindow):
         return "\n".join(lines)
 
     def _on_model_selected(self, index: int):
+        """Load the model and adapter chosen in the Control Center drop-down."""
         data = self._model_combo.itemData(index)
         self._load_model_selection(data)
 
     def _on_header_model_staged(self, *_args):
+        """Update the status text to show that a model is selected but not yet loaded."""
         self._update_header_model_status(staged=True)
 
     def _load_header_selected_model(self):
+        """Load the model chosen in the header drop-down."""
         data = self._header_model_combo.currentData()
         self._load_model_selection(data)
 
     def _reload_active_model(self):
+        """Force a reload of the currently active model and adapter."""
         if not self.state.model_name:
             self._chat_view.append_system_note("No active model is selected.")
             return
@@ -1751,6 +1843,7 @@ class WorkbenchWorkspace(QMainWindow):
         })
 
     def _load_model_selection(self, data: dict | None):
+        """Start loading the selected model and adapter on a background thread, refusing while inference or another load is running."""
         if not isinstance(data, dict):
             return
             
@@ -1773,6 +1866,7 @@ class WorkbenchWorkspace(QMainWindow):
             return
 
         self._set_busy(True)
+        # Disable the model controls while the load runs.
         swap_controls = [
             c for c in (
                 getattr(self, "_model_combo", None),
@@ -1786,12 +1880,15 @@ class WorkbenchWorkspace(QMainWindow):
         self.status_changed.emit(loading_text, True)
 
         from app.engine.model_load_thread import ModelLoadThread
+        # Load the model on a worker thread; the callbacks below update the UI.
         thread = ModelLoadThread(
             os.path.join("data", "models", filename),
             adapter_name=adapter_name,
         )
 
+        # Success handler.
         def on_loaded(loaded_filename: str, loaded_adapter: str | None, _draft_filename):
+            """Record the newly loaded model and adapter in state, notify listeners and refresh the UI."""
             self.state.model_name = loaded_filename
             self.state.adapter_name = loaded_adapter
             self.model_changed.emit(loaded_filename)
@@ -1803,10 +1900,12 @@ class WorkbenchWorkspace(QMainWindow):
             self._chat_view.append_system_note(note)
 
         def on_error(msg: str):
+            """Show the load error in the chat and in the header status."""
             self._chat_view.append_system_note(f"[Error switching model: {msg}]")
             self._update_header_model_status(error=msg)
 
         def on_finished():
+            """Re-enable the model controls and clear the busy state once the load thread ends."""
             for control in swap_controls:
                 control.setEnabled(True)
             self._set_busy(False)
@@ -1824,6 +1923,7 @@ class WorkbenchWorkspace(QMainWindow):
         thread.start()
 
     def _update_model_pill(self):
+        """Update the model pill text with the active model and adapter."""
         model = self.state.model_name or "no model"
         adapter = self.state.adapter_name
         if adapter:
@@ -1833,6 +1933,7 @@ class WorkbenchWorkspace(QMainWindow):
         self._update_header_model_status()
 
     def _update_header_model_status(self, staged: bool = False, error: str | None = None):
+        """Show the active or staged model, adapter and context size (or an error) in the header, elided to fit."""
         if not hasattr(self, "_header_model_status"):
             return
         from app.engine.model_loader import ModelLoader
@@ -1854,6 +1955,7 @@ class WorkbenchWorkspace(QMainWindow):
             prefix = "Staged" if staged else "Active"
             full_text = f"{prefix}: {model} · adapter {adapter} · ctx {n_ctx}"
             self._header_model_status.setStyleSheet(f"color: {accent}; font-weight: bold;")
+        # Elide long text and put the full text in the tooltip.
         metrics = QFontMetrics(self._header_model_status.font())
         elided = metrics.elidedText(
             full_text, Qt.TextElideMode.ElideRight, self._header_model_status.maximumWidth()
@@ -1862,6 +1964,7 @@ class WorkbenchWorkspace(QMainWindow):
         self._header_model_status.setToolTip(full_text if elided != full_text else "")
 
     def _autosave_session(self):
+        """Timer callback that saves the current conversation when it has at least two messages."""
         if not self.chat_history or len(self.chat_history) < 2:
             return
         try:
@@ -1875,12 +1978,14 @@ class WorkbenchWorkspace(QMainWindow):
             logger.warning(f"Autosave failed: {e}")
 
     def _load_session(self, path: str):
+        """Load a saved session file, rebuild the chat view and branch tree and restore feedback button states."""
         try:
             tree, session_id = SessionTree.load(path)
             self.chat_history = tree
             self._session_id = session_id
             self._current_session_file = path
             
+            # Show the messages on the active branch only.
             # Rebuild the chat view from the loaded tree
             self._chat_view.clear_display()
             active_path = self.chat_history.get_active_path()
@@ -1914,6 +2019,7 @@ class WorkbenchWorkspace(QMainWindow):
             QMessageBox.critical(self, "Load Error", f"Could not load session: {e}")
 
     def _new_session(self):
+        """Save the current conversation, then reset all conversation state for a fresh session."""
         self._autosave_session()
         self.chat_history = SessionTree()
         self._session_id = None
@@ -1940,6 +2046,7 @@ class WorkbenchWorkspace(QMainWindow):
         self._update_token_budget()
 
     def _on_context_stats(self, total: int, hist: int, rag: int, budget: int):
+        """Store token usage figures from the generation thread, update the budget bar and re-emit them."""
         self._last_context_used = total
         self._last_hist_tokens  = hist
         self._last_rag_tokens   = rag
@@ -1947,6 +2054,7 @@ class WorkbenchWorkspace(QMainWindow):
         self.context_stats.emit(total, hist, rag, budget)
     
     def _on_rag_context_used(self, chunks: list):
+        """Show up to five retrieved RAG chunks (source, distance, preview) in the sources view, or hide it when none were used."""
         if not hasattr(self, '_rag_sources_view'):
             return
         if not chunks:
@@ -1973,6 +2081,7 @@ class WorkbenchWorkspace(QMainWindow):
     # ── thread slots ──────────────────────────────────────────────────────────
 
     def _on_thought(self, token: str):
+        """Append a reasoning token to the reasoning view."""
         cursor = self._reasoning_view.textCursor()
         cursor.movePosition(QTextCursor.MoveOperation.End)
         cursor.insertText(token)
@@ -1980,15 +2089,19 @@ class WorkbenchWorkspace(QMainWindow):
         self._reasoning_view.ensureCursorVisible()
 
     def _on_chat(self, token: str):
+        """Append a reply token to the chat view, starting the stream if needed."""
         if not self._chat_view._streaming:
             self._chat_view.begin_stream()
         self._chat_view.append_token(token)
 
     def _on_live_stats(self, count: int, speed: float):
+        """Show the live token count and speed."""
         self._reasoning_stats_lbl.setText(f"({count} tokens · {speed:.1f} t/s)")
 
     def _on_done(self, thought: str, response: str, truncated: bool, _ended_in_thought: bool, diagnostics: dict | None = None):
+        """Finish a single generation: store the reply and its reasoning, show diagnostics, enable feedback buttons and save the session."""
         self._reasoning_stats_lbl.setText("")
+        # Store the reply in the session tree together with its reasoning.
         node = self.chat_history.add_message("assistant", response)
         node.thought = thought
         self._chat_view.finalize_stream(node.id)
@@ -2007,6 +2120,7 @@ class WorkbenchWorkspace(QMainWindow):
         self._set_busy(False)
         self._is_correcting = False
         self._correct_btn.setText("✎ correct")
+        # Reset the feedback buttons' labels and enable them for the new reply.
         self._thumb_btn.setText("✓ good")
         self._thumb_down_btn.setText("✗ bad")
         self._thumb_btn.setEnabled(True)
@@ -2018,6 +2132,7 @@ class WorkbenchWorkspace(QMainWindow):
         self._update_token_budget()
 
     def _on_iteration(self, index: int, _thought: str, response: str, diagnostics: dict | None = None):
+        """Note the end of one agentic loop iteration with its timing."""
         self._reasoning_stats_lbl.setText("")
         self._chat_view.finalize_stream()
         diag_suffix = ""
@@ -2028,11 +2143,13 @@ class WorkbenchWorkspace(QMainWindow):
         self._update_token_budget()
 
     def _on_loop_done(self, total: int):
+        """Finish an agentic loop: keep the final assistant reply in history, refresh the views and save the session."""
         self._reasoning_stats_lbl.setText("")
         self._chat_view.finalize_stream()
         if self._thread and hasattr(self._thread, "chat_history"):
             thread_history = self._thread.chat_history
             original_len = len(self.chat_history)
+            # Only messages added by the loop are new; keep the final assistant reply.
             new_msgs = thread_history[original_len:]
             assistant_msgs = [
                 msg for msg in new_msgs
@@ -2044,6 +2161,7 @@ class WorkbenchWorkspace(QMainWindow):
                 self._last_response = final_msg["content"]
                 self._last_thought = getattr(self, "_last_thought", "")
             
+            # Rebuild the display from the tree so every message carries its node id.
             # Refresh ChatView to ensure all messages have correct node_ids
             self._chat_view.clear_display()
             active_path = self.chat_history.get_active_path()
@@ -2059,6 +2177,7 @@ class WorkbenchWorkspace(QMainWindow):
         self._update_token_budget()
 
     def _on_error(self, msg: str):
+        """Show a generation error in the chat and put the workspace into the error state."""
         self._reasoning_stats_lbl.setText("")
         self._chat_view.finalize_stream()
         self._chat_view.append_system_note(f"error: {msg}")
@@ -2070,6 +2189,7 @@ class WorkbenchWorkspace(QMainWindow):
     # ── feedback ──────────────────────────────────────────────────────────────
 
     def _on_thumb_up(self):
+        """Save the last reply as a positive training example and log the feedback."""
         if self._last_response:
             prompt = self.chat_history[-2]["content"] if len(self.chat_history) >= 2 else ""
             self.state.curator.save_example(
@@ -2084,6 +2204,7 @@ class WorkbenchWorkspace(QMainWindow):
             self._thumb_down_btn.setEnabled(False)
 
     def _on_thumb_down(self):
+        """Save the last reply as a negative training example and log the feedback."""
         if self._last_response:
             prompt = self.chat_history[-2]["content"] if len(self.chat_history) >= 2 else ""
             self.state.curator.save_example(
@@ -2098,6 +2219,7 @@ class WorkbenchWorkspace(QMainWindow):
             self._thumb_down_btn.setEnabled(False)
 
     def _on_correct(self):
+        """Put the last reply in the input box for editing; the next Send saves it as a correction."""
         self._correct_btn.setText("editing...")
         self._correct_btn.setEnabled(False)
         self._is_correcting = True
@@ -2107,6 +2229,7 @@ class WorkbenchWorkspace(QMainWindow):
     # ── helpers ───────────────────────────────────────────────────────────────
 
     def _save_current_session(self):
+        """Save the current conversation (when it has at least two messages) and refresh the session list."""
         if not self.chat_history or len(self.chat_history) < 2:
             return
         try:
@@ -2121,6 +2244,7 @@ class WorkbenchWorkspace(QMainWindow):
 
 
     def _refresh_sessions(self):
+        """Reload the sessions list, reselect the current session and re-apply the search filter."""
         if not hasattr(self, '_sessions_list'):
             return
         self._sessions_list.blockSignals(True)
@@ -2144,6 +2268,7 @@ class WorkbenchWorkspace(QMainWindow):
 
 
     def _on_session_clicked(self, current, previous):
+        """Save the current session and load the one the user selected."""
         if not current:
             return
         path = current.data(Qt.ItemDataRole.UserRole)
@@ -2154,11 +2279,13 @@ class WorkbenchWorkspace(QMainWindow):
         self._load_session(path)
 
     def on_close(self):
+        """Save the session and wait for any model load thread before closing."""
         self._save_current_session()
         if self._model_load_thread is not None and self._model_load_thread.isRunning():
             self._model_load_thread.wait()
 
     def update_theme(self):
+        """Re-apply theme colours to the chat view, toggles, accent indicators and icons."""
         theme_colors = get_theme_colors(self.state)
         self._chat_view.set_theme(theme_colors)
         
@@ -2198,6 +2325,7 @@ class WorkbenchWorkspace(QMainWindow):
             self._new_session_btn.setIconSize(icon_size)
 
     def _set_busy(self, busy: bool):
+        """Enable or disable the send, stop and input controls and report the generating or idle state."""
         self._send_btn.setEnabled(not busy)
         self._stop_btn.setEnabled(busy)
         self._input.setEnabled(not busy)
@@ -2208,12 +2336,14 @@ class WorkbenchWorkspace(QMainWindow):
         self.update_model_state("generating" if busy else "idle")
 
     def _on_chat_link_clicked(self, url):
+        """Handle a branch link in the chat by moving the branch cursor to that message."""
         link = url.toString()
         if link.startswith("branch:"):
             node_id = link.split(":", 1)[1]
             self._branch_from_node(node_id)
 
     def _branch_from_node(self, node_id):
+        """Move the conversation cursor to a message so the next prompt forks from it, then redraw the chat."""
         if not self.chat_history:
             return
         if not self.chat_history.set_current_node(node_id):
@@ -2250,6 +2380,7 @@ class WorkbenchWorkspace(QMainWindow):
         self._save_current_session()
 
     def _populate_branches_tree(self):
+        """Rebuild the branch tree and its statistics label from the session tree."""
         self._branches_tree.blockSignals(True)
         self._branches_tree.clear()
         if not self.chat_history:
@@ -2268,6 +2399,7 @@ class WorkbenchWorkspace(QMainWindow):
             )
         
         def _add_node(session_node, parent_item):
+            """Recursively add a session node and its children to the tree widget."""
             snippet = session_node.content
             import re
             snippet = re.sub(r"<think>.*?</think>", "", snippet, flags=re.DOTALL).strip()
@@ -2304,6 +2436,7 @@ class WorkbenchWorkspace(QMainWindow):
         self._branches_tree.blockSignals(False)
 
     def _on_branch_clicked(self, item, column):
+        """Move the branch cursor to the clicked tree node unless it is already current."""
         node_id = item.data(0, Qt.ItemDataRole.UserRole)
         if not node_id:
             return
@@ -2312,6 +2445,7 @@ class WorkbenchWorkspace(QMainWindow):
         self._branch_from_node(node_id)
 
     def _branch_from_selected_tree_item(self):
+        """Move the branch cursor to the node selected in the tree."""
         item = self._branches_tree.currentItem()
         if not item:
             return
@@ -2322,6 +2456,7 @@ class WorkbenchWorkspace(QMainWindow):
     # ── Expert Control Strip ──────────────────────────────────────────────────
 
     def _build_expert_strip(self) -> QWidget:
+        """Build the thin status strip showing session, branch, model, RAG, loop and agent, with a collapse button."""
         strip = QFrame()
         strip.setObjectName("expert-strip")
         strip.setStyleSheet(
@@ -2368,6 +2503,7 @@ class WorkbenchWorkspace(QMainWindow):
         
         layout.addStretch()
         
+        # Start collapsed: the toggle runs once after construction.
         # Add a small collapse button
         self._collapse_strip_btn = QPushButton("▲ collapse")
         self._collapse_strip_btn.setObjectName("btn-ghost")
@@ -2381,6 +2517,7 @@ class WorkbenchWorkspace(QMainWindow):
         return strip
 
     def _toggle_expert_strip(self):
+        """Collapse or expand the strip, hiding everything except the session label when collapsed."""
         is_collapsed = self._strip_branch_lbl.isHidden()
         self._strip_branch_lbl.setHidden(not is_collapsed)
         self._strip_model_lbl.setHidden(not is_collapsed)
@@ -2400,6 +2537,7 @@ class WorkbenchWorkspace(QMainWindow):
 
     def _update_expert_strip(self):
         # Session
+        """Refresh every field of the strip from the current session, model, RAG, loop and agent settings."""
         fname = self._current_session_file or "new_session"
         self._strip_session_lbl.setText(f"Session: {fname}")
         
@@ -2437,12 +2575,14 @@ class WorkbenchWorkspace(QMainWindow):
     # ── Sessions Upgrades ─────────────────────────────────────────────────────
 
     def _filter_sessions(self, text):
+        """Hide session list items whose text does not contain the search text."""
         query = text.strip().lower()
         for idx in range(self._sessions_list.count()):
             item = self._sessions_list.item(idx)
             item.setHidden(query not in item.text().lower())
 
     def _show_session_context_menu(self, pos):
+        """Show a context menu to rename, duplicate or delete the session under the cursor."""
         item = self._sessions_list.itemAt(pos)
         if not item:
             return
@@ -2470,6 +2610,7 @@ class WorkbenchWorkspace(QMainWindow):
             self._delete_session(fname)
 
     def _rename_session(self, fname):
+        """Rename a session file, restricting the new name to the sessions folder and a .json suffix."""
         import os
         new_name, ok = QInputDialog.getText(
             self, "Rename Session", "Enter new filename (must end in .json):",
@@ -2478,6 +2619,7 @@ class WorkbenchWorkspace(QMainWindow):
         if not ok or not new_name.strip():
             return
 
+        # Guard against path traversal.
         # Strip any directory components the user typed (e.g. "../../foo.json")
         # so the rename can never land outside sessions_dir.
         new_name = os.path.basename(new_name.strip())
@@ -2510,6 +2652,7 @@ class WorkbenchWorkspace(QMainWindow):
             QMessageBox.critical(self, "Error", f"Failed to rename file: {e}")
 
     def _duplicate_session(self, fname):
+        """Copy a session file to a new name with a _copy suffix that does not collide with an existing file."""
         import os
         old_path = os.path.join(self.state.memory.sessions_dir, fname)
         base, ext = os.path.splitext(fname)
@@ -2530,6 +2673,7 @@ class WorkbenchWorkspace(QMainWindow):
             QMessageBox.critical(self, "Error", f"Failed to duplicate file: {e}")
 
     def _delete_session(self, fname):
+        """After confirmation, delete a session file and clear the view if it was the open session."""
         import os
         reply = QMessageBox.question(
             self, "Confirm Delete",
@@ -2554,40 +2698,52 @@ class WorkbenchWorkspace(QMainWindow):
             except Exception as e:
                 QMessageBox.critical(self, "Error", f"Failed to delete file: {e}")
 
+    # These thin wrappers are called by the main window and global shortcuts.
     # ── public API for main_window ────────────────────────────────────────────
 
     def new_session(self):
+        """Public entry point: start a new session."""
         self._new_session()
 
     def save_current_session(self):
+        """Public entry point: save the current session."""
         self._save_current_session()
 
     def toggle_rag_pipeline(self):
+        """Public entry point: toggle the RAG checkbox."""
         self._rag_check.toggle()
 
     def toggle_agentic_loop(self):
+        """Public entry point: toggle the Loop checkbox."""
         self._loop_check.toggle()
 
     def toggle_all_huds(self):
+        """Public entry point: show or hide all HUD panels."""
         self._toggle_all_huds()
 
     def toggle_reasoning_panel(self):
+        """Public entry point: toggle the reasoning dock."""
         self._toggle_reasoning()
 
     def toggle_sessions_panel(self):
+        """Public entry point: toggle the sessions dock."""
         self._toggle_sessions()
 
     def toggle_rag_panel(self):
+        """Public entry point: toggle the RAG sources view."""
         self._toggle_rag_hud()
 
     def toggle_context_panel(self):
+        """Public entry point: toggle the context bar."""
         self._toggle_context_hud()
 
     def set_system_prompt(self, prompt: str):
+        """Set the active system prompt and persist it to the UI config."""
         self._system_prompt = prompt
         _save_system_prompt(prompt)
 
     def set_hyperparams(self, params: dict):
+        """Merge new generation parameters and update the matching spin boxes without re-triggering their signals."""
         self._hyperparams.update(params)
         if hasattr(self, "_temp_spin") and "temperature" in params:
             self._temp_spin.blockSignals(True)
@@ -2603,6 +2759,7 @@ class WorkbenchWorkspace(QMainWindow):
             self._maxtok_spin.blockSignals(False)
 
     def append_to_input(self, text: str):
+        """Append text to the input box on a new line (or set it when empty)."""
         existing = self._input.toPlainText()
         if existing:
             self._input.setPlainText(existing + "\n" + text)
@@ -2610,5 +2767,6 @@ class WorkbenchWorkspace(QMainWindow):
             self._input.setPlainText(text)
 
     def replace_input(self, text: str):
+        """Replace the input box text and focus it."""
         self._input.setPlainText(text)
         self._input.setFocus()

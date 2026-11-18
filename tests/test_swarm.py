@@ -1,3 +1,8 @@
+# Program: karl-offline-lab - test_swarm.py
+# Programmer: Ethan-da-Tech-Wizard (written with Claude, an AI assistant)
+# Last Modified: 2026-11-18
+# Purpose: Integration tests of the swarm orchestrator planning, execution, rollback, self-correction and debugger controls using a stateful mock LLM.
+
 """
 Swarm Orchestrator Tests — Karl Workbench
 ==========================================
@@ -18,8 +23,10 @@ from app.engine.swarm_orchestrator import SwarmOrchestratorThread, rollback_swar
 
 
 class TestSwarmOrchestrator(unittest.TestCase):
+    """Test group or helper class: test swarm orchestrator."""
     def setUp(self):
         # Create a temporary sandbox directory for code editing and testing
+        """Prepare the fixtures needed by each test in this class."""
         self.sandbox_dir = tempfile.TemporaryDirectory()
         self.workspace_path = self.sandbox_dir.name
 
@@ -50,10 +57,12 @@ class TestSwarmOrchestrator(unittest.TestCase):
             f.write(test_script_content)
 
     def tearDown(self):
+        """Clean up whatever setUp created after each test."""
         self.config_patcher.stop()
         self.sandbox_dir.cleanup()
 
     def test_generated_smoke_suite_passes_without_test_command(self):
+        """Scenario: generated smoke suite passes without test command. Expected: the assertions in this test hold."""
         orchestrator = SwarmOrchestratorThread(
             workspace_path=self.workspace_path,
             objective="Create a helper module.",
@@ -70,6 +79,7 @@ class TestSwarmOrchestrator(unittest.TestCase):
         self.assertFalse(os.path.exists(os.path.join(self.workspace_path, "helper.py")))
 
     def test_generated_smoke_suite_fails_on_python_syntax_error(self):
+        """Scenario: generated smoke suite fails on python syntax error. Expected: the assertions in this test hold."""
         orchestrator = SwarmOrchestratorThread(
             workspace_path=self.workspace_path,
             objective="Create a helper module.",
@@ -86,6 +96,7 @@ class TestSwarmOrchestrator(unittest.TestCase):
         self.assertIn("python compile failed", trace)
 
     def test_backup_workspace_file_preserves_existing_content(self):
+        """Scenario: backup workspace file preserves existing content. Expected: the assertions in this test hold."""
         source_path = os.path.join(self.workspace_path, "existing.py")
         with open(source_path, "w", encoding="utf-8") as f:
             f.write("VALUE = 'before'\n")
@@ -104,6 +115,7 @@ class TestSwarmOrchestrator(unittest.TestCase):
         self.assertIn(".karl_swarm_backups", backup_path)
 
     def test_rollback_swarm_run_restores_existing_file(self):
+        """Scenario: rollback swarm run restores existing file. Expected: the assertions in this test hold."""
         source_path = os.path.join(self.workspace_path, "existing.py")
         with open(source_path, "w", encoding="utf-8") as f:
             f.write("VALUE = 'before'\n")
@@ -126,6 +138,7 @@ class TestSwarmOrchestrator(unittest.TestCase):
             self.assertEqual(f.read(), "VALUE = 'before'\n")
 
     def test_rollback_swarm_run_removes_new_file(self):
+        """Scenario: rollback swarm run removes new file. Expected: the assertions in this test hold."""
         new_path = os.path.join(self.workspace_path, "new_file.py")
         orchestrator = SwarmOrchestratorThread(
             workspace_path=self.workspace_path,
@@ -149,9 +162,11 @@ class TestSwarmOrchestrator(unittest.TestCase):
         # Call 1: Architect planning
         # Call 2: Coder first attempt (buggy: return a - b)
         # Call 3: Coder second attempt after error feedback (corrected: return a + b)
+        """Scenario: swarm self correction loop. Expected: the assertions in this test hold."""
         call_count = 0
 
         def stateful_mock_llm(prompt, **kwargs):
+            """Test helper: stateful mock llm."""
             nonlocal call_count
             call_count += 1
             
@@ -243,7 +258,9 @@ class TestSwarmOrchestrator(unittest.TestCase):
     @patch("app.engine.model_loader.ModelLoader.get_instance")
     def test_swarm_parallel_execution(self, mock_get_llm):
         # We simulate a stateful LLM to return Architect plan then Coder edits
+        """Scenario: swarm parallel execution. Expected: the assertions in this test hold."""
         def stateful_mock_llm(prompt, **kwargs):
+            """Test helper: stateful mock llm."""
             if "Architect" in prompt or "tasks" in prompt:
                 plan = {
                     "explanation": "Create two independent helper files.",
@@ -312,6 +329,7 @@ class TestSwarmOrchestrator(unittest.TestCase):
         call_count = 0
 
         def stateful_mock_llm(prompt, **kwargs):
+            """Test helper: stateful mock llm."""
             nonlocal call_count
             call_count += 1
             if "Architect" in prompt or "tasks" in prompt:
@@ -351,6 +369,7 @@ class TestSwarmOrchestrator(unittest.TestCase):
         coder_call_count = 0
 
         def stateful_mock_llm(prompt, **kwargs):
+            """Test helper: stateful mock llm."""
             nonlocal coder_call_count
             if "Architect" in prompt or "tasks" in prompt:
                 plan = {
@@ -398,6 +417,7 @@ class TestSwarmOrchestrator(unittest.TestCase):
         seen_prompts = []
 
         def stateful_mock_llm(prompt, **kwargs):
+            """Test helper: stateful mock llm."""
             seen_prompts.append(prompt)
             if "Architect" in prompt or "tasks" in prompt:
                 plan = {
@@ -439,6 +459,7 @@ class TestSwarmOrchestrator(unittest.TestCase):
         """The same syntax error twice in a row for one file should trip the
         drift detector and auto-inject corrective guidance."""
         def stateful_mock_llm(prompt, **kwargs):
+            """Test helper: stateful mock llm."""
             if "Architect" in prompt or "tasks" in prompt:
                 plan = {
                     "explanation": "x",
@@ -472,6 +493,7 @@ class TestSwarmOrchestrator(unittest.TestCase):
     def test_max_loops_hyperparam_limits_layer_retries(self, mock_get_llm):
         """max_loops caps how many times a failing layer is retried."""
         def stateful_mock_llm(prompt, **kwargs):
+            """Test helper: stateful mock llm."""
             if "Architect" in prompt or "tasks" in prompt:
                 plan = {
                     "explanation": "x",
@@ -508,6 +530,7 @@ class TestSwarmOrchestrator(unittest.TestCase):
         """A run whose deadline has already passed should stop before doing
         any layer work instead of hanging or crashing."""
         def stateful_mock_llm(prompt, **kwargs):
+            """Test helper: stateful mock llm."""
             plan = {
                 "explanation": "x",
                 "tasks": [{"filepath": "math_utils.py", "instructions": "Define an add(a, b) function."}],
@@ -544,6 +567,7 @@ class TestSwarmOrchestrator(unittest.TestCase):
         from app.engine.swarm_agents import CoderAgent
 
         def stateful_mock_llm(prompt, **kwargs):
+            """Test helper: stateful mock llm."""
             return {"choices": [{"text": (
                 "<tool_call name='write_file'>\n"
                 "  path: secret.py\n"
@@ -564,6 +588,7 @@ class TestSwarmOrchestrator(unittest.TestCase):
         self.assertFalse(os.path.exists(os.path.join(self.workspace_path, "secret.py")))
 
     def test_step_unblocks_without_disabling_pause_mode(self):
+        """Scenario: step unblocks without disabling pause mode. Expected: the assertions in this test hold."""
         orchestrator = SwarmOrchestratorThread(
             workspace_path=self.workspace_path, objective="x", test_command="",
             hyperparams={"pause_on_step": True},
@@ -577,6 +602,7 @@ class TestSwarmOrchestrator(unittest.TestCase):
         self.assertTrue(orchestrator.pause_on_step)  # step() re-arms for the next boundary
 
     def test_resume_disables_pause_mode(self):
+        """Scenario: resume disables pause mode. Expected: the assertions in this test hold."""
         orchestrator = SwarmOrchestratorThread(
             workspace_path=self.workspace_path, objective="x", test_command="",
             hyperparams={"pause_on_step": True},
@@ -589,6 +615,7 @@ class TestSwarmOrchestrator(unittest.TestCase):
         self.assertFalse(orchestrator.pause_on_step)
 
     def test_record_token_telemetry_emits_with_throttle(self):
+        """Scenario: record token telemetry emits with throttle. Expected: the assertions in this test hold."""
         orchestrator = SwarmOrchestratorThread(
             workspace_path=self.workspace_path, objective="x", test_command="",
         )
@@ -607,7 +634,9 @@ class TestSwarmOrchestrator(unittest.TestCase):
 
     @patch("app.engine.model_loader.ModelLoader.get_instance")
     def test_pause_on_step_emits_and_resume_unblocks(self, mock_get_llm):
+        """Scenario: pause on step emits and resume unblocks. Expected: the assertions in this test hold."""
         def stateful_mock_llm(prompt, **kwargs):
+            """Test helper: stateful mock llm."""
             if "Architect" in prompt or "tasks" in prompt:
                 plan = {
                     "explanation": "x",
@@ -630,6 +659,7 @@ class TestSwarmOrchestrator(unittest.TestCase):
         paused_events = []
 
         def _on_paused(info):
+            """Test helper: on paused."""
             paused_events.append(info)
             orchestrator.resume()
 
@@ -643,9 +673,11 @@ class TestSwarmOrchestrator(unittest.TestCase):
 
     @patch("app.engine.model_loader.ModelLoader.get_instance")
     def test_override_active_task_replaces_instructions(self, mock_get_llm):
+        """Scenario: override active task replaces instructions. Expected: the assertions in this test hold."""
         seen_prompts = []
 
         def stateful_mock_llm(prompt, **kwargs):
+            """Test helper: stateful mock llm."""
             seen_prompts.append(prompt)
             if "Architect" in prompt or "tasks" in prompt:
                 plan = {
@@ -668,6 +700,7 @@ class TestSwarmOrchestrator(unittest.TestCase):
         )
 
         def _on_paused(info):
+            """Test helper: on paused."""
             orchestrator.override_active_task(info["filepath"], "Define a subtract(a, b) function instead.")
             orchestrator.resume()
 

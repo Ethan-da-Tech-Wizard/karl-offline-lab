@@ -1,3 +1,8 @@
+# Program: karl-offline-lab - streaming_parser.py
+# Programmer: Ethan-da-Tech-Wizard (written with Claude, an AI assistant)
+# Last Modified: 2026-11-18
+# Purpose: Incrementally splits a streamed model reply into thought and chat text around think tags, holding back partial tags and stripping leaked control tokens.
+"""Streaming parser that routes model output to thought or chat callbacks."""
 from __future__ import annotations
 
 import re
@@ -39,11 +44,13 @@ _SPECIAL_TOKEN_LEAK_RE = re.compile(
 
 
 def _strip_special_token_leaks(text: str) -> str:
+    """Remove complete or nearly complete chat control tokens from text about to be emitted."""
     return _SPECIAL_TOKEN_LEAK_RE.sub("", text)
 
 
 @dataclass
 class ParserFeedResult:
+    """Result of one feed() call; closed_think is True when a closing think tag was seen."""
     closed_think: bool = False
 
 
@@ -58,6 +65,7 @@ class StreamingThoughtParser:
         chat_cb: Callable[[str], None],
         publish_events: bool = True,
     ):
+        """Set the starting mode (inside a thought or not), the two output callbacks and whether to publish broker events."""
         self.in_thought = in_thought
         self.buffer = ""
         self.parsed_thought = ""
@@ -67,6 +75,7 @@ class StreamingThoughtParser:
         self._publish_events = publish_events
 
     def feed(self, text: str, defer_after_think_close: bool = False) -> ParserFeedResult:
+        """Add streamed text to the buffer, switch mode on think tags and emit whatever cannot still become a protected tag."""
         self.buffer += text
         closed_think = False
 
@@ -87,6 +96,7 @@ class StreamingThoughtParser:
             if defer_after_think_close:
                 return ParserFeedResult(closed_think=True)
 
+        # Hold text back only while the buffer ends with something that might still become a protected sequence.
         if self.in_thought:
             if not any(self.buffer.endswith(s) for s in CLOSE_GUARDS):
                 self._emit_thought(self.buffer)
@@ -99,6 +109,7 @@ class StreamingThoughtParser:
         return ParserFeedResult(closed_think=closed_think)
 
     def flush(self) -> None:
+        """Emit any text still held in the buffer, for example when the stream ends."""
         if not self.buffer:
             return
         if self.in_thought:
@@ -108,6 +119,7 @@ class StreamingThoughtParser:
         self.buffer = ""
 
     def _emit_thought(self, token: str) -> None:
+        """Clean a thought fragment, send it to the thought callback and event bus, and add it to the parsed thought."""
         token = _strip_special_token_leaks(token)
         if not token:
             return
@@ -117,6 +129,7 @@ class StreamingThoughtParser:
         self.parsed_thought += token
 
     def _emit_chat(self, token: str) -> None:
+        """Clean a chat fragment, send it to the chat callback and event bus, and add it to the parsed response."""
         token = _strip_special_token_leaks(token)
         if not token:
             return

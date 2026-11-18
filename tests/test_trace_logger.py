@@ -1,3 +1,8 @@
+# Program: karl-offline-lab - test_trace_logger.py
+# Programmer: Ethan-da-Tech-Wizard (written with Claude, an AI assistant)
+# Last Modified: 2026-11-18
+# Purpose: Tests for TraceLogger: the logged record schema, size-based file rotation, pruning of old logs, zeroing of key material after archiving, and cleanup of decrypted payloads.
+"""Tests for TraceLogger schema, rotation, pruning and secure handling of key material."""
 import gc
 import gzip
 import os
@@ -15,6 +20,9 @@ import app.utils.trace_logger as tl
 from app.utils.trace_logger import TraceLogger
 
 def test_schema_fields():
+    """Scenario: one generation is logged with full metadata and diagnostics, then its feedback is updated.
+    Expected: the record has exactly the expected keys and values, and the feedback change is saved.
+    """
     print("Testing TraceLogger schema fields...")
     temp_dir = tempfile.mkdtemp()
     try:
@@ -51,6 +59,7 @@ def test_schema_fields():
         record = json.loads(line)
         
         # Verify schema keys
+        # The full set of fields every trace record must contain.
         expected_keys = {
             "id", "session_id", "timestamp", "timing", "model", "adapter",
             "workflow", "template", "hyperparams", "system_prompt",
@@ -80,6 +89,7 @@ def test_schema_fields():
         assert record["feedback"] == "none"
         
         # Test updating feedback
+        # Changing feedback must rewrite the last logged entry.
         logger.update_last_entry_feedback(feedback="thumbs_up")
         with open(log_file, "r", encoding="utf-8") as f:
             line = f.readline().strip()
@@ -91,17 +101,23 @@ def test_schema_fields():
         shutil.rmtree(temp_dir)
 
 def test_file_rotation():
+    """Scenario: the size limit is set very small and two entries are logged.
+    Expected: the second entry goes to a different file and both files hold the right content.
+    """
     print("Testing TraceLogger rotation logic...")
     temp_dir = tempfile.mkdtemp()
     
     # Save original max bytes
+    # Save the module's size limit so it can be restored afterwards.
     old_max = tl._MAX_BYTES
     # Set max bytes very small so any entry triggers rotation
+    # Use a tiny limit so a single entry triggers rotation.
     tl._MAX_BYTES = 50 
     
     try:
         logger = TraceLogger(log_dir=temp_dir)
         
+        # Skip archiving so only the rotation behaviour is tested.
         with patch.object(logger, "_archive_log", return_value=None):
             # Write one entry. This file will exceed 50 bytes.
             file1 = logger.log_generation("prompt 1", {}, "raw 1", "thought 1", "resp 1", 1.0)
@@ -128,11 +144,15 @@ def test_file_rotation():
         shutil.rmtree(temp_dir)
 
 def test_log_pruning():
+    """Scenario: retention is two days, one log is ten days old and one is new.
+    Expected: the old log is deleted and the new one is kept.
+    """
     import time
     from unittest.mock import patch
     print("Testing TraceLogger pruning logic...")
     temp_dir = tempfile.mkdtemp()
     
+    # Make log retention two days by faking the UI config.
     with patch("app.engine.config_store.get_ui_config", return_value={"log_retention_days": 2}):
         logger = TraceLogger(log_dir=temp_dir)
         
@@ -145,6 +165,7 @@ def test_log_pruning():
             f.write("{}\n")
             
         now = time.time()
+        # Backdate the old file's modification time by ten days.
         os.utime(old_file, (now - 10 * 86400, now - 10 * 86400))
         
         logger.prune_logs()
@@ -166,19 +187,24 @@ def test_cryptographic_memory_zeroing():
     archive_dir = tempfile.mkdtemp()
     captured: list[bytearray] = []
 
+    # Keep the real zeroing function so the wrapper can still call it.
     original_zero = TraceLogger._zero_bytes
 
     def intercepting_zero(ba: bytearray) -> None:
+        """Record the bytearray being zeroed, then call the real zeroing function."""
         # Capture the bytearray reference BEFORE the real zeroing runs so we
         # can inspect the same object (in-place mutation) after the call.
+        # Keep the same bytearray object so it can be inspected after zeroing.
         captured.append(ba)
         original_zero(ba)
 
     try:
+        # Replace the zeroing helper with the wrapper that records its argument.
         with patch.object(TraceLogger, "_zero_bytes", staticmethod(intercepting_zero)):
             tracer = TraceLogger(log_dir=temp_dir, archive_dir=archive_dir)
 
             # Write a real JSONL entry so _archive_log() has a non-empty file.
+            # Write a real JSONL entry so archiving has a non-empty file to process.
             test_log = os.path.join(temp_dir, "trace_zeroing_test.jsonl")
             with open(test_log, "w", encoding="utf-8") as fh:
                 fh.write('{"id":"zero-test","session_id":"s0","timestamp":"2026-06-13T00:00:00+00:00"}\n')
@@ -225,6 +251,7 @@ def test_decrypted_payload_cleanup():
             fh.write(encrypted)
 
         # ── 2. Decrypt to a mutable bytearray ────────────────────────────────
+        # Decrypt into a mutable bytearray so it can be wiped in place.
         result = TraceLogger.decrypt_to_bytearray(enc_path, test_key)
         assert isinstance(result, bytearray), \
             "decrypt_to_bytearray must return a bytearray"
@@ -235,6 +262,7 @@ def test_decrypted_payload_cleanup():
         # ── 3. Verify no unexpected external references before zeroing ────────
         # sys.getrefcount() always adds 1 for its own argument.
         # Expected: 2 = local variable 'result' + getrefcount argument.
+        # Collect garbage so reference counts are accurate.
         gc.collect()
         ref_count = sys.getrefcount(result)
         assert ref_count <= 2, (
@@ -268,6 +296,7 @@ def test_decrypted_payload_cleanup():
         shutil.rmtree(temp_dir, ignore_errors=True)
 
 
+# Allow running the tests directly without pytest.
 if __name__ == "__main__":
     test_schema_fields()
     test_file_rotation()

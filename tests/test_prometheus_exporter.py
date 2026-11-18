@@ -1,3 +1,10 @@
+# Program: karl-offline-lab - test_prometheus_exporter.py
+# Programmer: Ethan-da-Tech-Wizard (written with Claude, an AI assistant)
+# Last Modified: 2026-11-18
+# Purpose: Tests the Prometheus metrics exposition and HTTP request handling of WebSocketServerManager.
+
+"""Tests the Prometheus metrics exposition and HTTP request handling of WebSocketServerManager."""
+
 from types import SimpleNamespace
 
 import tests.qt_test_helper  # noqa: F401
@@ -8,6 +15,7 @@ from app.engine.websocket_server import WebSocketServerManager
 
 
 def make_manager():
+    """Test helper: make manager."""
     manager = WebSocketServerManager.__new__(WebSocketServerManager)
     manager.clients = set()
     manager.last_generation_metrics = {
@@ -20,14 +28,17 @@ def make_manager():
 
 
 def make_request(path, headers=None):
+    """Test helper: make request."""
     return SimpleNamespace(path=path, headers=Headers(headers or []))
 
 
 def response_text(response):
+    """Test helper: response text."""
     return bytes(response.body).decode("utf-8")
 
 
 def test_prometheus_metrics_exposition_contains_expected_headers():
+    """Scenario: prometheus metrics exposition contains expected headers. Expected: the assertions in this test hold."""
     manager = make_manager()
     manager.clients = {object()}
 
@@ -45,6 +56,7 @@ def test_prometheus_metrics_exposition_contains_expected_headers():
 
 
 def test_metrics_http_request_returns_200_prometheus_text():
+    """Scenario: metrics http request returns 200 prometheus text. Expected: the assertions in this test hold."""
     manager = make_manager()
 
     response = manager._process_http_request(None, make_request("/metrics"))
@@ -57,6 +69,7 @@ def test_metrics_http_request_returns_200_prometheus_text():
 
 
 def test_non_websocket_http_request_returns_404():
+    """Scenario: non websocket http request returns 404. Expected: the assertions in this test hold."""
     manager = make_manager()
 
     response = manager._process_http_request(None, make_request("/not-metrics"))
@@ -66,6 +79,7 @@ def test_non_websocket_http_request_returns_404():
 
 
 def test_websocket_upgrade_bypasses_http_interceptor():
+    """Scenario: websocket upgrade bypasses http interceptor. Expected: the assertions in this test hold."""
     manager = make_manager()
     request = make_request(
         "/?token=test-token",
@@ -76,6 +90,7 @@ def test_websocket_upgrade_bypasses_http_interceptor():
 
 
 def test_generation_diagnostics_update_last_metrics():
+    """Scenario: generation diagnostics update last metrics. Expected: the assertions in this test hold."""
     manager = make_manager()
 
     manager._record_generation_metrics({

@@ -1,3 +1,7 @@
+# Program: karl-offline-lab - test_token_lifecycle.py
+# Programmer: Ethan-da-Tech-Wizard (written with Claude, an AI assistant)
+# Last Modified: 2026-11-18
+# Purpose: Integration tests that run a real WebSocket server with short token lifetimes to check lease expiry, token refresh, forced revocation and removal of the saved token file.
 """
 Token Lifecycle Tests — lease expiry, refresh, and revocation.
 
@@ -26,6 +30,7 @@ import websockets
 import websockets.exceptions
 import pytest
 
+# Mark every test in this file as an integration and websocket test.
 pytestmark = [pytest.mark.integration, pytest.mark.websocket]
 
 # ── Helpers ───────────────────────────────────────────────────────────────────
@@ -35,6 +40,7 @@ _TEST_PORT = 19991  # high port — unlikely to conflict
 
 
 def _stub_init_security(self) -> None:
+    """Replace the server's security setup with a known test token that has all scopes and no blocked paths."""
     self.bridge_token = _TEST_TOKEN
     self._token_created_at = time.time()
     self._token_store = {_TEST_TOKEN: list(type(self)._FULL_SCOPES)}
@@ -48,6 +54,7 @@ class _TestServer:
     """
 
     def __init__(self, port: int = _TEST_PORT, token_lifetime: int = 5, audit_interval: int = 1):
+        """Store the port and timing settings; the server and patches are created later in __enter__."""
         self.port = port
         self._token_lifetime = token_lifetime
         self._audit_interval = audit_interval
@@ -57,11 +64,14 @@ class _TestServer:
     # ── context-manager protocol ──────────────────────────────────────────────
 
     def __enter__(self):
+        """Apply all patches, start the patched server, wait for it to bind and return the manager."""
         from app.engine.websocket_server import WebSocketServerManager
 
         # Patch class attrs so the running loop sees the short lifetimes.
+        # Patch class attributes so the running server loop sees the short lifetimes.
         p1 = patch.object(WebSocketServerManager, "_TOKEN_LIFETIME", self._token_lifetime)
         p2 = patch.object(WebSocketServerManager, "_LEASE_AUDIT_INTERVAL", self._audit_interval)
+        # Replace heavy components with mocks and disable security steps that are not needed here.
         p3 = patch("app.engine.websocket_server.RAGPipeline", return_value=MagicMock())
         p4 = patch("app.engine.websocket_server.InferenceService", return_value=MagicMock())
         p5 = patch.object(WebSocketServerManager, "_seed_codex", lambda self: None)
@@ -73,6 +83,7 @@ class _TestServer:
             p.start()
             self._patches.append(p)
 
+        # Start the server and wait for it to report that it is listening.
         self._mgr = WebSocketServerManager(port=self.port, state=None)
         ok = self._mgr.started_event.wait(timeout=5.0)
         assert ok, "Server did not start within 5 seconds"
@@ -80,6 +91,7 @@ class _TestServer:
         return self._mgr
 
     def __exit__(self, *_):
+        """Stop the server event loop and remove every patch."""
         if self._mgr is not None:
             try:
                 self._mgr.loop.call_soon_threadsafe(self._mgr.loop.stop)
@@ -91,6 +103,7 @@ class _TestServer:
 
 
 def _ws_url(port: int, token: str = _TEST_TOKEN) -> str:
+    """Build the plain WebSocket URL for the given port with the token as a query parameter."""
     return f"ws://127.0.0.1:{port}?token={token}"
 
 
@@ -102,6 +115,7 @@ async def _recv_close_code(url: str, timeout: float) -> int | None:
     try:
         async with websockets.connect(url, open_timeout=3.0) as ws:
             try:
+                # Stop waiting when the time limit passes so a still-open connection is reported as None.
                 async with asyncio.timeout(timeout):
                     async for _ in ws:
                         pass
@@ -124,6 +138,7 @@ def test_expired_session_closes_with_code_4002():
     with _TestServer(token_lifetime=5, audit_interval=1) as mgr:
         url = _ws_url(mgr.port)
         # Wait 8 seconds: TOKEN_LIFETIME (5s) + up to 2 audit cycles (2s) + margin
+        # Run the async client to completion and capture the close code.
         close_code = asyncio.run(_recv_close_code(url, timeout=9.0))
 
     assert close_code == 4002, (
@@ -189,6 +204,7 @@ def test_refresh_token_invalid_token_returns_error():
     """Calling refresh_token with a wrong token must return a JSON-RPC error."""
 
     async def _bad_refresh(url: str) -> dict:
+        """Send a refresh request with a wrong token on an authenticated connection and return the parsed response."""
         async with websockets.connect(url, open_timeout=3.0) as ws:
             await ws.send(json.dumps({
                 "jsonrpc": "2.0",
@@ -214,6 +230,7 @@ def test_force_revoke_closes_all_connections_with_4003():
     """force_revoke() must close all active connections with code 4003."""
 
     async def _connect_and_wait(url: str, close_queue: asyncio.Queue) -> None:
+        """Connect, drain messages until the server closes, and put the close code on the queue."""
         try:
             async with websockets.connect(url, open_timeout=3.0) as ws:
                 try:
@@ -225,6 +242,7 @@ def test_force_revoke_closes_all_connections_with_4003():
             await close_queue.put(None)
 
     async def _run_revoke_test(url: str, mgr) -> int | None:
+        """Open a connection, trigger force_revoke on the manager and return the close code the client received."""
         queue: asyncio.Queue = asyncio.Queue()
         task = asyncio.create_task(_connect_and_wait(url, queue))
 
@@ -232,6 +250,7 @@ def test_force_revoke_closes_all_connections_with_4003():
         await asyncio.sleep(0.3)
 
         # Trigger revocation from the test thread (simulating force_revoke)
+        # Trigger revocation directly on the manager, as an operator would.
         mgr.force_revoke()
 
         # Wait for the close code
@@ -259,6 +278,7 @@ def test_revoke_wipes_token_file(tmp_path, monkeypatch):
     token_file.write_text('{"token": "abc", "created_at": 0}')
 
     with _TestServer(token_lifetime=60) as mgr:
+        # Point the manager at the temporary token file instead of the real one.
         monkeypatch.setattr(type(mgr), "_TOKEN_PATH", str(token_file), raising=False)
         mgr._TOKEN_PATH = str(token_file)
         mgr.force_revoke()

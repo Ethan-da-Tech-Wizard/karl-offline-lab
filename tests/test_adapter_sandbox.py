@@ -1,3 +1,7 @@
+# Program: karl-offline-lab - test_adapter_sandbox.py
+# Programmer: Ethan-da-Tech-Wizard (written with Claude, an AI assistant)
+# Last Modified: 2026-11-18
+# Purpose: Unit tests for adapter evaluation and the adapter sandbox benchmark and generation workers.
 """
 Unit Tests for Adapter Sandbox & Speculative Evaluation
 =========================================================
@@ -19,12 +23,16 @@ from app.ui.workspaces.system_config.adapter_sandbox import BenchmarkWorker, Gen
 
 class TestAdapterSandbox(unittest.TestCase):
     
+    """Tests for code-block extraction, model performance evaluation and the sandbox worker threads."""
     @classmethod
     def setUpClass(cls):
         # Create QApplication instance for PyQt tests
+        """Create (or reuse) the QApplication that the Qt workers need."""
+        # Reuse or create the QApplication instance for PyQt tests
         cls.app = QApplication.instance() or QApplication([])
 
     def test_extract_code_block(self):
+        """Scenario: text with and without a fenced code block. Expected: the code inside the fence, or the text itself when no fence exists."""
         text_with_fences = "Some thought\n```python\nprint('hello')\n```\nSome footer"
         self.assertEqual(extract_code_block(text_with_fences), "print('hello')")
         
@@ -34,6 +42,7 @@ class TestAdapterSandbox(unittest.TestCase):
     @patch("app.engine.model_loader.ModelLoader.get_instance")
     @patch("app.engine.model_loader.ModelLoader.reset_instance")
     def test_evaluate_model_performance_tps(self, mock_reset, mock_get_instance):
+        """Scenario: a mocked model returns valid Python for one case. Expected: stats report the adapter name, one case, positive tokens per second and 100 percent syntax accuracy."""
         mock_llm = MagicMock()
         mock_llm.return_value = [{"choices": [{"text": "```python\ndef add(a, b): return a + b\n```"}]}]
         mock_llm.tokenize.return_value = [1, 2, 3, 4, 5]
@@ -48,6 +57,7 @@ class TestAdapterSandbox(unittest.TestCase):
 
     @patch("subprocess.run")
     def test_benchmark_worker_success(self, mock_run):
+        """Scenario: the benchmark subprocess succeeds and a report file exists. Expected: the worker emits the report contents once through its finished signal."""
         mock_run.return_value = MagicMock(returncode=0)
         
         # Mock writing of report file
@@ -59,6 +69,7 @@ class TestAdapterSandbox(unittest.TestCase):
             "accuracy_improvement_percent": 10.0
         }
         
+        # Write a fake report where the worker expects to find it
         report_path = Path("data/adapters") / "eval_report_math_adapter.json"
         report_path.parent.mkdir(parents=True, exist_ok=True)
         with report_path.open("w", encoding="utf-8") as fh:
@@ -78,10 +89,12 @@ class TestAdapterSandbox(unittest.TestCase):
             self.assertEqual(results[0]["tps_improvement_percent"], 50.0)
         finally:
             if report_path.exists():
+                # Remove the fake report so later runs start clean
                 report_path.unlink()
 
     @patch("app.engine.model_loader.ModelLoader.get_instance")
     def test_gen_worker_tps(self, mock_get_instance):
+        """Scenario: a mocked model generates text for a prompt. Expected: finished emits once with the text, the token count and a non-negative elapsed time."""
         mock_llm = MagicMock()
         mock_llm.return_value = [{"choices": [{"text": "print('speed test')"}]}]
         mock_llm.tokenize.return_value = [1, 2, 3]

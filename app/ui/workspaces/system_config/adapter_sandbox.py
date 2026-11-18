@@ -1,3 +1,7 @@
+# Program: karl-offline-lab - adapter_sandbox.py
+# Programmer: Ethan-da-Tech-Wizard (written with Claude, an AI assistant)
+# Last Modified: 2026-11-18
+# Purpose: Settings tab mixin for loading LoRA adapters, running test generations against them and benchmarking them in background threads.
 """
 Adapter Sandbox Mixin Panel
 ===========================
@@ -30,10 +34,12 @@ class BenchmarkWorker(QThread):
     error = pyqtSignal(str)
 
     def __init__(self, adapter_name: str, parent=None):
+        """Store the name of the adapter to benchmark."""
         super().__init__(parent)
         self.adapter_name = adapter_name
 
     def run(self):
+        """Run the adapter evaluation tool in a subprocess and emit its report or an error."""
         try:
             # Execute benchmark subprocess
             cmd = [sys.executable, "tools/evaluate_adapters.py", "--adapter", self.adapter_name, "--limit", "3"]
@@ -61,11 +67,13 @@ class GenWorker(QThread):
     error = pyqtSignal(str)
 
     def __init__(self, prompt: str, adapter_name: str | None, parent=None):
+        """Store the test prompt and optional adapter name."""
         super().__init__(parent)
         self.prompt = prompt
         self.adapter_name = adapter_name
 
     def run(self):
+        """Load the model (with the adapter if given), generate a reply and emit text, elapsed time and token count."""
         try:
             # Load model handle
             llm = ModelLoader.get_instance(adapter_name=self.adapter_name)
@@ -107,6 +115,7 @@ class AdapterSandboxMixin:
     """Mixin that builds the visual tab for LoRA hot-reloading and benchmarks."""
 
     def _build_adapter_sandbox_tab(self) -> QWidget:
+        """Build the adapter sandbox tab: adapter selection, generation test and benchmark results table."""
         tab = QWidget()
         layout = QVBoxLayout(tab)
         layout.setContentsMargins(12, 12, 12, 12)
@@ -194,6 +203,7 @@ class AdapterSandboxMixin:
         self._sandbox_adapter_combo.addItems(sorted(adapters))
 
     def _on_sandbox_load(self):
+        """Activate the selected LoRA adapter and notify listeners when it is loaded."""
         adapter = self._sandbox_adapter_combo.currentText()
         if not adapter:
             return
@@ -215,6 +225,7 @@ class AdapterSandboxMixin:
             self._btn_sandbox_load.setText("Activate Adapter")
 
     def _on_sandbox_unload(self):
+        """Reset to the baseline model with no adapter and notify listeners."""
         logger.info("Unloading active LoRA adapter...")
         try:
             ModelLoader.reset_instance()
@@ -225,6 +236,7 @@ class AdapterSandboxMixin:
             logger.error("Failed to unload adapter: %s", exc)
 
     def _on_sandbox_run(self):
+        """Start a background generation test with the entered prompt and selected adapter."""
         prompt = self._sandbox_prompt_input.toPlainText().strip()
         if not prompt:
             return
@@ -240,6 +252,7 @@ class AdapterSandboxMixin:
         self._gen_worker.start()
 
     def _on_gen_finished(self, text: str, elapsed: float, tokens: int):
+        """Show the generated text and tokens-per-second stats, and re-enable the run button."""
         self._btn_sandbox_run.setEnabled(True)
         self._btn_sandbox_run.setText("Run Generation Test")
         self._sandbox_output_area.setText(text)
@@ -249,11 +262,13 @@ class AdapterSandboxMixin:
         )
 
     def _on_gen_error(self, err_msg: str):
+        """Show the generation error and re-enable the run button."""
         self._btn_sandbox_run.setEnabled(True)
         self._btn_sandbox_run.setText("Run Generation Test")
         self._sandbox_output_area.setText(f"Error occurred: {err_msg}")
 
     def _on_sandbox_benchmark(self):
+        """Start a background benchmark of the selected adapter against the baseline."""
         adapter = self._sandbox_adapter_combo.currentText()
         if not adapter:
             return
@@ -267,6 +282,7 @@ class AdapterSandboxMixin:
         self._bench_worker.start()
 
     def _on_bench_finished(self, report: dict):
+        """Fill the results table from the benchmark report and show the improvement summary."""
         self._btn_sandbox_benchmark.setEnabled(True)
         self._btn_sandbox_benchmark.setText("Run Adapter Speculative Benchmark")
         
@@ -294,6 +310,7 @@ class AdapterSandboxMixin:
         )
 
     def _on_bench_error(self, err_msg: str):
+        """Re-enable the benchmark button and show the error in red."""
         self._btn_sandbox_benchmark.setEnabled(True)
         self._btn_sandbox_benchmark.setText("Run Adapter Speculative Benchmark")
         self._lbl_bench_improvement.setText(f"Benchmark error: {err_msg}")

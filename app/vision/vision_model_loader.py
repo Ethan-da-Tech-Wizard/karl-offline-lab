@@ -1,3 +1,8 @@
+# Program: karl-offline-lab - vision_model_loader.py
+# Programmer: Ethan-da-Tech-Wizard (written with Claude, an AI assistant)
+# Last Modified: 2026-11-18
+# Purpose: Reads the vision model registry and loads/caches a local llama-cpp multimodal model that captions images.
+"""Vision model registry and local multimodal model loader."""
 from __future__ import annotations
 
 import base64
@@ -9,6 +14,7 @@ from typing import Any
 from app.vision.schemas import VisionResult
 
 
+# === Default file locations (relative to the working directory) ===
 REGISTRY_PATH = Path("data/vision_model_registry.json")
 ACTIVE_PATH = Path("data/active_vision_model.json")
 MODEL_DIR = Path("data/vision_models")
@@ -17,6 +23,7 @@ PROJECTOR_DIR = Path("data/vision_projectors")
 
 @dataclass(frozen=True)
 class VisionModelEntry:
+    """One registry entry: a vision model file, its projector file, family and hardware needs."""
     id: str
     name: str
     family: str
@@ -30,6 +37,7 @@ class VisionModelEntry:
 
     @classmethod
     def from_dict(cls, data: dict[str, Any]) -> "VisionModelEntry":
+        """Build an entry from registry JSON; only id is required and other keys get defaults."""
         return cls(
             id=data["id"],
             name=data.get("name", data["id"]),
@@ -44,12 +52,15 @@ class VisionModelEntry:
         )
 
     def model_path(self) -> Path:
+        """Return the expected path of the model weights file."""
         return MODEL_DIR / self.model_filename
 
     def projector_path(self) -> Path:
+        """Return the expected path of the multimodal projector file."""
         return PROJECTOR_DIR / self.projector_filename
 
     def to_dict(self) -> dict[str, Any]:
+        """Return the entry as a dict, plus resolved paths and whether each file is installed."""
         return {
             "id": self.id,
             "name": self.name,
@@ -69,6 +80,8 @@ class VisionModelEntry:
 
 
 def read_vision_registry(path: Path = REGISTRY_PATH) -> list[VisionModelEntry]:
+    """Load all registry entries; returns an empty list if the file is missing or not a list."""
+    # Imported inside the function so this module loads without the engine package.
     from app.engine.config_store import read_json
 
     raw = read_json(str(path), default=[])
@@ -78,6 +91,7 @@ def read_vision_registry(path: Path = REGISTRY_PATH) -> list[VisionModelEntry]:
 
 
 def active_vision_model_id(path: Path = ACTIVE_PATH) -> str | None:
+    """Return the saved active model id, or None if nothing valid is saved."""
     from app.engine.config_store import read_json
 
     data = read_json(str(path), default=None)
@@ -87,16 +101,22 @@ def active_vision_model_id(path: Path = ACTIVE_PATH) -> str | None:
 
 
 def set_active_vision_model(model_id: str, path: Path = ACTIVE_PATH) -> None:
+    """Persist model_id as the active vision model using an atomic write."""
     from app.engine.config_store import write_json_atomic
 
     write_json_atomic(str(path), {"id": model_id}, indent=2)
 
 
 def installed_vision_models() -> list[dict[str, Any]]:
+    """Return every registry entry as a dict (including install flags)."""
     return [entry.to_dict() for entry in read_vision_registry()]
 
 
 class VisionModelLoader:
+    """Process-wide loader that caches one vision model and reports its status.
+
+    State lives on the class and is guarded by a lock so threads share one model.
+    """
     _lock = threading.Lock()
     _entry: VisionModelEntry | None = None
     _llm = None
@@ -104,6 +124,7 @@ class VisionModelLoader:
 
     @classmethod
     def status(cls) -> dict[str, Any]:
+        """Report whether a model is loaded, which one is active, backend availability and the last error."""
         entry = cls._entry or cls._default_entry()
         backend = cls._backend_status()
         return {
@@ -118,6 +139,7 @@ class VisionModelLoader:
 
     @classmethod
     def reset(cls) -> None:
+        """Forget the loaded model and any saved error (the model is garbage-collected)."""
         with cls._lock:
             cls._llm = None
             cls._entry = None
@@ -125,6 +147,10 @@ class VisionModelLoader:
 
     @classmethod
     def load(cls, model_id: str | None = None):
+        """Load the requested (or active, or first) model with its projector.
+
+        Returns the Llama object, or None with last_error set when a file, library or family is missing.
+        """
         with cls._lock:
             entry = cls._resolve_entry(model_id)
             cls._entry = entry
@@ -153,11 +179,13 @@ class VisionModelLoader:
                 return None
 
             try:
+                # The chat handler feeds image embeddings (via the projector) to the language model.
                 handler = handler_cls(clip_model_path=str(entry.projector_path()), verbose=False)
                 cls._llm = Llama(
                     model_path=str(entry.model_path()),
                     chat_handler=handler,
                     n_ctx=entry.n_ctx,
+                    # -1 offloads all layers to the GPU when one is available.
                     n_gpu_layers=-1,
                     verbose=False,
                 )
@@ -176,6 +204,10 @@ class VisionModelLoader:
         model_id: str | None = None,
         max_tokens: int = 512,
     ) -> VisionResult:
+        """Ask the local model to describe an image, returning a VisionResult.
+
+        If no model can be loaded, the result explains why instead of raising.
+        """
         llm = cls._llm or cls.load(model_id)
         entry = cls._entry or cls._resolve_entry(model_id)
         model_name = entry.name if entry else None
@@ -188,6 +220,7 @@ class VisionModelLoader:
             )
 
         try:
+            # Images are passed inline as a base64 data URL.
             data_url = cls._image_data_url(image_path)
             user_prompt = prompt or (
                 "Describe this image accurately. If it is a code screenshot, identify visible errors, "
@@ -204,6 +237,7 @@ class VisionModelLoader:
                     }
                 ],
                 max_tokens=max_tokens,
+                # Low temperature keeps the description factual.
                 temperature=0.1,
             )
             caption = response["choices"][0]["message"]["content"].strip()
@@ -224,6 +258,7 @@ class VisionModelLoader:
 
     @classmethod
     def _default_entry(cls) -> VisionModelEntry | None:
+        """Pick the active entry from the registry, falling back to the first one."""
         entries = read_vision_registry()
         if not entries:
             return None
@@ -236,6 +271,7 @@ class VisionModelLoader:
 
     @classmethod
     def _resolve_entry(cls, model_id: str | None = None) -> VisionModelEntry | None:
+        """Find the entry for model_id (or the active id), falling back to the first entry."""
         entries = read_vision_registry()
         if not entries:
             return None
@@ -248,6 +284,7 @@ class VisionModelLoader:
 
     @staticmethod
     def _handler_class(family: str):
+        """Return (handler class, '') for a model family, or (None, error message) if unsupported."""
         try:
             from llama_cpp.llama_chat_format import (
                 Llava15ChatHandler,
@@ -275,6 +312,7 @@ class VisionModelLoader:
 
     @staticmethod
     def _backend_status() -> dict[str, Any]:
+        """Check that llama_cpp, its multimodal handlers and native mtmd library import cleanly."""
         try:
             import llama_cpp  # noqa: F401
         except Exception as exc:
@@ -291,6 +329,7 @@ class VisionModelLoader:
 
     @staticmethod
     def _image_data_url(image_path: str) -> str:
+        """Read an image file and return it as a base64 data URL."""
         path = Path(image_path)
         suffix = path.suffix.lower().lstrip(".") or "png"
         mime = "jpeg" if suffix in {"jpg", "jpeg"} else suffix
@@ -300,12 +339,14 @@ class VisionModelLoader:
 
 
 def _looks_like_code(text: str) -> bool:
+    """Return True if the caption mentions code-related words."""
     lowered = text.lower()
     markers = ("code", "function", "class", "import", "traceback", "compiler", "terminal")
     return any(marker in lowered for marker in markers)
 
 
 def _looks_like_error(text: str) -> bool:
+    """Return True if the caption mentions error-related words."""
     lowered = text.lower()
     markers = ("error", "exception", "traceback", "failed", "warning", "stack trace")
     return any(marker in lowered for marker in markers)

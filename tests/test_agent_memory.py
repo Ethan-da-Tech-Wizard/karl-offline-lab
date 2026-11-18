@@ -1,3 +1,9 @@
+# Program: karl-offline-lab - test_agent_memory.py
+# Programmer: Ethan-da-Tech-Wizard (written with Claude, an AI assistant)
+# Last Modified: 2026-11-18
+# Purpose: Tests for the codebase memory index and its use by the coder agent prompt.
+"""Tests for app.engine.agent_memory.CodebaseMemory and its injection into the coder agent."""
+
 import json
 from unittest.mock import patch
 
@@ -5,6 +11,7 @@ from app.engine.agent_memory import CodebaseMemory
 
 
 def test_codebase_memory_indexes_functions_classes_and_methods(tmp_path):
+    """Scenario: a workspace with one function and one class method. Expected: the index lists both with names, args and docstrings and is saved to disk."""
     workspace = tmp_path / "workspace"
     workspace.mkdir()
     (workspace / "math_utils.py").write_text(
@@ -28,6 +35,7 @@ class Calculator:
     index = memory.build_index()
 
     assert db_path.exists()
+    # The saved JSON file must equal the in-memory index
     persisted = json.loads(db_path.read_text(encoding="utf-8"))
     assert persisted == index
     assert index["math_utils.py"]["functions"][0] == {
@@ -42,6 +50,7 @@ class Calculator:
 
 
 def test_query_memory_returns_matching_signature_text(tmp_path):
+    """Scenario: query the built index for a function name. Expected: the result contains that function signature and summary line."""
     workspace = tmp_path / "workspace"
     workspace.mkdir()
     (workspace / "math_utils.py").write_text(
@@ -58,6 +67,7 @@ def test_query_memory_returns_matching_signature_text(tmp_path):
 
 
 def test_coder_agent_injects_codebase_signature_reference(tmp_path):
+    """Scenario: CoderAgent generates code with a workspace path and a fake model. Expected: the prompt sent to the model includes the signature reference for existing functions."""
     from app.engine.swarm_agents import CoderAgent
 
     workspace = tmp_path / "workspace"
@@ -69,9 +79,11 @@ def test_coder_agent_injects_codebase_signature_reference(tmp_path):
     prompts = []
 
     def fake_llm(prompt, **kwargs):
+        """Fake model that records the prompt and returns canned code."""
         prompts.append(prompt)
         return {"choices": [{"text": "def use_add(a, b):\n    return add(a, b)\n"}]}
 
+    # Replace the model loader so no real model is needed
     with patch("app.engine.swarm_agents.ModelLoader.get_instance", return_value=fake_llm):
         agent = CoderAgent()
         result = agent.generate(

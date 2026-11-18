@@ -1,4 +1,8 @@
 #!/usr/bin/env python3
+# Program: karl-offline-lab - decrypt_logs.py
+# Programmer: Ethan-da-Tech-Wizard (written with Claude, an AI assistant)
+# Last Modified: 2026-11-18
+# Purpose: Command-line tool that decrypts and decompresses an archived encrypted trace log using the bridge token, locking memory pages and wiping the plaintext buffer afterwards.
 """
 Karl Log Decryption Utility
 ===========================
@@ -21,6 +25,7 @@ import ctypes
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 # ── libc page locking ────────────────────────────────────────────────────────
+# Load the C library (not available on Windows) for locking memory pages.
 _libc = None
 if sys.platform != "win32":
     try:
@@ -28,10 +33,12 @@ if sys.platform != "win32":
     except Exception:
         _libc = None
 
+# Flags for mlockall: lock pages already mapped and all future ones.
 _MCL_CURRENT = 1
 _MCL_FUTURE  = 2
 # ─────────────────────────────────────────────────────────────────────────────
 
+# Third-party and project imports; a missing one means the wrong environment is active.
 try:
     import psutil
     from core.hardware_scout import get_cpu_flags
@@ -42,7 +49,11 @@ except ImportError as e:
     sys.exit(1)
 
 def main():
+    """Read the token (argument, environment, keychain or prompt), decrypt the input archive, write the plaintext to the output path and exit with a status code.
+    The plaintext is held in a mutable buffer that is zeroed and unlocked from memory in the cleanup step.
+    """
     parser = argparse.ArgumentParser(description="Decrypt Karl encrypted trace logs.")
+    # Command-line options: input archive, output file and optional token.
     parser.add_argument("--input", "-i", required=True, help="Path to the .enc log file.")
     parser.add_argument("--output", "-o", required=True, help="Path to save the decrypted .jsonl file.")
     parser.add_argument("--token", "-t", help="Bridge token (optional, will prompt if omitted).")
@@ -68,6 +79,7 @@ def main():
         print(f"Error: Input file not found: {args.input}")
         sys.exit(1)
 
+    # Ask the OS to keep this process's memory out of swap so decrypted data is not written to disk.
     locked = False
     if _libc and hasattr(_libc, "mlockall"):
         res = _libc.mlockall(_MCL_CURRENT | _MCL_FUTURE)
@@ -76,6 +88,7 @@ def main():
         else:
             locked = True
 
+    # Defined before the try block so the cleanup step can always check it.
     plaintext_ba = None
     try:
         print(f"Decrypting {args.input}...")
@@ -112,11 +125,13 @@ def main():
     except Exception as e:
         print(f"An unexpected error occurred: {e}")
         sys.exit(1)
+    # Always wipe the decrypted buffer and release the memory lock, even on errors.
     finally:
         if plaintext_ba is not None:
             TraceLogger._zero_bytes(plaintext_ba)
         if locked and _libc and hasattr(_libc, "munlockall"):
             _libc.munlockall()
 
+# Run the tool when executed as a script.
 if __name__ == "__main__":
     main()

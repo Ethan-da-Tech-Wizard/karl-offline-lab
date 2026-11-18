@@ -1,4 +1,8 @@
 #!/usr/bin/env python3
+# Program: karl-offline-lab - curate_code_datasets.py
+# Programmer: Ethan-da-Tech-Wizard (written with Claude, an AI assistant)
+# Last Modified: 2026-11-18
+# Purpose: Command-line tool that turns Karl trace logs into code SFT and DPO datasets, then merges them with synthetic, public, library and self-correction data, filtering out invalid or oversized rows.
 """Curate code SFT/DPO datasets from Karl trace logs."""
 
 from __future__ import annotations
@@ -12,6 +16,7 @@ import sys
 from pathlib import Path
 from typing import Iterable
 
+# Repository root, so the app package can be imported when run as a script.
 ROOT = Path(__file__).resolve().parents[1]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
@@ -19,17 +24,23 @@ if str(ROOT) not in sys.path:
 from app.utils.compactor import decompact_trace
 
 
+# Feedback labels that mark a response as good (chosen) or bad (rejected).
 POSITIVE_FEEDBACK = {"thumbs_up", "corrected", "eval_chosen"}
 NEGATIVE_FEEDBACK = {"thumbs_down", "eval_rejected"}
+# Words that suggest a record is about code.
 CODE_HINT_RE = re.compile(
     r"\b(code|python|pytest|function|class|module|diff|patch|bug|test|compile|traceback|exception)\b",
     re.IGNORECASE,
 )
+# Matches fenced code blocks, with or without a python tag.
 CODE_BLOCK_RE = re.compile(r"```(?:python)?\s*\n(.*?)```", re.DOTALL)
+# Default token limit for a training row (estimated).
 DEFAULT_MAX_TOKENS = 3500
 
 
 def iter_trace_records(trace_dir: Path) -> Iterable[dict]:
+    # Remember trace ids so duplicates across files are dropped.
+    """Yield unique trace records from the plain and compact trace files in a directory, skipping repeated ids."""
     seen: set[str] = set()
     for path in sorted(trace_dir.glob("trace_*.jsonl")):
         yield from _read_jsonl(path, compact=False, seen=seen)
@@ -38,6 +49,7 @@ def iter_trace_records(trace_dir: Path) -> Iterable[dict]:
 
 
 def _read_jsonl(path: Path, compact: bool, seen: set[str]) -> Iterable[dict]:
+    """Read one trace file line by line, decoding compact lines when needed, and yield each new dictionary record; unreadable lines and files are skipped."""
     try:
         with path.open("r", encoding="utf-8") as fh:
             for line in fh:
@@ -45,6 +57,7 @@ def _read_jsonl(path: Path, compact: bool, seen: set[str]) -> Iterable[dict]:
                 if not line:
                     continue
                 try:
+                    # Compact files need decoding; plain files are ordinary JSON.
                     record = decompact_trace(line) if compact else json.loads(line)
                 except (json.JSONDecodeError, TypeError, ValueError):
                     continue
@@ -61,6 +74,8 @@ def _read_jsonl(path: Path, compact: bool, seen: set[str]) -> Iterable[dict]:
 
 
 def is_verified_success(record: dict) -> bool:
+    # Search the whole record text in lowercase for success markers.
+    """Return True when the record text contains a marker showing that verification passed."""
     haystack = json.dumps(record, ensure_ascii=False).lower()
     return any(
         marker in haystack
@@ -76,6 +91,7 @@ def is_verified_success(record: dict) -> bool:
 
 
 def is_code_record(record: dict) -> bool:
+    """Return True when the record is a code workflow or its text looks code related."""
     workflow = str(record.get("workflow", "")).lower()
     if "code" in workflow:
         return True
@@ -87,6 +103,7 @@ def is_code_record(record: dict) -> bool:
 
 
 def prompt_key(record: dict) -> tuple[str, str]:
+    """Return the (system prompt, user prompt) pair that identifies a record for grouping."""
     system = str(record.get("system_prompt") or "")
     user = extract_user_prompt(str(record.get("compiled_prompt") or ""))
     if not user:
@@ -95,15 +112,18 @@ def prompt_key(record: dict) -> tuple[str, str]:
 
 
 def extract_user_prompt(compiled_prompt: str) -> str:
+    """Pull the last user turn out of a compiled prompt, trying several chat formats and falling back to its last twelve non-empty lines."""
     if not compiled_prompt:
         return ""
 
+    # Chat formats to try, each capturing the text of a user turn.
     patterns = [
         r"(?is)(?:^|\n)user:\s*(.*?)(?=\nassistant:|\n<\|assistant|$)",
         r"(?is)<\|user\|>\s*(.*?)(?=<\|assistant\|>|$)",
         r"(?is)###\s*user\s*(.*?)(?=###\s*assistant|$)",
     ]
     for pattern in patterns:
+        # Use the last match, which is the most recent user turn.
         matches = re.findall(pattern, compiled_prompt)
         if matches:
             return matches[-1].strip()
@@ -113,13 +133,18 @@ def extract_user_prompt(compiled_prompt: str) -> str:
 
 
 def assistant_response(record: dict, chosen: bool) -> str:
+    """Return the assistant text for a record, preferring the user-corrected response for chosen examples."""
     if chosen and record.get("corrected_response"):
         return str(record["corrected_response"])
     return str(record.get("response") or record.get("raw_output") or "")
 
 
 def build_datasets(records: Iterable[dict]) -> tuple[list[dict], list[dict]]:
+    """Build SFT rows from positive records and DPO chosen/rejected pairs from records grouped by prompt.
+    Returns (sft_rows, dpo_rows).
+    """
     sft: list[dict] = []
+    # Group responses by prompt so chosen and rejected answers can be paired.
     groups: dict[tuple[str, str], dict[str, list[str]]] = {}
 
     for record in records:
@@ -127,6 +152,7 @@ def build_datasets(records: Iterable[dict]) -> tuple[list[dict], list[dict]]:
             continue
 
         feedback = str(record.get("feedback") or "none")
+        # A record counts as good if it has positive feedback or verified success.
         positive = feedback in POSITIVE_FEEDBACK or is_verified_success(record)
         negative = feedback in NEGATIVE_FEEDBACK
         if not positive and not negative:
@@ -149,6 +175,7 @@ def build_datasets(records: Iterable[dict]) -> tuple[list[dict], list[dict]]:
                 "timestamp": record.get("timestamp"),
             })
 
+        # Collect chosen and rejected responses for this prompt.
         bucket = groups.setdefault((system, user), {"chosen": [], "rejected": []})
         if positive:
             bucket["chosen"].append(response)
@@ -157,6 +184,7 @@ def build_datasets(records: Iterable[dict]) -> tuple[list[dict], list[dict]]:
 
     dpo: list[dict] = []
     for (system, user), bucket in groups.items():
+        # Pair responses one to one; extra unpaired ones are ignored.
         pair_count = min(len(bucket["chosen"]), len(bucket["rejected"]))
         for idx in range(pair_count):
             dpo.append({
@@ -172,6 +200,7 @@ def build_datasets(records: Iterable[dict]) -> tuple[list[dict], list[dict]]:
 
 
 def write_jsonl(path: Path, rows: Iterable[dict], sft_only_messages: bool = False) -> int:
+    """Write rows as JSON lines (optionally only their messages) and return how many were written."""
     path.parent.mkdir(parents=True, exist_ok=True)
     count = 0
     with path.open("w", encoding="utf-8") as fh:
@@ -183,6 +212,7 @@ def write_jsonl(path: Path, rows: Iterable[dict], sft_only_messages: bool = Fals
 
 
 def load_jsonl(path: Path) -> list[dict]:
+    """Read a JSON lines file into a list of dictionaries, skipping blank or invalid lines; a missing file gives an empty list."""
     rows: list[dict] = []
     if not path.exists():
         return rows
@@ -199,6 +229,7 @@ def load_jsonl(path: Path) -> list[dict]:
 
 
 def _code_snippets(text: str) -> list[str]:
+    """Return the fenced code blocks in the text, or the whole text when there are none."""
     blocks = CODE_BLOCK_RE.findall(text)
     return blocks if blocks else [text]
 
@@ -221,6 +252,7 @@ def estimate_tokens(text: str) -> int:
 
 
 def passes_quality_checks(row: dict, max_tokens: int = DEFAULT_MAX_TOKENS) -> bool:
+    """Return True when a row has at least two messages, fits the estimated token limit and every assistant message is valid Python."""
     messages = row.get("messages")
     if not isinstance(messages, list) or len(messages) < 2:
         return False
@@ -249,6 +281,7 @@ def merge_datasets(
     curated = load_jsonl(curated_path)
     synthetic = load_jsonl(synthetic_path)
 
+    # Optional extra datasets next to the curated file are merged in when present.
     public_path = curated_path.parent / "public_code_sft.jsonl"
     public_data = load_jsonl(public_path) if public_path.exists() else []
 
@@ -261,10 +294,13 @@ def merge_datasets(
     api_automation_path = curated_path.parent / "api_automation_sft.jsonl"
     api_automation_data = load_jsonl(api_automation_path) if api_automation_path.exists() else []
 
+    # Concatenate every source into one list.
     combined = curated + synthetic + public_data + scraped_library_data + self_correction_data + api_automation_data
 
+    # Keep only rows that pass the quality checks.
     valid_rows = [row for row in combined if passes_quality_checks(row, max_tokens=max_tokens)]
 
+    # A seeded generator makes the shuffle repeatable when a seed is given.
     rng = random.Random(seed)
     rng.shuffle(valid_rows)
 
@@ -287,6 +323,7 @@ def merge_datasets(
 
 
 def main() -> int:
+    """Parse command-line options, build and write the SFT and DPO datasets, optionally merge them, print a summary and return 0."""
     parser = argparse.ArgumentParser(description="Curate Karl trace logs into code SFT/DPO datasets.")
     parser.add_argument("--trace-dir", default="data/logs/traces", help="Trace log directory")
     parser.add_argument("--out-dir", default="data/training/code", help="Output dataset directory")
@@ -327,5 +364,6 @@ def main() -> int:
     return 0
 
 
+# Run main() and use its return value as the exit code.
 if __name__ == "__main__":
     raise SystemExit(main())

@@ -1,3 +1,8 @@
+# Program: karl-offline-lab - test_memory_trim.py
+# Programmer: Ethan-da-Tech-Wizard (written with Claude, an AI assistant)
+# Last Modified: 2026-11-18
+# Purpose: Regression tests for the post-generation malloc_trim helper in the LLM and agentic threads.
+
 """Regression test for the post-generation glibc malloc_trim() call.
 
 Background: a live stress test on a memory-constrained shared machine showed
@@ -24,14 +29,17 @@ from app.engine.agentic_thread import _trim_memory as agentic_trim_memory
 def test_trim_memory_is_callable_and_silent_on_both_threads():
     # Must never raise, regardless of platform (best-effort on non-glibc
     # libc such as musl/macOS -- caught internally).
+    """Scenario: trim memory is callable and silent on both threads. Expected: the assertions in this test hold."""
     assert llm_trim_memory() is None
     assert agentic_trim_memory() is None
 
 
 def test_trim_memory_survives_missing_libc(monkeypatch):
+    """Scenario: trim memory survives missing libc. Expected: the assertions in this test hold."""
     import ctypes
 
     def _boom(*_a, **_k):
+        """Test helper: boom."""
         raise OSError("no libc.so.6 on this platform")
 
     monkeypatch.setattr(ctypes, "CDLL", _boom)
@@ -54,6 +62,7 @@ def test_llm_thread_run_finally_calls_trim_memory():
 
 
 def test_agentic_thread_run_finally_calls_trim_memory():
+    """Scenario: agentic thread run finally calls trim memory. Expected: the assertions in this test hold."""
     import inspect
     import app.engine.agentic_thread as agentic_thread_module
 

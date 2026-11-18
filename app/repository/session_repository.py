@@ -1,3 +1,9 @@
+# Program: karl-offline-lab - session_repository.py
+# Programmer: Ethan-da-Tech-Wizard (written with Claude, an AI assistant)
+# Last Modified: 2026-11-18
+# Purpose: Stores each chat session tree as its own JSON file inside a sessions directory.
+"""Session persistence: one JSON file per session.
+"""
 import os
 import json
 
@@ -10,6 +16,7 @@ class SessionRepository:
     """
 
     def __init__(self, sessions_dir="data/sessions"):
+        """Resolve the sessions directory to an absolute path and create it if missing."""
         self.sessions_dir = os.path.abspath(sessions_dir)
         os.makedirs(self.sessions_dir, exist_ok=True)
 

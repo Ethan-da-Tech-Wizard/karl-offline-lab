@@ -1,3 +1,7 @@
+# Program: karl-offline-lab - kv_cache.py
+# Programmer: Ethan-da-Tech-Wizard (written with Claude, an AI assistant)
+# Last Modified: 2026-11-18
+# Purpose: Computes how much of a prompt the llama.cpp KV-cache can reuse and appends those statistics to a JSONL log.
 """
 KV-cache statistics and logging helpers.
 
@@ -34,6 +38,7 @@ def kv_cache_stats(llm: Any, prompt: str) -> dict[str, Any]:
         from llama_cpp import Llama as _Llama
 
         prompt_tokens = tuple(llm.tokenize(prompt.encode("utf-8")))
+        # Ask the cache for the stored token sequence that shares the longest prefix with this prompt.
         prefix_key = cache._find_longest_prefix_key(prompt_tokens)
         if prefix_key is None:
             return {
@@ -61,6 +66,7 @@ def log_cache_stats(stats: dict[str, Any], ts: str) -> None:
     Silently swallows all I/O errors so it never disrupts inference.
     """
     try:
+        # Make sure the log folder exists before appending.
         os.makedirs(os.path.dirname(_KV_CACHE_LOG), exist_ok=True)
         entry: dict[str, Any] = {"ts": ts, **stats}
         with open(_KV_CACHE_LOG, "a", encoding="utf-8") as fh:

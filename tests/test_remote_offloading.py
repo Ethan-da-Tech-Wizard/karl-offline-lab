@@ -1,3 +1,10 @@
+# Program: karl-offline-lab - test_remote_offloading.py
+# Programmer: Ethan-da-Tech-Wizard (written with Claude, an AI assistant)
+# Last Modified: 2026-11-18
+# Purpose: Tests remote model offloading: RPC timeout fallback, persistence of the disabled state and ModelLoader routing between remote and local.
+
+"""Tests remote model offloading: RPC timeout fallback, persistence of the disabled state and ModelLoader routing between remote and local."""
+
 from __future__ import annotations
 
 import types
@@ -7,6 +14,7 @@ from unittest.mock import MagicMock, patch
 
 
 def test_remote_rpc_timeout_disables_remote_and_streams_local_fallback(monkeypatch):
+    """Scenario: remote rpc timeout disables remote and streams local fallback. Expected: the assertions in this test hold."""
     from app.engine.remote_rpc_client import RemoteRPCModel
 
     captured = {
@@ -16,13 +24,17 @@ def test_remote_rpc_timeout_disables_remote_and_streams_local_fallback(monkeypat
     }
 
     class FailingWebSocketContext:
+        """Test group or helper class: failing web socket context."""
         async def __aenter__(self):
+            """Test helper: aenter."""
             raise TimeoutError("handshake timeout")
 
         async def __aexit__(self, exc_type, exc, tb):
+            """Test helper: aexit."""
             return False
 
     def fake_connect(url, ssl=None, close_timeout=None):
+        """Test helper: fake connect."""
         captured["connect_url"] = url
         captured["ssl_context"] = ssl
         captured["close_timeout"] = close_timeout
@@ -35,12 +47,15 @@ def test_remote_rpc_timeout_disables_remote_and_streams_local_fallback(monkeypat
     monkeypatch.setitem(__import__("sys").modules, "websockets.asyncio.client", client_module)
 
     class LocalFallbackModel:
+        """Test group or helper class: local fallback model."""
         def __call__(self, prompt, **kwargs):
+            """Make the object callable."""
             captured["local_prompt"] = prompt
             captured["local_kwargs"] = kwargs
             yield {"choices": [{"text": "local answer", "finish_reason": "stop"}]}
 
     def on_fallback(reason):
+        """Test helper: on fallback."""
         captured["fallback_reason"] = reason
 
     model = RemoteRPCModel(
@@ -75,6 +90,7 @@ def test_remote_rpc_timeout_disables_remote_and_streams_local_fallback(monkeypat
 
 
 def test_model_loader_remote_fallback_persists_disabled(monkeypatch):
+    """Scenario: model loader remote fallback persists disabled. Expected: the assertions in this test hold."""
     from app.engine.model_loader import ModelLoader
 
     calls = []
@@ -118,6 +134,7 @@ def test_model_loader_remote_fallback_persists_disabled(monkeypatch):
 
 @pytest.fixture
 def isolated_model_loader_remote_state():
+    """Pytest fixture: isolated model loader remote state."""
     from app.engine.model_loader import ModelLoader
 
     saved = {
@@ -152,6 +169,7 @@ def isolated_model_loader_remote_state():
 
 
 def _local_load_patches():
+    """Test helper: local load patches."""
     from app.engine.model_loader import ModelLoader
     return patch.multiple(
         ModelLoader,
@@ -167,6 +185,7 @@ def _local_load_patches():
 
 
 def test_get_instance_routes_to_remote_when_enabled(isolated_model_loader_remote_state):
+    """Scenario: get instance routes to remote when enabled. Expected: the assertions in this test hold."""
     from app.engine.model_loader import ModelLoader
 
     fake_remote = MagicMock(name="RemoteRPCModel-instance")
@@ -205,6 +224,7 @@ def test_get_instance_routes_to_remote_when_enabled(isolated_model_loader_remote
 def test_get_instance_reuses_cached_remote_instance_for_same_url_and_token(
     isolated_model_loader_remote_state,
 ):
+    """Scenario: get instance reuses cached remote instance for same url and token. Expected: the assertions in this test hold."""
     from app.engine.model_loader import ModelLoader
 
     fake_remote = MagicMock(name="RemoteRPCModel-instance")
@@ -232,6 +252,7 @@ def test_get_instance_reuses_cached_remote_instance_for_same_url_and_token(
 def test_get_instance_reconstructs_remote_instance_when_url_changes(
     isolated_model_loader_remote_state,
 ):
+    """Scenario: get instance reconstructs remote instance when url changes. Expected: the assertions in this test hold."""
     from app.engine.model_loader import ModelLoader
 
     first_remote = MagicMock(name="remote-1")
@@ -323,6 +344,7 @@ def test_local_fallback_factory_disables_remote_and_reenters_local_path(
     captured = {}
 
     def fake_remote_ctor(url, token, on_fallback=None, local_fallback_factory=None, **_kw):
+        """Test helper: fake remote ctor."""
         captured["on_fallback"] = on_fallback
         captured["local_fallback_factory"] = local_fallback_factory
         remote = MagicMock(name="remote-instance")
@@ -335,6 +357,7 @@ def test_local_fallback_factory_disables_remote_and_reenters_local_path(
         # _remote_fallback() disables it, subsequent calls see it disabled —
         # mirroring what config_store.set_remote_engine_config(False, ...)
         # actually persists to disk.
+        """Test helper: fake get engine config."""
         return dict(engine_cfg)
 
     with _local_load_patches(), patch(

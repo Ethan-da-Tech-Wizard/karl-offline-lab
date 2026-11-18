@@ -1,3 +1,7 @@
+# Program: karl-offline-lab - swarm_memory.py
+# Programmer: Ethan-da-Tech-Wizard (written with Claude, an AI assistant)
+# Last Modified: 2026-11-18
+# Purpose: Persists failure fingerprints and the fixes that resolved them, so later swarm runs can recall past lessons by keyword matching.
 """
 SwarmMemory — persistent cross-run failure/fix learning for the swarm.
 
@@ -37,6 +41,7 @@ _ERROR_CLASS_RE = re.compile(r"\b([A-Z][A-Za-z0-9]*(?:Error|Exception|Warning))\
 
 
 def _keywords(text: str, limit: int = 10) -> list[str]:
+    """Extract up to `limit` distinct, lower-cased identifier-like keywords from text, skipping stopwords."""
     words = re.findall(r"[A-Za-z_][A-Za-z0-9_]{2,}", text or "")
     seen: set[str] = set()
     out: list[str] = []
@@ -80,6 +85,7 @@ class SwarmMemory:
     """Thread-safe, atomically-persisted failure/fix memory for one workspace."""
 
     def __init__(self, workspace_path: str, db_path: str | None = None):
+        """Remember the workspace and pick the JSON database path (scoped per workspace when none is given)."""
         self.workspace_path = workspace_path
         if db_path is None:
             # Scope memory per-workspace (by realpath hash) so unrelated
@@ -96,6 +102,7 @@ class SwarmMemory:
     # ── Persistence ──────────────────────────────────────────────────────────
 
     def _load(self) -> None:
+        """Lazily read the JSON record list from disk once; a missing or corrupt file leaves memory empty."""
         if self._loaded:
             return
         try:
@@ -107,6 +114,7 @@ class SwarmMemory:
         self._loaded = True
 
     def _persist(self) -> None:
+        """Write the newest 500 records to disk atomically (temp file, then replace)."""
         self.db_path.parent.mkdir(parents=True, exist_ok=True)
         tmp = self.db_path.with_suffix(".json.tmp")
         tmp.write_text(json.dumps(self._records[-500:], indent=2, ensure_ascii=False), encoding="utf-8")
@@ -173,6 +181,7 @@ class SwarmMemory:
                     fixes_by_fp.setdefault(fp, []).append(r)
 
         def _score(rec: dict) -> int:
+            """Rank a record by how many query terms overlap its stored keywords."""
             return len(terms & set(rec.get("keywords", [])))
 
         scored = sorted(

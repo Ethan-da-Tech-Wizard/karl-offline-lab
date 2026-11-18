@@ -1,4 +1,8 @@
 #!/usr/bin/env python3
+# Program: karl-offline-lab - generate_code_sft_dataset.py
+# Programmer: Ethan-da-Tech-Wizard (written with Claude, an AI assistant)
+# Last Modified: 2026-11-18
+# Purpose: Command-line tool that parses the project's own Python files with the AST and writes every class, function and method as a chat-format SFT example whose answer is the real source code.
 """Scrape app/, core/, and eval/ into a synthetic code SFT dataset.
 
 Crawls the local codebase, extracts every class/method/function definition
@@ -17,12 +21,14 @@ import sys
 import textwrap
 from pathlib import Path
 
+# Repository root, added to the import path so project modules can be imported.
 ROOT = Path(__file__).resolve().parents[1]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
 from core.default_prompts import SWARM_CODER_SYSTEM_PROMPT
 
+# Folders crawled by default, the default output file, and folder names that are skipped (including tests).
 DEFAULT_ROOTS = ["app", "core", "eval"]
 DEFAULT_OUTPUT = ROOT / "data" / "training" / "code" / "synthetic_code_sft.jsonl"
 IGNORED_DIR_NAMES = {".git", "venv", ".venv", "__pycache__", "test", "tests"}
@@ -35,12 +41,14 @@ class DefinitionVisitor(ast.NodeVisitor):
     """
 
     def __init__(self, source: str, filepath: str):
+        """Store the source lines and file path and prepare empty lists for the definitions found and the current class nesting."""
         self.lines = source.splitlines()
         self.filepath = filepath
         self.definitions: list[dict] = []
         self._class_stack: list[str] = []
 
     def visit_ClassDef(self, node: ast.ClassDef) -> None:
+        """Record the class, then record each method directly in its body (tracking the class name for qualified names)."""
         self.definitions.append(self._build_entry(node, kind="class", qualname=node.name))
         self._class_stack.append(node.name)
         for child in node.body:
@@ -49,17 +57,21 @@ class DefinitionVisitor(ast.NodeVisitor):
         self._class_stack.pop()
 
     def visit_FunctionDef(self, node: ast.FunctionDef) -> None:
+        """Record a top-level function."""
         self._record_function(node)
 
     def visit_AsyncFunctionDef(self, node: ast.AsyncFunctionDef) -> None:
+        """Record a top-level async function."""
         self._record_function(node)
 
     def _record_function(self, node: ast.FunctionDef | ast.AsyncFunctionDef) -> None:
+        """Record a function or method, with a dotted name that includes its class when it has one."""
         qualname = ".".join(self._class_stack + [node.name])
         kind = "method" if self._class_stack else "function"
         self.definitions.append(self._build_entry(node, kind=kind, qualname=qualname))
 
     def _build_entry(self, node: ast.AST, kind: str, qualname: str) -> dict:
+        """Build a dictionary describing one definition: kind, names, docstring, arguments, return type, line range and its dedented source text."""
         docstring = ast.get_docstring(node) or ""
         args = self._format_args(node) if kind != "class" else ""
         returns = ""
@@ -91,19 +103,23 @@ class DefinitionVisitor(ast.NodeVisitor):
 
     @staticmethod
     def _format_args(node: ast.FunctionDef | ast.AsyncFunctionDef) -> str:
+        """Format a function's parameters as text, including annotations, defaults, star arguments and keyword-only markers."""
         a = node.args
         parts: list[str] = []
 
+        # Positional parameters pair up with defaults from the right, so pad the defaults list with None on the left.
         positional = a.posonlyargs + a.args
         defaults = [None] * (len(positional) - len(a.defaults)) + list(a.defaults)
         for arg, default in zip(positional, defaults):
             parts.append(DefinitionVisitor._format_one_arg(arg, default))
 
+        # A bare star marks the start of keyword-only parameters when there is no *args.
         if a.vararg:
             parts.append(f"*{a.vararg.arg}")
         elif a.kwonlyargs:
             parts.append("*")
 
+        # Keyword-only defaults line up one to one (missing ones are None).
         for arg, default in zip(a.kwonlyargs, a.kw_defaults):
             parts.append(DefinitionVisitor._format_one_arg(arg, default))
 
@@ -114,6 +130,7 @@ class DefinitionVisitor(ast.NodeVisitor):
 
     @staticmethod
     def _format_one_arg(arg: ast.arg, default: ast.expr | None) -> str:
+        """Format one parameter as name, optional annotation and optional default."""
         piece = arg.arg
         if arg.annotation is not None:
             piece += f": {ast.unparse(arg.annotation)}"
@@ -123,10 +140,12 @@ class DefinitionVisitor(ast.NodeVisitor):
 
 
 def _is_ignored(path: Path) -> bool:
+    """Return True when any part of the path is an ignored folder name."""
     return any(part in IGNORED_DIR_NAMES for part in path.parts)
 
 
 def iter_python_files(root_dirs: list[Path]):
+    """Yield every Python file under the given roots, in sorted order, skipping ignored folders and missing roots."""
     for root in root_dirs:
         if not root.exists():
             continue
@@ -137,6 +156,8 @@ def iter_python_files(root_dirs: list[Path]):
 
 
 def build_user_prompt(entry: dict) -> str:
+    # Describe a class by name only; functions and methods also list their parameters.
+    """Compose the request text for a definition from its kind, name, arguments, docstring, return type and file path."""
     if entry["kind"] == "class":
         subject = f"class '{entry['name']}'"
         params_clause = ""
@@ -156,6 +177,7 @@ def build_user_prompt(entry: dict) -> str:
 
 
 def build_sft_row(entry: dict) -> dict:
+    """Build the chat-format training row, with the code as a fenced Python block, plus metadata about where it came from."""
     return {
         "messages": [
             {"role": "system", "content": SWARM_CODER_SYSTEM_PROMPT},
@@ -173,6 +195,7 @@ def build_sft_row(entry: dict) -> dict:
 
 def crawl(root_dirs: list[Path]) -> tuple[list[dict], int, int]:
     """Returns (sft_rows, files_crawled, files_skipped)."""
+    # Collect rows and counts as files are crawled.
     rows: list[dict] = []
     files_crawled = 0
     files_skipped = 0
@@ -182,15 +205,18 @@ def crawl(root_dirs: list[Path]) -> tuple[list[dict], int, int]:
         try:
             source = path.read_text(encoding="utf-8")
             tree = ast.parse(source)
+        # Skip files that cannot be read or parsed and report them.
         except (OSError, SyntaxError, UnicodeDecodeError) as exc:
             files_skipped += 1
             print(f"  Skipped {path}: {exc}")
             continue
 
+        # Store paths relative to the repository root when possible.
         rel = str(path.relative_to(ROOT)) if path.is_relative_to(ROOT) else str(path)
         visitor = DefinitionVisitor(source, rel)
         visitor.visit(tree)
         for entry in visitor.definitions:
+            # Ignore definitions that produced no source text.
             if entry["source"].strip():
                 rows.append(build_sft_row(entry))
 
@@ -198,6 +224,7 @@ def crawl(root_dirs: list[Path]) -> tuple[list[dict], int, int]:
 
 
 def main() -> int:
+    """Parse options, crawl the chosen folders, write the dataset as JSON lines, print counts and return 0."""
     parser = argparse.ArgumentParser(description="Scrape the local codebase into a synthetic code SFT dataset.")
     parser.add_argument("--roots", nargs="+", default=DEFAULT_ROOTS, help="Directories to crawl (relative to repo root)")
     parser.add_argument("--out", default=str(DEFAULT_OUTPUT), help="Output JSONL path")

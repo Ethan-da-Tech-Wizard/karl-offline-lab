@@ -1,3 +1,7 @@
+# Program: karl-offline-lab - tool_executor.py
+# Programmer: Ethan-da-Tech-Wizard (written with Claude, an AI assistant)
+# Last Modified: 2026-11-18
+# Purpose: Builds the tool-schema prompt for the model, parses tool calls from model output, and executes them through the MCP client manager.
 """
 tool_executor.py — MCP tool call execution for LLMThread.
 Provides build_tool_schema_prompt() and execute_tool_call() for the chat loop.
@@ -14,6 +18,7 @@ def build_tool_schema_prompt(tools: list[dict]) -> str:
     """Convert MCP tool list to a prompt-injectable XML schema block."""
     if not tools:
         return ""
+    # Describe each tool (name, server, description, parameters) inside an XML-like block.
     lines = ["<available_tools>"]
     for t in tools:
         schema = t.get("input_schema", {})
@@ -42,6 +47,7 @@ def build_tool_schema_prompt(tools: list[dict]) -> str:
 def parse_tool_calls(text: str) -> list[dict]:
     """Extract all <tool_call> blocks from model output."""
     calls = []
+    # Each tool_call block gives an optional server, a tool name and a body of key: value arguments.
     for m in re.finditer(r"<tool_call(?:\s+server='([^']*)')?(?:\s+name='([^']*)')>(.*?)</tool_call>", text, re.DOTALL):
         server = m.group(1) or ""
         name = m.group(2) or ""
@@ -90,15 +96,18 @@ def execute_tool_calls(calls: list[dict]) -> list[str]:
     from app.engine.mcp_client import MCPClientManager
     results = []
     try:
+        # Get the shared MCP client manager; if unavailable, report one error result.
         manager = MCPClientManager.get_instance()
     except Exception as e:
         return [f"<tool_result>ERROR: MCP manager unavailable: {e}</tool_result>"]
 
     for call in calls:
+        # The pseudo-tool done() ends the loop and is not sent to any server.
         if call["name"] == "done":
             results.append("<tool_result name='done'>OK</tool_result>")
             continue
         try:
+            # Forward the call to its server and turn the response into a tool_result string.
             resp = manager.call_tool(call["server"], call["name"], call["args"])
             if resp.get("is_error"):
                 text = resp.get("error", "Unknown error")

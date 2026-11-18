@@ -1,3 +1,8 @@
+# Program: karl-offline-lab - shortcuts_overlay.py
+# Programmer: Ethan-da-Tech-Wizard (written with Claude, an AI assistant)
+# Last Modified: 2026-11-18
+# Purpose: Implements ShortcutsOverlay, a floating panel that lists the Workbench keyboard shortcuts and repositions itself when its parent resizes.
+
 """Floating, semi-transparent keyboard shortcuts reference overlay."""
 
 from __future__ import annotations
@@ -8,6 +13,9 @@ from PyQt6.QtWidgets import (
 from PyQt6.QtCore import Qt, QEvent
 
 
+# ---------------------------------------------------------------------------
+# Shortcut table
+# ---------------------------------------------------------------------------
 _SHORTCUTS = [
     # (key display, description)
     ("Ctrl + Enter",  "Send message"),
@@ -21,8 +29,12 @@ _SHORTCUTS = [
 ]
 
 
+# ---------------------------------------------------------------------------
+# Helper
+# ---------------------------------------------------------------------------
 def _kbd(text: str, accent: str, border: str, bg_raised: str, text_hi: str) -> QLabel:
     """Render a key name as a styled kbd badge."""
+    # Centred label with a rounded border so it resembles a keyboard key
     lbl = QLabel(text)
     lbl.setAlignment(Qt.AlignmentFlag.AlignCenter)
     lbl.setStyleSheet(f"""
@@ -38,6 +50,9 @@ def _kbd(text: str, accent: str, border: str, bg_raised: str, text_hi: str) -> Q
     return lbl
 
 
+# ---------------------------------------------------------------------------
+# Overlay widget
+# ---------------------------------------------------------------------------
 class ShortcutsOverlay(QWidget):
     """Semi-transparent floating panel listing Workbench keyboard shortcuts.
 
@@ -47,6 +62,7 @@ class ShortcutsOverlay(QWidget):
     """
 
     def __init__(self, parent: QWidget):
+        """Create the hidden frameless overlay, build its contents and position it over the parent."""
         super().__init__(parent)
         self.setObjectName("shortcuts-overlay")
         self.setAttribute(Qt.WidgetAttribute.WA_TransparentForMouseEvents, False)
@@ -59,12 +75,15 @@ class ShortcutsOverlay(QWidget):
     # ── build ─────────────────────────────────────────────────────────────────
 
     def _build(self, parent: QWidget):
+        """Fill the overlay with a title, close button, divider and one row per shortcut, using theme colours."""
+        # Imported here to avoid a circular import at module load
         from app.ui.themes import get_theme_colors
         try:
             colors = get_theme_colors(getattr(parent, "state", None))
         except Exception:
             colors = {}
 
+        # Theme colours with fallbacks if the theme lookup fails
         bg_raised = colors.get("bg_raised", "#1C1C2A")
         border    = colors.get("border",    "#252535")
         border_hi = colors.get("border_hi", "#383850")
@@ -130,6 +149,7 @@ class ShortcutsOverlay(QWidget):
             row.setSpacing(12)
             row.setContentsMargins(0, 0, 0, 0)
 
+            # Keys joined by " + " become separate badges with a "+" between them
             kbd_parts = key_text.split(" + ")
             for i, part in enumerate(kbd_parts):
                 row.addWidget(_kbd(part.strip(), accent, border, bg_raised, text_hi))
@@ -153,6 +173,7 @@ class ShortcutsOverlay(QWidget):
     # ── positioning ───────────────────────────────────────────────────────────
 
     def _reposition(self):
+        """Place the overlay in the parent's top-right corner below the Workbench header rows."""
         parent = self.parent()
         if parent is None:
             return
@@ -166,11 +187,13 @@ class ShortcutsOverlay(QWidget):
         self.setGeometry(x, y, w, max(h, 300))
 
     def show_overlay(self):
+        """Reposition, bring to front and show the overlay."""
         self._reposition()
         self.raise_()
         self.show()
 
     def toggle(self):
+        """Hide the overlay if visible, otherwise show it."""
         if self.isVisible():
             self.hide()
         else:
@@ -179,6 +202,7 @@ class ShortcutsOverlay(QWidget):
     # ── respond to parent resize ──────────────────────────────────────────────
 
     def eventFilter(self, obj, event):
+        """Reposition whenever the watched parent is resized; other events pass through."""
         if event.type() == QEvent.Type.Resize:
             self._reposition()
         return super().eventFilter(obj, event)

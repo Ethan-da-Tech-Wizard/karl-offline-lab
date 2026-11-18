@@ -1,3 +1,8 @@
+# Program: karl-offline-lab - test_swarm_debugger_rpc.py
+# Programmer: Ethan-da-Tech-Wizard (written with Claude, an AI assistant)
+# Last Modified: 2026-11-18
+# Purpose: Dispatch-level tests of the swarm debugger RPC endpoints using a mock WebSocket and a manager built without sockets.
+
 """
 Dispatch-level tests for the swarm interactive-debugger RPC endpoints:
 swarm_pause / swarm_resume / swarm_step / swarm_override_task / swarm_get_history.
@@ -20,30 +25,37 @@ from app.engine.websocket_server import WebSocketServerManager
 
 
 class MockWebSocket:
+    """Test group or helper class: mock web socket."""
     def __init__(self, messages):
+        """Initialise this helper object with its starting state."""
         self._messages = list(messages)
         self.sent = []
         self.remote_address = ("127.0.0.1", 50000)
         self.closed = False
 
     def __aiter__(self):
+        """Test helper: aiter."""
         return self
 
     async def __anext__(self):
+        """Test helper: anext."""
         if not self._messages:
             raise StopAsyncIteration
         return self._messages.pop(0)
 
     async def send(self, payload):
+        """Test helper: send."""
         self.sent.append(payload)
 
     async def close(self, code=None, reason=None):
+        """Test helper: close."""
         self.closed = True
         self.close_code = code
         self.close_reason = reason
 
 
 def make_manager():
+    """Test helper: make manager."""
     manager = WebSocketServerManager.__new__(WebSocketServerManager)
     manager.port = 19998
     manager.clients = set()
@@ -62,6 +74,7 @@ def make_manager():
 
 
 async def _rpc(manager, message: dict) -> dict:
+    """Test helper: rpc."""
     websocket = MockWebSocket([json.dumps(message)])
     await manager._handler(websocket, path="/?token=test-token")
     assert websocket.sent, "handler produced no response"
@@ -69,7 +82,9 @@ async def _rpc(manager, message: dict) -> dict:
 
 
 class TestSwarmDebuggerRpc(unittest.TestCase):
+    """Test group or helper class: test swarm debugger rpc."""
     def test_swarm_pause_without_active_run_returns_error(self):
+        """Scenario: swarm pause without active run returns error. Expected: the assertions in this test hold."""
         resp = asyncio.run(_rpc(make_manager(), {
             "jsonrpc": "2.0", "id": 1, "method": "swarm_pause", "params": {"run_id": "no-such-run"},
         }))
@@ -77,18 +92,21 @@ class TestSwarmDebuggerRpc(unittest.TestCase):
         self.assertIn("No swarm task", resp["error"]["message"])
 
     def test_swarm_resume_without_active_run_returns_error(self):
+        """Scenario: swarm resume without active run returns error. Expected: the assertions in this test hold."""
         resp = asyncio.run(_rpc(make_manager(), {
             "jsonrpc": "2.0", "id": 2, "method": "swarm_resume", "params": {"run_id": "no-such-run"},
         }))
         self.assertIn("error", resp)
 
     def test_swarm_step_without_active_run_returns_error(self):
+        """Scenario: swarm step without active run returns error. Expected: the assertions in this test hold."""
         resp = asyncio.run(_rpc(make_manager(), {
             "jsonrpc": "2.0", "id": 3, "method": "swarm_step", "params": {"run_id": "no-such-run"},
         }))
         self.assertIn("error", resp)
 
     def test_swarm_override_task_without_active_run_returns_error(self):
+        """Scenario: swarm override task without active run returns error. Expected: the assertions in this test hold."""
         resp = asyncio.run(_rpc(make_manager(), {
             "jsonrpc": "2.0", "id": 4, "method": "swarm_override_task",
             "params": {"run_id": "no-such-run", "filepath": "a.py", "instructions": "do X"},
@@ -96,6 +114,7 @@ class TestSwarmDebuggerRpc(unittest.TestCase):
         self.assertIn("error", resp)
 
     def test_swarm_pause_rejects_missing_run_id(self):
+        """Scenario: swarm pause rejects missing run id. Expected: the assertions in this test hold."""
         resp = asyncio.run(_rpc(make_manager(), {
             "jsonrpc": "2.0", "id": 5, "method": "swarm_pause", "params": {},
         }))
@@ -103,6 +122,7 @@ class TestSwarmDebuggerRpc(unittest.TestCase):
         self.assertEqual(resp["error"]["code"], -32602)
 
     def test_swarm_override_task_rejects_missing_instructions(self):
+        """Scenario: swarm override task rejects missing instructions. Expected: the assertions in this test hold."""
         resp = asyncio.run(_rpc(make_manager(), {
             "jsonrpc": "2.0", "id": 6, "method": "swarm_override_task",
             "params": {"run_id": "x", "filepath": "a.py"},
@@ -111,6 +131,7 @@ class TestSwarmDebuggerRpc(unittest.TestCase):
         self.assertEqual(resp["error"]["code"], -32602)
 
     def test_swarm_get_history_without_run_id_lists_runs(self):
+        """Scenario: swarm get history without run id lists runs. Expected: the assertions in this test hold."""
         resp = asyncio.run(_rpc(make_manager(), {
             "jsonrpc": "2.0", "id": 7, "method": "swarm_get_history", "params": {},
         }))
@@ -119,6 +140,7 @@ class TestSwarmDebuggerRpc(unittest.TestCase):
         self.assertIsInstance(resp["result"]["runs"], list)
 
     def test_swarm_get_history_with_unknown_run_id_returns_empty_steps(self):
+        """Scenario: swarm get history with unknown run id returns empty steps. Expected: the assertions in this test hold."""
         resp = asyncio.run(_rpc(make_manager(), {
             "jsonrpc": "2.0", "id": 8, "method": "swarm_get_history",
             "params": {"run_id": "definitely-not-a-real-run"},
@@ -127,6 +149,7 @@ class TestSwarmDebuggerRpc(unittest.TestCase):
         self.assertEqual(resp["result"]["steps"], [])
 
     def test_swarm_get_history_rejects_non_string_run_id(self):
+        """Scenario: swarm get history rejects non string run id. Expected: the assertions in this test hold."""
         resp = asyncio.run(_rpc(make_manager(), {
             "jsonrpc": "2.0", "id": 9, "method": "swarm_get_history", "params": {"run_id": 123},
         }))

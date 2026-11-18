@@ -1,3 +1,7 @@
+# Program: karl-offline-lab - security.py
+# Programmer: Ethan-da-Tech-Wizard (written with Claude, an AI assistant)
+# Last Modified: 2026-11-18
+# Purpose: Refuses to start a Karl process when it is running as root or administrator.
 """
 Small, dependency-light security helpers shared across every independently
 launched Karl entrypoint (the PyQt app in main.py, and standalone scripts
@@ -11,6 +15,7 @@ import logging
 import os
 import sys
 
+# Message logged when a privileged run is blocked.
 PRIV_MSG = (
     "Security Error: Running Karl as root or administrator is blocked "
     "to prevent accidental host system modification during agentic testing loops."
@@ -30,10 +35,12 @@ def assert_not_privileged() -> None:
     """
     import platform
     plat = platform.system()
+    # On Unix-like systems, user id 0 means root.
     if plat in ("Linux", "Darwin"):
         if os.getuid() == 0:
             logging.getLogger("karl").critical(PRIV_MSG)
             sys.exit(1)
+    # On Windows, ask the shell API whether the user is an administrator.
     elif plat == "Windows":
         try:
             import ctypes

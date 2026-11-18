@@ -1,3 +1,7 @@
+# Program: karl-offline-lab - test_db_pool.py
+# Programmer: Ethan-da-Tech-Wizard (written with Claude, an AI assistant)
+# Last Modified: 2026-11-18
+# Purpose: Tests for the SQLite connection pool: WAL settings, connection reuse, concurrent writes and rollback.
 """
 Tests for SQLiteConnectionPool — thread-safety, WAL configuration, and ACID safety
 under concurrent writes.
@@ -15,6 +19,7 @@ from app.utils.db_pool import SQLiteConnectionPool
 # ── Helpers ───────────────────────────────────────────────────────────────────
 
 def _create_table(db_path: str) -> None:
+    """Create the test_rows table in the given database file if it is missing."""
     conn = sqlite3.connect(db_path)
     conn.execute(
         """
@@ -30,6 +35,7 @@ def _create_table(db_path: str) -> None:
 
 
 def _row_count(db_path: str) -> int:
+    """Return the number of rows in test_rows using a fresh connection."""
     conn = sqlite3.connect(db_path, timeout=5.0)
     try:
         return conn.execute("SELECT COUNT(*) FROM test_rows").fetchone()[0]
@@ -94,8 +100,10 @@ def test_concurrent_inserts_complete_without_lock_errors(tmp_path):
     lock = threading.Lock()
 
     def worker(thread_id: int) -> None:
+        """Insert a batch of rows in one immediate transaction and record success or the error."""
         try:
             with pool.get_connection() as conn:
+                # Take the write lock up front so concurrent writers queue instead of failing
                 conn.execute("BEGIN IMMEDIATE")
                 for i in range(rows_per_thread):
                     conn.execute(
@@ -142,6 +150,7 @@ def test_final_row_count_matches_expected_acid_safety(tmp_path):
     errors: list[str] = []
 
     def worker(thread_id: int) -> None:
+        """Insert a batch of rows in one immediate transaction and record any error."""
         try:
             with pool.get_connection() as conn:
                 conn.execute("BEGIN IMMEDIATE")
@@ -219,6 +228,7 @@ def test_semaphore_gates_concurrent_access_to_pool_size(tmp_path):
     current_holders = [0]
 
     def holder() -> None:
+        """Hold a pooled connection, track how many threads hold one at once, then release."""
         with pool.get_connection() as _conn:
             with hwm_lock:
                 current_holders[0] += 1

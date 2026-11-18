@@ -1,3 +1,8 @@
+# Program: karl-offline-lab - test_security_guards.py
+# Programmer: Ethan-da-Tech-Wizard (written with Claude, an AI assistant)
+# Last Modified: 2026-11-18
+# Purpose: Tests path sandboxing, input sanitization and HTML escaping guards in the WebSocket server and related helpers.
+
 """
 Security Guards Tests — Karl Workbench
 =======================================
@@ -48,34 +53,43 @@ def _make_server():
 
 class TestIsSafePath(unittest.TestCase):
 
+    """Test group or helper class: test is safe path."""
     def setUp(self):
+        """Prepare the fixtures needed by each test in this class."""
         self.server = _make_server()
         self.project_root = os.path.realpath(os.getcwd())
 
     # -- blocklist ----------------------------------------------------------------
 
     def test_blocks_etc(self):
+        """Scenario: blocks etc. Expected: the assertions in this test hold."""
         self.assertFalse(self.server._is_safe_path("/etc/passwd"))
 
     def test_blocks_root_dir(self):
+        """Scenario: blocks root dir. Expected: the assertions in this test hold."""
         self.assertFalse(self.server._is_safe_path("/"))
 
     def test_blocks_proc(self):
+        """Scenario: blocks proc. Expected: the assertions in this test hold."""
         self.assertFalse(self.server._is_safe_path("/proc/self/mem"))
 
     def test_blocks_sys(self):
+        """Scenario: blocks sys. Expected: the assertions in this test hold."""
         self.assertFalse(self.server._is_safe_path("/sys/kernel"))
 
     def test_blocks_usr_bin(self):
+        """Scenario: blocks usr bin. Expected: the assertions in this test hold."""
         self.assertFalse(self.server._is_safe_path("/usr/bin/python3"))
 
     def test_tmp_is_not_blocked(self):
         # /tmp is intentionally NOT in the blocklist so tempfile-based workspaces
         # and test environments remain functional. Symlink attacks from /tmp are
         # caught by the realpath check in _is_safe_path.
+        """Scenario: tmp is not blocked. Expected: the assertions in this test hold."""
         self.assertTrue(self.server._is_safe_path("/tmp"))
 
     def test_root_home_keeps_tmp_available_and_sensitive_paths_blocked(self):
+        """Scenario: root home keeps tmp available and sensitive paths blocked. Expected: the assertions in this test hold."""
         expanduser = os.path.expanduser
         with patch(
             'app.engine.websocket_server.os.path.expanduser',
@@ -87,36 +101,44 @@ class TestIsSafePath(unittest.TestCase):
             self.assertFalse(server._is_safe_path('/root/.ssh/id_rsa'))
 
     def test_blocks_home_root(self):
+        """Scenario: blocks home root. Expected: the assertions in this test hold."""
         home = os.path.expanduser("~")
         self.assertFalse(self.server._is_safe_path(home))
 
     def test_blocks_ssh_dir(self):
+        """Scenario: blocks ssh dir. Expected: the assertions in this test hold."""
         ssh = os.path.join(os.path.expanduser("~"), ".ssh", "id_rsa")
         self.assertFalse(self.server._is_safe_path(ssh))
 
     def test_blocks_aws_credentials(self):
+        """Scenario: blocks aws credentials. Expected: the assertions in this test hold."""
         aws = os.path.join(os.path.expanduser("~"), ".aws", "credentials")
         self.assertFalse(self.server._is_safe_path(aws))
 
     def test_blocks_gnupg(self):
+        """Scenario: blocks gnupg. Expected: the assertions in this test hold."""
         gpg = os.path.join(os.path.expanduser("~"), ".gnupg", "secring.gpg")
         self.assertFalse(self.server._is_safe_path(gpg))
 
     def test_blocks_kube_config(self):
+        """Scenario: blocks kube config. Expected: the assertions in this test hold."""
         kube = os.path.join(os.path.expanduser("~"), ".kube", "config")
         self.assertFalse(self.server._is_safe_path(kube))
 
     # -- allowlist (project root) -------------------------------------------------
 
     def test_allows_project_root_itself(self):
+        """Scenario: allows project root itself. Expected: the assertions in this test hold."""
         self.assertTrue(self.server._is_safe_path(self.project_root))
 
     def test_allows_file_inside_project(self):
+        """Scenario: allows file inside project. Expected: the assertions in this test hold."""
         target = os.path.join(self.project_root, "app", "engine", "websocket_server.py")
         if os.path.exists(target):
             self.assertTrue(self.server._is_safe_path(target))
 
     def test_allows_data_dir(self):
+        """Scenario: allows data dir. Expected: the assertions in this test hold."""
         data = os.path.join(self.project_root, "data")
         if os.path.exists(data):
             self.assertTrue(self.server._is_safe_path(data))
@@ -124,9 +146,11 @@ class TestIsSafePath(unittest.TestCase):
     # -- edge cases ---------------------------------------------------------------
 
     def test_empty_string_is_unsafe(self):
+        """Scenario: empty string is unsafe. Expected: the assertions in this test hold."""
         self.assertFalse(self.server._is_safe_path(""))
 
     def test_none_is_unsafe(self):
+        """Scenario: none is unsafe. Expected: the assertions in this test hold."""
         self.assertFalse(self.server._is_safe_path(None))  # type: ignore[arg-type]
 
     # -- symlink resolution -------------------------------------------------------
@@ -161,14 +185,18 @@ class TestIsSafePath(unittest.TestCase):
 
 class TestCollectKbFiles(unittest.TestCase):
 
+    """Test group or helper class: test collect kb files."""
     def setUp(self):
+        """Prepare the fixtures needed by each test in this class."""
         self.server = _make_server()
         self.tmpdir = tempfile.TemporaryDirectory()
 
     def tearDown(self):
+        """Clean up whatever setUp created after each test."""
         self.tmpdir.cleanup()
 
     def test_collects_supported_extensions(self):
+        """Scenario: collects supported extensions. Expected: the assertions in this test hold."""
         for ext in (".txt", ".md", ".py"):
             Path(self.tmpdir.name, f"file{ext}").write_text("content")
         # .exe should be ignored
@@ -181,6 +209,7 @@ class TestCollectKbFiles(unittest.TestCase):
         self.assertNotIn(".exe", exts)
 
     def test_returns_realpath_for_each_file(self):
+        """Scenario: returns realpath for each file. Expected: the assertions in this test hold."""
         txt = Path(self.tmpdir.name, "sample.txt")
         txt.write_text("hello")
         results = self.server._collect_kb_files(str(txt), recursive=False)
@@ -188,12 +217,14 @@ class TestCollectKbFiles(unittest.TestCase):
         self.assertEqual(results[0], os.path.realpath(str(txt)))
 
     def test_raises_on_unsupported_single_file(self):
+        """Scenario: raises on unsupported single file. Expected: the assertions in this test hold."""
         bad = Path(self.tmpdir.name, "evil.exe")
         bad.write_text("nope")
         with self.assertRaises(ValueError):
             self.server._collect_kb_files(str(bad), recursive=False)
 
     def test_raises_on_missing_path(self):
+        """Scenario: raises on missing path. Expected: the assertions in this test hold."""
         with self.assertRaises(FileNotFoundError):
             self.server._collect_kb_files("/nonexistent/path/abc123", recursive=False)
 
@@ -222,6 +253,7 @@ class TestCreateAgentValidation(unittest.TestCase):
     """
 
     def setUp(self):
+        """Prepare the fixtures needed by each test in this class."""
         self.server = _make_server()
 
     def _validate_base_model(self, base_model):
@@ -259,29 +291,36 @@ class TestCreateAgentValidation(unittest.TestCase):
     # base_model checks --------------------------------------------------------
 
     def test_base_model_none_is_allowed(self):
+        """Scenario: base model none is allowed. Expected: the assertions in this test hold."""
         self.assertIsNone(self._validate_base_model(None))
 
     def test_base_model_path_separator_rejected(self):
+        """Scenario: base model path separator rejected. Expected: the assertions in this test hold."""
         with self.assertRaises(ValueError):
             self._validate_base_model("../../etc/shadow")
 
     def test_base_model_path_separator_slash_rejected(self):
+        """Scenario: base model path separator slash rejected. Expected: the assertions in this test hold."""
         with self.assertRaises(ValueError):
             self._validate_base_model("data/models/legit.gguf")
 
     def test_base_model_non_gguf_extension_rejected(self):
+        """Scenario: base model non gguf extension rejected. Expected: the assertions in this test hold."""
         with self.assertRaises(ValueError):
             self._validate_base_model("model.bin")
 
     def test_base_model_empty_string_rejected(self):
+        """Scenario: base model empty string rejected. Expected: the assertions in this test hold."""
         with self.assertRaises(ValueError):
             self._validate_base_model("   ")
 
     def test_base_model_valid_requires_file_to_exist(self):
+        """Scenario: base model valid requires file to exist. Expected: the assertions in this test hold."""
         with self.assertRaises(FileNotFoundError):
             self._validate_base_model("nonexistent_model.gguf")
 
     def test_base_model_valid_when_file_exists(self):
+        """Scenario: base model valid when file exists. Expected: the assertions in this test hold."""
         model_dir = os.path.join("data", "models")
         os.makedirs(model_dir, exist_ok=True)
         model_path = os.path.join(model_dir, "_test_security_model.gguf")
@@ -296,25 +335,31 @@ class TestCreateAgentValidation(unittest.TestCase):
     # adapter checks -----------------------------------------------------------
 
     def test_adapter_none_is_allowed(self):
+        """Scenario: adapter none is allowed. Expected: the assertions in this test hold."""
         self.assertIsNone(self._validate_adapter(None))
 
     def test_adapter_path_separator_rejected(self):
+        """Scenario: adapter path separator rejected. Expected: the assertions in this test hold."""
         with self.assertRaises(ValueError):
             self._validate_adapter("../../.ssh")
 
     def test_adapter_slash_prefix_rejected(self):
+        """Scenario: adapter slash prefix rejected. Expected: the assertions in this test hold."""
         with self.assertRaises(ValueError):
             self._validate_adapter("/absolute/adapter")
 
     def test_adapter_empty_string_rejected(self):
+        """Scenario: adapter empty string rejected. Expected: the assertions in this test hold."""
         with self.assertRaises(ValueError):
             self._validate_adapter("   ")
 
     def test_adapter_valid_requires_dir_to_exist(self):
+        """Scenario: adapter valid requires dir to exist. Expected: the assertions in this test hold."""
         with self.assertRaises(FileNotFoundError):
             self._validate_adapter("nonexistent_adapter_xyz")
 
     def test_adapter_valid_when_dir_exists(self):
+        """Scenario: adapter valid when dir exists. Expected: the assertions in this test hold."""
         adapter_dir = os.path.join("data", "adapters", "_test_security_adapter")
         os.makedirs(adapter_dir, exist_ok=True)
         try:
@@ -330,7 +375,9 @@ class TestCreateAgentValidation(unittest.TestCase):
 
 class TestSetActiveModelAdapter(unittest.TestCase):
 
+    """Test group or helper class: test set active model adapter."""
     def setUp(self):
+        """Prepare the fixtures needed by each test in this class."""
         self.server = _make_server()
 
     def test_adapter_with_path_separator_raises(self):
@@ -348,10 +395,12 @@ class TestSetActiveModelAdapter(unittest.TestCase):
                 os.remove(model_path)
 
     def test_missing_model_raises_file_not_found(self):
+        """Scenario: missing model raises file not found. Expected: the assertions in this test hold."""
         with self.assertRaises(FileNotFoundError):
             self.server._set_active_model("definitely_missing.gguf")
 
     def test_model_with_path_separator_raises_value_error(self):
+        """Scenario: model with path separator raises value error. Expected: the assertions in this test hold."""
         with self.assertRaises(ValueError):
             self.server._set_active_model("../../etc/shadow.gguf")
 
@@ -369,42 +418,53 @@ class TestAutoTrainInputSanitization(unittest.TestCase):
     # topic -------------------------------------------------------------------
 
     def test_valid_topic(self):
+        """Scenario: valid topic. Expected: the assertions in this test hold."""
         self.assertIsNotNone(self.TOPIC_RE.match("Python basics"))
         self.assertIsNotNone(self.TOPIC_RE.match("data-structures"))
         self.assertIsNotNone(self.TOPIC_RE.match("intro_to_llms"))
 
     def test_topic_with_semicolon_rejected(self):
+        """Scenario: topic with semicolon rejected. Expected: the assertions in this test hold."""
         self.assertIsNone(self.TOPIC_RE.match("evil; rm -rf /"))
 
     def test_topic_with_backtick_rejected(self):
+        """Scenario: topic with backtick rejected. Expected: the assertions in this test hold."""
         self.assertIsNone(self.TOPIC_RE.match("topic`malicious`"))
 
     def test_topic_with_slash_rejected(self):
+        """Scenario: topic with slash rejected. Expected: the assertions in this test hold."""
         self.assertIsNone(self.TOPIC_RE.match("../../etc/passwd"))
 
     def test_topic_with_dollar_rejected(self):
+        """Scenario: topic with dollar rejected. Expected: the assertions in this test hold."""
         self.assertIsNone(self.TOPIC_RE.match("$HOME/secret"))
 
     def test_topic_starting_with_special_char_rejected(self):
+        """Scenario: topic starting with special char rejected. Expected: the assertions in this test hold."""
         self.assertIsNone(self.TOPIC_RE.match(" leading space"))
 
     # adapter_name ------------------------------------------------------------
 
     def test_valid_adapter_name(self):
+        """Scenario: valid adapter name. Expected: the assertions in this test hold."""
         self.assertIsNotNone(self.ADAPTER_RE.match("my_adapter"))
         self.assertIsNotNone(self.ADAPTER_RE.match("adapter-v2"))
         self.assertIsNotNone(self.ADAPTER_RE.match("LoRA1"))
 
     def test_adapter_name_with_space_rejected(self):
+        """Scenario: adapter name with space rejected. Expected: the assertions in this test hold."""
         self.assertIsNone(self.ADAPTER_RE.match("has space"))
 
     def test_adapter_name_with_slash_rejected(self):
+        """Scenario: adapter name with slash rejected. Expected: the assertions in this test hold."""
         self.assertIsNone(self.ADAPTER_RE.match("../../secrets"))
 
     def test_adapter_name_with_dot_rejected(self):
+        """Scenario: adapter name with dot rejected. Expected: the assertions in this test hold."""
         self.assertIsNone(self.ADAPTER_RE.match("../evil"))
 
     def test_adapter_name_empty_rejected(self):
+        """Scenario: adapter name empty rejected. Expected: the assertions in this test hold."""
         self.assertIsNone(self.ADAPTER_RE.match(""))
 
 
@@ -414,41 +474,49 @@ class TestXssEscaping(unittest.TestCase):
     """Verify that the Python HTML-escape helpers neutralize injection payloads."""
 
     def setUp(self):
+        """Prepare the fixtures needed by each test in this class."""
         from app.ui.workspaces.workbench.chat_view import _escape, _escape_pre
         self._escape = _escape
         self._escape_pre = _escape_pre
 
     def test_escape_lt_gt(self):
+        """Scenario: escape lt gt. Expected: the assertions in this test hold."""
         result = self._escape("<script>alert(1)</script>")
         self.assertNotIn("<script>", result)
         self.assertIn("&lt;script&gt;", result)
 
     def test_escape_ampersand(self):
+        """Scenario: escape ampersand. Expected: the assertions in this test hold."""
         result = self._escape("foo & bar")
         self.assertIn("&amp;", result)
         self.assertNotIn(" & ", result)
 
     def test_escape_converts_newlines_to_br(self):
+        """Scenario: escape converts newlines to br. Expected: the assertions in this test hold."""
         result = self._escape("line1\nline2")
         self.assertIn("<br>", result)
         self.assertNotIn("\n", result)
 
     def test_escape_pre_keeps_newlines(self):
+        """Scenario: escape pre keeps newlines. Expected: the assertions in this test hold."""
         result = self._escape_pre("line1\nline2")
         self.assertIn("\n", result)
         self.assertNotIn("<br>", result)
 
     def test_escape_pre_still_escapes_html(self):
+        """Scenario: escape pre still escapes html. Expected: the assertions in this test hold."""
         result = self._escape_pre("<b>bold</b>")
         self.assertNotIn("<b>", result)
         self.assertIn("&lt;b&gt;", result)
 
     def test_escape_event_handler_injection(self):
+        """Scenario: escape event handler injection. Expected: the assertions in this test hold."""
         result = self._escape('<img src=x onerror="alert(1)">')
         self.assertNotIn("<img", result)
         self.assertIn("&lt;img", result)
 
     def test_escape_script_in_code_block(self):
+        """Scenario: escape script in code block. Expected: the assertions in this test hold."""
         payload = "```\n<script>evil()</script>\n```"
         # _escape should convert all < > to entities even inside code fences
         result = self._escape(payload)
@@ -459,26 +527,33 @@ class TestXssEscaping(unittest.TestCase):
 
 class TestPromptPairNameSanitization(unittest.TestCase):
 
+    """Test group or helper class: test prompt pair name sanitization."""
     def setUp(self):
+        """Prepare the fixtures needed by each test in this class."""
         self.server = _make_server()
 
     def test_alphanumeric_and_safe_chars_preserved(self):
+        """Scenario: alphanumeric and safe chars preserved. Expected: the assertions in this test hold."""
         self.assertEqual(self.server._safe_prompt_pair_name("my-test_pair1"), "my-test_pair1")
 
     def test_special_chars_replaced(self):
+        """Scenario: special chars replaced. Expected: the assertions in this test hold."""
         result = self.server._safe_prompt_pair_name("evil/../../../etc")
         self.assertNotIn("/", result)
         self.assertNotIn(".", result)
 
     def test_empty_name_raises(self):
+        """Scenario: empty name raises. Expected: the assertions in this test hold."""
         with self.assertRaises(ValueError):
             self.server._safe_prompt_pair_name("   ")
 
     def test_spaces_replaced(self):
+        """Scenario: spaces replaced. Expected: the assertions in this test hold."""
         result = self.server._safe_prompt_pair_name("hello world")
         self.assertNotIn(" ", result)
 
     def test_null_bytes_stripped(self):
+        """Scenario: null bytes stripped. Expected: the assertions in this test hold."""
         result = self.server._safe_prompt_pair_name("ok\x00name")
         self.assertNotIn("\x00", result)
 

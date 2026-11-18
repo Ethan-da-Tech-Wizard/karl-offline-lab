@@ -1,3 +1,8 @@
+# Program: karl-offline-lab - test_scrape_library_docs.py
+# Programmer: Ethan-da-Tech-Wizard (written with Claude, an AI assistant)
+# Last Modified: 2026-11-18
+# Purpose: Tests the library documentation scraper and its LLM-driven instruction/response synthesis helpers.
+
 """Tests for tools/scrape_library_docs.py — library signature scraping and
 LLM-driven instruction/response synthesis."""
 
@@ -18,7 +23,9 @@ import scrape_library_docs as m  # noqa: E402
 
 
 class TestScrapePackage(unittest.TestCase):
+    """Test group or helper class: test scrape package."""
     def test_scrapes_real_installed_package(self):
+        """Scenario: scrapes real installed package. Expected: the assertions in this test hold."""
         results = m.scrape_package("requests", max_examples=12)
 
         self.assertGreater(len(results), 0)
@@ -30,6 +37,7 @@ class TestScrapePackage(unittest.TestCase):
             self.assertIn(entry["kind"], {"function", "class", "method"})
 
     def test_prioritizes_functions_before_exception_classes(self):
+        """Scenario: prioritizes functions before exception classes. Expected: the assertions in this test hold."""
         results = m.scrape_package("requests", max_examples=15)
         kinds_in_order = [r["kind"] for r in results]
         first_class_index = kinds_in_order.index("class") if "class" in kinds_in_order else len(kinds_in_order)
@@ -39,17 +47,21 @@ class TestScrapePackage(unittest.TestCase):
         self.assertTrue({"get", "post"} & function_names)
 
     def test_returns_empty_list_for_unimportable_package(self):
+        """Scenario: returns empty list for unimportable package. Expected: the assertions in this test hold."""
         results = m.scrape_package("definitely_not_a_real_package_xyz")
         self.assertEqual(results, [])
 
     def test_skips_undocumented_members(self):
+        """Scenario: skips undocumented members. Expected: the assertions in this test hold."""
         results = m.scrape_package("requests", max_examples=50)
         for entry in results:
             self.assertTrue(entry["docstring"].strip())
 
 
 class TestMetaPromptAndParsing(unittest.TestCase):
+    """Test group or helper class: test meta prompt and parsing."""
     def test_build_meta_prompt_includes_signature_and_docstring(self):
+        """Scenario: build meta prompt includes signature and docstring. Expected: the assertions in this test hold."""
         entry = {
             "package": "numpy", "qualname": "arange", "kind": "function",
             "signature": "(start, stop, step)", "docstring": "Return evenly spaced values.",
@@ -61,6 +73,7 @@ class TestMetaPromptAndParsing(unittest.TestCase):
         self.assertIn("INSTRUCTION:", prompt)
 
     def test_truncates_long_docstrings(self):
+        """Scenario: truncates long docstrings. Expected: the assertions in this test hold."""
         entry = {
             "package": "x", "qualname": "y", "kind": "function",
             "signature": "()", "docstring": "z" * 5000,
@@ -69,6 +82,7 @@ class TestMetaPromptAndParsing(unittest.TestCase):
         self.assertLess(len(prompt), 3000)
 
     def test_parse_llm_output_extracts_instruction_and_response(self):
+        """Scenario: parse llm output extracts instruction and response. Expected: the assertions in this test hold."""
         raw = (
             "INSTRUCTION: How do I use arange?\n"
             "RESPONSE:\n"
@@ -81,16 +95,20 @@ class TestMetaPromptAndParsing(unittest.TestCase):
         self.assertIn("np.arange(5)", response)
 
     def test_parse_llm_output_returns_none_when_markers_missing(self):
+        """Scenario: parse llm output returns none when markers missing. Expected: the assertions in this test hold."""
         self.assertIsNone(m._parse_llm_output("just some free text, no markers"))
 
     def test_parse_llm_output_returns_none_on_empty_instruction(self):
+        """Scenario: parse llm output returns none on empty instruction. Expected: the assertions in this test hold."""
         raw = "INSTRUCTION:   \nRESPONSE:\n```python\nx = 1\n```"
         self.assertIsNone(m._parse_llm_output(raw))
 
 
 class TestGenerateSftQa(unittest.TestCase):
+    """Test group or helper class: test generate sft qa."""
     @patch("scrape_library_docs.ModelLoader.get_instance")
     def test_builds_sft_row_from_well_formed_output(self, mock_get_instance):
+        """Scenario: builds sft row from well formed output. Expected: the assertions in this test hold."""
         mock_llm = MagicMock(return_value={"choices": [{"text": (
             "INSTRUCTION: How do I create a range using numpy.arange?\n"
             "RESPONSE:\n```python\nimport numpy as np\narr = np.arange(0, 10, 2)\n```"
@@ -116,6 +134,7 @@ class TestGenerateSftQa(unittest.TestCase):
 
     @patch("scrape_library_docs.ModelLoader.get_instance")
     def test_returns_none_when_output_unparsable(self, mock_get_instance):
+        """Scenario: returns none when output unparsable. Expected: the assertions in this test hold."""
         mock_llm = MagicMock(return_value={"choices": [{"text": "not in the expected format at all"}]})
         mock_get_instance.return_value = mock_llm
 
@@ -126,12 +145,14 @@ class TestGenerateSftQa(unittest.TestCase):
 
     @patch("scrape_library_docs.ModelLoader.get_instance", side_effect=RuntimeError("no model loaded"))
     def test_returns_none_when_model_load_fails(self, _mock):
+        """Scenario: returns none when model load fails. Expected: the assertions in this test hold."""
         entry = {"package": "numpy", "qualname": "arange", "kind": "function", "signature": "()", "docstring": "doc"}
         row = m.generate_sft_qa(entry)
         self.assertIsNone(row)
 
     @patch("scrape_library_docs.ModelLoader.get_instance")
     def test_returns_none_when_llm_call_raises(self, mock_get_instance):
+        """Scenario: returns none when llm call raises. Expected: the assertions in this test hold."""
         mock_llm = MagicMock(side_effect=RuntimeError("generation failed"))
         mock_get_instance.return_value = mock_llm
 

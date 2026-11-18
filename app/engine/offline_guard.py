@@ -1,3 +1,7 @@
+# Program: karl-offline-lab - offline_guard.py
+# Programmer: Ethan-da-Tech-Wizard (written with Claude, an AI assistant)
+# Last Modified: 2026-11-18
+# Purpose: Patches the requests, urllib and httpx clients so external network calls raise an error unless online execution is explicitly enabled, and sets Hugging Face offline variables.
 """Runtime network guard for Karl's offline-first backend."""
 
 from __future__ import annotations
@@ -20,6 +24,7 @@ _ORIGINAL_HTTPX_REQUEST = None
 _ORIGINAL_HTTPX_CLIENT_REQUEST = None
 _ORIGINAL_HTTPX_ASYNC_CLIENT_REQUEST = None
 
+# Host names treated as the local machine and therefore always allowed (empty, localhost, loopback and the any-address form).
 _LOCAL_HOSTS = {
     "",
     "localhost",
@@ -34,6 +39,7 @@ class OfflineNetworkError(RuntimeError):
 
 
 def _truthy(value: object) -> bool:
+    """Return True when the value reads as an on-switch such as 1, true, yes or on."""
     return str(value).strip().lower() in {"1", "true", "yes", "on"}
 
 
@@ -51,6 +57,7 @@ def online_execution_enabled() -> bool:
 
 
 def _is_local_url(url: object) -> bool:
+    """Return True for file URLs, URLs without a scheme, and URLs whose host is the local machine."""
     parsed = urlparse(str(url))
     if parsed.scheme in {"", "file"}:
         return True
@@ -88,12 +95,14 @@ def install() -> None:
     try:
         import requests
 
+        # Keep the real method so the guard can call it once the request is allowed.
         _ORIGINAL_REQUESTS_REQUEST = requests.sessions.Session.request
 
         def guarded_requests_request(session, method, url, *args, **kwargs):
             assert_online_allowed(url, operation=f"HTTP {str(method).upper()}")
             return _ORIGINAL_REQUESTS_REQUEST(session, method, url, *args, **kwargs)
 
+        # Replace the library method with the guarded version.
         requests.sessions.Session.request = guarded_requests_request
     except Exception as exc:
         logger.debug("requests offline guard not installed: %s", exc)

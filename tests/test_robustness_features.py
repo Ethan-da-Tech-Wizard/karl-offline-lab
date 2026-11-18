@@ -1,3 +1,10 @@
+# Program: karl-offline-lab - test_robustness_features.py
+# Programmer: Ethan-da-Tech-Wizard (written with Claude, an AI assistant)
+# Last Modified: 2026-11-18
+# Purpose: Tests robustness features: circuit breaker states, speculative-decoding fallback persistence and WebSocket client disconnect cleanup.
+
+"""Tests robustness features: circuit breaker states, speculative-decoding fallback persistence and WebSocket client disconnect cleanup."""
+
 from unittest.mock import MagicMock, patch
 
 from app.engine.model_loader import ModelCircuitBreaker, ModelLoader
@@ -5,17 +12,22 @@ from app.engine import config_store
 from app.engine.websocket_server import WebSocketServerManager
 
 class FakeClock:
+    """Test group or helper class: fake clock."""
     def __init__(self):
+        """Initialise this helper object with its starting state."""
         self.now = 0.0
 
     def __call__(self):
+        """Make the object callable."""
         return self.now
 
     def advance(self, seconds: float):
+        """Move the fake clock forward by the given number of seconds."""
         self.now += seconds
 
 
 def test_circuit_breaker_states():
+    """Scenario: circuit breaker states. Expected: the assertions in this test hold."""
     clock = FakeClock()
     breaker = ModelCircuitBreaker(failure_threshold=2, cooldown_duration=10.0, clock=clock)
     
@@ -45,6 +57,7 @@ def test_circuit_breaker_states():
 
 def test_model_loader_speculative_fallback_persists(tmp_path, monkeypatch):
     # Mock config store paths
+    """Scenario: model loader speculative fallback persists. Expected: the assertions in this test hold."""
     draft_path = tmp_path / "draft_model.json"
     active_path = tmp_path / "active_model.json"
     monkeypatch.setattr(config_store, "DRAFT_MODEL_PATH", str(draft_path))
@@ -81,6 +94,7 @@ def test_model_loader_speculative_fallback_persists(tmp_path, monkeypatch):
 
 
 def test_websocket_client_disconnect_cleanup():
+    """Scenario: websocket client disconnect cleanup. Expected: the assertions in this test hold."""
     state_mock = MagicMock()
     
     with patch("app.engine.websocket_server.save_cached_token"), \

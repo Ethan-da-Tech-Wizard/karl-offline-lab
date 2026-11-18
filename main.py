@@ -1,3 +1,7 @@
+# Program: karl-offline-lab - main.py
+# Programmer: Ethan-da-Tech-Wizard (written with Claude, an AI assistant)
+# Last Modified: 2026-11-18
+# Purpose: Application entry point: silences noisy library output, configures logging, handles command-line maintenance flags, and starts either the headless WebSocket bridge or the desktop window.
 """
 Karl -- entry point.
 All library noise is suppressed here, before any third-party import runs.
@@ -34,12 +38,14 @@ warnings.filterwarnings("ignore")
 class _NullFD:
     """Context manager: redirects fd 2 (stderr) to os.devnull at C level."""
     def __enter__(self):
+        """Save the real stderr descriptor and point it at the null device."""
         self._orig_fd2 = os.dup(2)          # save real stderr fd
         self._devnull  = os.open(os.devnull, os.O_WRONLY)
         os.dup2(self._devnull, 2)            # point fd 2 at /dev/null
         return self
 
     def __exit__(self, *_):
+        """Restore the saved stderr descriptor and close the extra descriptors."""
         os.dup2(self._orig_fd2, 2)           # restore real stderr
         os.close(self._orig_fd2)
         os.close(self._devnull)
@@ -118,6 +124,7 @@ def _run_headless() -> int:
     stop_event = threading.Event()
 
     def stop(_signum=None, _frame=None):
+        """Signal handler: ask the main thread to stop waiting."""
         stop_event.set()
 
     signal.signal(signal.SIGINT, stop)
@@ -140,6 +147,11 @@ def _run_headless() -> int:
 
 
 def main():
+    """Run Karl: apply the privilege check, handle flags (--diagnose, --generate-key, --revoke, --safe-mode, --enable-flag, --headless), then launch the Qt window.
+
+    Maintenance flags exit the process directly with their own status code.
+    """
+    # Refuse to run as root or administrator.
     _assert_not_privileged()
 
     # ── Feature flags & boot guard ────────────────────────────────────────────
@@ -148,6 +160,7 @@ def main():
     from app.engine.feature_flags import FeatureFlagStore, run_boot_guard
     _flags = FeatureFlagStore()
 
+    # Command-line flags are read straight from sys.argv; the first matching action may exit the process.
     if "--diagnose" in sys.argv:
         from app.utils.diagnostics import run_diagnostics
         sys.exit(run_diagnostics())
@@ -216,6 +229,7 @@ def main():
             print(f"[Karl --enable-flag] Unknown flag: {exc}")
             sys.exit(1)
 
+    # Headless mode serves only the WebSocket bridge, with no desktop window.
     if "--headless" in sys.argv or os.environ.get("KARL_HEADLESS") == "1":
         sys.exit(_run_headless())
 
@@ -238,6 +252,7 @@ def main():
     window = MainWindow()
     window.show()
     
+    # Run the Qt event loop until the window closes, then revoke bridge tokens before exiting.
     code = app.exec()
     
     try:

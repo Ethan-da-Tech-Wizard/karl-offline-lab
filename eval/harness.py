@@ -1,3 +1,7 @@
+# Program: karl-offline-lab - harness.py
+# Programmer: Ethan-da-Tech-Wizard (written with Claude, an AI assistant)
+# Last Modified: 2026-11-18
+# Purpose: Runs a JSONL dataset through the local model for a chosen workflow (with per-case timeout isolation), grades each output, and builds, prints and saves an EvalReport.
 """
 Eval Harness — Karl Workbench
 ==============================
@@ -31,6 +35,7 @@ from dataclasses import dataclass, field, asdict
 from typing import Optional
 
 # Allow running from repo root without install
+# Put the repository root on the import path so core/ and app/ import when this file is run directly.
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from eval.graders import run_grader
@@ -57,6 +62,7 @@ def _run_model_worker(
             model_path = os.path.join("data", "models", model_name)
         llm = ModelLoader.get_instance(model_path=model_path, adapter_name=adapter_name)
         history = [{"role": "user", "content": user_prompt}]
+        # Hand the generation settings to the prompt builder through its module-level setting.
         import core.interaction_loop
         core.interaction_loop.ACTIVE_HYPERPARAMS = hyperparams
         prompt = build_prompt(system_prompt, history)
@@ -81,6 +87,7 @@ def _run_model_worker(
 
 @dataclass
 class CaseResult:
+    """Outcome of one dataset case: output, grade, latency, context used and any error."""
     case_id: str
     prompt: str
     workflow: str
@@ -95,6 +102,7 @@ class CaseResult:
 
 @dataclass
 class EvalReport:
+    """Aggregate results for a whole run: counts, pass rate, average score and latency, plus every CaseResult."""
     workflow: str
     template: str
     dataset: str
@@ -156,6 +164,7 @@ class EvalHarness:
         self._worker_target = _run_model_worker
 
     def _load_dataset(self, dataset_path: str) -> list[dict]:
+        """Read the JSONL dataset, skipping blank lines, comment lines and unparseable lines (with a warning)."""
         cases = []
         with open(dataset_path, "r", encoding="utf-8") as f:
             for i, line in enumerate(f, 1):
@@ -195,6 +204,7 @@ class EvalHarness:
         return []
 
     def _build_system_prompt(self, template_name: str, context_chunks: list[str], case: dict) -> str:
+        """Fill the named template with the case's context, schema and code (with placeholder defaults)."""
         rag_context = "\n\n".join(context_chunks) if context_chunks else "(No context retrieved.)"
         schema = case.get("schema", "(No schema specified.)")
         code = case.get("code", case.get("context", "(No code provided.)"))
@@ -267,6 +277,7 @@ class EvalHarness:
 
         ctx = mp.get_context("spawn")
         queue = ctx.Queue(maxsize=1)
+        # A separate 'spawn' process lets a hung model call be killed on timeout.
         proc = ctx.Process(
             target=self._worker_target,
             args=(queue, system_prompt, user_prompt, hyperparams, model_name, adapter_name),
@@ -299,6 +310,7 @@ class EvalHarness:
         return result["output"], float(result["latency"])
 
     def _grade(self, output: str, case: dict, context_chunks: list[str]) -> dict:
+        """Pick grader arguments from the case fields and score the output; the default grader is keyword_hit."""
         grader_name = case.get("grader", "keyword_hit")
         kwargs: dict = {}
 
@@ -349,6 +361,7 @@ class EvalHarness:
         from app.engine.model_loader import ModelLoader
 
         # Guard: ensure model is loaded before running eval
+        # Fail early with a clear message if no model can be loaded.
         path_to_load = None
         if model_name:
             path_to_load = os.path.join("data", "models", model_name)
@@ -412,6 +425,7 @@ class EvalHarness:
             # Calculate dynamic timeout based on rolling average latency (3x avg)
             # Default to 120s for the first cases
             avg_lat = sum(latencies) / len(latencies) if latencies else 40.0
+            # The timeout is three times the average latency so far, never below 60 seconds.
             timeout_limit = max(60.0, avg_lat * 3.0)
             # ─────────────────────────────────────────────────────────────────
 
@@ -433,6 +447,7 @@ class EvalHarness:
                 error = None
                 
                 # Curate eval failures as SFT/DPO pairs
+                # The expected answer is saved as 'chosen' and the model's output as 'rejected'.
                 if not grade.get("passed"):
                     try:
                         from app.utils.training_curator import save_example
@@ -492,6 +507,7 @@ class EvalHarness:
             dataset=dataset_path,
             total=total,
             passed=passed,
+            # Errored cases are counted separately from graded failures.
             failed=total - passed - errors,
             errors=errors,
             pass_rate=passed / total if total else 0.0,
@@ -502,6 +518,7 @@ class EvalHarness:
         )
 
         # Persist last eval result for the Flywheel dashboard
+        # Failure to write this summary is ignored because it is only a convenience file.
         try:
             os.makedirs("data", exist_ok=True)
             summary = {

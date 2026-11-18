@@ -1,3 +1,7 @@
+# Program: karl-offline-lab - test_custom_agents.py
+# Programmer: Ethan-da-Tech-Wizard (written with Claude, an AI assistant)
+# Last Modified: 2026-11-18
+# Purpose: Tests for custom agent profiles: profile reloading, create/list RPC validation, and routing of a custom model and adapter into the chat thread.
 """
 Unit and Integration Tests for Custom Agent Profiles
 ===================================================
@@ -22,6 +26,7 @@ from app.engine.llm_thread import LLMThread
 
 
 def _running_under_bwrap() -> bool:
+    """Return True when running inside the bwrap sandbox, detected from the init process name."""
     try:
         with open("/proc/1/comm", "r", encoding="utf-8") as f:
             return f.read().strip() == "bwrap"
@@ -30,8 +35,10 @@ def _running_under_bwrap() -> bool:
 
 
 class TestCustomAgents(unittest.TestCase):
+    """Tests for custom agent profile files, RPC calls and model/adapter routing."""
     def setUp(self):
         # Back up existing custom_agents.json
+        """Back up the agents file, reset profiles, create placeholder model and adapter paths, and start the websocket server for the tests that need it."""
         self.custom_agents_path = os.path.join("data", "custom_agents.json")
         self.backup_content = None
         if os.path.exists(self.custom_agents_path):
@@ -58,12 +65,14 @@ class TestCustomAgents(unittest.TestCase):
 
         if needs_server and not _running_under_bwrap():
             self.app = QCoreApplication.instance() or QCoreApplication(sys.argv)
+            # Fixed local test port; the server singleton is reset in tearDown
             self.port = 8082
             self.manager = WebSocketServerManager.get_instance(port=self.port)
             self.manager.started_event.wait(timeout=5.0)
 
     def tearDown(self):
         # Remove dummy test assets if we created them
+        """Remove placeholder assets, restore the agents file, reload profiles and stop the websocket server if one was started."""
         if not self._dummy_model_existed and os.path.exists(self._dummy_model):
             os.remove(self._dummy_model)
         if os.path.isdir(self._dummy_adapter) and not os.listdir(self._dummy_adapter):
@@ -92,6 +101,7 @@ class TestCustomAgents(unittest.TestCase):
             WebSocketServerManager.reset_instance()
 
     def _get_uri(self):
+        """Build the websocket address including the bridge token, using the secure scheme when a certificate exists."""
         token = self.manager.bridge_token
         proto = "ws"
         if os.path.exists(self.manager._SSL_CERT_PATH):
@@ -99,6 +109,7 @@ class TestCustomAgents(unittest.TestCase):
         return f"{proto}://localhost:{self.port}/?token={token}"
 
     def _get_ssl_context(self):
+        """Return a client SSL context that skips certificate checks (test only), or None when no certificate exists."""
         import ssl
         if os.path.exists(self.manager._SSL_CERT_PATH):
             ssl_context = ssl.SSLContext(ssl.PROTOCOL_TLS_CLIENT)
@@ -155,6 +166,7 @@ class TestCustomAgents(unittest.TestCase):
             self.skipTest("Bwrap blocks localhost websocket testing")
 
         async def run_client():
+            """Exercise create_custom_agent validation, successful creation with its broadcast, a duplicate error and list_custom_agents."""
             async with websockets.connect(self._get_uri(), ssl=self._get_ssl_context(), close_timeout=2) as ws:
                 # 1. Test invalid name (non-alphanumeric)
                 payload_invalid = {
@@ -258,6 +270,7 @@ class TestCustomAgents(unittest.TestCase):
         
         # We call the generation loop synchronously (or run its target block)
         # to ensure it resolves model_path and calls ModelLoader.get_instance.
+        # Silence the finished signal; only the model loading call is of interest
         with patch.object(thread, "generation_finished"):
             # Running the main execution path of LLMThread
             thread.run()
@@ -298,11 +311,13 @@ class TestCustomAgents(unittest.TestCase):
         reload_profiles()
 
         async def qt_event_loop_spinner():
+            """Keep pumping Qt events so signals from the chat thread are delivered."""
             while True:
                 QCoreApplication.processEvents()
                 await asyncio.sleep(0.01)
 
         async def run_client():
+            """Send submit_chat for the custom agent and wait for chat_finished, then check which model and adapter were loaded."""
             spinner = asyncio.create_task(qt_event_loop_spinner())
             try:
                 async with websockets.connect(self._get_uri(), ssl=self._get_ssl_context(), close_timeout=2) as ws:

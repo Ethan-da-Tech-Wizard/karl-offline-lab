@@ -1,3 +1,7 @@
+# Program: karl-offline-lab - tracing.py
+# Programmer: Ethan-da-Tech-Wizard (written with Claude, an AI assistant)
+# Last Modified: 2026-11-18
+# Purpose: Provides a dependency-free, context-local span tracer that writes completed trace trees to daily JSONL files.
 """
 Local span tracing for Karl.
 
@@ -18,25 +22,32 @@ from pathlib import Path
 from typing import Any
 
 
+# === Tracer: manages the stack of open spans ===
 class Tracer:
     """Context-local span manager that persists completed root traces."""
 
     def __init__(self, trace_dir: str | os.PathLike[str] = "data/logs/traces") -> None:
+        """Create a tracer that writes root traces under trace_dir."""
         self.trace_dir = Path(trace_dir)
+        # A ContextVar keeps the span stack separate per thread/async task.
         self._stack: contextvars.ContextVar[list[Span]] = contextvars.ContextVar(
             "karl_span_stack",
             default=[],
         )
 
     def span(self, name: str, attributes: dict[str, Any] | None = None) -> "Span":
+        """Return a new Span bound to this tracer (use it in a with-block)."""
         return Span(name, attributes=attributes, tracer=self)
 
     def _push(self, span: "Span") -> None:
+        """Make span the innermost open span."""
+        # Copy the list so the ContextVar default is never mutated in place.
         stack = list(self._stack.get())
         stack.append(span)
         self._stack.set(stack)
 
     def _pop(self, span: "Span") -> None:
+        """Remove span from the open-span stack, tolerating out-of-order exits."""
         stack = list(self._stack.get())
         if stack and stack[-1] is span:
             stack.pop()
@@ -45,6 +56,7 @@ class Tracer:
         self._stack.set(stack)
 
     def current_span(self) -> "Span | None":
+        """Return the innermost open span, or None when no span is open."""
         stack = self._stack.get()
         return stack[-1] if stack else None
 
@@ -62,18 +74,22 @@ class Tracer:
             fh.write(json.dumps(span.to_dict(), ensure_ascii=False) + "\n")
 
 
+# === Shared default tracer used by spans that are not given one ===
 DEFAULT_TRACER = Tracer()
 
 
+# === Span: one timed operation in the trace tree ===
 class Span:
     """Context manager representing one timed operation in a trace tree."""
 
     def __init__(
         self,
+        # Constructor arguments: span name, optional attributes, optional tracer.
         name: str,
         attributes: dict[str, Any] | None = None,
         tracer: Tracer | None = None,
     ) -> None:
+        """Store the span name, attributes and tracer; timing fields are filled in on enter/exit."""
         self.name = name
         self.attributes = dict(attributes or {})
         self.tracer = tracer or DEFAULT_TRACER
@@ -89,7 +105,9 @@ class Span:
         self._start_perf = 0.0
 
     def __enter__(self) -> "Span":
+        """Start timing, link to the parent span, and become the current span."""
         self._parent = self.tracer.current_span()
+        # Children share the root's trace id; a root span starts a new trace.
         self.trace_id = self._parent.trace_id if self._parent else str(uuid.uuid4())
         self.span_id = str(uuid.uuid4())
         self.parent_span_id = self._parent.span_id if self._parent else None
@@ -101,6 +119,10 @@ class Span:
         return self
 
     def __exit__(self, exc_type, exc, traceback) -> bool:
+        """Stop timing, record any exception, and persist the trace if this is a root span.
+
+        Returns False so exceptions still propagate to the caller.
+        """
         self.duration_sec = round(time.perf_counter() - self._start_perf, 6)
         if exc_type is not None:
             self.status = "ERROR"
@@ -114,9 +136,11 @@ class Span:
         return False
 
     def set_attribute(self, key: str, value: Any) -> None:
+        """Attach or overwrite one attribute on this span."""
         self.attributes[key] = value
 
     def to_dict(self) -> dict[str, Any]:
+        """Serialize this span and its children to a JSON-friendly dict."""
         payload: dict[str, Any] = {
             "trace_id": self.trace_id,
             "span_id": self.span_id,

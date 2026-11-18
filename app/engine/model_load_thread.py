@@ -1,3 +1,8 @@
+# Program: karl-offline-lab - model_load_thread.py
+# Programmer: Ethan-da-Tech-Wizard (written with Claude, an AI assistant)
+# Last Modified: 2026-11-18
+# Purpose: Qt thread that loads or reloads a GGUF model through ModelLoader off the GUI thread and optionally saves it as the active model.
+"""Background model loading thread."""
 from __future__ import annotations
 
 import os
@@ -20,6 +25,7 @@ class ModelLoadThread(QThread):
         persist_active: bool = True,
         parent=None,
     ):
+        """Store the model path, adapter, optional draft model and whether to persist the choice as the active model."""
         super().__init__(parent)
         self.model_path = model_path
         self.adapter_name = adapter_name
@@ -27,10 +33,12 @@ class ModelLoadThread(QThread):
         self.persist_active = persist_active
 
     def run(self) -> None:
+        """Reset and rebuild the ModelLoader singleton, optionally persist the active model, then emit loaded or error."""
         from app.engine import config_store
         from app.engine.model_loader import ModelLoader
 
         try:
+            # Drop any previously loaded model so the new one is loaded fresh.
             ModelLoader.reset_instance()
             ModelLoader.get_instance(
                 model_path=self.model_path,
@@ -42,6 +50,7 @@ class ModelLoadThread(QThread):
             draft_filename = os.path.basename(self.draft_model_path) if self.draft_model_path else None
 
             if self.persist_active:
+                # Remember this model as the active one for the next start.
                 if not config_store.set_active_model(filename, self.adapter_name):
                     raise OSError("Failed to persist data/active_model.json")
                 if draft_filename:

@@ -1,9 +1,16 @@
+# Program: karl-offline-lab - test_cognitive_compression.py
+# Programmer: Ethan-da-Tech-Wizard (written with Claude, an AI assistant)
+# Last Modified: 2026-11-18
+# Purpose: Tests that the LLM and agentic threads compress long reasoning when the context fills up and emit live stats, using a scripted fake model.
+"""Tests for cognitive roll-up compression in LLMThread and AgenticThread."""
+
 import tests.qt_test_helper  # noqa: F401
 
 import os
 import sys
 from PyQt6.QtCore import QCoreApplication
 
+# Make the repository root importable
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from unittest.mock import patch
@@ -19,11 +26,14 @@ if not app:
 
 
 class MockLlama:
+    """Scripted fake model: reports a huge token count for the trigger prompt, answers compression requests, and replays a length-stop then a normal stop."""
     def __init__(self):
+        """Start with zero calls and the compression flag cleared."""
         self.call_count = 0
         self.compress_called = False
 
     def tokenize(self, text_bytes, add_bos=True):
+        """Fake token counter: fixed sizes for compression and trigger prompts, otherwise roughly four characters per token."""
         text = text_bytes.decode("utf-8")
         if "You are a cognitive compression tool" in text:
             return [0] * 50
@@ -33,6 +43,7 @@ class MockLlama:
         return [0] * (len(text) // 4 + 1)
 
     def __call__(self, prompt, **kwargs):
+        """Return a compression summary for compression prompts, otherwise a scripted stream of completion chunks depending on call order."""
         self.call_count += 1
 
         # Check if this is the compression call (non-streaming, returning dict)
@@ -86,6 +97,7 @@ class MockLlama:
 
 
 def test_cognitive_compression_and_live_stats():
+    """Scenario: LLMThread runs a prompt that overflows 80 percent of the context. Expected: compression runs, live stats and one done signal are emitted, the thought contains the summary, and diagnostics are filled."""
     print("Testing cognitive roll-up compression and live stats signals (LLMThread)...")
 
     # Save original ModelLoader attributes to restore later
@@ -94,6 +106,7 @@ def test_cognitive_compression_and_live_stats():
     orig_n_ctx = ModelLoader.n_ctx
 
     mock_llama = MockLlama()
+    # Swap in the fake model; the originals are restored in the finally block
     ModelLoader.get_instance = lambda *args, **kwargs: mock_llama
     ModelLoader.model_name = lambda: "mock-r1-model.gguf"
     ModelLoader.n_ctx = lambda: 4096
@@ -106,18 +119,23 @@ def test_cognitive_compression_and_live_stats():
         done_payload = []
 
         def on_live_stats(count, speed):
+            """Record each (token count, speed) pair."""
             stats_emitted.append((count, speed))
 
         def on_thought(token):
+            """Record each thought token."""
             thought_emitted.append(token)
 
         def on_chat(token):
+            """Record each chat token."""
             chat_emitted.append(token)
 
         def on_done(thought, response, truncated, ended_in_thought, diagnostics):
+            """Record the final generation payload."""
             done_payload.append((thought, response, truncated, ended_in_thought, diagnostics))
 
         # Instantiate LLMThread with a prompt targeting compression
+        # Build the thread with a prompt that triggers compression
         thread = LLMThread(
             system_prompt="System Prompt",
             chat_history=[{"role": "user", "content": "trigger_compression"}],
@@ -164,6 +182,7 @@ def test_cognitive_compression_and_live_stats():
 
 
 def test_agentic_cognitive_compression_and_live_stats():
+    """Scenario: AgenticThread runs one iteration with the same overflowing prompt. Expected: compression runs, one iteration and one loop-finished signal are emitted with a compressed thought and diagnostics."""
     print("Testing cognitive roll-up compression and live stats signals (AgenticThread)...")
 
     # Save original ModelLoader attributes to restore later
@@ -180,6 +199,7 @@ def test_agentic_cognitive_compression_and_live_stats():
     ModelLoader.n_ctx = lambda: 4096
 
     # Force Agentic Loop to stop after the first generation turn
+    # Force the agentic loop to stop after one turn
     core.agentic_loop.should_continue = lambda iteration, response: False
     core.agentic_loop.build_next_prompt = lambda response, iteration: "next"
 
@@ -189,12 +209,15 @@ def test_agentic_cognitive_compression_and_live_stats():
         loop_finished_payload = []
 
         def on_live_stats(count, speed):
+            """Record each (token count, speed) pair."""
             stats_emitted.append((count, speed))
 
         def on_iteration_finished(iteration, thought, response, diagnostics):
+            """Record the payload of each finished iteration."""
             iteration_finished_payload.append((iteration, thought, response, diagnostics))
 
         def on_loop_finished(total):
+            """Record the total iteration count."""
             loop_finished_payload.append(total)
 
         thread = AgenticThread(

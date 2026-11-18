@@ -1,3 +1,8 @@
+# Program: karl-offline-lab - knowledge_base.py
+# Programmer: Ethan-da-Tech-Wizard (written with Claude, an AI assistant)
+# Last Modified: 2026-11-18
+# Purpose: Implements the Knowledge Base workspace for managing the RAG index: ingesting files in the background, browsing sources and chunks, testing search, tuning retrieval settings, and a TF-IDF vector sandbox with a 2D projection widget.
+
 """
 Knowledge Base — RAG management workspace.
 
@@ -25,33 +30,43 @@ from app.utils.custom_embeddings import TfidfEmbedder
 
 
 
+# ---------------------------------------------------------------------------
+# Small UI helpers
+# ---------------------------------------------------------------------------
 def _hline() -> QFrame:
+    """Create a horizontal divider line."""
     f = QFrame()
     f.setFrameShape(QFrame.Shape.HLine)
     return f
 
 
 def _section(text: str) -> QLabel:
+    """Create a section-header styled label."""
     lbl = QLabel(text)
     lbl.setObjectName("section-header")
     return lbl
 
 
 def _label(text: str, obj: str = "") -> QLabel:
+    """Create a label, optionally tagged with a stylesheet object name."""
     lbl = QLabel(text)
     if obj:
         lbl.setObjectName(obj)
     return lbl
 
 
+# ── background threads ────────────────────────────────────────────────────────
+# Slow RAG work runs off the GUI thread so the window stays responsive.
 # ── background ingest thread ──────────────────────────────────────────────────
 
 class _IngestThread(QThread):
+    """Background thread that ingests files into the RAG index and reports per-file progress."""
     done = pyqtSignal(str, int)   # filename, chunk_count
     error = pyqtSignal(str)
     progress = pyqtSignal(int, int, str, int, str)  # current, total, filename, chunks, status
 
     def __init__(self, rag, filepaths, chunk_size: int = 200, overlap: int = 50):
+        """Store the retriever, a list of file paths and the chunk size and overlap settings."""
         super().__init__()
         self.rag = rag
         if isinstance(filepaths, (list, tuple)):
@@ -62,8 +77,10 @@ class _IngestThread(QThread):
         self.overlap = overlap
 
     def run(self):
+        """Ingest all files in batches, forwarding progress events, and emit done or error."""
         try:
             def _progress(current, total, event):
+                """Translate a progress event from the retriever into the thread's progress signal."""
                 self.progress.emit(
                     int(current),
                     int(total),
@@ -88,16 +105,19 @@ class _IngestThread(QThread):
 
 
 class _RagOperationThread(QThread):
+    """Background thread that runs one index operation: preload encoder, remove source, rebuild or clear."""
     done = pyqtSignal(str)
     error = pyqtSignal(str)
 
     def __init__(self, rag, operation: str, argument: str | None = None):
+        """Store the retriever, the operation name and an optional argument (such as a source name)."""
         super().__init__()
         self.rag = rag
         self.operation = operation
         self.argument = argument
 
     def run(self):
+        """Run the requested operation and emit a status message, or an error for failures and unknown operations."""
         try:
             if self.operation == "preload":
                 self.rag.preload_encoder()
@@ -118,10 +138,12 @@ class _RagOperationThread(QThread):
 
 
 class _SearchThread(QThread):
+    """Background thread that runs a retrieval query so the interface does not freeze."""
     done = pyqtSignal(str, list)
     error = pyqtSignal(str)
 
     def __init__(self, rag, query: str, top_k: int, mode: str):
+        """Store the retriever, query text, number of results and retrieval mode."""
         super().__init__()
         self.rag = rag
         self.query = query
@@ -129,6 +151,7 @@ class _SearchThread(QThread):
         self.mode = mode
 
     def run(self):
+        """Retrieve matching chunks with metadata and emit them with the query, or emit an error."""
         try:
             results = self.rag.retrieve_with_metadata(
                 self.query,
@@ -140,6 +163,9 @@ class _SearchThread(QThread):
             self.error.emit(str(e))
 
 
+# ---------------------------------------------------------------------------
+# 2D vector projection widget
+# ---------------------------------------------------------------------------
 class VectorProjectionWidget(QFrame):
     """Interactive 2D projection canvas for query/document vector relationships."""
 
@@ -162,10 +188,12 @@ class VectorProjectionWidget(QFrame):
         self.animation_timer.timeout.connect(self._animate_step)
 
     def start_fade_in(self):
+        """Restart the fade-in animation from fully transparent."""
         self.opacity = 0.0
         self.animation_timer.start(25)  # ~40 FPS
 
     def _animate_step(self):
+        """Increase opacity one step and stop the timer once fully visible."""
         self.opacity += 0.08
         if self.opacity >= 1.0:
             self.opacity = 1.0
@@ -173,22 +201,27 @@ class VectorProjectionWidget(QFrame):
         self.update()
 
     def set_query(self, x: float, y: float):
+        """Set the query point (in 0-1 plot coordinates) and fade in."""
         self.query_point = (x, y)
         self.start_fade_in()
 
     def set_documents(self, docs: list[dict]):
+        """Set the list of document points (dicts with x, y, similarity, text, id) and fade in."""
         self.doc_points = docs
         self.start_fade_in()
 
     def set_axes(self, label_x: str, label_y: str):
+        """Set the x-axis and y-axis labels and fade in."""
         self.axis_labels = (label_x, label_y)
         self.start_fade_in()
 
     def resizeEvent(self, event):
+        """Repaint when the widget size changes."""
         super().resizeEvent(event)
         self.update()
 
     def mouseMoveEvent(self, event: QMouseEvent):
+        """Track which document point (if any) the cursor is over so it can be highlighted."""
         pos = event.position()
         px = pos.x()
         py = pos.y()
@@ -231,10 +264,12 @@ class VectorProjectionWidget(QFrame):
             self.update()
 
     def leaveEvent(self, event):
+        """Clear the hover highlight when the cursor leaves the widget."""
         self.hovered_point = None
         self.update()
 
     def paintEvent(self, event):
+        """Draw the card, grid, axes, document points, query point and hover details."""
         painter = QPainter(self)
         painter.setRenderHint(QPainter.RenderHint.Antialiasing)
         
@@ -260,6 +295,7 @@ class VectorProjectionWidget(QFrame):
             
         # Helper for applying fade opacity to colors
         def apply_alpha(color_val, default_alpha: int = 255) -> QColor:
+            """Return the colour with its alpha scaled by the current fade opacity."""
             col = QColor(color_val)
             col.setAlpha(int(default_alpha * self.opacity))
             return col
@@ -604,6 +640,7 @@ class KnowledgeBaseWorkspace(QWidget):
 
 
     def _build_explorer_tab(self) -> QWidget:
+        """Build the Explorer tab: sources list, index controls and a chunk inspector."""
         w = QWidget()
         layout = QHBoxLayout(w)
         layout.setContentsMargins(8, 8, 8, 8)
@@ -663,6 +700,7 @@ class KnowledgeBaseWorkspace(QWidget):
         return w
 
     def _build_ingest_tab(self) -> QWidget:
+        """Build the Ingest tab: chunking settings, file picker, ingest queue and progress."""
         w = QWidget()
         layout = QVBoxLayout(w)
         layout.setContentsMargins(12, 12, 12, 12)
@@ -745,6 +783,7 @@ class KnowledgeBaseWorkspace(QWidget):
         return w
 
     def _build_search_tab(self) -> QWidget:
+        """Build the Search tab: query box, retrieval settings and results view."""
         w = QWidget()
         layout = QVBoxLayout(w)
         layout.setContentsMargins(12, 12, 12, 12)
@@ -830,12 +869,14 @@ class KnowledgeBaseWorkspace(QWidget):
     # ── logic ─────────────────────────────────────────────────────────────────
 
     def _update_encoder_status(self):
+        """Show whether the embedding encoder is loaded and enable preload only when it is not."""
         loaded = self.state.rag.is_encoder_loaded
         self._model_status_lbl.setText(f"Encoder: {'Ready' if loaded else 'Lazy-loaded (Not loaded)'}")
         self._model_status_lbl.setStyleSheet(f"color: {'#00C2FF' if loaded else '#9090A8'}; font-weight: bold;")
         self._preload_btn.setEnabled(not loaded)
 
     def _preload_encoder(self):
+        """Load the encoder in the background through the shared index-operation helper."""
         self._model_status_lbl.setText("Encoder: Loading...")
         self._preload_btn.setEnabled(False)
         self._start_rag_operation(
@@ -846,6 +887,7 @@ class KnowledgeBaseWorkspace(QWidget):
         )
 
     def _update_health_lbl(self):
+        """Show index health (empty or healthy) with the index file size."""
         index_file = self.state.rag.INDEX_FILE
         index_size_kb = 0
         if os.path.exists(index_file):
@@ -855,6 +897,7 @@ class KnowledgeBaseWorkspace(QWidget):
         self._health_lbl.setText(f"Health: {status} ({index_size_kb:.1f}KB)")
 
     def _refresh_sources(self):
+        """Reload the list of ingested sources and the source and chunk counts."""
         self._source_list.clear()
         sources = self.state.rag.list_sources()
         for s in sources:
@@ -864,6 +907,7 @@ class KnowledgeBaseWorkspace(QWidget):
         self._update_health_lbl()
 
     def _on_source_selected(self, source: str):
+        """Show the first 20 chunks of the chosen source in the inspector."""
         if not source:
             return
         docs = [
@@ -887,6 +931,7 @@ class KnowledgeBaseWorkspace(QWidget):
         self._source_inspector.setHtml("".join(lines))
 
     def _ingest_file(self):
+        """Ask for files, queue them as Pending and start ingesting."""
         paths, _ = QFileDialog.getOpenFileNames(
             self, "Add File(s) to Knowledge Base", "",
             "Documents (*.pdf *.docx *.txt *.md *.py *.csv);;All Files (*)"
@@ -899,6 +944,7 @@ class KnowledgeBaseWorkspace(QWidget):
         self._process_ingest_queue()
 
     def _update_queue_ui(self):
+        """Redraw the ingest queue list with each file's status and error."""
         self._queue_list.clear()
         for item in self._ingest_queue:
             fname = os.path.basename(item["path"])
@@ -907,6 +953,7 @@ class KnowledgeBaseWorkspace(QWidget):
             self._queue_list.addItem(f"[{status}] {fname}{err}")
 
     def _process_ingest_queue(self):
+        """Start a background ingest of all Pending files, updating queue status, progress and the source list as events arrive."""
         pending = [item for item in self._ingest_queue if item["status"] == "Pending"]
         if not pending:
             self._progress.setVisible(False)
@@ -938,6 +985,7 @@ class KnowledgeBaseWorkspace(QWidget):
         self._ingest_thread.finished.connect(self._ingest_thread.deleteLater)
         
         def on_progress(current, total, filename, chunks, status):
+            """Update the progress bar, status text and the matching file's queue status."""
             self._progress.setRange(0, max(1, total))
             self._progress.setValue(current)
             if filename:
@@ -951,6 +999,7 @@ class KnowledgeBaseWorkspace(QWidget):
             self._update_queue_ui()
 
         def on_done(filename, count):
+            """Mark finished files Done and refresh the source list and encoder status."""
             for item in self._ingest_queue:
                 if item["status"] in {"Queued", "Parsed"}:
                     item["status"] = "Done"
@@ -961,6 +1010,7 @@ class KnowledgeBaseWorkspace(QWidget):
             self._update_encoder_status()
             
         def on_error(msg):
+            """Mark unfinished files Failed with the error message."""
             for item in self._ingest_queue:
                 if item["status"] in {"Queued", "Parsed"}:
                     item["status"] = "Failed"
@@ -975,6 +1025,7 @@ class KnowledgeBaseWorkspace(QWidget):
         self._ingest_thread.start()
 
     def _set_index_controls_enabled(self, enabled: bool):
+        """Enable or disable the buttons that change the index while an operation runs."""
         for control in (
             getattr(self, "_remove_btn", None),
             getattr(self, "_rebuild_btn", None),
@@ -993,6 +1044,7 @@ class KnowledgeBaseWorkspace(QWidget):
         done_cb=None,
         error_cb=None,
     ):
+        """Start one index operation on a background thread; returns False if another is already running."""
         if self._rag_operation_thread is not None and self._rag_operation_thread.isRunning():
             self._ingest_status.setText("Another index operation is already running.")
             return False
@@ -1005,6 +1057,7 @@ class KnowledgeBaseWorkspace(QWidget):
         thread = _RagOperationThread(self.state.rag, operation, argument)
 
         def on_done(msg: str):
+            """Use the caller's callback or refresh the sources and show the message."""
             if done_cb is not None:
                 done_cb(msg)
             else:
@@ -1013,12 +1066,14 @@ class KnowledgeBaseWorkspace(QWidget):
                 self._ingest_status.setText(msg)
 
         def on_error(msg: str):
+            """Use the caller's error callback or show the error in the status line."""
             if error_cb is not None:
                 error_cb(msg)
             else:
                 self._ingest_status.setText(f"Index operation error: {msg}")
 
         def on_finished():
+            """Hide the progress bar, re-enable the controls and release the finished thread."""
             self._progress.setVisible(False)
             self._progress.setRange(0, 100)
             self._set_index_controls_enabled(True)
@@ -1037,6 +1092,7 @@ class KnowledgeBaseWorkspace(QWidget):
         return True
 
     def _remove_selected_source(self):
+        """After confirmation, remove all chunks of the selected source and rebuild the index."""
         curr_source = self._source_list.currentItem()
         if not curr_source:
             QMessageBox.warning(self, "No Selection", "Please select a source to remove.")
@@ -1062,6 +1118,7 @@ class KnowledgeBaseWorkspace(QWidget):
             )
 
     def _rebuild_index(self):
+        """After confirmation, re-encode every stored chunk and rebuild the index."""
         reply = QMessageBox.question(
             self, "Rebuild Index",
             "This will re-encode all chunks in metadata. Proceed?",
@@ -1079,13 +1136,16 @@ class KnowledgeBaseWorkspace(QWidget):
             )
 
     def open_ingest_dialog(self):
+        """Switch to the Ingest tab and open the file picker (used by the command palette)."""
         self._tabs.setCurrentIndex(1)
         self._ingest_file()
 
     def rebuild_index(self):
+        """Public wrapper that starts an index rebuild (used by the command palette)."""
         self._rebuild_index()
 
     def _send_query_to_workbench(self):
+        """Send the current search text to the Workbench input and switch to the Workbench."""
         query = self._search_input.text().strip()
         if not query:
             return
@@ -1094,6 +1154,7 @@ class KnowledgeBaseWorkspace(QWidget):
 
 
     def _run_search(self):
+        """Run a retrieval query on a background thread, or show a message if the index is empty."""
         query = self._search_input.text().strip()
         if not query:
             return
@@ -1112,14 +1173,17 @@ class KnowledgeBaseWorkspace(QWidget):
         thread = _SearchThread(self.state.rag, query, top_k, mode)
 
         def on_done(done_query: str, results: list):
+            """Show the returned results."""
             self._render_search_results(done_query, results)
 
         def on_error(msg: str):
+            """Show the escaped search error."""
             self._search_results.setHtml(
                 f"<div style='color:#F05050;'>Search error: {html.escape(msg)}</div>"
             )
 
         def on_finished():
+            """Re-enable the search controls and release the finished thread."""
             self._search_btn.setEnabled(True)
             self._search_input.setEnabled(True)
             self._active_threads.discard(thread)
@@ -1135,6 +1199,7 @@ class KnowledgeBaseWorkspace(QWidget):
         thread.start()
 
     def _render_search_results(self, query: str, results: list):
+        """Render results as styled cards with source, chunk, distance bar and a copy link, applying the distance threshold filter."""
         from app.ui.themes import get_theme_colors
         colors = get_theme_colors(self.state)
         accent = colors.get("accent", "#00C2FF")
@@ -1189,6 +1254,7 @@ class KnowledgeBaseWorkspace(QWidget):
         self._search_results.setHtml("".join(lines))
 
     def _handle_search_result_link(self, url):
+        """Copy a chunk's text to the clipboard when its copy link is clicked."""
         link = url.toString()
         if link.startswith("copy:"):
             try:
@@ -1205,6 +1271,7 @@ class KnowledgeBaseWorkspace(QWidget):
                 logging.getLogger("karl.kb").warning(f"Failed to copy chunk: {e}")
 
     def _clear_index(self):
+        """After confirmation, permanently clear the whole vector index."""
         reply = QMessageBox.question(
             self, "Clear index",
             "This permanently deletes the vector index and all ingested data. Continue?",
@@ -1223,6 +1290,7 @@ class KnowledgeBaseWorkspace(QWidget):
             )
 
     def _load_rag_config(self):
+        """Load the saved retrieval settings (threshold, top-k, mode) from the local config file, defaulting to dense mode."""
         import json
         cfg_path = os.path.join("data", "rag_config.json")
         self.state.rag_mode = "dense"
@@ -1237,6 +1305,7 @@ class KnowledgeBaseWorkspace(QWidget):
                 pass
 
     def _save_rag_config(self):
+        """Write the current retrieval settings to the local config file; errors are ignored."""
         import json
         os.makedirs("data", exist_ok=True)
         cfg_path = os.path.join("data", "rag_config.json")
@@ -1252,20 +1321,24 @@ class KnowledgeBaseWorkspace(QWidget):
             pass
 
     def _on_threshold_changed(self, val):
+        """Store the new distance threshold and save the settings."""
         self.state.rag_threshold = val
         self._save_rag_config()
 
     def _on_topk_changed(self, val):
+        """Store the new number of results and save the settings."""
         self.state.rag_top_k = val
         self._save_rag_config()
 
     def _on_mode_changed(self, val):
+        """Store the new retrieval mode and save the settings."""
         self.state.rag_mode = val
         self._save_rag_config()
 
     # ── Vector Sandbox Implementation ──────────────────────────────────────────
 
     def _build_sandbox_tab(self) -> QWidget:
+        """Build the Vector Sandbox tab: editable documents, TF-IDF tables, a 2D projection and a similarity explainer."""
         w = QWidget()
         layout = QHBoxLayout(w)
         layout.setContentsMargins(8, 8, 8, 8)
@@ -1390,6 +1463,7 @@ class KnowledgeBaseWorkspace(QWidget):
         return w
 
     def _reset_sandbox_docs(self):
+        """Restore the four default sandbox documents and recompute."""
         self._sandbox_doc_list.clear()
         defaults = [
             "The quick brown fox jumps over the lazy dog",
@@ -1402,6 +1476,7 @@ class KnowledgeBaseWorkspace(QWidget):
         self._recompute_sandbox()
 
     def _add_sandbox_doc(self):
+        """Add the typed text as a sandbox document and recompute."""
         text = self._sandbox_doc_input.text().strip()
         if text:
             self._sandbox_doc_list.addItem(text)
@@ -1409,12 +1484,14 @@ class KnowledgeBaseWorkspace(QWidget):
             self._recompute_sandbox()
 
     def _remove_sandbox_doc(self):
+        """Remove the selected sandbox document and recompute."""
         curr = self._sandbox_doc_list.currentItem()
         if curr:
             self._sandbox_doc_list.takeItem(self._sandbox_doc_list.row(curr))
             self._recompute_sandbox()
 
     def _recompute_sandbox(self):
+        """Refit the TF-IDF vectorizer on the sandbox documents and refresh the vocabulary, matrix and projection views."""
         # Gather documents
         docs = []
         for i in range(self._sandbox_doc_list.count()):
@@ -1520,6 +1597,7 @@ class KnowledgeBaseWorkspace(QWidget):
                 self._sandbox_projection.set_documents([])
 
     def _run_sandbox_similarity(self):
+        """Vectorize the query and show a step-by-step cosine similarity breakdown against each sandbox document."""
         query = self._sandbox_query_input.text().strip()
         if not query:
             return

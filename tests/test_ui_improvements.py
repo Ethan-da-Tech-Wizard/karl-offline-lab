@@ -1,3 +1,8 @@
+# Program: karl-offline-lab - test_ui_improvements.py
+# Programmer: Ethan-da-Tech-Wizard (written with Claude, an AI assistant)
+# Last Modified: 2026-11-18
+# Purpose: Tests for UI improvements: theme stylesheet and color helpers, the documentation codex workspace, workbench docks, swarm studio construction, final-answer persistence of the agentic loop, and System Config features.
+"""Tests for theme, workspace construction and settings behaviour in the desktop UI."""
 import os
 import sys
 import tempfile
@@ -8,17 +13,25 @@ import pytest
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 class TestUIImprovements(unittest.TestCase):
+    """Tests covering themes and several workspace widgets."""
     def test_theme_qss_generation(self):
+        """Scenario: a stylesheet is generated for every theme.
+        Expected: each is non-empty, longer than 100 characters and has no unreplaced placeholder keys.
+        """
         from app.ui.themes import THEMES, get_theme_stylesheet
         for theme_name in THEMES.keys():
             qss = get_theme_stylesheet(theme_name)
             self.assertIsNotNone(qss)
             self.assertGreater(len(qss), 100)
+            # Every placeholder such as the accent key must have been substituted.
             # Check that formatting keys were properly substituted
             self.assertNotIn("{accent}", qss)
             self.assertNotIn("{bg_deep}", qss)
 
     def test_theme_config_read_write(self):
+        """Scenario: color helpers and theme palettes are called with fixed inputs.
+        Expected: darken and tint give the known hex values, custom accent and pitch black tones apply, and the warm sepia tone changes the background.
+        """
         from app.ui.themes import darken_hex_color, _tint_hex_color, get_theme_colors
         
         # Test color darkening helper
@@ -41,6 +54,9 @@ class TestUIImprovements(unittest.TestCase):
     @pytest.mark.integration
     @pytest.mark.model
     def test_codex_library_loading_and_search(self):
+        """Scenario: the docs workspace is built with the default library and searched for a topic.
+        Expected: default topics are cached, searching shows the matching topic and selecting it renders its content (skipped when no embedding model is available).
+        """
         from tests.conftest import embedding_model_available
         if not embedding_model_available():
             self.skipTest("sentence-transformers embedding model is unavailable (offline and not cached)")
@@ -82,6 +98,9 @@ class TestUIImprovements(unittest.TestCase):
         self.assertIn("ownership", rendered_html)
 
     def test_workbench_docks(self):
+        """Scenario: the workbench workspace is constructed.
+        Expected: it is a main window with a central widget, a sessions dock, a reasoning dock and the branch and token labels.
+        """
         from app.state import AppState
         from app.ui.workspaces.workbench import WorkbenchWorkspace
         from PyQt6.QtWidgets import QMainWindow, QDockWidget
@@ -104,6 +123,9 @@ class TestUIImprovements(unittest.TestCase):
         self.assertTrue(hasattr(workbench, "_token_remaining_lbl"))
 
     def test_swarm_studio_constructs(self):
+        """Scenario: the swarm studio workspace is constructed.
+        Expected: it exists and has the layers tree, task table and traceback browser.
+        """
         from app.state import AppState
         from app.ui.workspaces.swarm_studio import SwarmStudioWorkspace
 
@@ -116,21 +138,28 @@ class TestUIImprovements(unittest.TestCase):
         self.assertTrue(hasattr(workspace, "_traceback_browser"))
 
     def test_agentic_loop_persists_only_final_assistant_answer(self):
+        """Scenario: an agentic loop with intermediate iterations ends.
+        Expected: only the user message and the final assistant answer remain in the active chat history.
+        """
         from app.state import AppState
         from app.ui.workspaces.workbench import WorkbenchWorkspace
         from app.utils.memory_manager import MemoryManager
 
         class FakeThread:
+            """Stand-in for the model thread that only carries a chat history."""
             def __init__(self, history):
+                """Store the chat history the loop produced."""
                 self.chat_history = history
 
         state = AppState()
         with tempfile.TemporaryDirectory() as tmpdir:
+            # Store sessions in a temporary directory so nothing real is touched.
             state.memory = MemoryManager(sessions_dir=tmpdir)
             workbench = WorkbenchWorkspace(state)
 
             user_node = workbench.chat_history.add_message("user", "how many sides does a hexagon have?")
             workbench._chat_view.push_user("how many sides does a hexagon have?", user_node.id)
+            # Simulate a loop that produced an intermediate answer and then a final one.
             workbench._thread = FakeThread([
                 {"role": "user", "content": "how many sides does a hexagon have?"},
                 {"role": "assistant", "content": "A hexagon has 6 sides."},
@@ -151,6 +180,9 @@ class TestUIImprovements(unittest.TestCase):
             self.assertNotIn("Iteration", "\n".join(msg["content"] for msg in active))
 
     def test_system_config_features(self):
+        """Scenario: the System Config workspace is searched, run through model preflight checks and its file cache refreshed.
+        Expected: search hides non-matching rows, the diagnostic report flags the adapter mismatch and the cached model and adapter lists exist.
+        """
         from app.state import AppState
         from app.ui.workspaces.system_config import SystemConfigWorkspace
         
@@ -186,6 +218,9 @@ class TestUIImprovements(unittest.TestCase):
     @pytest.mark.integration
     @pytest.mark.model
     def test_codex_rag_features(self):
+        """Scenario: documentation is ingested into a separate codex index and a topic is searched and sent to the workbench.
+        Expected: the codex and user indexes use different files, the matching topic is selected and its text lands in the workbench input (skipped when no embedding model is available).
+        """
         from tests.conftest import embedding_model_available
         if not embedding_model_available():
             self.skipTest("sentence-transformers embedding model is unavailable (offline and not cached)")
@@ -198,6 +233,7 @@ class TestUIImprovements(unittest.TestCase):
         
         state = AppState()
         temp_dir = tempfile.mkdtemp()
+        # Delete the temporary index directory when the test ends.
         self.addCleanup(shutil.rmtree, temp_dir)
         
         from app.utils.rag_pipeline import RAGPipeline
@@ -242,6 +278,7 @@ class TestUIImprovements(unittest.TestCase):
         
         from PyQt6.QtWidgets import QMessageBox
         original_info = QMessageBox.information
+        # Replace the modal message box so the test does not block, and restore it afterwards.
         QMessageBox.information = lambda *args, **kwargs: QMessageBox.StandardButton.Ok
         try:
             docs_workspace._send_to_workbench()
@@ -252,5 +289,6 @@ class TestUIImprovements(unittest.TestCase):
         self.assertIn("[Codex: TestTopic]", input_text)
         self.assertIn("descriptor metaclass borrow checker query manual", input_text)
 
+# Allow running this file directly with the unittest runner.
 if __name__ == "__main__":
     unittest.main()

@@ -1,3 +1,9 @@
+# Program: karl-offline-lab - swarm_studio.py
+# Programmer: Ethan-da-Tech-Wizard (written with Claude, an AI assistant)
+# Last Modified: 2026-11-18
+# Purpose: Swarm Studio workspace: launches a multi-agent coding swarm, shows its plan, layers, live code stream, telemetry, debugger controls, edit cherry-picking and run replay.
+"""Swarm Studio workspace: launches a multi-agent coding swarm, shows its plan, layers, live code stream, telemetry, debugger controls, edit cherry-picking and run replay."""
+
 from __future__ import annotations
 
 import os
@@ -47,6 +53,7 @@ class _TpsChart(QWidget):
     """Minimal sparkline canvas for live tokens-per-second telemetry."""
 
     def __init__(self, parent=None):
+        """Set up an empty rolling chart of tokens-per-second samples."""
         super().__init__(parent)
         self.setMinimumHeight(64)
         self._samples: list[float] = []
@@ -54,6 +61,7 @@ class _TpsChart(QWidget):
         self._latest_tps = 0.0
 
     def add_sample(self, tokens_per_second: float, cumulative_tokens: int) -> None:
+        """Record a new speed sample (keeping the latest 60) and repaint."""
         self._samples.append(max(0.0, tokens_per_second))
         self._samples = self._samples[-60:]
         self._latest_tps = tokens_per_second
@@ -61,12 +69,14 @@ class _TpsChart(QWidget):
         self.update()
 
     def reset(self) -> None:
+        """Clear all samples and counters and repaint."""
         self._samples = []
         self._cumulative_tokens = 0
         self._latest_tps = 0.0
         self.update()
 
     def paintEvent(self, event):
+        """Paint the background, the speed line and the latest speed and token totals."""
         painter = QPainter(self)
         painter.setRenderHint(QPainter.RenderHint.Antialiasing)
         rect = self.rect()
@@ -102,6 +112,7 @@ class SwarmStudioWorkspace(QWidget):
     """High-signal dashboard for Karl's multi-agent code swarm."""
 
     def __init__(self, state, parent=None):
+        """Initialise run state, build the UI, load history and agent profiles."""
         super().__init__(parent)
         self.state = state
         self.setObjectName("workspace-root")
@@ -124,6 +135,7 @@ class SwarmStudioWorkspace(QWidget):
         self._load_history()
 
     def _build_ui(self):
+        """Build the title row and the main tabbed layout."""
         root = QVBoxLayout(self)
         root.setContentsMargins(12, 12, 12, 12)
         root.setSpacing(10)
@@ -166,6 +178,7 @@ class SwarmStudioWorkspace(QWidget):
         root.addWidget(self._main_tabs, 1)
 
     def _build_left_panel(self) -> QWidget:
+        """Build the objective, workspace, test command, agent profile and history controls."""
         panel = QWidget()
         layout = QVBoxLayout(panel)
         layout.setContentsMargins(0, 0, 8, 0)
@@ -285,6 +298,7 @@ class SwarmStudioWorkspace(QWidget):
         return scroll
 
     def _build_center_panel(self) -> QWidget:
+        """Build the run summary, task table, layers tree and dependency graph."""
         panel = QWidget()
         outer = QVBoxLayout(panel)
         outer.setContentsMargins(8, 0, 8, 0)
@@ -361,6 +375,7 @@ class SwarmStudioWorkspace(QWidget):
         return panel
 
     def _build_right_panel(self) -> QWidget:
+        """Build the live code stream, preview, traceback, intelligence log, steering and debugger controls."""
         panel = QWidget()
         layout = QVBoxLayout(panel)
         layout.setContentsMargins(8, 0, 0, 0)
@@ -517,6 +532,7 @@ class SwarmStudioWorkspace(QWidget):
         return panel
 
     def _build_replay_panel(self) -> QWidget:
+        """Build the tab for browsing past swarm runs and their steps, diffs and test output."""
         panel = QWidget()
         layout = QVBoxLayout(panel)
         layout.setContentsMargins(8, 8, 8, 8)
@@ -573,10 +589,12 @@ class SwarmStudioWorkspace(QWidget):
         return panel
 
     def _on_main_tab_changed(self, index: int) -> None:
+        """Load the list of past runs the first time the Replay tab is opened."""
         if self._main_tabs.tabText(index) == "Replay" and self._replay_run_combo.count() == 0:
             self._refresh_replay_runs()
 
     def _refresh_replay_runs(self) -> None:
+        """Reload past runs from the replay manager into the run combo box."""
         from app.utils.swarm_replay import SwarmReplayManager
         if self._replay_manager is None:
             self._replay_manager = SwarmReplayManager()
@@ -600,6 +618,7 @@ class SwarmStudioWorkspace(QWidget):
             self._replay_test_view.clear()
 
     def _on_replay_run_selected(self, index: int) -> None:
+        """Show the objective and steps of the chosen past run."""
         if index < 0 or self._replay_manager is None:
             return
         run_id = self._replay_run_combo.itemData(index)
@@ -622,11 +641,13 @@ class SwarmStudioWorkspace(QWidget):
         self._replay_test_view.clear()
 
     def _on_replay_step_selected(self, item: QListWidgetItem) -> None:
+        """Show the diff and test output for the chosen replay step."""
         step = item.data(Qt.ItemDataRole.UserRole) or {}
         self._replay_diff_view.setPlainText(step.get("diff") or "(no diff for this step)")
         self._replay_test_view.setPlainText(step.get("test_output") or "(no test output for this step)")
 
     def _load_history(self):
+        """Load saved swarm objectives into the recent list."""
         self._history = self.state.memory.load_swarm_history()
         self._recent_list.clear()
         for item in self._history:
@@ -637,6 +658,7 @@ class SwarmStudioWorkspace(QWidget):
             self._recent_list.addItem(row)
 
     def _save_history_item(self, objective: str, workspace_path: str, test_command: str):
+        """Save this run configuration to history, replacing any older entry for the same objective."""
         item = {
             "objective": objective,
             "workspace_path": workspace_path,
@@ -651,6 +673,7 @@ class SwarmStudioWorkspace(QWidget):
         self._load_history()
 
     def _load_history_item(self, item: QListWidgetItem):
+        """Fill the input fields from a history entry."""
         data = item.data(Qt.ItemDataRole.UserRole) or {}
         self._objective_input.setPlainText(data.get("objective", ""))
         self._workspace_input.setText(data.get("workspace_path", ""))
@@ -661,6 +684,7 @@ class SwarmStudioWorkspace(QWidget):
             self._tokens_spin.setValue(int(data["max_tokens"]))
 
     def _refresh_agent_profile_selectors(self):
+        """Reload agent profiles and fill the architect, coder and tester selectors."""
         self._agent_profiles = load_agent_profiles()
         combos = {
             "architect": getattr(self, "_architect_profile_combo", None),
@@ -682,6 +706,7 @@ class SwarmStudioWorkspace(QWidget):
             combo.blockSignals(False)
 
     def _launch(self):
+        """Validate inputs, save history and start the swarm orchestrator thread."""
         objective = self._objective_input.toPlainText().strip()
         workspace_path = self._workspace_input.text().strip()
         test_command = self._test_command_input.text().strip()
@@ -744,6 +769,7 @@ class SwarmStudioWorkspace(QWidget):
         self._thread.start()
 
     def _reset_run_ui(self):
+        """Clear tables, trees, graph and logs before a new run."""
         self._task_rows.clear()
         self._file_contents.clear()
         self._tracebacks.clear()
@@ -774,25 +800,30 @@ class SwarmStudioWorkspace(QWidget):
         self._debug_active_step_lbl.setText("No task currently paused.")
 
     def _stop(self):
+        """Ask the running swarm thread to stop."""
         if self._thread and self._thread.isRunning():
             self._thread.request_stop()
             self._status_log.append("[Swarm] Stop requested.")
 
     def _tick(self):
+        """Timer callback that updates the elapsed run time label."""
         if self._started_at:
             elapsed = time.time() - self._started_at
             self._runtime_lbl.setText(f"running {elapsed:.1f}s")
 
     def _on_status(self, message: str):
+        """Append a status message to the status log."""
         self._status_log.append(message)
 
     def _on_plan(self, plan: dict):
+        """Show the planned tasks and add a row for each."""
         tasks = plan.get("tasks", [])
         self._task_lbl.setText(f"Tasks: {len(tasks)}")
         for task in tasks:
             self._ensure_task_row(task.get("filepath", ""), "planned", "", task.get("instructions", ""))
 
     def _on_layers(self, layers: list):
+        """Show the execution layers in the tree and update the layer and task counts."""
         self._layers_tree.clear()
         total_tasks = sum(len(layer) for layer in layers)
         self._layer_lbl.setText(f"Layers: {len(layers)}")
@@ -809,15 +840,18 @@ class SwarmStudioWorkspace(QWidget):
         self._render_dependency_graph(layers)
 
     def _on_layer_started(self, index: int, total: int, tasks: list):
+        """Mark the layer as coding and its tasks as in progress."""
         self._verify_lbl.setText(f"Layer {index}/{total}: coding")
         for task in tasks:
             self._on_task_status(task.get("filepath", ""), "in_progress", f"Layer {index} started")
 
     def _on_layer_finished(self, index: int, success: bool, summary: str):
+        """Show whether the layer verified or failed and log the summary."""
         self._verify_lbl.setText(f"Layer {index}: {'verified' if success else 'failed'}")
         self._status_log.append(f"[Layer] {summary}")
 
     def _on_task_status(self, filepath: str, status: str, detail: str):
+        """Update a task row and graph node and recompute overall progress."""
         self._ensure_task_row(filepath, status, self._layer_for_file(filepath), detail)
         completed = 0
         total = max(1, len(self._task_rows))
@@ -840,12 +874,15 @@ class SwarmStudioWorkspace(QWidget):
     # ── Swarm 2.0 telemetry ──────────────────────────────────────────────────
 
     def _log_intel(self, line: str):
+        """Append a line to the intelligence log."""
         self._cognition_log.appendPlainText(line)
 
     def _on_candidates_generated(self, filepath: str, count: int):
+        """Log that candidate solutions are being generated for a file."""
         self._log_intel(f"[Multiverse] {filepath}: generating {count} candidate solutions...")
 
     def _on_candidate_scored(self, filepath: str, index: int, score: dict):
+        """Log the score details of one candidate solution."""
         ok = "✓" if score.get("syntax_ok") else "✗"
         self._log_intel(
             f"  candidate {index} [{ok}] score={score.get('total_score')} "
@@ -854,12 +891,15 @@ class SwarmStudioWorkspace(QWidget):
         )
 
     def _on_winner_selected(self, filepath: str, index: int, reason: str):
+        """Log which candidate won and why."""
         self._log_intel(f"[Multiverse] {filepath}: winner is candidate {index} ({reason})")
 
     def _on_memory_recalled(self, filepath: str, text: str):
+        """Log past patterns recalled from memory for a file."""
         self._log_intel(f"[Memory] {filepath}: recalled past pattern(s):\n{text}")
 
     def _on_specialist_review(self, filepath: str, specialist: str, result: dict):
+        """Log a specialist reviewer verdict, risk score and concerns."""
         verdict = result.get("verdict", "?")
         concerns = result.get("concerns", [])
         if concerns:
@@ -871,12 +911,15 @@ class SwarmStudioWorkspace(QWidget):
             self._log_intel(f"[{specialist.title()}] {filepath}: clean (verdict={verdict})")
 
     def _on_concurrency_adjusted(self, workers: int, reason: str):
+        """Log a change in the number of parallel workers."""
         self._log_intel(f"[Concurrency] {workers} parallel workers — {reason}")
 
     def _on_guidance_injected(self, filepath: str, message: str):
+        """Log guidance that was sent to a file task."""
         self._log_intel(f"[Steering] → {filepath}: \"{message}\"")
 
     def _on_send_guidance(self):
+        """Send the typed steering message to the running swarm for the target file."""
         if not self._thread or not self._thread.isRunning():
             return
         target = self._steering_target.text().strip()
@@ -889,11 +932,13 @@ class SwarmStudioWorkspace(QWidget):
     # ── Interactive debugger ─────────────────────────────────────────────────
 
     def _on_debug_pause(self):
+        """Ask the swarm to pause at the next task boundary."""
         if self._thread and self._thread.isRunning():
             self._thread.pause()
             self._status_log.append("[Debugger] Pause requested — takes effect at the next task boundary.")
 
     def _on_debug_resume(self):
+        """Resume the paused swarm and disable the step controls."""
         if self._thread and self._thread.isRunning():
             self._thread.resume()
         self._debug_step_btn.setEnabled(False)
@@ -902,6 +947,7 @@ class SwarmStudioWorkspace(QWidget):
         self._status_log.append("[Debugger] Resumed.")
 
     def _on_debug_step(self):
+        """Let the paused swarm run one task, then pause again."""
         if self._thread and self._thread.isRunning():
             self._thread.step()
         self._debug_step_btn.setEnabled(False)
@@ -909,6 +955,7 @@ class SwarmStudioWorkspace(QWidget):
         self._status_log.append("[Debugger] Stepping one task forward.")
 
     def _on_swarm_paused(self, task_info: dict):
+        """Show the task the swarm paused before and enable step and resume."""
         filepath = task_info.get("filepath", "")
         instructions = task_info.get("instructions", "")
         self._debug_active_step_lbl.setText(f"Paused before: {filepath}\n{instructions}")
@@ -919,15 +966,18 @@ class SwarmStudioWorkspace(QWidget):
         self._status_log.append(f"[Debugger] Paused before {filepath}.")
 
     def _on_telemetry_update(self, payload: dict):
+        """Feed tokens-per-second telemetry into the chart."""
         self._tps_chart.add_sample(
             payload.get("tokens_per_second", 0.0), payload.get("cumulative_tokens", 0)
         )
 
     def _on_verification_started(self, layer_index: int, command: str):
+        """Show that a layer is being verified and log the command."""
         self._verify_lbl.setText(f"Layer {layer_index}: verifying")
         self._status_log.append(f"[Tester] Layer {layer_index}: {command}")
 
     def _on_proposal_verification_finished(self, layer_index: int, passed: bool, trace: str):
+        """Record the dry-run result for a layer and show its trace on failure."""
         status = "passed" if passed else "failed"
         self._verify_lbl.setText(f"Layer {layer_index}: dry-run {status}")
         self._status_log.append(f"[Tester] Layer {layer_index} dry-run {status} before approval.")
@@ -938,15 +988,18 @@ class SwarmStudioWorkspace(QWidget):
                 self._traceback_browser.setHtml(self._format_traceback_html(trace, key))
 
     def _on_traceback(self, key: str, trace: str):
+        """Store a traceback under its key and show it formatted."""
         self._tracebacks[key] = trace
         self._traceback_browser.setHtml(self._format_traceback_html(trace, key))
 
     def _on_file_edited(self, filepath: str, content: str):
+        """Remember the written file content, update its task row and preview it."""
         self._file_contents[filepath] = content
         self._ensure_task_row(filepath, "written", self._layer_for_file(filepath), "File content written")
         self._preview.setPlainText(content)
 
     def _on_test_result(self, passed: bool, trace: str):
+        """Show a pass message or the formatted failure trace."""
         if passed:
             self._traceback_browser.setHtml(
                 '<div style="font-family:Monospace,monospace;padding:8px;color:#4CAF50;">Verification passed.</div>'
@@ -955,6 +1008,7 @@ class SwarmStudioWorkspace(QWidget):
             self._traceback_browser.setHtml(self._format_traceback_html(trace))
 
     def _on_finished(self, success: bool, summary: str):
+        """Reset run state and controls and show the final summary banner."""
         self.state.swarm_running = False
         self._timer.stop()
         self._runtime_lbl.setText("idle")
@@ -970,6 +1024,7 @@ class SwarmStudioWorkspace(QWidget):
 
     def _on_coder_token(self, filepath: str, token: str):
         # Set header on first token for this file
+        """Append a streamed coder token, adding a file header when the file changes."""
         current_header = getattr(self, '_stream_current_file', None)
         if current_header != filepath:
             self._stream_current_file = filepath
@@ -978,6 +1033,7 @@ class SwarmStudioWorkspace(QWidget):
         self._stream_view.insertPlainText(token)
 
     def _ensure_task_row(self, filepath: str, status: str, layer: str, detail: str):
+        """Create the task table row for a file if missing, then update its status, layer and detail."""
         if not filepath:
             return
         if filepath not in self._task_rows:
@@ -1077,6 +1133,7 @@ class SwarmStudioWorkspace(QWidget):
             )
 
     def _update_graph_node_status(self, filepath: str, status: str) -> None:
+        """Recolour the graph node for a file according to its status."""
         node = self._task_nodes.get(filepath)
         if node is None:
             return
@@ -1098,6 +1155,7 @@ class SwarmStudioWorkspace(QWidget):
         node.setPen(QPen(status_border.get(status, status_border["planned"]), 1.5))
 
     def _layer_for_file(self, filepath: str) -> str:
+        """Return the layer number containing the file, or an empty string."""
         for idx in range(self._layers_tree.topLevelItemCount()):
             parent = self._layers_tree.topLevelItem(idx)
             layer_num = parent.data(0, Qt.ItemDataRole.UserRole)
@@ -1107,6 +1165,7 @@ class SwarmStudioWorkspace(QWidget):
         return ""
 
     def _sync_selection_preview(self):
+        """Show the stored content of the selected task row in the preview."""
         rows = self._task_table.selectionModel().selectedRows() if self._task_table.selectionModel() else []
         if not rows:
             return
@@ -1128,6 +1187,7 @@ class SwarmStudioWorkspace(QWidget):
     # ── Cherry-pick helpers ──────────────────────────────────────────────────
 
     def _on_edits_proposed(self, edits: list):
+        """List proposed file edits as checkable items for cherry-picking."""
         self._cherry_pick_list.clear()
         for edit in edits:
             item = QListWidgetItem(edit["filepath"])
@@ -1140,19 +1200,23 @@ class SwarmStudioWorkspace(QWidget):
         self._status_log.append("[Swarm] Edits proposed — review and commit to proceed.")
 
     def _on_cherry_pick_item_clicked(self, item: QListWidgetItem):
+        """Preview the content of the clicked proposed edit."""
         content = item.data(Qt.ItemDataRole.UserRole)
         if content:
             self._preview.setPlainText(content)
 
     def _cherry_select_all(self):
+        """Check every proposed edit."""
         for i in range(self._cherry_pick_list.count()):
             self._cherry_pick_list.item(i).setCheckState(Qt.CheckState.Checked)
 
     def _cherry_select_none(self):
+        """Uncheck every proposed edit."""
         for i in range(self._cherry_pick_list.count()):
             self._cherry_pick_list.item(i).setCheckState(Qt.CheckState.Unchecked)
 
     def _on_commit_edits(self):
+        """Commit the checked edits to the swarm thread and report how many were skipped."""
         if not self._thread:
             return
         selected = [
@@ -1172,9 +1236,11 @@ class SwarmStudioWorkspace(QWidget):
     # ── Verification traceback viewer ────────────────────────────────────────
 
     def _on_verification_failed(self, context: str, traceback_text: str):
+        """Show the verification failure traceback."""
         self._traceback_browser.setHtml(self._format_traceback_html(traceback_text, context))
 
     def _format_traceback_html(self, trace: str, context: str = "") -> str:
+        """Convert a traceback into escaped, colour-highlighted HTML with an optional context heading."""
         import html as _html
         _exc_starts = (
             "Traceback", "Error", "Exception", "SyntaxError", "TypeError",
@@ -1203,6 +1269,7 @@ class SwarmStudioWorkspace(QWidget):
         return "".join(parts)
 
     def closeEvent(self, event):
+        """Stop and wait for the swarm thread before the widget closes."""
         if self._thread and self._thread.isRunning():
             self._thread.request_stop()
             self._thread.wait()

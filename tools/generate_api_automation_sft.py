@@ -1,4 +1,8 @@
 #!/usr/bin/env python3
+# Program: karl-offline-lab - generate_api_automation_sft.py
+# Programmer: Ethan-da-Tech-Wizard (written with Claude, an AI assistant)
+# Last Modified: 2026-11-18
+# Purpose: Command-line tool that writes a small hand-written set of API and AI automation coding examples as chat-format SFT rows.
 """
 API & AI Automation SFT Dataset Generator
 =========================================
@@ -17,7 +21,9 @@ from pathlib import Path
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s")
 logger = logging.getLogger("karl.generate_api_automation_sft")
 
+# Repository root, used to place the output file.
 ROOT = Path(__file__).resolve().parents[1]
+# Where the generated dataset is written.
 OUT_PATH = ROOT / "data/training/code/api_automation_sft.jsonl"
 
 # Expert system prompt for coding assistant
@@ -182,12 +188,15 @@ AUTOMATION_SCENARIOS = [
 
 
 def main() -> int:
+    """Write each built-in scenario as a system/user/assistant SFT example to the output file and return 0."""
     logger.info("Generating API and AI automation synthetic SFT examples...")
     OUT_PATH.parent.mkdir(parents=True, exist_ok=True)
     
     written = 0
+    # Overwrite the output file with one JSON line per example.
     with OUT_PATH.open("w", encoding="utf-8") as fh:
         for scenario in AUTOMATION_SCENARIOS:
+            # One chat example per scenario: fixed system message, the instruction and the model answer.
             sft_entry = {
                 "messages": [
                     {"role": "system", "content": SYSTEM_PROMPT},
@@ -203,5 +212,6 @@ def main() -> int:
     return 0
 
 
+# Run main() and use its return value as the exit code.
 if __name__ == "__main__":
     raise SystemExit(main())

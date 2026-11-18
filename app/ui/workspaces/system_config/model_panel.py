@@ -1,3 +1,9 @@
+# Program: karl-offline-lab - model_panel.py
+# Programmer: Ethan-da-Tech-Wizard (written with Claude, an AI assistant)
+# Last Modified: 2026-11-18
+# Purpose: Settings mixin that builds the Model tab: loading GGUF models and adapters, speculative draft models, model scanning and circuit-breaker reset.
+"""Settings mixin that builds the Model tab: loading GGUF models and adapters, speculative draft models, model scanning and circuit-breaker reset."""
+
 from __future__ import annotations
 
 import html
@@ -20,7 +26,9 @@ from .common import _hline, _row, _section
 logger = logging.getLogger("karl.system_config")
 
 class ModelPanelMixin:
+    """Mixin that builds the Model tab and manages model, adapter and draft-model loading."""
     def _build_model_tab(self) -> QWidget:
+        """Build the Model tab: model loading, speculative draft model, adapters, registry and hardware info."""
         w = QWidget()
         outer = QVBoxLayout(w)
         outer.setContentsMargins(0, 0, 0, 0)
@@ -304,6 +312,7 @@ class ModelPanelMixin:
         on_error=None,
         on_finished=None,
     ):
+        """Start a background model load, disabling controls meanwhile; returns False if one is already running."""
         from app.engine.model_load_thread import ModelLoadThread
 
         if getattr(self, "_model_load_thread", None) and self._model_load_thread.isRunning():
@@ -335,6 +344,7 @@ class ModelPanelMixin:
         )
 
         def handle_loaded(filename: str, loaded_adapter: str | None, draft_filename: str | None):
+            """Update app state and refresh lists after a successful load, then call the caller callback."""
             self.state.model_name = filename
             self.state.adapter_name = loaded_adapter
             self.adapter_changed.emit(loaded_adapter or "")
@@ -367,6 +377,7 @@ class ModelPanelMixin:
                 on_loaded(filename, loaded_adapter, draft_filename)
 
         def handle_error(msg: str):
+            """Show the load error in the status label or a dialog and call the error callback."""
             if status_label is not None:
                 status_label.setText(f"<span style='color:#FF5C7A;'>Error: {msg}</span>")
                 status_label.setTextFormat(Qt.TextFormat.RichText)
@@ -376,6 +387,7 @@ class ModelPanelMixin:
                 on_error(msg)
 
         def handle_finished():
+            """Re-enable controls, forget the finished thread and call the finished callback."""
             for control in controls:
                 if control is not None:
                     control.setEnabled(True)
@@ -396,6 +408,7 @@ class ModelPanelMixin:
 
 
     def _browse_model(self):
+        """Let the user pick a GGUF model file and put its path in the input."""
         path, _ = QFileDialog.getOpenFileName(
             self, "Select GGUF model", "data/models", "GGUF (*.gguf);;All Files (*)"
         )
@@ -404,6 +417,7 @@ class ModelPanelMixin:
 
 
     def _load_model(self):
+        """Validate the entered model path and start loading it."""
         path = self._model_path_input.text().strip()
         if not path:
             self._model_status.setText("enter a model path first")
@@ -423,6 +437,7 @@ class ModelPanelMixin:
 
 
     def _browse_draft_model(self):
+        """Let the user pick a draft GGUF model and select it in the combo box if listed."""
         path, _ = QFileDialog.getOpenFileName(
             self, "Select Draft GGUF model", "data/models", "GGUF (*.gguf);;All Files (*)"
         )
@@ -435,6 +450,7 @@ class ModelPanelMixin:
 
 
     def _on_draft_combo_changed(self, text: str):
+        """Fill the draft path input from the chosen combo entry, or clear it for none."""
         if not text or text == "none":
             self._draft_model_input.clear()
             return
@@ -442,6 +458,7 @@ class ModelPanelMixin:
 
 
     def _load_speculative(self):
+        """Load the draft model for speculative decoding, or clear it when the toggle is off."""
         if not self._speculative_toggle.isChecked():
             self._clear_draft_model()
             return
@@ -469,6 +486,7 @@ class ModelPanelMixin:
 
 
     def _clear_draft_model(self):
+        """Unload the draft model, disable speculative decoding and reset the draft controls."""
         from app.engine.model_loader import ModelLoader
         from app.engine import config_store as _cs
         try:
@@ -485,6 +503,7 @@ class ModelPanelMixin:
 
 
     def _populate_draft_selector(self):
+        """Fill the draft model combo box, preferring the saved or registry companion draft model."""
         if not hasattr(self, "_draft_model_combo"):
             return
 
@@ -521,6 +540,7 @@ class ModelPanelMixin:
 
 
     def _scan_models(self, force=False):
+        """List GGUF files in the models folder into a cache (rescanned when forced) and refresh the views."""
         models_dir = "data/models"
         if force or self._cached_models_list is None:
             if not os.path.exists(models_dir):
@@ -579,6 +599,7 @@ class ModelPanelMixin:
 
 
     def _scan_adapters(self, force=False):
+        """List adapter folders in the adapters folder into a cache (rescanned when forced) and refresh the views."""
         if force or self._cached_adapters_list is None:
             adapters_dir = "data/adapters"
             cached = []
@@ -607,6 +628,7 @@ class ModelPanelMixin:
 
 
     def _load_adapter(self):
+        """Load the selected adapter on the current model; refused while inference is active."""
         from app.engine.model_loader import ModelLoader
         if ModelLoader.is_instance_locked():
             QMessageBox.warning(
@@ -641,6 +663,7 @@ class ModelPanelMixin:
 
 
     def refresh_filesystem_cache(self):
+        """Rescan models and adapters and refresh the registry, hardware info and preflight checks."""
         self._scan_models(force=True)
         self._scan_adapters(force=True)
         self._populate_registry()
@@ -649,6 +672,7 @@ class ModelPanelMixin:
 
 
     def _reset_circuit_breaker(self):
+        """Reset the model loader circuit breaker and show it as closed."""
         from app.engine.model_loader import ModelLoader
         ModelLoader.reset_circuit_breaker()
         if hasattr(self, "_cb_status_lbl") and self._cb_status_lbl is not None:

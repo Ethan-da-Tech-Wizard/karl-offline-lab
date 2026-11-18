@@ -1,3 +1,10 @@
+# Program: karl-offline-lab - test_session_tree.py
+# Programmer: Ethan-da-Tech-Wizard (written with Claude, an AI assistant)
+# Last Modified: 2026-11-18
+# Purpose: Tests SessionNode and SessionTree behavior: branching, serialization, sequence-style access and on-disk save and load.
+
+"""Tests SessionNode and SessionTree behavior: branching, serialization, sequence-style access and on-disk save and load."""
+
 import os
 import sys
 
@@ -11,6 +18,7 @@ from app.utils.session_tree import SessionNode, SessionTree
 # ---------------------------------------------------------------------------
 
 def test_node_defaults():
+    """Scenario: node defaults. Expected: the assertions in this test hold."""
     node = SessionNode("user", "hello")
     assert node.role == "user"
     assert node.content == "hello"
@@ -21,6 +29,7 @@ def test_node_defaults():
 
 
 def test_node_add_child():
+    """Scenario: node add child. Expected: the assertions in this test hold."""
     parent = SessionNode("user", "hi")
     child = parent.add_child("assistant", "hey")
     assert child in parent.children
@@ -29,6 +38,7 @@ def test_node_add_child():
 
 
 def test_node_to_from_dict_round_trip():
+    """Scenario: node to from dict round trip. Expected: the assertions in this test hold."""
     parent = SessionNode("user", "question", node_id="u1")
     child = parent.add_child("assistant", "answer", node_id="a1")
     child.thought = "thinking..."
@@ -44,6 +54,7 @@ def test_node_to_from_dict_round_trip():
 
 
 def test_node_attachments_round_trip():
+    """Scenario: node attachments round trip. Expected: the assertions in this test hold."""
     node = SessionNode(
         "user",
         "what is wrong here?",
@@ -60,12 +71,14 @@ def test_node_attachments_round_trip():
 # ---------------------------------------------------------------------------
 
 def test_tree_empty_on_init():
+    """Scenario: tree empty on init. Expected: the assertions in this test hold."""
     tree = SessionTree()
     assert len(tree) == 0
     assert not tree  # __bool__
 
 
 def test_tree_add_message():
+    """Scenario: tree add message. Expected: the assertions in this test hold."""
     tree = SessionTree()
     tree.add_message("user", "Hello")
     tree.add_message("assistant", "Hi there")
@@ -76,6 +89,7 @@ def test_tree_add_message():
 
 
 def test_tree_active_path_content():
+    """Scenario: tree active path content. Expected: the assertions in this test hold."""
     tree = SessionTree()
     tree.add_message("user", "Q1", attachments=[{"type": "image", "id": "abc"}])
     tree.add_message("assistant", "A1")
@@ -116,6 +130,7 @@ def test_tree_branching():
 
 
 def test_tree_serialization_round_trip():
+    """Scenario: tree serialization round trip. Expected: the assertions in this test hold."""
     tree = SessionTree()
     tree.add_message("user", "ping")
     tree.add_message("assistant", "pong")
@@ -132,6 +147,7 @@ def test_tree_serialization_round_trip():
 
 
 def test_tree_serialization_with_branch():
+    """Scenario: tree serialization with branch. Expected: the assertions in this test hold."""
     tree = SessionTree()
     tree.add_message("user", "base")
     base_id = tree.current_id
@@ -150,6 +166,7 @@ def test_tree_serialization_with_branch():
 
 
 def test_tree_clear():
+    """Scenario: tree clear. Expected: the assertions in this test hold."""
     tree = SessionTree()
     tree.add_message("user", "hi")
     tree.add_message("assistant", "hello")
@@ -158,6 +175,7 @@ def test_tree_clear():
 
 
 def test_tree_copy_is_independent():
+    """Scenario: tree copy is independent. Expected: the assertions in this test hold."""
     tree = SessionTree()
     tree.add_message("user", "original")
     copy = tree.copy()
@@ -168,6 +186,7 @@ def test_tree_copy_is_independent():
 
 
 def test_tree_duck_typing_len_iter():
+    """Scenario: tree duck typing len iter. Expected: the assertions in this test hold."""
     tree = SessionTree()
     tree.add_message("user", "a")
     tree.add_message("assistant", "b")
@@ -180,6 +199,7 @@ def test_tree_duck_typing_len_iter():
 
 
 def test_tree_getitem():
+    """Scenario: tree getitem. Expected: the assertions in this test hold."""
     tree = SessionTree()
     tree.add_message("user", "first")
     tree.add_message("assistant", "second")
@@ -189,6 +209,7 @@ def test_tree_getitem():
 
 
 def test_tree_append_dict():
+    """Scenario: tree append dict. Expected: the assertions in this test hold."""
     tree = SessionTree()
     tree.append({"role": "user", "content": "via append"})
     tree.append({"role": "assistant", "content": "reply"})
@@ -197,6 +218,7 @@ def test_tree_append_dict():
 
 
 def test_tree_append_invalid_raises():
+    """Scenario: tree append invalid raises. Expected: the assertions in this test hold."""
     tree = SessionTree()
     try:
         tree.append({"role": "user"})  # missing "content"
@@ -206,6 +228,7 @@ def test_tree_append_invalid_raises():
 
 
 def test_tree_update_current_node_content():
+    """Scenario: tree update current node content. Expected: the assertions in this test hold."""
     tree = SessionTree()
     tree.add_message("assistant", "draft")
     tree.update_current_node_content("final answer")
@@ -223,6 +246,7 @@ def test_tree_nodes_map_consistency():
 
     # Every node should be in the map
     def collect(node, ids):
+        """Test helper: collect."""
         ids.add(node.id)
         for c in node.children:
             collect(c, ids)
@@ -234,6 +258,7 @@ def test_tree_nodes_map_consistency():
 
 
 def test_tree_stats_and_branch_label():
+    """Scenario: tree stats and branch label. Expected: the assertions in this test hold."""
     tree = SessionTree()
     user = tree.add_message("user", "base")
     tree.add_message("assistant", "branch A")
@@ -247,6 +272,7 @@ def test_tree_stats_and_branch_label():
 
 
 def test_branch_from_missing_returns_none():
+    """Scenario: branch from missing returns none. Expected: the assertions in this test hold."""
     tree = SessionTree()
     assert tree.branch_from("missing", "user", "nope") is None
     assert len(tree) == 0
@@ -259,6 +285,7 @@ def test_branch_from_missing_returns_none():
 # ---------------------------------------------------------------------------
 
 def test_tree_save_strips_think_blocks(tmp_path, monkeypatch):
+    """Scenario: tree save strips think blocks. Expected: the assertions in this test hold."""
     monkeypatch.setattr(SessionTree, "SESSIONS_DIR", str(tmp_path))
 
     tree = SessionTree()
@@ -279,6 +306,7 @@ def test_tree_save_strips_think_blocks(tmp_path, monkeypatch):
 
 
 def test_tree_save_load_round_trip(tmp_path, monkeypatch):
+    """Scenario: tree save load round trip. Expected: the assertions in this test hold."""
     monkeypatch.setattr(SessionTree, "SESSIONS_DIR", str(tmp_path))
 
     tree = SessionTree()
@@ -296,6 +324,7 @@ def test_tree_save_load_round_trip(tmp_path, monkeypatch):
 
 
 def test_tree_list_sessions(tmp_path, monkeypatch):
+    """Scenario: tree list sessions. Expected: the assertions in this test hold."""
     monkeypatch.setattr(SessionTree, "SESSIONS_DIR", str(tmp_path))
 
     tree = SessionTree()

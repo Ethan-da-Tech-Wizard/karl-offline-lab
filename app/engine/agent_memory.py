@@ -1,3 +1,7 @@
+# Program: karl-offline-lab - agent_memory.py
+# Programmer: Ethan-da-Tech-Wizard (written with Claude, an AI assistant)
+# Last Modified: 2026-11-18
+# Purpose: Indexes Python function and class signatures in a workspace into a JSON file and answers keyword queries so swarm agents can see existing APIs.
 """
 Offline code-schema memory for swarm agents.
 
@@ -16,20 +20,24 @@ from typing import Any
 
 
 class CodebaseMemory:
+    """Builds, stores and queries a signature index of the Python files in one workspace."""
     def __init__(
         self,
         workspace_path: str,
         db_path: str | os.PathLike[str] | None = None,
     ) -> None:
+        """Resolve the workspace path and pick the JSON index file (a hash of the workspace path names it by default)."""
         self.workspace_path = Path(workspace_path).expanduser().resolve()
         if db_path is None:
             import hashlib
+            # Short hash of the workspace path so each workspace gets its own index file.
             ws_hash = hashlib.md5(str(self.workspace_path).encode("utf-8")).hexdigest()[:12]
             db_path = f"data/agent_memory_{ws_hash}.json"
         self.db_path = Path(db_path)
         self.index: dict[str, dict[str, list[dict[str, Any]]]] = {}
 
     def build_index(self) -> dict[str, dict[str, list[dict[str, Any]]]]:
+        """Parse every Python file in the workspace and rebuild the index of top-level functions and classes, then save it."""
         self.index = {}
         if not self.workspace_path.exists():
             self._persist()
@@ -41,11 +49,13 @@ class CodebaseMemory:
             rel = path.relative_to(self.workspace_path).as_posix()
             try:
                 tree = ast.parse(path.read_text(encoding="utf-8", errors="ignore"))
+            # Files that cannot be read or parsed are skipped rather than failing the whole index.
             except (SyntaxError, OSError, UnicodeDecodeError):
                 continue
 
             functions = []
             classes = []
+            # Only top-level functions and classes are indexed; nested definitions are skipped.
             for node in tree.body:
                 if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
                     functions.append(self._function_entry(node))
@@ -61,6 +71,7 @@ class CodebaseMemory:
         return self.index
 
     def load(self) -> dict[str, dict[str, list[dict[str, Any]]]]:
+        """Load a previously saved index from disk; an unreadable or invalid file yields an empty index."""
         try:
             data = json.loads(self.db_path.read_text(encoding="utf-8"))
             if isinstance(data, dict):
@@ -70,8 +81,10 @@ class CodebaseMemory:
         return self.index
 
     def query_memory(self, keywords: list[str]) -> str:
+        """Return one text line per indexed function, class or method whose name, docstring or arguments contain any keyword."""
         if not self.index:
             self.load()
+        # Lower-case the search terms so matching is case-insensitive.
         terms = {term.lower() for term in keywords if term}
         if not terms:
             return ""
@@ -90,14 +103,17 @@ class CodebaseMemory:
         return "\n".join(lines)
 
     def _persist(self) -> None:
+        """Write the current index to the JSON file, creating its folder if needed."""
         self.db_path.parent.mkdir(parents=True, exist_ok=True)
         self.db_path.write_text(json.dumps(self.index, indent=2, ensure_ascii=False), encoding="utf-8")
 
     def _skip_path(self, path: Path) -> bool:
+        """Return True for paths inside folders that should not be indexed (virtualenvs, caches, data and so on)."""
         skip_parts = {".git", ".venv", "venv", "__pycache__", "node_modules", "data"}
         return any(part in skip_parts for part in path.parts)
 
     def _function_entry(self, node: ast.FunctionDef | ast.AsyncFunctionDef) -> dict[str, Any]:
+        """Summarise a function node as its name, argument names and docstring."""
         return {
             "name": node.name,
             "args": self._args(node.args),
@@ -105,6 +121,7 @@ class CodebaseMemory:
         }
 
     def _class_entry(self, node: ast.ClassDef) -> dict[str, Any]:
+        """Summarise a class node as its name, docstring and the entries of its methods."""
         methods = [
             self._function_entry(child)
             for child in node.body
@@ -117,6 +134,7 @@ class CodebaseMemory:
         }
 
     def _args(self, args: ast.arguments) -> list[str]:
+        """List argument names in order, prefixing variadic ones with * or **."""
         names = [arg.arg for arg in args.posonlyargs + args.args]
         if args.vararg:
             names.append("*" + args.vararg.arg)
@@ -126,6 +144,7 @@ class CodebaseMemory:
         return names
 
     def _matches(self, item: dict[str, Any], terms: set[str]) -> bool:
+        """Return True when any search term appears (case-insensitive) in the item name, docstring or argument names."""
         haystack = " ".join([
             str(item.get("name", "")),
             str(item.get("doc", "")),
@@ -134,17 +153,20 @@ class CodebaseMemory:
         return any(term in haystack for term in terms)
 
     def _format_function(self, rel_path: str, item: dict[str, Any]) -> str:
+        """Format a function entry as a one-line bullet with its file, signature and docstring."""
         args = ", ".join(item.get("args", []))
         doc = item.get("doc", "")
         suffix = f" -> {doc}" if doc else ""
         return f"- {rel_path}: def {item.get('name')}({args}){suffix}"
 
     def _format_class(self, rel_path: str, item: dict[str, Any]) -> str:
+        """Format a class entry as a one-line bullet with its file and docstring."""
         doc = item.get("doc", "")
         suffix = f" -> {doc}" if doc else ""
         return f"- {rel_path}: class {item.get('name')}{suffix}"
 
     def _format_method(self, rel_path: str, cls: dict[str, Any], item: dict[str, Any]) -> str:
+        """Format a method entry as a one-line bullet using the Class.method form."""
         args = ", ".join(item.get("args", []))
         doc = item.get("doc", "")
         suffix = f" -> {doc}" if doc else ""
@@ -152,6 +174,7 @@ class CodebaseMemory:
 
 
 def keywords_from_task(task: dict[str, Any]) -> list[str]:
+    """Pull up to 12 distinct identifier-like keywords from a task dict (file path and instructions), skipping common filler words."""
     text = f"{task.get('filepath', '')} {task.get('instructions', '')}"
     words = re.findall(r"[A-Za-z_][A-Za-z0-9_]{2,}", text)
     stop = {

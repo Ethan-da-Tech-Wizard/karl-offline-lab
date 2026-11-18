@@ -1,3 +1,8 @@
+# Program: karl-offline-lab - registry_panel.py
+# Programmer: Ethan-da-Tech-Wizard (written with Claude, an AI assistant)
+# Last Modified: 2026-11-18
+# Purpose: Mixin for the System Config workspace that lists the model registry as cards and handles downloading, quantizing and activating GGUF models.
+"""Model registry tab mixin: registry cards, downloads, quantization and activation."""
 from __future__ import annotations
 
 import logging
@@ -12,10 +17,14 @@ from app.engine import config_store
 from app.ui.themes import MONO
 from .download_threads import DownloadThread, QuantizationDialog, QuantizationThread
 
+# ----- Module setup -----
 logger = logging.getLogger("karl.system_config")
 
+# ----- Registry mixin -----
 class RegistryPanelMixin:
+    """Adds the model registry tab and its download, quantize and activate behaviour to the workspace."""
     def _on_quant_done(self, out_path: str):
+        """Reset the quantization controls after a successful job and refresh the model list."""
         self._quant_progress_bar.setValue(100)
         self._quant_progress_bar.setVisible(False)
         self._quant_btn.setEnabled(True)
@@ -33,11 +42,13 @@ class RegistryPanelMixin:
 
 
     def _build_registry_tab(self) -> QWidget:
+        """Build the scrollable registry list and the hidden download progress panel."""
         w = QWidget()
         layout = QVBoxLayout(w)
         layout.setContentsMargins(12, 12, 12, 12)
         layout.setSpacing(12)
 
+        # Scrollable area that holds one card per model.
         scroll = QScrollArea()
         scroll.setWidgetResizable(True)
         scroll.setFrameShape(QFrame.Shape.NoFrame)
@@ -52,6 +63,7 @@ class RegistryPanelMixin:
         scroll.setWidget(scroll_content)
         layout.addWidget(scroll, 1)
 
+        # Progress strip, hidden until a download, quantization or activation runs.
         self._progress_panel = QWidget()
         self._progress_panel.setObjectName("panel")
         self._progress_panel.setVisible(False)
@@ -80,8 +92,11 @@ class RegistryPanelMixin:
 
 
     def _load_registry(self):
+        # Use the configured registry when present.
+        """Load the model registry from config, falling back to a built-in list of default models."""
         self._registry = list(config_store.get_model_registry())
 
+        # Nothing configured: fall back to built-in defaults, ordered by tier (larger tiers need more RAM).
         if not self._registry:
             self._registry = [
                 {
@@ -138,6 +153,7 @@ class RegistryPanelMixin:
 
 
     def _get_active_model_name(self) -> str:
+        """Return the active model file name from state or saved config, or none."""
         active_name = self.state.model_name or "none"
         if active_name == "none":
             from app.engine import config_store
@@ -148,6 +164,8 @@ class RegistryPanelMixin:
 
 
     def _populate_registry(self):
+        # Clear any existing cards before redrawing.
+        """Rebuild one card per registry entry with the right action button (Active, Activate, Download, Quantize)."""
         while self._registry_layout.count():
             item = self._registry_layout.takeAt(0)
             w = item.widget()
@@ -181,6 +199,7 @@ class RegistryPanelMixin:
             h_layout.addWidget(lbl_title, 1)
             
             file_path = os.path.join(models_dir, filename)
+            # Choose the button by state: active, downloaded (activate), or not yet downloaded (download).
             is_downloaded = os.path.exists(file_path)
             is_active = (filename == active_name)
             
@@ -196,6 +215,7 @@ class RegistryPanelMixin:
                 btn.clicked.connect(lambda checked, f=filename: self._activate_registry_model(f))
                 btn.setStyleSheet("background-color: rgba(0, 194, 255, 0.1); color: #00C2FF; border: 1px solid rgba(0, 194, 255, 0.35); border-radius: 4px; padding: 5px 14px;")
                 
+                # Only full-precision files get a Quantize option.
                 # If downloaded and precision is FP16, add Quantize button
                 # We'll infer FP16 if 'FP16' is in the name or filename
                 if "FP16" in name.upper() or "FP16" in filename.upper() or item.get("precision") == "FP16":
@@ -226,10 +246,12 @@ class RegistryPanelMixin:
             
             self._registry_layout.addWidget(card)
             
+        # Push the cards to the top.
         self._registry_layout.addStretch(1)
 
 
     def _on_quantize_clicked(self, filename: str, model_name: str):
+        """Ask for a quantization format and start a background quantization of the chosen model file."""
         src_path = os.path.join("data", "models", filename)
         
         dialog = QuantizationDialog(model_name, self)
@@ -238,6 +260,7 @@ class RegistryPanelMixin:
             
             # Suggest output name: model-name-Q4_K_M.gguf
             base = os.path.splitext(filename)[0]
+            # Output goes next to the source in the models folder.
             out_filename = f"{base}-{fmt}.gguf"
             out_path = os.path.join("data", "models", out_filename)
             
@@ -247,6 +270,7 @@ class RegistryPanelMixin:
             self._download_bar.setValue(0)
             self._set_ui_enabled_for_download(False)
             
+            # Run quantization on a worker thread so the UI stays responsive.
             thread = QuantizationThread(src_path, out_path, fmt)
             self._active_threads.add(thread)
             thread.finished.connect(lambda: self._active_threads.discard(thread))
@@ -261,6 +285,7 @@ class RegistryPanelMixin:
 
 
     def _on_registry_quant_done(self, output_path: str):
+        """Hide the progress panel and refresh the lists after a registry quantization finishes."""
         self._progress_panel.setVisible(False)
         self._set_ui_enabled_for_download(True)
         filename = os.path.basename(output_path)
@@ -276,7 +301,9 @@ class RegistryPanelMixin:
 
 
     def _activate_registry_model(self, filename: str):
+        """Load the chosen model as the active one, refusing while inference is running."""
         from app.engine.model_loader import ModelLoader
+        # Switching models mid-generation is unsafe, so refuse.
         if ModelLoader.is_instance_locked():
             from PyQt6.QtWidgets import QMessageBox
             QMessageBox.warning(
@@ -289,22 +316,26 @@ class RegistryPanelMixin:
         path = os.path.join("data", "models", filename)
         self._progress_panel.setVisible(True)
         self._download_status_lbl.setText(f"Activating {filename}...")
+        # A 0-0 range makes the bar show an indeterminate busy animation.
         self._download_bar.setRange(0, 0)
         self._set_ui_enabled_for_download(False)
 
         def finish_activation_ui():
+            """Hide the progress panel and re-enable the registry buttons."""
             self._progress_panel.setVisible(False)
             self._download_bar.setRange(0, 100)
             self._download_bar.setValue(0)
             self._set_ui_enabled_for_download(True)
 
         def on_loaded(_filename, _adapter, _draft):
+            """Callback for a successful load: restore the UI and tell the user."""
             finish_activation_ui()
             QMessageBox.information(
                 self, "Model Activated",
                 f"Model '{filename}' has been activated successfully!"
             )
 
+        # Hand off to the shared model loader with callbacks for success, error and completion.
         started = self._start_model_load(
             path,
             status_label=getattr(self, "_model_status", None),
@@ -319,6 +350,8 @@ class RegistryPanelMixin:
 
 
     def _start_download(self, url: str, filename: str):
+        # Only one download at a time.
+        """Start a background download of a model file, unless one is already running."""
         if self._download_thread and self._download_thread.isRunning():
             QMessageBox.warning(self, "Download In Progress", "A download is already running.")
             return
@@ -336,6 +369,7 @@ class RegistryPanelMixin:
             lambda t=self._download_thread: self._active_threads.discard(t)
         )
         self._download_thread.finished.connect(self._download_thread.deleteLater)
+        # Wire the worker's signals to the UI slots.
         self._download_thread.progress.connect(self._on_download_progress)
         self._download_thread.speed.connect(self._on_download_speed)
         self._download_thread.done.connect(lambda: self._on_download_done(filename))
@@ -345,6 +379,7 @@ class RegistryPanelMixin:
 
 
     def _cancel_download(self):
+        """Confirm with the user and then cancel the running download."""
         if self._download_thread and self._download_thread.isRunning():
             reply = QMessageBox.question(
                 self, "Cancel Download", "Are you sure you want to cancel the download?",
@@ -355,6 +390,7 @@ class RegistryPanelMixin:
 
 
     def _set_ui_enabled_for_download(self, enabled: bool):
+        """Enable or disable every registry card button except the Active one."""
         for i in range(self._registry_layout.count()):
             item = self._registry_layout.itemAt(i)
             if item and item.widget():
@@ -365,19 +401,24 @@ class RegistryPanelMixin:
 
 
     def _on_download_progress(self, percent: int):
+        """Show the download percentage on the progress bar."""
         self._download_bar.setValue(percent)
 
 
     def _on_download_speed(self, speed_str: str):
+        # Drop any previous speed suffix before adding the new one.
+        """Append the current transfer speed to the status text."""
         status_text = self._download_status_lbl.text().split(" (")[0]
         self._download_status_lbl.setText(f"{status_text} ({speed_str})")
 
 
     def _on_download_log(self, text: str):
+        """Show a log message from the worker thread as the status text."""
         self._download_status_lbl.setText(f"{text}")
 
 
     def _on_download_error(self, err_msg: str):
+        """Hide the progress panel, re-enable the UI and report the download error."""
         self._progress_panel.setVisible(False)
         self._set_ui_enabled_for_download(True)
         QMessageBox.critical(self, "Download Error", f"An error occurred during download:\n{err_msg}")
@@ -385,6 +426,7 @@ class RegistryPanelMixin:
 
 
     def _on_download_done(self, filename: str):
+        """Finish the download UI state and activate the newly downloaded model."""
         self._progress_panel.setVisible(False)
         self._set_ui_enabled_for_download(True)
         self._activate_registry_model(filename)

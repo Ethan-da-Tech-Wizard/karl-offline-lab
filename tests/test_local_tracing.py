@@ -1,3 +1,10 @@
+# Program: karl-offline-lab - test_local_tracing.py
+# Programmer: Ethan-da-Tech-Wizard (written with Claude, an AI assistant)
+# Last Modified: 2026-11-18
+# Purpose: Tests the local Tracer and Span classes: nesting, error capture, persisted JSONL schema and timing.
+
+"""Tests the local Tracer and Span classes: nesting, error capture, persisted JSONL schema and timing."""
+
 import json
 import time
 
@@ -5,6 +12,7 @@ from app.utils.tracing import Span, Tracer
 
 
 def read_trace_file(trace_dir):
+    """Test helper: read trace file."""
     files = list(trace_dir.glob("spans_*.jsonl"))
     assert len(files) == 1
     lines = files[0].read_text(encoding="utf-8").splitlines()
@@ -13,6 +21,7 @@ def read_trace_file(trace_dir):
 
 
 def test_nested_spans_register_under_parent_and_persist_schema(tmp_path):
+    """Scenario: nested spans register under parent and persist schema. Expected: the assertions in this test hold."""
     tracer = Tracer(trace_dir=tmp_path)
 
     with Span("Swarm Run", {"objective": "test"}, tracer=tracer) as root:
@@ -40,6 +49,7 @@ def test_nested_spans_register_under_parent_and_persist_schema(tmp_path):
 
 
 def test_span_exception_marks_error_and_preserves_exception(tmp_path):
+    """Scenario: span exception marks error and preserves exception. Expected: the assertions in this test hold."""
     tracer = Tracer(trace_dir=tmp_path)
 
     try:
@@ -58,6 +68,7 @@ def test_span_exception_marks_error_and_preserves_exception(tmp_path):
 
 
 def test_execution_time_is_calculated_accurately_enough(tmp_path):
+    """Scenario: execution time is calculated accurately enough. Expected: the assertions in this test hold."""
     tracer = Tracer(trace_dir=tmp_path)
 
     with tracer.span("Timed Work") as span:

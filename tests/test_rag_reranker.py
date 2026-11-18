@@ -1,3 +1,8 @@
+# Program: karl-offline-lab - test_rag_reranker.py
+# Programmer: Ethan-da-Tech-Wizard (written with Claude, an AI assistant)
+# Last Modified: 2026-11-18
+# Purpose: Tests cross-encoder reranking inside RAGPipeline.retrieve_hybrid using a deterministic encoder and a mocked CrossEncoder.
+
 """
 Cross-Encoder Reranker integration tests for RAGPipeline.retrieve_hybrid.
 
@@ -28,6 +33,7 @@ class _DeterministicEncoder:
     """Hash-based encoder: identical inputs → identical vectors, no model file."""
 
     def encode(self, texts, batch_size: int = 32, show_progress_bar: bool = False):
+        """Return deterministic fake embeddings for the given texts."""
         if isinstance(texts, str):
             texts = [texts]
         vectors = []
@@ -43,6 +49,7 @@ class _DeterministicEncoder:
 
 
 def _make_pipeline(index_path: str) -> RAGPipeline:
+    """Test helper: make pipeline."""
     rag = RAGPipeline(index_path=index_path)
     rag._encoder = _DeterministicEncoder()
     return rag
@@ -52,6 +59,7 @@ def _make_pipeline(index_path: str) -> RAGPipeline:
 
 @pytest.fixture
 def tmp_dir():
+    """Pytest fixture: tmp dir."""
     d = tempfile.mkdtemp()
     yield d
     shutil.rmtree(d, ignore_errors=True)
@@ -59,6 +67,7 @@ def tmp_dir():
 
 @pytest.fixture
 def rag(tmp_dir):
+    """Pytest fixture: rag."""
     return _make_pipeline(tmp_dir)
 
 
@@ -91,6 +100,7 @@ _QUERY = "artificial intelligence research applications"
 
 
 def _ingest_all(rag: RAGPipeline) -> None:
+    """Test helper: ingest all."""
     for key, (text, _score) in _DOCS.items():
         rag.ingest_text(text, source_name=f"{key}.txt", chunk_size=200, overlap=0)
 
@@ -99,6 +109,7 @@ def _make_reranker_mock() -> MagicMock:
     """Return a mock CrossEncoder whose predict() uses text content to look up scores."""
 
     def _predict(pairs: list[tuple[str, str]]) -> np.ndarray:
+        """Test helper: predict."""
         scores = []
         for _query, text in pairs:
             score = 0.0
@@ -228,6 +239,7 @@ def test_reranker_pool_limited_by_rerank_candidates(rag):
 
     mock = MagicMock()
     def _predict(pairs):
+        """Test helper: predict."""
         received_sizes.append(len(pairs))
         return np.zeros(len(pairs), dtype="float32")
     mock.predict.side_effect = _predict

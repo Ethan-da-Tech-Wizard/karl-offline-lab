@@ -1,3 +1,7 @@
+# Program: karl-offline-lab - default_prompts.py
+# Programmer: Ethan-da-Tech-Wizard (written with Claude, an AI assistant)
+# Last Modified: 2026-11-18
+# Purpose: Single source of truth for Karl's default system prompt, built-in prompt presets (plus user-saved presets on disk) and the swarm agent prompts.
 """
 Karl's default system prompt and prompt preset registry — single source of truth.
 
@@ -274,6 +278,7 @@ def save_user_preset(key: str, label: str, description: str, prompt: str) -> boo
                 existing = data
         existing[key] = {"label": label, "description": description, "prompt": prompt}
         os.makedirs(os.path.dirname(SYSTEM_PROMPTS_PATH) or ".", exist_ok=True)
+        # Write to a temp file in the same folder, then atomically replace the real file so a crash cannot corrupt it.
         import tempfile
         directory = os.path.dirname(SYSTEM_PROMPTS_PATH) or "."
         fd, tmp = tempfile.mkstemp(prefix="system_prompts.", suffix=".tmp", dir=directory)
@@ -309,6 +314,7 @@ def delete_user_preset(key: str) -> bool:
         if not isinstance(existing, dict) or key not in existing:
             return True
         del existing[key]
+        # Same atomic temp-file-and-replace write as in save_user_preset.
         import tempfile
         directory = os.path.dirname(SYSTEM_PROMPTS_PATH) or "."
         fd, tmp = tempfile.mkstemp(prefix="system_prompts.", suffix=".tmp", dir=directory)

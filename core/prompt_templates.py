@@ -1,3 +1,8 @@
+# Program: karl-offline-lab - prompt_templates.py
+# Programmer: Ethan-da-Tech-Wizard (written with Claude, an AI assistant)
+# Last Modified: 2026-11-18
+# Purpose: Hot-reloadable table of system-prompt templates with placeholders, plus helpers to fill and list them.
+"""System-prompt templates and helpers for filling them."""
 # THE HACKABLE PROMPT TEMPLATE LAYER
 # This file is hot-reloaded by interaction_loop.py on every generation.
 # Add or edit templates here without restarting Karl.
@@ -9,6 +14,7 @@
 from typing import Optional
 
 
+# Template name -> template text. Placeholders such as the retrieved context, schema or code are written in curly braces.
 TEMPLATES: dict[str, str] = {
 
     # ── Reasoning-model style ─────────────────────────────────────────────────
@@ -111,6 +117,7 @@ def get_template(name: str, **kwargs) -> str:
         available = ", ".join(TEMPLATES.keys())
         raise KeyError(f"Unknown template '{name}'. Available: {available}")
 
+    # Placeholders are replaced with plain string replace (not str.format) so literal braces in templates such as JSON examples are safe.
     raw = TEMPLATES[name]
 
     # Provide safe defaults for optional placeholders

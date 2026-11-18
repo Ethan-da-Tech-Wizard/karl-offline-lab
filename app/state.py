@@ -1,3 +1,9 @@
+# Program: karl-offline-lab - state.py
+# Programmer: Ethan-da-Tech-Wizard (written with Claude, an AI assistant)
+# Last Modified: 2026-11-18
+# Purpose: Defines AppState, the shared observable application state that emits signals on change and persists chosen settings.
+"""Shared application state for the Karl UI.
+"""
 from PyQt6.QtCore import QObject, Q_ARG, QMetaObject, Qt, pyqtSignal, pyqtSlot
 from app.utils.rag_pipeline import RAGPipeline
 from app.utils.memory_manager import MemoryManager
@@ -40,6 +46,10 @@ _PERSIST_FIELDS: tuple[str, ...] = (
 
 
 class AppState(QObject):
+    """Central observable state object.
+
+    Assigning to a public attribute after initialization emits state_changed when the value differs.
+    """
     state_changed = pyqtSignal(str, object)
     
     # Decoupled communication signals
@@ -51,6 +61,7 @@ class AppState(QObject):
     set_workbench_system_prompt = pyqtSignal(str)
 
     def __init__(self):
+        """Build the heavy services (RAG, memory, logger, curator, image store), load saved settings, then enable change notifications."""
         super().__init__()
         self._initialized = False
 
@@ -132,6 +143,7 @@ class AppState(QObject):
 
     @property
     def cached_bridge_token(self) -> str | None:
+        """Return the cached bridge token from the keychain helper, or None if there is none."""
         return load_cached_token()
 
     def save_to_disk(self) -> bool:
@@ -181,9 +193,11 @@ class AppState(QObject):
 
     @pyqtSlot(str, object)
     def _emit_state_changed(self, name: str, value: object) -> None:
+        """Emit the state_changed signal for the named attribute."""
         self.state_changed.emit(name, value)
 
     def __setattr__(self, name, value):
+        """Set an attribute and, once initialized, emit a change signal if the value actually changed."""
         if name.startswith('_') or not getattr(self, '_initialized', False):
             super().__setattr__(name, value)
             return

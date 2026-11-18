@@ -1,3 +1,8 @@
+# Program: karl-offline-lab - test_security_sandbox.py
+# Programmer: Ethan-da-Tech-Wizard (written with Claude, an AI assistant)
+# Last Modified: 2026-11-18
+# Purpose: Tests the privileged-execution block, the workspace path sandbox in swarm agent tools and WebSocket symlink-safe path checks.
+
 """
 Security sandbox tests — Prompt E
 
@@ -50,20 +55,24 @@ def test_root_block_allows_normal_user():
 # ── 2. _safe_workspace_path unit tests ───────────────────────────────────────
 
 def test_safe_workspace_path_empty_rel_blocked(tmp_path):
+    """Scenario: safe workspace path empty rel blocked. Expected: the assertions in this test hold."""
     assert _safe_workspace_path(str(tmp_path), "") is None
 
 
 def test_safe_workspace_path_parent_traversal_blocked(tmp_path):
+    """Scenario: safe workspace path parent traversal blocked. Expected: the assertions in this test hold."""
     result = _safe_workspace_path(str(tmp_path), "../../etc/passwd")
     assert result is None
 
 
 def test_safe_workspace_path_absolute_injection_blocked(tmp_path):
+    """Scenario: safe workspace path absolute injection blocked. Expected: the assertions in this test hold."""
     result = _safe_workspace_path(str(tmp_path), "/etc/passwd")
     assert result is None
 
 
 def test_safe_workspace_path_normal_file_allowed(tmp_path):
+    """Scenario: safe workspace path normal file allowed. Expected: the assertions in this test hold."""
     result = _safe_workspace_path(str(tmp_path), "src/app.py")
     assert result is not None
     assert result.startswith(str(tmp_path))
@@ -71,6 +80,7 @@ def test_safe_workspace_path_normal_file_allowed(tmp_path):
 
 
 def test_safe_workspace_path_nested_allowed(tmp_path):
+    """Scenario: safe workspace path nested allowed. Expected: the assertions in this test hold."""
     result = _safe_workspace_path(str(tmp_path), "a/b/c/deep.txt")
     assert result is not None
     assert os.path.realpath(str(tmp_path)) in result
@@ -106,6 +116,7 @@ def test_tool_write_file_symlink_escape_blocked(tmp_path):
 
 
 def test_tool_write_file_parent_traversal_blocked(tmp_path):
+    """Scenario: tool write file parent traversal blocked. Expected: the assertions in this test hold."""
     outside_file = tmp_path / "sensitive.txt"
     outside_file.write_text("safe", encoding="utf-8")
     workspace = tmp_path / "workspace"
@@ -118,6 +129,7 @@ def test_tool_write_file_parent_traversal_blocked(tmp_path):
 
 
 def test_tool_write_file_normal_path_works(tmp_path):
+    """Scenario: tool write file normal path works. Expected: the assertions in this test hold."""
     workspace = tmp_path / "workspace"
     workspace.mkdir()
 
@@ -143,11 +155,13 @@ def test_tool_read_file_symlink_escape_blocked(tmp_path):
 
 
 def test_tool_read_file_absolute_path_blocked(tmp_path):
+    """Scenario: tool read file absolute path blocked. Expected: the assertions in this test hold."""
     result = _tool_read_file(str(tmp_path), {"path": "/etc/passwd"})
     assert result == _SECURITY_BLOCK_MSG
 
 
 def test_tool_read_file_parent_traversal_blocked(tmp_path):
+    """Scenario: tool read file parent traversal blocked. Expected: the assertions in this test hold."""
     workspace = tmp_path / "workspace"
     workspace.mkdir()
     victim = tmp_path / "victim.txt"
@@ -158,6 +172,7 @@ def test_tool_read_file_parent_traversal_blocked(tmp_path):
 
 
 def test_tool_read_file_normal_path_works(tmp_path):
+    """Scenario: tool read file normal path works. Expected: the assertions in this test hold."""
     workspace = tmp_path / "workspace"
     workspace.mkdir()
     (workspace / "code.py").write_text("x = 1\n", encoding="utf-8")
@@ -180,11 +195,13 @@ def test_tool_lint_python_symlink_escape_blocked(tmp_path):
 
 
 def test_tool_lint_python_empty_path_blocked(tmp_path):
+    """Scenario: tool lint python empty path blocked. Expected: the assertions in this test hold."""
     result = _tool_lint_python(str(tmp_path), {"path": ""})
     assert result == _SECURITY_BLOCK_MSG
 
 
 def test_tool_lint_python_normal_path_works(tmp_path):
+    """Scenario: tool lint python normal path works. Expected: the assertions in this test hold."""
     workspace = tmp_path / "workspace"
     workspace.mkdir()
     (workspace / "ok.py").write_text("x = 1\n", encoding="utf-8")
@@ -203,6 +220,7 @@ class _StubManager:
     _is_safe_path = _cls._is_safe_path
 
     def __init__(self):
+        """Initialise this helper object with its starting state."""
         self.blocked_paths = {"/", "/etc", "/bin", "/sbin", "/root", "/proc", "/sys"}
         user_home = os.path.expanduser("~")
         self.blocked_paths.add(user_home)
@@ -211,11 +229,13 @@ class _StubManager:
 
 
 def test_is_safe_path_blocks_etc(tmp_path):
+    """Scenario: is safe path blocks etc. Expected: the assertions in this test hold."""
     mgr = _StubManager()
     assert mgr._is_safe_path("/etc/passwd") is False
 
 
 def test_is_safe_path_blocks_empty():
+    """Scenario: is safe path blocks empty. Expected: the assertions in this test hold."""
     mgr = _StubManager()
     assert mgr._is_safe_path("") is False
 

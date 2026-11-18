@@ -1,3 +1,7 @@
+# Program: karl-offline-lab - engine_test.py
+# Programmer: Ethan-da-Tech-Wizard (written with Claude, an AI assistant)
+# Last Modified: 2026-11-18
+# Purpose: Headless smoke test that runs one generation on the active model, parses the thought stream, and writes a trace log entry.
 """
 engine_test.py — Karl headless introspection engine smoke test.
 
@@ -15,6 +19,7 @@ import os
 import sys
 import time
 
+# Allow imports from the repository root when the script is run directly.
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 from app.engine.model_loader import ModelLoader
@@ -23,6 +28,10 @@ from core.cognitive_parser import parse_thought_stream
 
 
 def test_introspection_engine():
+    """Scenario: load the active model, send one reasoning prompt and parse the output.
+
+    Expected: thought and response text are printed and a trace log file is written; if no model file exists the script prints a hint and exits with status 1.
+    """
     # ------------------------------------------------------------------
     # 1. Model loading — honours data/active_model.json, falls back to
     #    the 1.5b GGUF if absent.  Uses the registry-aware n_ctx.
@@ -76,6 +85,7 @@ def test_introspection_engine():
         stop=["<|im_end|>", "<|endoftext|>", "<|end_of_text|>", "<|im_start|>"],
     )
 
+    # Re-attach the pre-seeded think tag, which the model does not repeat in its output.
     raw_output = "<think>\n" + response["choices"][0]["text"]
     execution_time = time.time() - start_time
 

@@ -1,3 +1,8 @@
+# Program: karl-offline-lab - download_all_models.py
+# Programmer: Ethan-da-Tech-Wizard (written with Claude, an AI assistant)
+# Last Modified: 2026-11-18
+# Purpose: Command-line tool that downloads models listed in data/model_registry.json, by tier, all at once, or from an interactive menu.
+"""Bulk model downloader driven by the model registry."""
 import os
 import argparse
 import json
@@ -5,6 +10,7 @@ import requests
 from tqdm import tqdm
 
 def download_file(url, filepath):
+    """Stream the file at url to filepath in 1 MB blocks with a progress bar; raises an HTTP error on failure."""
     response = requests.get(url, stream=True)
     response.raise_for_status()
     total_size = int(response.headers.get('content-length', 0))
@@ -23,6 +29,7 @@ def download_file(url, filepath):
                 bar.update(size)
 
 def main():
+    """Parse options, pick which registry models to fetch (flags or interactive prompt) and download those not already on disk."""
     parser = argparse.ArgumentParser(description="Download Karl LLM models from the registry.")
     parser.add_argument(
         "--tier", type=int, choices=[1, 2, 3, 4], help="Download all models of a specific tier (e.g. tier 2 for 7B/8B class models)."
@@ -32,6 +39,7 @@ def main():
     )
     args = parser.parse_args()
 
+    # The registry is a JSON list of models with name, tier, filename, url and size.
     registry_path = "data/model_registry.json"
     if not os.path.exists(registry_path):
         print(f"Registry not found at {registry_path}")
@@ -49,6 +57,7 @@ def main():
         to_download = [m for m in registry if m.get("tier") == args.tier]
     else:
         # Interactive selection
+        # No flag given: list the models and ask the user which numbers to download.
         print("Available models in registry:")
         for idx, m in enumerate(registry, 1):
             file_path = os.path.join("data/models", m["filename"])
@@ -76,6 +85,7 @@ def main():
     for m in to_download:
         target = os.path.join("data/models", m["filename"])
         print(f"\nProcessing {m['name']}...")
+        # Skip models that are already downloaded.
         if os.path.exists(target):
             print(f"Model already exists at {target}")
             continue
@@ -87,5 +97,6 @@ def main():
         except Exception as e:
             print(f"Error downloading {m['name']}: {e}")
 
+# Script entry point.
 if __name__ == "__main__":
     main()

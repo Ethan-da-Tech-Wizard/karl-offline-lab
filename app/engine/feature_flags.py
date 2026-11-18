@@ -1,3 +1,7 @@
+# Program: karl-offline-lab - feature_flags.py
+# Programmer: Ethan-da-Tech-Wizard (written with Claude, an AI assistant)
+# Last Modified: 2026-11-18
+# Purpose: Stores feature flags in a JSON file and provides a boot guard that enters Safe Mode when the previous start-up crashed.
 """
 Local Feature Flag Registry and Boot Guard utilities.
 
@@ -48,6 +52,7 @@ class FeatureFlagStore:
     safe_mode_active: bool = False
 
     def __init__(self, path: str = FLAGS_FILE) -> None:
+        """Start from the default flags, then overlay the values saved at the given path."""
         self._path = path
         # Start from the compiled defaults then overlay the persisted values.
         self._flags: dict[str, bool] = dict(self.DEFAULTS)
@@ -56,6 +61,7 @@ class FeatureFlagStore:
     # ── persistence ───────────────────────────────────────────────────────────
 
     def _load(self) -> None:
+        """Read saved flag values (registered flags only); write defaults if the file is missing or invalid."""
         if not os.path.exists(self._path):
             self._save()   # write defaults on first run
             return
@@ -65,6 +71,7 @@ class FeatureFlagStore:
             if not isinstance(data, dict):
                 raise ValueError("flags file is not a JSON object")
             # Only load keys that are registered — ignore unknown entries.
+            # Take a saved value only if it is a real boolean; otherwise keep the default.
             for key, default in self.DEFAULTS.items():
                 raw = data.get(key)
                 self._flags[key] = bool(raw) if isinstance(raw, bool) else default
@@ -75,6 +82,7 @@ class FeatureFlagStore:
             self._save()
 
     def _save(self) -> None:
+        """Write the current flags to the JSON file, logging instead of raising on I/O errors."""
         try:
             os.makedirs(os.path.dirname(self._path) or ".", exist_ok=True)
             with open(self._path, "w", encoding="utf-8") as fh:
@@ -157,6 +165,7 @@ def run_boot_guard(
     * **Lock absent** — normal boot.  Creates the lock so a crash during this
       boot will be detected next time.  Returns ``False``.
     """
+    # A leftover lock means the last start never finished rendering, so assume a crash.
     if check_boot_lock(lock_path):
         logger.critical(
             "Boot lock detected (%s). Previous initialization crashed. "

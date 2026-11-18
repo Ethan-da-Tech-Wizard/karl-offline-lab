@@ -1,3 +1,7 @@
+# Program: karl-offline-lab - inference_service.py
+# Programmer: Ethan-da-Tech-Wizard (written with Claude, an AI assistant)
+# Last Modified: 2026-11-18
+# Purpose: Central service that chooses between the plain and agentic generation threads, wires their callbacks and tracks thread lifetimes.
 """
 Inference Service — Karl Engine
 
@@ -29,6 +33,7 @@ class InferenceService:
     """
 
     def __init__(self, state) -> None:
+        """Keep a reference to the app state and an empty set of running threads."""
         self._state = state
         # Strong references keep threads alive until ``finished`` fires.
         # Without this set, Qt garbage-collects the QThread before its
@@ -104,6 +109,7 @@ class InferenceService:
             The *already-started* thread handle.  Callers may connect
             additional signals or call ``request_stop()`` on the handle.
         """
+        # The agentic thread is used when requested directly or enabled in the hyperparameters.
         use_agentic = agentic or bool(hyperparams.get("agentic_loop_enabled", False))
 
         thread: LLMThread | AgenticThread
@@ -188,5 +194,6 @@ class InferenceService:
             adapter_name,
             len(prompt),
         )
+        # Start the worker; callers receive the already running thread.
         thread.start()
         return thread

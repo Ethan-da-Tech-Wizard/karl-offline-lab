@@ -1,3 +1,8 @@
+# Program: karl-offline-lab - test_rbac_scopes.py
+# Programmer: Ethan-da-Tech-Wizard (written with Claude, an AI assistant)
+# Last Modified: 2026-11-18
+# Purpose: Tests scope-based access control of the WebSocket server using a real server with admin, read and knowledge-base tokens.
+
 """
 RBAC / Scope-Based Access Control Tests.
 
@@ -39,6 +44,7 @@ _TOKEN_STORE: dict[str, list[str]] = {
 
 
 def _stub_init_security(self) -> None:
+    """Test helper: stub init security."""
     self.bridge_token = _ADMIN_TOKEN
     self._token_created_at = time.time()
     self._token_store = dict(_TOKEN_STORE)   # copy so tests can't pollute each other
@@ -48,9 +54,11 @@ def _stub_init_security(self) -> None:
 # ── Test server context manager ───────────────────────────────────────────────
 
 class _TestServer:
+    """Test group or helper class: test server."""
     _port: int = 19997
 
     def __enter__(self):
+        """Start the helper when entering a with block and return it."""
         from app.engine.websocket_server import WebSocketServerManager
 
         self._patches = [
@@ -70,6 +78,7 @@ class _TestServer:
         return self._mgr
 
     def __exit__(self, *_):
+        """Stop the helper when leaving the with block."""
         if self._mgr is not None:
             try:
                 self._mgr.loop.call_soon_threadsafe(self._mgr.loop.stop)
@@ -81,12 +90,14 @@ class _TestServer:
 
 
 def _url(port: int, token: str) -> str:
+    """Test helper: url."""
     return f"ws://127.0.0.1:{port}?token={token}"
 
 
 # ── Helper: single RPC round-trip ─────────────────────────────────────────────
 
 async def _rpc(url: str, method: str, params: dict | None = None, rpc_id: int = 1) -> dict:
+    """Test helper: rpc."""
     async with websockets.connect(url, open_timeout=3.0) as ws:
         await ws.send(json.dumps({
             "jsonrpc": "2.0",
@@ -104,6 +115,7 @@ def test_invalid_token_rejected_with_4001():
     """Connecting with an unknown token must be rejected with WebSocket close code 4001."""
 
     async def _connect_invalid(url: str) -> int | None:
+        """Test helper: connect invalid."""
         try:
             async with websockets.connect(url, open_timeout=3.0) as ws:
                 # Drain until the server closes — the handler rejects immediately.
@@ -245,6 +257,7 @@ def test_add_scoped_token_registers_new_token():
     """add_scoped_token() creates a new token that is accepted by the server."""
 
     async def _connect_new_token(url: str) -> dict:
+        """Test helper: connect new token."""
         async with websockets.connect(url, open_timeout=3.0) as ws:
             await ws.send(json.dumps({
                 "jsonrpc": "2.0", "id": 1, "method": "get_runtime_status", "params": {},

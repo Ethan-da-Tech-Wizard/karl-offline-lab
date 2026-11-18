@@ -1,3 +1,7 @@
+# Program: karl-offline-lab - task_supervisor.py
+# Programmer: Ethan-da-Tech-Wizard (written with Claude, an AI assistant)
+# Last Modified: 2026-11-18
+# Purpose: Thread-safe registry that tracks the lifecycle, progress, errors and cleanup hooks of long-running tasks.
 """
 TaskSupervisor — unified long-running task registry for Karl.
 
@@ -38,6 +42,7 @@ logger = logging.getLogger("karl.task_supervisor")
 
 
 class TaskStatus(str, Enum):
+    """Lifecycle states a supervised task moves through."""
     IDLE       = "idle"
     RUNNING    = "running"
     CANCELLING = "cancelling"
@@ -47,6 +52,7 @@ class TaskStatus(str, Enum):
 
 @dataclass
 class TaskRecord:
+    """Mutable bookkeeping record for one supervised task: identity, status, progress, error and hooks."""
     task_id: str
     name: str
     status: TaskStatus = TaskStatus.IDLE
@@ -63,12 +69,14 @@ class TaskSupervisor:
     _instance_lock = threading.Lock()
 
     def __init__(self) -> None:
+        """Create an empty registry guarded by a lock; the trace logger is attached lazily."""
         self._lock = threading.Lock()
         self._tasks: dict[str, TaskRecord] = {}
         self._logger: Any = None  # lazy import to avoid circular deps
 
     @classmethod
     def instance(cls) -> TaskSupervisor:
+        """Return the process-wide singleton, creating it on first use (double-checked locking)."""
         if cls._instance is None:
             with cls._instance_lock:
                 if cls._instance is None:
@@ -211,21 +219,25 @@ class TaskSupervisor:
     # ── Queries ──────────────────────────────────────────────────────────────
 
     def status(self, task_id: str) -> TaskStatus | None:
+        """Return the task's status, or None if the id is unknown."""
         with self._lock:
             rec = self._tasks.get(task_id)
             return rec.status if rec else None
 
     def progress(self, task_id: str) -> float:
+        """Return the task's progress in [0.0, 1.0], or 0.0 if the id is unknown."""
         with self._lock:
             rec = self._tasks.get(task_id)
             return rec.progress if rec else 0.0
 
     def error(self, task_id: str) -> str:
+        """Return the task's error text, or an empty string if none or unknown."""
         with self._lock:
             rec = self._tasks.get(task_id)
             return rec.error if rec else ""
 
     def get(self, task_id: str) -> TaskRecord | None:
+        """Return the TaskRecord for the id, or None if unknown."""
         with self._lock:
             return self._tasks.get(task_id)
 
@@ -238,6 +250,7 @@ class TaskSupervisor:
             ]
 
     def all_tasks(self) -> list[TaskRecord]:
+        """Return a snapshot list of every registered task record."""
         with self._lock:
             return list(self._tasks.values())
 
@@ -251,6 +264,7 @@ class TaskSupervisor:
     # ── Internals ────────────────────────────────────────────────────────────
 
     def _run_hooks(self, hooks: list[Callable], task_id: str) -> None:
+        """Call each cleanup hook in turn, logging a warning instead of raising if one fails."""
         for hook in hooks:
             try:
                 hook()

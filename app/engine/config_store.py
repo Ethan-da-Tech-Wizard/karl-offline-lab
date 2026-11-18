@@ -1,3 +1,7 @@
+# Program: karl-offline-lab - config_store.py
+# Programmer: Ethan-da-Tech-Wizard (written with Claude, an AI assistant)
+# Last Modified: 2026-11-18
+# Purpose: Single place for reading and writing Karl runtime JSON config (active model, registry, engine, UI and MCP settings) with atomic writes, validation and defaults.
 """
 Centralized JSON configuration store for Karl.
 
@@ -83,12 +87,14 @@ def write_json_atomic(path: str, data: Any, indent: int | None = None) -> bool:
     directory = os.path.dirname(path) or "."
     try:
         os.makedirs(directory, exist_ok=True)
+        # Write to a temp file in the same folder, then swap it in, so a crash never leaves half-written JSON.
         fd, tmp_path = tempfile.mkstemp(
             prefix=os.path.basename(path) + ".", suffix=".tmp", dir=directory
         )
         try:
             with os.fdopen(fd, "w", encoding="utf-8") as f:
                 json.dump(data, f, indent=indent, ensure_ascii=False)
+            # Atomic rename over the real file.
             os.replace(tmp_path, path)
         except BaseException:
             try:
@@ -192,6 +198,7 @@ def get_model_registry() -> list[dict]:
         mtime = None
 
     with _registry_lock:
+        # Reuse the parsed registry while the file is unchanged.
         if _registry_cache is not None and mtime == _registry_cache_mtime:
             return _registry_cache
 
@@ -322,6 +329,7 @@ def _validate_field(key: str, raw_value: Any, default_value: Any) -> Any:
     if rule is not None:
         expected_type, lo, hi = rule
         # bool is a subclass of int — reject bool for int fields and vice-versa
+        # Exact type match is required, so a bool is not accepted as an int.
         if type(raw_value) is not expected_type:  # noqa: E721
             # Allow int→float and float→int coercion for numeric fields only
             if expected_type is float and isinstance(raw_value, int) and not isinstance(raw_value, bool):
@@ -389,6 +397,7 @@ def get_ui_config() -> dict:
                 raw = json.load(f)
         except (json.JSONDecodeError, OSError, UnicodeDecodeError) as exc:
             logger.warning("Corrupt ui_config.json (%s) — quarantining and restoring defaults", exc)
+            # Keep the corrupt file under a new name for debugging.
             _quarantine_config()
             save_ui_config(merged)  # write fresh defaults
             return merged

@@ -1,3 +1,8 @@
+# Program: karl-offline-lab - swarm_replay.py
+# Programmer: Ethan-da-Tech-Wizard (written with Claude, an AI assistant)
+# Last Modified: 2026-11-18
+# Purpose: Reads saved swarm run logs and turns them into run summaries and step-by-step timelines, computing file diffs from the swarm's backups.
+
 """
 Swarm Replay Manager — Karl Workbench
 ======================================
@@ -14,6 +19,7 @@ on-disk content, so they reflect what that run actually changed.
 
 from __future__ import annotations
 
+# Standard-library imports: diffs, JSON, logging, time and file paths.
 import difflib
 import json
 import logging
@@ -21,8 +27,10 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Optional
 
+# Logger for scan progress and unreadable log files.
 logger = logging.getLogger("karl.swarm_replay")
 
+# ── Constants ────────────────────────────────────────────────────────────
 # Cognition node types that map onto a distinct replay step, and the replay
 # step "type" bucket each one falls into.
 _STEP_TYPE_BY_NODE_TYPE = {
@@ -38,10 +46,12 @@ _STEP_TYPE_BY_NODE_TYPE = {
 }
 
 
+# ── Replay manager ───────────────────────────────────────────────────────
 class SwarmReplayManager:
     """Reconstructs historical swarm execution logs and file-level edits."""
 
     def __init__(self, trace_dir: str = "data/logs/swarm_cognition"):
+        """Remember the folder holding the per-run log files."""
         # Kept the "trace_dir" name for interface compatibility with the
         # original scaffold, but this reads cognition-graph files, not raw
         # generation traces — those don't carry per-run structure.
@@ -60,6 +70,7 @@ class SwarmReplayManager:
             return []
 
         runs: list[dict[str, Any]] = []
+        # Each file is named run_<id>.json; strip the prefix to get the run id.
         for path in self.trace_dir.glob("run_*.json"):
             run_id = path.stem[len("run_"):]
             nodes = self._read_nodes(path)
@@ -67,6 +78,7 @@ class SwarmReplayManager:
                 continue
             runs.append(self._summarize(run_id, nodes, path))
 
+        # Most recent runs first (timestamps are ISO strings, so text order works).
         runs.sort(key=lambda r: r.get("timestamp") or "", reverse=True)
         return runs
 
@@ -106,6 +118,7 @@ class SwarmReplayManager:
         drifted_filepaths: set[str] = set()
         steps: list[dict[str, Any]] = []
 
+        # One pass over the log: record the objective and workspace, then turn each relevant node into a step.
         for index, node in enumerate(nodes):
             node_type = node.get("type")
 
@@ -117,6 +130,7 @@ class SwarmReplayManager:
                 objective = str(node.get("explanation", ""))
 
             if node_type == "drift_detected":
+                # Remember files that drifted so their other steps are flagged too.
                 drifted_filepaths.add(str(node.get("filepath", "")))
 
             step_type = _STEP_TYPE_BY_NODE_TYPE.get(node_type)
@@ -125,6 +139,7 @@ class SwarmReplayManager:
 
             filepath = str(node.get("filepath", ""))
             diff = ""
+            # Diffs are only computed for written files, comparing the backup with the current file.
             if node_type == "file_written" and workspace_path:
                 diff = self._compute_diff(workspace_path, filepath, node.get("backup_path", ""))
 
@@ -156,6 +171,7 @@ class SwarmReplayManager:
 
     @staticmethod
     def _read_nodes(path: Path) -> Optional[list[dict]]:
+        """Load a run log and return its list of step nodes, or None if missing, unreadable or not a list."""
         if not path.exists():
             return None
         try:
@@ -167,6 +183,7 @@ class SwarmReplayManager:
 
     @staticmethod
     def _summarize(run_id: str, nodes: list[dict], path: Path) -> dict[str, Any]:
+        """Build a run summary (id, earliest timestamp, objective, step count, success) from its nodes."""
         objective = ""
         success = False
         finished = False
@@ -185,6 +202,7 @@ class SwarmReplayManager:
                 finished = True
                 success = bool(node.get("success"))
 
+        # Use the earliest logged time; fall back to the log file's modification time.
         if earliest_ts is not None:
             timestamp = datetime.fromtimestamp(earliest_ts, tz=timezone.utc).isoformat()
         else:
@@ -194,12 +212,14 @@ class SwarmReplayManager:
             "run_id": run_id,
             "timestamp": timestamp,
             "objective": objective,
+            # (success is only trusted when the run logged a finish event)
             "steps_count": len(nodes),
             "success": success if finished else False,
         }
 
     @staticmethod
     def _workspace_root_from_backup_path(backup_path: Path) -> Optional[Path]:
+        """Find the workspace folder that contains the backups directory in this backup path, or None."""
         for parent in backup_path.parents:
             if parent.name == ".karl_swarm_backups":
                 return parent.parent
@@ -216,6 +236,7 @@ class SwarmReplayManager:
             new_text = current_path.read_text(encoding="utf-8", errors="ignore") if current_path.exists() else ""
 
             backup = Path(backup_path) if backup_path else None
+            # A missing backup or ".missing" marker means the file did not exist before the run.
             is_new_file = backup is None or backup.suffix == ".missing" or not backup.exists()
             old_text = "" if is_new_file else backup.read_text(encoding="utf-8", errors="ignore")
 

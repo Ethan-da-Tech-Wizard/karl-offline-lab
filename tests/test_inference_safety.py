@@ -1,3 +1,7 @@
+# Program: karl-offline-lab - test_inference_safety.py
+# Programmer: Ethan-da-Tech-Wizard (written with Claude, an AI assistant)
+# Last Modified: 2026-11-18
+# Purpose: Tests for inference safety: model lock rules, stream cleanup on cancel, agentic repetition guard and the offline network guard.
 """Inference safety tests for model locking, stream cleanup, and offline mode."""
 
 from __future__ import annotations
@@ -9,6 +13,7 @@ import pytest
 
 
 def test_model_reset_blocked_during_active_generation():
+    """Scenario: reset the model while a generation is counted as active. Expected: RuntimeError."""
     from app.engine.model_loader import ModelLoader
 
     original_count = ModelLoader._active_generation_count
@@ -24,6 +29,7 @@ def test_model_reset_blocked_during_active_generation():
 
 
 def test_model_reload_or_adapter_change_blocked_during_active_generation():
+    """Scenario: request a different model or adapter while generating. Expected: RuntimeError for both."""
     from app.engine.model_loader import ModelLoader
 
     original_count = ModelLoader._active_generation_count
@@ -58,6 +64,7 @@ def test_model_reload_or_adapter_change_blocked_during_active_generation():
 
 
 def test_failed_acquire_does_not_release_existing_generation():
+    """Scenario: a blocked acquire while another generation runs. Expected: it raises and leaves the active count and lock untouched."""
     from app.engine.model_loader import ModelLoader
 
     original_count = ModelLoader._active_generation_count
@@ -83,6 +90,7 @@ def test_failed_acquire_does_not_release_existing_generation():
 
 
 def test_offline_guard_blocks_external_http_by_default(monkeypatch):
+    """Scenario: an external web request with online mode unset. Expected: OfflineNetworkError."""
     from app.engine.offline_guard import OfflineNetworkError, assert_online_allowed
 
     monkeypatch.delenv("KARL_ONLINE_EXECUTION", raising=False)
@@ -91,6 +99,7 @@ def test_offline_guard_blocks_external_http_by_default(monkeypatch):
 
 
 def test_offline_guard_allows_localhost_by_default(monkeypatch):
+    """Scenario: loopback HTTP and websocket addresses with online mode unset. Expected: allowed."""
     from app.engine.offline_guard import assert_online_allowed
 
     monkeypatch.delenv("KARL_ONLINE_EXECUTION", raising=False)
@@ -99,6 +108,7 @@ def test_offline_guard_allows_localhost_by_default(monkeypatch):
 
 
 def test_offline_guard_env_allows_external(monkeypatch):
+    """Scenario: online mode switched on by the environment. Expected: external requests are allowed."""
     from app.engine.offline_guard import assert_online_allowed
 
     monkeypatch.setenv("KARL_ONLINE_EXECUTION", "1")
@@ -106,6 +116,7 @@ def test_offline_guard_env_allows_external(monkeypatch):
 
 
 def test_requests_external_call_is_blocked_before_network(monkeypatch):
+    """Scenario: call the requests library on an external address in offline mode. Expected: OfflineNetworkError before any connection."""
     import requests
     from app.engine.offline_guard import OfflineNetworkError
 
@@ -115,26 +126,35 @@ def test_requests_external_call_is_blocked_before_network(monkeypatch):
 
 
 def test_agentic_stream_generator_closes_on_cancel():
+    """Scenario: the agentic thread is stopped before generating. Expected: the stream is closed."""
     from app.engine.agentic_thread import AgenticThread
 
     class FakeStream:
+        """Fake token stream that records whether it was closed."""
         def __init__(self):
+            """Start not closed."""
             self.closed = False
 
         def __iter__(self):
+            """Yield one chunk."""
             yield {"choices": [{"text": "ignored", "finish_reason": None}]}
 
         def close(self):
+            """Record the close."""
             self.closed = True
 
     class FakeLLM:
+        """Fake model that returns the fake stream."""
         def __init__(self):
+            """Create the fake stream."""
             self.stream = FakeStream()
 
         def __call__(self, *args, **kwargs):
+            """Return the stream for any prompt."""
             return self.stream
 
         def tokenize(self, data, add_bos=False):
+            """Return a single token."""
             return [1]
 
     llm = FakeLLM()
@@ -151,27 +171,36 @@ def test_agentic_stream_generator_closes_on_cancel():
 
 
 def test_agentic_adapter_direct_answer_routes_to_chat_tokens():
+    """Scenario: an adapter is active and the model answers directly without thinking. Expected: text goes to chat tokens, not thought tokens, and the stream is closed."""
     from app.engine.agentic_thread import AgenticThread
     from app.engine.model_loader import ModelLoader
 
     class FakeStream:
+        """Fake token stream that yields one direct answer."""
         def __init__(self):
+            """Start not closed."""
             self.closed = False
 
         def __iter__(self):
+            """Yield the answer chunk with a stop reason."""
             yield {"choices": [{"text": "Direct answer.", "finish_reason": "stop"}]}
 
         def close(self):
+            """Record the close."""
             self.closed = True
 
     class FakeLLM:
+        """Fake model that returns the fake stream."""
         def __init__(self):
+            """Create the fake stream."""
             self.stream = FakeStream()
 
         def __call__(self, *args, **kwargs):
+            """Return the stream for any prompt."""
             return self.stream
 
         def tokenize(self, data, add_bos=False):
+            """Return a single token."""
             return [1]
 
     original_adapter = getattr(ModelLoader, "_active_adapter", None)
@@ -203,6 +232,7 @@ def test_agentic_adapter_direct_answer_routes_to_chat_tokens():
 
 
 def test_agentic_repetition_guard_detects_near_duplicate_responses():
+    """Scenario: compare a response with a copy and with a short different one. Expected: the copy is flagged as repetitive and the different one is not."""
     from app.engine.agentic_thread import AgenticThread
 
     thread = AgenticThread(
@@ -218,6 +248,7 @@ def test_agentic_repetition_guard_detects_near_duplicate_responses():
 
 
 def test_llm_thread_request_stop_sets_flag():
+    """Scenario: request a stop on a new thread. Expected: the stop flag goes from False to True."""
     from app.engine.llm_thread import LLMThread
 
     thread = LLMThread(
@@ -236,10 +267,13 @@ def test_llm_thread_stop_flag_prevents_generation():
     close_calls = []
 
     class FakeStream:
+        """Fake stream that records close calls."""
         def __iter__(self):
+            """Yield one chunk."""
             yield {"choices": [{"text": "x", "finish_reason": None}]}
 
         def close(self):
+            """Record that close was called."""
             close_calls.append(True)
 
     # Verify the finally-close pattern directly without running the full thread.
@@ -261,6 +295,7 @@ def test_llm_thread_stop_flag_prevents_generation():
 
 
 def test_active_generation_count_increments_and_decrements():
+    """Scenario: lock twice then unlock twice. Expected: the count goes 1, 2, 1, 0 and the lock state follows."""
     from app.engine.model_loader import ModelLoader
 
     original_count = ModelLoader._active_generation_count
@@ -286,6 +321,7 @@ def test_active_generation_count_increments_and_decrements():
 
 
 def test_inference_error_message_is_descriptive():
+    """Scenario: reset while two generations are active. Expected: the error names the count and mentions cancellation."""
     from app.engine.model_loader import ModelLoader
 
     original_count = ModelLoader._active_generation_count
@@ -304,6 +340,7 @@ def test_inference_error_message_is_descriptive():
 
 
 def test_hf_offline_vars_applied_when_offline(monkeypatch):
+    """Scenario: apply the config in offline mode. Expected: all offline environment variables are set to 1."""
     from app.engine import offline_guard
 
     monkeypatch.delenv("KARL_ONLINE_EXECUTION", raising=False)
@@ -322,6 +359,7 @@ def test_hf_offline_vars_applied_when_offline(monkeypatch):
 
 
 def test_hf_offline_vars_cleared_when_online(monkeypatch):
+    """Scenario: apply the config in online mode after offline variables were set. Expected: those variables are removed."""
     from app.engine import offline_guard
 
     monkeypatch.setenv("KARL_ONLINE_EXECUTION", "1")
@@ -340,6 +378,7 @@ def test_hf_offline_vars_cleared_when_online(monkeypatch):
 
 
 def test_guard_install_is_idempotent():
+    """Scenario: install the guard twice. Expected: it stays installed and is not wrapped a second time."""
     from app.engine import offline_guard
 
     first = offline_guard._INSTALLED

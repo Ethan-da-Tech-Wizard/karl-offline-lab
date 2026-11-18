@@ -1,3 +1,8 @@
+# Program: karl-offline-lab - ocr_engine.py
+# Programmer: Ethan-da-Tech-Wizard (written with Claude, an AI assistant)
+# Last Modified: 2026-11-18
+# Purpose: Wraps the Tesseract command-line tool to run OCR on an image and parse its TSV output into an OcrResult.
+"""Tesseract OCR engine wrapper."""
 from __future__ import annotations
 
 import csv
@@ -8,14 +13,18 @@ from io import StringIO
 from app.vision.schemas import OcrResult
 
 
+# === Tesseract OCR wrapper ===
 class TesseractOcrEngine:
     def __init__(self, executable: str = "tesseract"):
+        """Remember which tesseract executable name or path to run."""
         self.executable = executable
 
     def available(self) -> bool:
+        """Return True if the executable can be found on PATH."""
         return shutil.which(self.executable) is not None
 
     def version(self) -> str | None:
+        """Return the first line of the tesseract version output, or None if unavailable."""
         if not self.available():
             return None
         try:
@@ -32,6 +41,10 @@ class TesseractOcrEngine:
         return first[0].strip() if first else None
 
     def analyze(self, image_path: str, lang: str = "eng") -> OcrResult:
+        """Run tesseract on an image and return the parsed result.
+
+        Problems (missing binary, non-zero exit) are returned as an empty result with an error box instead of raising.
+        """
         if not self.available():
             return OcrResult(
                 engine="tesseract",
@@ -42,6 +55,7 @@ class TesseractOcrEngine:
             )
 
         result = subprocess.run(
+            # Ask tesseract to print word-level TSV (with confidences and boxes) to stdout.
             [self.executable, image_path, "stdout", "-l", lang, "tsv"],
             capture_output=True,
             text=True,
@@ -61,6 +75,7 @@ class TesseractOcrEngine:
         return self._parse_tsv(result.stdout, lang)
 
     def _parse_tsv(self, raw: str, lang: str) -> OcrResult:
+        """Convert tesseract TSV text into an OcrResult with joined text, boxes and average confidence."""
         reader = csv.DictReader(StringIO(raw), delimiter="\t")
         words = []
         boxes = []
@@ -88,6 +103,7 @@ class TesseractOcrEngine:
                 "line": int(float(row.get("line_num", 0) or 0)),
             })
 
+        # Tesseract reports 0-100; the average is scaled to 0-1 below.
         confidence = sum(confidences) / len(confidences) if confidences else 0.0
         return OcrResult(
             engine="tesseract",

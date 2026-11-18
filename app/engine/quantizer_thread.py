@@ -1,3 +1,7 @@
+# Program: karl-offline-lab - quantizer_thread.py
+# Programmer: Ethan-da-Tech-Wizard (written with Claude, an AI assistant)
+# Last Modified: 2026-11-18
+# Purpose: Runs the llama-quantize command-line tool in a Qt thread to convert a GGUF model to a smaller quantization format, reporting progress parsed from its output.
 """
 QuantizerThread — background GGUF quantization via llama-quantize CLI
 ======================================================================
@@ -60,6 +64,7 @@ def _locate_llama_quantize(input_path: str | None = None) -> str | None:
             return path
 
     # Fall through to system PATH
+    # Last resort: look the tool up on the system PATH.
     return shutil.which(_BINARY_NAME)
 
 
@@ -112,6 +117,7 @@ class QuantizerThread(QThread):
         output_path: str,
         target_format: str,
     ) -> None:
+        """Store the source file, destination file and quantization type, and prepare an empty process handle."""
         super().__init__()
         self.input_path    = input_path
         self.output_path   = output_path
@@ -132,6 +138,7 @@ class QuantizerThread(QThread):
 
     def run(self) -> None:
         # ── locate binary ─────────────────────────────────────────────────────
+        """Locate the tool, validate the input, run it while streaming output for progress, then emit done or error based on the exit code."""
         binary = _locate_llama_quantize(self.input_path)
         if not binary:
             self.error.emit(
@@ -154,6 +161,7 @@ class QuantizerThread(QThread):
         logger.info("QuantizerThread: launching %s", " ".join(cmd))
 
         try:
+            # Start the tool as a child process and read its output line by line.
             self._proc = subprocess.Popen(
                 cmd,
                 stdout=subprocess.PIPE,
@@ -183,6 +191,7 @@ class QuantizerThread(QThread):
             logger.warning("Stream read error: %s", exc)
 
         # ── wait for process to exit ──────────────────────────────────────────
+        # Wait for the tool to exit; a zero exit code means success.
         exit_code = self._proc.wait()
         self._proc = None
 

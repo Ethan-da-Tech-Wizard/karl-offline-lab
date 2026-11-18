@@ -1,3 +1,10 @@
+# Program: karl-offline-lab - test_swarm_agent_profiles.py
+# Programmer: Ethan-da-Tech-Wizard (written with Claude, an AI assistant)
+# Last Modified: 2026-11-18
+# Purpose: Tests loading, saving and resolving swarm agent profiles and the tool schema filter.
+
+"""Tests loading, saving and resolving swarm agent profiles and the tool schema filter."""
+
 import json
 
 import pytest
@@ -7,6 +14,7 @@ from app.utils import swarm_agent_profiles as profiles
 
 
 def test_load_agent_profiles_includes_normalized_defaults(tmp_path, monkeypatch):
+    """Scenario: load agent profiles includes normalized defaults. Expected: the assertions in this test hold."""
     monkeypatch.chdir(tmp_path)
 
     loaded = profiles.load_agent_profiles()
@@ -18,6 +26,7 @@ def test_load_agent_profiles_includes_normalized_defaults(tmp_path, monkeypatch)
 
 
 def test_save_agent_profile_round_trips_and_clamps(tmp_path, monkeypatch):
+    """Scenario: save agent profile round trips and clamps. Expected: the assertions in this test hold."""
     monkeypatch.chdir(tmp_path)
 
     saved = profiles.save_agent_profile(
@@ -43,6 +52,7 @@ def test_save_agent_profile_round_trips_and_clamps(tmp_path, monkeypatch):
 
 
 def test_save_agent_profile_rejects_invalid_id(tmp_path, monkeypatch):
+    """Scenario: save agent profile rejects invalid id. Expected: the assertions in this test hold."""
     monkeypatch.chdir(tmp_path)
 
     with pytest.raises(ValueError):
@@ -50,6 +60,7 @@ def test_save_agent_profile_rejects_invalid_id(tmp_path, monkeypatch):
 
 
 def test_active_profile_map_resolves_role_overrides(tmp_path, monkeypatch):
+    """Scenario: active profile map resolves role overrides. Expected: the assertions in this test hold."""
     monkeypatch.chdir(tmp_path)
     profiles.save_agent_profile(
         "strict_coder",
@@ -68,6 +79,7 @@ def test_active_profile_map_resolves_role_overrides(tmp_path, monkeypatch):
 
 
 def test_tool_schema_block_respects_allowed_tool_filter():
+    """Scenario: tool schema block respects allowed tool filter. Expected: the assertions in this test hold."""
     schema = get_tool_schema_block({"read_file"})
 
     assert "name='read_file'" in schema

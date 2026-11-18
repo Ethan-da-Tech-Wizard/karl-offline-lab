@@ -1,8 +1,13 @@
+# Program: karl-offline-lab - raw_test.py
+# Programmer: Ethan-da-Tech-Wizard (written with Claude, an AI assistant)
+# Last Modified: 2026-11-18
+# Purpose: Quick manual script that loads the model and sends one hand-built ChatML prompt, printing the raw output without any UI or threading.
 """
 Quick raw model test -- bypasses all UI/threading.
 Run: python raw_test.py
 """
 import os
+# Force offline mode so nothing is fetched from the network.
 os.environ["HF_HUB_OFFLINE"] = "1"
 
 from app.engine.model_loader import ModelLoader
@@ -26,6 +31,7 @@ print("Prompt sent:")
 print(repr(prompt))
 print("\n--- RAW OUTPUT ---")
 
+# Run one non-streaming generation with the sampling settings below.
 output = llm(
     prompt,
     max_tokens=512,
@@ -37,6 +43,7 @@ output = llm(
     stream=False,
 )
 
+# Print the generated text, why generation stopped, and token usage.
 raw = output["choices"][0]["text"]
 finish = output["choices"][0]["finish_reason"]
 print(raw)

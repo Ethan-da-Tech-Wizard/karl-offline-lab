@@ -1,4 +1,8 @@
 #!/usr/bin/env python3
+# Program: karl-offline-lab - scrape_library_docs.py
+# Programmer: Ethan-da-Tech-Wizard (written with Claude, an AI assistant)
+# Last Modified: 2026-11-18
+# Purpose: Command-line tool that inspects an installed Python package for documented public functions, classes and methods, asks the local model to turn each into a question and code answer, and saves them as SFT examples.
 """
 Library Doc Scraper & QA Compiler
 ==================================
@@ -23,14 +27,17 @@ from typing import Any, Optional
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s")
 logger = logging.getLogger("karl.scrape_library_docs")
 
+# Repository root, added to the import path so project modules can be imported.
 ROOT = Path(__file__).resolve().parents[1]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
 from app.engine.model_loader import ModelLoader
 
+# Where the generated examples are written.
 OUT_PATH = ROOT / "data/training/code/scraped_library_sft.jsonl"
 
+# How many levels of submodules to descend into.
 _MAX_RECURSION_DEPTH = 2
 
 
@@ -58,14 +65,17 @@ def scrape_package(package_name: str, max_examples: int = 50) -> list[dict[str, 
         return []
 
     results: list[dict[str, Any]] = []
+    # Track names and modules already handled to avoid duplicates and import cycles.
     seen_qualnames: set[str] = set()
     visited_modules: set[str] = set()
 
     def _belongs_to_package(obj: Any) -> bool:
+        """Return True when the object is defined inside the target package rather than imported from elsewhere."""
         owner = getattr(obj, "__module__", "") or ""
         return owner == package_name or owner.startswith(package_name + ".")
 
     def _record(qualname: str, obj: Any, kind: str) -> None:
+        """Add one documented API (name, kind, signature, docstring) to the results unless it was already seen or has no docstring."""
         if qualname in seen_qualnames:
             return
         doc = inspect.getdoc(obj)
@@ -74,6 +84,7 @@ def scrape_package(package_name: str, max_examples: int = 50) -> list[dict[str, 
         try:
             signature = str(inspect.signature(obj))
         except (TypeError, ValueError):
+            # Some built-in objects have no readable signature, so use a placeholder.
             signature = "(...)"
         seen_qualnames.add(qualname)
         results.append({
@@ -85,6 +96,7 @@ def scrape_package(package_name: str, max_examples: int = 50) -> list[dict[str, 
         })
 
     def _walk(mod: Any, prefix: str, depth: int) -> None:
+        """Recursively visit a module: record functions first, then classes with their public methods, then submodules, stopping at the example limit or the depth limit."""
         if len(results) >= max_examples or depth > _MAX_RECURSION_DEPTH:
             return
         mod_name = getattr(mod, "__name__", "")
@@ -97,6 +109,7 @@ def scrape_package(package_name: str, max_examples: int = 50) -> list[dict[str, 
         # crowd out the more instructive top-level functions (get, post, ...)
         # before max_examples is reached.
         members = [(n, o) for n, o in inspect.getmembers(mod) if not n.startswith("_")]
+        # Select members by type, keeping only those defined in this package.
         functions = [(n, o) for n, o in members if (inspect.isfunction(o) or inspect.isbuiltin(o)) and _belongs_to_package(o)]
         classes = [(n, o) for n, o in members if inspect.isclass(o) and _belongs_to_package(o)]
         submodules = [(n, o) for n, o in members if inspect.ismodule(o) and getattr(o, "__name__", "").startswith(package_name)]
@@ -125,6 +138,7 @@ def scrape_package(package_name: str, max_examples: int = 50) -> list[dict[str, 
     return results[:max_examples]
 
 
+# Fixed reply format so the answer can be parsed reliably.
 _FORMAT_INSTRUCTIONS = (
     "Respond in exactly this format, nothing else:\n"
     "INSTRUCTION: <the question, one line>\n"
@@ -134,6 +148,7 @@ _FORMAT_INSTRUCTIONS = (
     "```"
 )
 
+# Template that asks the model for one question and one code example for an API.
 _META_PROMPT_TEMPLATE = (
     "You are creating one training example for a coding assistant. Given a Python "
     "library API signature and its documentation, respond with:\n"
@@ -147,11 +162,13 @@ _META_PROMPT_TEMPLATE = (
     "{format_instructions}"
 )
 
+# Patterns that capture the text after the INSTRUCTION and RESPONSE labels.
 _INSTRUCTION_RE = re.compile(r"INSTRUCTION:[ \t]*(.*?)\s*(?=RESPONSE:|\Z)", re.DOTALL | re.IGNORECASE)
 _RESPONSE_RE = re.compile(r"RESPONSE:\s*(.+)\Z", re.DOTALL | re.IGNORECASE)
 
 
 def _build_meta_prompt(signature_info: dict[str, Any]) -> str:
+    """Fill the prompt template with the API details, trimming very long documentation to 1200 characters."""
     docstring = str(signature_info.get("docstring", "")).strip()
     if len(docstring) > 1200:
         docstring = docstring[:1200] + "..."
@@ -166,6 +183,7 @@ def _build_meta_prompt(signature_info: dict[str, Any]) -> str:
 
 
 def _parse_llm_output(raw: str) -> Optional[tuple[str, str]]:
+    """Extract the instruction and the response from the model's reply, or return None when either part is missing."""
     instr_match = _INSTRUCTION_RE.search(raw)
     resp_match = _RESPONSE_RE.search(raw)
     if not instr_match or not resp_match:
@@ -192,6 +210,7 @@ def generate_sft_qa(signature_info: dict[str, Any], model_name: Optional[str] = 
     from core.default_prompts import SWARM_CODER_SYSTEM_PROMPT
     from core.interaction_loop import build_prompt
 
+    # Resolve the optional model filename under the local models folder.
     model_path = os.path.join("data", "models", model_name) if model_name else None
     try:
         llm = ModelLoader.get_instance(model_path=model_path)
@@ -201,18 +220,21 @@ def generate_sft_qa(signature_info: dict[str, Any], model_name: Optional[str] = 
 
     meta_prompt = _build_meta_prompt(signature_info)
     history = [{"role": "user", "content": meta_prompt}]
+    # Wrap the request in the chat format with a short system message.
     prompt = build_prompt(
         "You generate high-quality, concise training examples for a coding assistant.",
         history,
     )
 
     try:
+        # Low temperature keeps the generated examples focused.
         result = llm(prompt, max_tokens=512, temperature=0.4, top_p=0.9, stop=["<|im_end|>"])
     except Exception as exc:
         logger.warning("LLM call failed for %s: %s", signature_info.get("qualname"), exc)
         return None
 
     raw = result["choices"][0]["text"]
+    # Remove any thinking section and keep only the final answer text.
     _thought, parsed = parse_thought_stream(raw, start_in_thought=prompt.rstrip().endswith("<think>"))
     pair = _parse_llm_output(parsed or raw)
     if pair is None:
@@ -233,6 +255,7 @@ def generate_sft_qa(signature_info: dict[str, Any], model_name: Optional[str] = 
 
 
 def main() -> int:
+    """Parse options, scrape the package, generate an example for each API with the local model, write the rows (appending unless told to overwrite) and return an exit code."""
     parser = argparse.ArgumentParser(description="Scrape local library signatures and generate training datasets.")
     parser.add_argument("--package", required=True, help="Target Python package name (e.g. websockets, numpy)")
     parser.add_argument("--max-examples", type=int, default=50, help="Maximum SFT pairs to generate")
@@ -263,6 +286,7 @@ def main() -> int:
             skipped += 1
 
     OUT_PATH.parent.mkdir(parents=True, exist_ok=True)
+    # Append by default so runs for several packages accumulate in one file.
     mode = "w" if args.overwrite else "a"
     with OUT_PATH.open(mode, encoding="utf-8") as fh:
         for row in rows:
@@ -273,5 +297,6 @@ def main() -> int:
     return 0
 
 
+# Run main() and use its return value as the exit code.
 if __name__ == "__main__":
     raise SystemExit(main())

@@ -1,3 +1,8 @@
+# Program: karl-offline-lab - test_machine_speak_fallback.py
+# Programmer: Ethan-da-Tech-Wizard (written with Claude, an AI assistant)
+# Last Modified: 2026-11-18
+# Purpose: Regression tests for the Machine Speak default and the decompaction fallback that salvages readable text from malformed compact traces.
+
 """Regression tests for the Machine Speak default and its decompaction
 fallback path.
 
@@ -26,6 +31,7 @@ from app.engine.streaming_parser import StreamingThoughtParser
 
 
 def _make_parser():
+    """Test helper: make parser."""
     thoughts, chats = [], []
     parser = StreamingThoughtParser(
         in_thought=True,
@@ -37,11 +43,13 @@ def _make_parser():
 
 
 def test_default_is_off_in_config_store():
+    """Scenario: default is off in config store. Expected: the assertions in this test hold."""
     assert config_store.UI_CONFIG_DEFAULTS["enable_machine_speak"] is False
 
 
 def test_well_formed_compact_trace_still_decompacts_normally():
     # Sanity check the happy path is unaffected by the fallback changes.
+    """Scenario: well formed compact trace still decompacts normally. Expected: the assertions in this test hold."""
     buffer = (
         '{"$":"karl.trace.compact.v1","d":{"tk":"reasoning here",'
         '"r":"the actual answer"}}'
@@ -56,6 +64,7 @@ def test_malformed_compact_trace_salvages_response_instead_of_leaking_json():
     # Unescaped double quote inside the "r" value breaks json.loads() even
     # though the buffer is brace-balanced -- this is the exact shape of
     # output that reproduced the bug against a live 1.5B model.
+    """Scenario: malformed compact trace salvages response instead of leaking json. Expected: the assertions in this test hold."""
     buffer = (
         '{"$":"karl.trace.compact.v1","d":{"p":"hi there, Karl. '
         'I am a "helpful" assistant","r":"Paris is the capital of France."}}'
@@ -69,6 +78,7 @@ def test_malformed_compact_trace_salvages_response_instead_of_leaking_json():
 
 
 def test_malformed_compact_trace_with_no_salvageable_fields_falls_back():
+    """Scenario: malformed compact trace with no salvageable fields falls back. Expected: the assertions in this test hold."""
     buffer = '{"$":"karl.trace.compact.v1","d":{"p":"broken \\ unterminated'
     parser, thoughts, chats = _make_parser()
     assert llm_emit(buffer, parser) is False
@@ -83,6 +93,7 @@ def test_unrelated_json_output_is_not_treated_as_a_compact_trace():
     # isn't valid JSON for some other reason must not be mistaken for a
     # failed compact trace -- no marker, no salvage attempt, clean passthrough
     # signal (False) so the caller's normal raw-text path handles it.
+    """Scenario: unrelated json output is not treated as a compact trace. Expected: the assertions in this test hold."""
     buffer = '{"name": "incomplete real json"'
     parser, thoughts, chats = _make_parser()
     assert llm_emit(buffer, parser) is False
@@ -91,6 +102,7 @@ def test_unrelated_json_output_is_not_treated_as_a_compact_trace():
 
 
 def test_salvage_helper_handles_escaped_quotes_and_newlines():
+    """Scenario: salvage helper handles escaped quotes and newlines. Expected: the assertions in this test hold."""
     thought, response = llm_salvage(
         '{"$":"karl.trace.compact.v1","d":{"tk":"line one\\nline two",'
         '"r":"she said \\"hi\\" back"}}'
@@ -102,6 +114,7 @@ def test_salvage_helper_handles_escaped_quotes_and_newlines():
 def test_agentic_thread_mirrors_llm_thread_behavior():
     # AGENTS.md gotcha: the streaming parser (and this fallback) is
     # duplicated across both threads; any fix must land identically in both.
+    """Scenario: agentic thread mirrors llm thread behavior. Expected: the assertions in this test hold."""
     buffer = (
         '{"$":"karl.trace.compact.v1","d":{"p":"hi there, Karl. '
         'I am a "helpful" assistant","r":"Paris is the capital of France."}}'

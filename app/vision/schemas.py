@@ -1,3 +1,8 @@
+# Program: karl-offline-lab - schemas.py
+# Programmer: Ethan-da-Tech-Wizard (written with Claude, an AI assistant)
+# Last Modified: 2026-11-18
+# Purpose: Defines the dataclasses (OcrResult, VisionResult, ImageRecord) that describe an analyzed image and convert to and from dicts.
+"""Data models for stored image records and their OCR and vision results."""
 from __future__ import annotations
 
 from dataclasses import asdict, dataclass, field
@@ -6,6 +11,7 @@ from typing import Any
 
 @dataclass
 class OcrResult:
+    """Text, confidence (0-1) and word boxes produced by an OCR engine."""
     engine: str = "none"
     language: str = "eng"
     text: str = ""
@@ -14,6 +20,7 @@ class OcrResult:
 
     @classmethod
     def from_dict(cls, data: dict[str, Any] | None) -> "OcrResult":
+        """Build an OcrResult from a dict, filling defaults for missing keys (None is allowed)."""
         data = data or {}
         return cls(
             engine=data.get("engine", "none"),
@@ -24,11 +31,13 @@ class OcrResult:
         )
 
     def to_dict(self) -> dict[str, Any]:
+        """Return the result as a plain dict."""
         return asdict(self)
 
 
 @dataclass
 class VisionResult:
+    """Caption, layout hint and detection flags produced by a vision step."""
     engine: str = "none"
     model: str | None = None
     caption: str = ""
@@ -39,6 +48,7 @@ class VisionResult:
 
     @classmethod
     def from_dict(cls, data: dict[str, Any] | None) -> "VisionResult":
+        """Build a VisionResult from a dict, filling defaults for missing keys (None is allowed)."""
         data = data or {}
         return cls(
             engine=data.get("engine", "none"),
@@ -51,11 +61,13 @@ class VisionResult:
         )
 
     def to_dict(self) -> dict[str, Any]:
+        """Return the result as a plain dict."""
         return asdict(self)
 
 
 @dataclass
 class ImageRecord:
+    """Everything stored about one image: file paths, hash, size, tags, OCR, vision output, user corrections and RAG index state."""
     id: str
     created_at: str
     source: str
@@ -83,6 +95,7 @@ class ImageRecord:
 
     @classmethod
     def from_dict(cls, data: dict[str, Any]) -> "ImageRecord":
+        """Rebuild a record from saved JSON data; only the id is required, other keys get defaults."""
         return cls(
             id=data["id"],
             created_at=data.get("created_at", ""),
@@ -103,6 +116,7 @@ class ImageRecord:
         )
 
     def to_dict(self) -> dict[str, Any]:
+        """Return the record as a dict, with the nested OCR and vision results converted too."""
         data = asdict(self)
         data["ocr"] = self.ocr.to_dict()
         data["vision"] = self.vision.to_dict()

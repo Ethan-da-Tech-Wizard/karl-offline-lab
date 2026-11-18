@@ -1,3 +1,8 @@
+# Program: karl-offline-lab - diagnostics.py
+# Programmer: Ethan-da-Tech-Wizard (written with Claude, an AI assistant)
+# Last Modified: 2026-11-18
+# Purpose: Runs startup health checks (dependencies, CPU/GPU capabilities, model files, network port), prints a colour-coded table and writes a JSON report.
+
 """
 Karl Startup Diagnostics Engine
 =================================
@@ -21,6 +26,7 @@ Returns:
 from __future__ import annotations
 
 import importlib
+# Standard-library imports used by the individual checks.
 import importlib.metadata
 import json
 import os
@@ -31,17 +37,21 @@ import sys
 from datetime import datetime, timezone
 from typing import Any
 
+# Where the JSON report is written, and the four-byte marker every GGUF model file starts with.
 _REPORT_PATH = "data/logs/diagnostics_report.json"
 _GGUF_MAGIC = b"GGUF"
 
 # ── ANSI helpers ──────────────────────────────────────────────────────────────
+# Colours are only used when output goes to a real terminal.
 _USE_ANSI = sys.stdout.isatty()
 
 
 def _c(code: str, s: str) -> str:
+    """Wrap text in an ANSI colour code when the terminal supports it, otherwise return it unchanged."""
     return f"\033[{code}m{s}\033[0m" if _USE_ANSI else s
 
 
+# One-line colour helpers built on _c (green, red, yellow, cyan, bold, dim).
 def _green(s: str) -> str:  return _c("32", s)
 def _red(s: str) -> str:    return _c("31", s)
 def _yellow(s: str) -> str: return _c("33", s)
@@ -50,17 +60,20 @@ def _bold(s: str) -> str:   return _c("1", s)
 def _dim(s: str) -> str:    return _c("2", s)
 
 
+# Pre-coloured status badges used at the start of each table row.
 _OK   = _green("[OK  ]")
 _WARN = _yellow("[WARN]")
 _FAIL = _red("[FAIL]")
 
 
 def _row(badge: str, label: str, detail: str = "") -> str:
+    """Format one indented table row: badge, label padded to 30 characters, then detail."""
     return f"  {badge} {label:<30} {detail}".rstrip()
 
 
 # ── 1. Dependency Audit ───────────────────────────────────────────────────────
 
+# Packages to audit: display name, module to import, and the attribute that holds its version.
 _PACKAGES: list[tuple[str, str, str]] = [
     # (display_name, importable_module,   version_attr_on_module)
     ("PyQt6",                "PyQt6.QtCore",          "PYQT_VERSION_STR"),
@@ -69,10 +82,12 @@ _PACKAGES: list[tuple[str, str, str]] = [
     ("faiss",                "faiss",                 "__version__"),
 ]
 
+# Only these missing packages count as a critical failure; the others only warn.
 _CRITICAL_DEPS = {"PyQt6", "llama_cpp"}
 
 
 def _metadata_version(name: str) -> str | None:
+    """Look up an installed package version from its metadata, trying common name variants; None if not found."""
     for candidate in (name, name.replace("_", "-"),
                       name + "-cpu", name + "-gpu"):
         try:
@@ -83,6 +98,7 @@ def _metadata_version(name: str) -> str | None:
 
 
 def check_dependencies() -> dict[str, Any]:
+    """Try importing each audited package and report its version or the import error."""
     results: dict[str, Any] = {}
     for display, module_path, attr in _PACKAGES:
         try:
@@ -97,6 +113,7 @@ def check_dependencies() -> dict[str, Any]:
 # ── 2. Hardware Capability Scout ─────────────────────────────────────────────
 
 def _linux_cpu_flags() -> set[str]:
+    """Read the CPU feature flags from /proc/cpuinfo on Linux; empty set if unavailable."""
     try:
         with open("/proc/cpuinfo", "r", encoding="utf-8") as fh:
             for line in fh:
@@ -108,6 +125,7 @@ def _linux_cpu_flags() -> set[str]:
 
 
 def _macos_sysctl(key: str) -> str:
+    """Ask the macOS sysctl tool for a value; returns an empty string on any failure."""
     try:
         res = subprocess.run(
             ["sysctl", "-n", key],
@@ -119,6 +137,7 @@ def _macos_sysctl(key: str) -> str:
 
 
 def check_hardware() -> dict[str, Any]:
+    """Report the platform, CPU instruction-set support (AVX2, AVX-512, FMA) and GPU availability (CUDA, Metal)."""
     plat = platform.system()
     result: dict[str, Any] = {"platform": plat}
 
@@ -138,6 +157,7 @@ def check_hardware() -> dict[str, Any]:
             "fma":    _macos_sysctl("hw.optional.fma")    == "1",
         }
     else:
+        # (None means "unknown", shown as a warning later)
         # Windows: would need cpuid; skip gracefully
         cpu_flags = {"avx2": None, "avx512": None, "fma": None}
     result["cpu_flags"] = cpu_flags
@@ -145,6 +165,7 @@ def check_hardware() -> dict[str, Any]:
     # GPU frameworks
     gpu_info: dict[str, Any] = {}
     try:
+        # torch is optional; if it is missing or fails, the error is recorded instead of raised.
         import torch  # noqa: PLC0415
         cuda_ok = torch.cuda.is_available()
         gpu_info["torch_cuda"] = {
@@ -166,6 +187,7 @@ def check_hardware() -> dict[str, Any]:
 # ── 3. Model Verification ─────────────────────────────────────────────────────
 
 def _read_active_filename() -> str | None:
+    """Return the active model filename from the active-model settings file, or None if unreadable."""
     try:
         with open("data/active_model.json", "r", encoding="utf-8") as fh:
             return json.load(fh).get("filename")
@@ -174,6 +196,7 @@ def _read_active_filename() -> str | None:
 
 
 def _gguf_magic_ok(path: str) -> bool:
+    """True if the file starts with the GGUF marker bytes."""
     try:
         with open(path, "rb") as fh:
             return fh.read(4) == _GGUF_MAGIC
@@ -182,6 +205,7 @@ def _gguf_magic_ok(path: str) -> bool:
 
 
 def check_models() -> dict[str, Any]:
+    """List GGUF model files with size and validity, and check that the active model exists."""
     models_dir = "data/models"
     active_filename = _read_active_filename()
     result: dict[str, Any] = {
@@ -195,6 +219,7 @@ def check_models() -> dict[str, Any]:
         result["message"] = f"models directory not found: {models_dir}"
         return result
 
+    # Only files ending in .gguf are considered models.
     gguf_files = sorted(f for f in os.listdir(models_dir) if f.endswith(".gguf"))
 
     for filename in gguf_files:
@@ -213,6 +238,7 @@ def check_models() -> dict[str, Any]:
             "status":      "ok" if magic_ok else "fail",
         })
 
+    # Overall status: warn if none found, fail if the active model is missing, else ok.
     if not gguf_files:
         result["status"]  = "warn"
         result["message"] = "no .gguf files found in data/models/"
@@ -228,9 +254,11 @@ def check_models() -> dict[str, Any]:
 # ── 4. Network Port Audit ─────────────────────────────────────────────────────
 
 def check_port(port: int = 8080) -> dict[str, Any]:
+    """Check whether a local port can be bound (free) or is already in use."""
     try:
         with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
             s.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+            # Binding succeeds only if nothing else is listening on the port.
             s.bind(("127.0.0.1", port))
         return {"port": port, "status": "ok",   "message": f"port {port} is free"}
     except OSError as exc:
@@ -244,6 +272,7 @@ def _render(report: dict[str, Any]) -> bool:
     Print the colour-coded diagnostics table.
     Returns True if no *critical* check failed.
     """
+    # Divider lines used between sections.
     div = _cyan("─" * 52)
     header_bar = _bold(_cyan("═" * 52))
 
@@ -252,6 +281,7 @@ def _render(report: dict[str, Any]) -> bool:
     print(_bold("  Karl Startup Diagnostics"))
     print(header_bar)
 
+    # Collects the names of failures that should make the whole run fail.
     critical_failures: list[str] = []
 
     # ── Dependencies ─────────────────────────────────────────────────────────
@@ -357,6 +387,7 @@ def run_diagnostics() -> int:
     Run all checks, print the terminal table, and write the JSON report.
     Returns 0 on success, 1 on critical failure.
     """
+    # Run every check and gather the results into one report.
     ts = datetime.now(timezone.utc).isoformat()
 
     report: dict[str, Any] = {
@@ -371,10 +402,12 @@ def run_diagnostics() -> int:
         },
     }
 
+    # Print the table first; its return value decides the overall status.
     all_passed = _render(report)
     report["overall_status"] = "ok" if all_passed else "fail"
 
     try:
+        # A failure to save the report only prints a warning and does not change the result.
         os.makedirs(os.path.dirname(_REPORT_PATH), exist_ok=True)
         with open(_REPORT_PATH, "w", encoding="utf-8") as fh:
             json.dump(report, fh, indent=2, ensure_ascii=False)

@@ -1,3 +1,8 @@
+# Program: karl-offline-lab - test_service_discovery.py
+# Programmer: Ethan-da-Tech-Wizard (written with Claude, an AI assistant)
+# Last Modified: 2026-11-18
+# Purpose: Tests automatic port failover and the service discovery file lifecycle of WebSocketServerManager.
+
 """
 Tests for service-discovery: automatic port failover and ~/.karl/service_discovery.json
 lifecycle (write on bind, remove on stop).
@@ -84,6 +89,7 @@ def _make_serve_factory(fail_ports: set[int]):
     and returns a usable mock server otherwise.
     """
     async def _serve(handler, host, port, ssl=None, **kwargs):
+        """Test helper: serve."""
         if port in fail_ports:
             raise OSError(98, "Address already in use")
         mock_server = MagicMock()
@@ -159,6 +165,7 @@ def test_two_concurrent_managers_land_on_different_ports(tmp_path):
     bound_lock = threading.Lock()
 
     async def _tracking_serve(handler, host, port, ssl=None, **kwargs):
+        """Test helper: tracking serve."""
         with bound_lock:
             # Simulate that if another instance already has a port, it's occupied
             if port in bound:

@@ -1,3 +1,8 @@
+# Program: karl-offline-lab - model_combo.py
+# Programmer: Ethan-da-Tech-Wizard (written with Claude, an AI assistant)
+# Last Modified: 2026-11-18
+# Purpose: Provides ModelComboBox, a dropdown that lists local GGUF models and their compatible LoRA adapters and keeps the selection in sync with app state.
+
 """Model combo box — reusable model and adapter selector widget."""
 
 from __future__ import annotations
@@ -9,15 +14,21 @@ from PyQt6.QtCore import Qt
 
 from app.engine import config_store
 
+# Module logger for scan/registry warnings
 logger = logging.getLogger("karl.widgets.model_combo")
 
 
+# ---------------------------------------------------------------------------
+# Model selector widget
+# ---------------------------------------------------------------------------
 class ModelComboBox(QComboBox):
     """Reusable dropdown to select local models and their compatible LoRA adapters."""
 
     def __init__(self, state, parent=None, short_labels: bool = True):
+        """Create the combo box, remember the shared state and populate it with the models found on disk."""
         super().__init__(parent)
         self.state = state
+        # short_labels chooses between bare file names and detailed labels
         self.short_labels = short_labels
         self.refresh_models()
 
@@ -28,11 +39,13 @@ class ModelComboBox(QComboBox):
 
     def refresh_models(self):
         """Re-scan models and adapters, rebuild items, and restore selection."""
+        # Block signals so rebuilding the list does not fire selection-changed handlers
         self.blockSignals(True)
+        # Remember what was selected so it can be restored after the rebuild
         current_data = self.currentData()
         self.clear()
 
-        # Scan adapters
+        # Scan adapters: a folder counts only if it holds a .gguf or .bin weight file
         adapters_dir = "data/adapters"
         adapters = []
         if os.path.exists(adapters_dir):
@@ -46,7 +59,7 @@ class ModelComboBox(QComboBox):
             except Exception as e:
                 logger.warning("Error scanning adapters in ModelComboBox: %s", e)
 
-        # Scan models
+        # Scan models: every .gguf file in the models folder
         models_dir = "data/models"
         files = []
         if os.path.exists(models_dir):
@@ -55,7 +68,7 @@ class ModelComboBox(QComboBox):
             except Exception as e:
                 logger.warning("Error scanning models in ModelComboBox: %s", e)
 
-        # Get registry
+        # Get registry: map file name to its registry metadata (tier, context, RAM)
         registry = {}
         try:
             for item in config_store.get_model_registry():
@@ -63,6 +76,7 @@ class ModelComboBox(QComboBox):
         except Exception as e:
             logger.warning("Error reading model registry in ModelComboBox: %s", e)
 
+        # Build one entry per model, plus one per compatible adapter
         entries = []
         for filename in sorted(files):
             meta = registry.get(filename, {})
@@ -84,14 +98,14 @@ class ModelComboBox(QComboBox):
                         "data": {"model": filename, "adapter": adapter, "meta": meta},
                     })
 
-        # Add items
+        # Add items: the tooltip carries the long description, the data carries the model/adapter choice
         for entry in entries:
             label = entry["short_label"] if self.short_labels else entry["label"]
             self.addItem(label, entry["data"])
             idx = self.count() - 1
             self.setItemData(idx, entry["tooltip"], Qt.ItemDataRole.ToolTipRole)
 
-        # Restore selection
+        # Restore selection from the previous choice, else from the shared app state
         target_model = None
         target_adapter = None
         if current_data and isinstance(current_data, dict):
@@ -134,6 +148,7 @@ class ModelComboBox(QComboBox):
         return found
 
     def _model_file_size_label(self, filename: str) -> str:
+        """Return the model file size in GB as text, or 'unknown size' if it cannot be read."""
         path = os.path.join("data", "models", filename)
         try:
             return f"{os.path.getsize(path) / (1024 ** 3):.2f} GB"
@@ -141,6 +156,7 @@ class ModelComboBox(QComboBox):
             return "unknown size"
 
     def _model_registry_detail(self, filename: str, meta: dict, size: str) -> str:
+        """Build the one-line label for a model: file, size, tier, context, RAM and an ACTIVE marker."""
         tier = meta.get("tier")
         n_ctx = meta.get("n_ctx")
         ram = meta.get("min_ram_gb")
@@ -156,6 +172,7 @@ class ModelComboBox(QComboBox):
         return " · ".join(bits)
 
     def _model_tooltip(self, filename: str, meta: dict, size: str, adapter: str | None) -> str:
+        """Build the multi-line tooltip describing a model file, its adapter and registry metadata."""
         lines = [
             f"File: {filename}",
             f"Size: {size}",

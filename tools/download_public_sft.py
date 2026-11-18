@@ -1,4 +1,8 @@
 #!/usr/bin/env python3
+# Program: karl-offline-lab - download_public_sft.py
+# Programmer: Ethan-da-Tech-Wizard (written with Claude, an AI assistant)
+# Last Modified: 2026-11-18
+# Purpose: Command-line tool that downloads public programming instruction datasets and writes the Python-related examples as de-duplicated chat-format SFT rows.
 """Download and format a public programming instruction dataset for Karl fine-tuning."""
 
 from __future__ import annotations
@@ -14,7 +18,9 @@ from pathlib import Path
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s")
 logger = logging.getLogger("karl.download_public_sft")
 
+# Repository root, used to place the output file.
 ROOT = Path(__file__).resolve().parents[1]
+# Where the formatted public dataset is written.
 OUT_PATH = ROOT / "data/training/code/public_code_sft.jsonl"
 
 
@@ -33,26 +39,32 @@ def is_python_code(text: str) -> bool:
 
 
 def main() -> int:
+    """Download each configured public dataset, keep unique Python-related examples, write them as SFT JSON lines and return an exit code (1 if the datasets library is missing)."""
     try:
+        # Import lazily so a missing library gives a friendly error instead of a crash on import.
         from datasets import load_dataset
     except ImportError:
         logger.error("HuggingFace 'datasets' library is not installed. Install requirements.txt first.")
         return 1
 
+    # Public datasets to use, each with its split and a source label stored in the output.
     datasets_to_load = [
         ("sahil2801/CodeAlpaca-20k", "train", "public_codealpaca"),
         ("iamtarun/python_code_instructions_18k_alpaca", "train", "python_instructions_18k")
     ]
 
     formatted_count = 0
+    # Remember prompts already written so duplicates are skipped.
     seen_prompts = set()
     OUT_PATH.parent.mkdir(parents=True, exist_ok=True)
 
+    # Open the output once and stream examples into it.
     with OUT_PATH.open("w", encoding="utf-8") as fh:
         for ds_name, split_name, source_label in datasets_to_load:
             logger.info("Downloading %s from HuggingFace...", ds_name)
             try:
                 dataset = load_dataset(ds_name, split=split_name)
+            # A failed download only skips that dataset; the others still run.
             except Exception as exc:
                 logger.warning("Failed to download dataset %s: %s", ds_name, exc)
                 continue
@@ -63,6 +75,7 @@ def main() -> int:
                 input_context = item.get("input", "")
                 output = item.get("output", "")
 
+                # Skip rows with an empty instruction or answer.
                 if not instruction.strip() or not output.strip():
                     continue
 
@@ -75,6 +88,7 @@ def main() -> int:
                 if not is_python:
                     continue
 
+                # Append the optional input context to the instruction as the user message.
                 user_content = instruction
                 if input_context:
                     user_content += f"\n\nInput Context:\n{input_context}"
@@ -86,6 +100,7 @@ def main() -> int:
                 seen_prompts.add(prompt_key)
 
                 # Format to conversational system/user/assistant block
+                # One chat example: fixed system message, user request and the dataset's answer.
                 sft_entry = {
                     "messages": [
                         {

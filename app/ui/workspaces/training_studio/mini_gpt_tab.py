@@ -1,3 +1,8 @@
+# Program: karl-offline-lab - mini_gpt_tab.py
+# Programmer: Ethan-da-Tech-Wizard (written with Claude, an AI assistant)
+# Last Modified: 2026-11-18
+# Purpose: Qt tab for training and sampling a small character-level GPT sandbox, with a live loss chart, generation monitor and dataset selection.
+"""Mini-GPT sandbox tab for the Training Studio."""
 import os
 import json
 import html
@@ -15,19 +20,24 @@ from app.ui.workspaces.training_studio.threads import MiniTrainThread
 from app.engine.model_loader import ModelLoader
 
 def _section(text: str) -> QLabel:
+    """Return a styled section-header label."""
     lbl = QLabel(text)
     lbl.setObjectName("section-header")
     return lbl
 
 
 def _hline() -> QFrame:
+    """Return a horizontal divider line."""
     f = QFrame()
     f.setFrameShape(QFrame.Shape.HLine)
     return f
 
 
+# ----- Loss chart -----
 class LossChartWidget(QFrame):
+    """Custom-painted line chart of the validation loss history."""
     def __init__(self, parent=None):
+        """Set up the frame style, minimum height and empty loss history."""
         super().__init__(parent)
         self.setObjectName("loss-chart-widget")
         self.setMinimumHeight(150)
@@ -41,16 +51,19 @@ class LossChartWidget(QFrame):
         self._loss_history = []
 
     def set_loss_history(self, history: list[float]):
+        """Replace the plotted loss values and repaint."""
         self._loss_history = list(history)
         self.update()
 
     def paintEvent(self, event):
+        """Draw the frame, grid, smoothed loss curve with gradient fill, last-point marker and loss/step readouts (or a waiting message when empty)."""
         painter = QPainter(self)
         painter.setRenderHint(QPainter.RenderHint.Antialiasing)
         
         w = self.width()
         h = self.height()
         
+        # Reserve space around the plot area for axis labels.
         margin_left = 45
         margin_right = 15
         margin_top = 15
@@ -74,6 +87,7 @@ class LossChartWidget(QFrame):
             painter.drawText(0, 0, w, h, Qt.AlignmentFlag.AlignCenter, "Waiting for training loss...")
             return
 
+        # Choose the y-axis range with 10% padding (or a fixed band when the loss is flat).
         # Scale data
         min_y = min(self._loss_history)
         max_y = max(self._loss_history)
@@ -92,6 +106,7 @@ class LossChartWidget(QFrame):
         font = QFont("JetBrains Mono", 8)
         painter.setFont(font)
         
+        # Three dashed grid lines (bottom, middle, top) with value labels.
         levels = [y_bottom, (y_bottom + y_top) / 2.0, y_top]
         for val in levels:
             pct = (val - y_bottom) / (y_top - y_bottom) if y_top != y_bottom else 0.5
@@ -105,6 +120,7 @@ class LossChartWidget(QFrame):
                              f"{val:.2f}")
             painter.setPen(grid_pen)
 
+        # Map each loss value to pixel coordinates inside the plot area.
         # Compute point coordinates
         points = []
         n_points = len(self._loss_history)
@@ -123,6 +139,7 @@ class LossChartWidget(QFrame):
                 x1, y1 = points[i]
                 x2, y2 = points[i+1]
                 dx = (x2 - x1) / 3.0
+                # Cubic segments with horizontal handles give a smooth curve.
                 path.cubicTo(x1 + dx, y1, x2 - dx, y2, x2, y2)
         else:
             path.lineTo(points[0][0] + 5, points[0][1])
@@ -161,8 +178,11 @@ class LossChartWidget(QFrame):
         painter.drawText(margin_left + 10, margin_top + 30, f"Steps: {n_points}")
 
 
+# ----- Mini-GPT tab -----
 class MiniGptTab(QWidget):
+    """Tab with dataset and model settings, training controls, live monitors and an inference sandbox."""
     def __init__(self, state, parent=None):
+        """Set up thread tracking and the loss history and build the UI."""
         super().__init__(parent)
         self.state = state
         self._active_threads = set()
@@ -171,6 +191,7 @@ class MiniGptTab(QWidget):
         self._build_ui()
 
     def _build_ui(self):
+        """Create the configuration column on the left and the monitors plus inference sandbox on the right."""
         layout = QHBoxLayout(self)
         layout.setContentsMargins(12, 12, 12, 12)
         layout.setSpacing(12)
@@ -193,6 +214,7 @@ class MiniGptTab(QWidget):
         self._mini_dataset_combo.currentTextChanged.connect(self._on_mini_dataset_changed)
         ll.addWidget(self._mini_dataset_combo)
 
+        # Shown only when the custom text file option is chosen.
         # Custom File Row (Initially Hidden)
         self._mini_custom_row = QWidget()
         cr_layout = QHBoxLayout(self._mini_custom_row)
@@ -209,6 +231,7 @@ class MiniGptTab(QWidget):
         self._mini_custom_row.setVisible(False)
         ll.addWidget(self._mini_custom_row)
 
+        # Model size and training settings, with ranges that keep the sandbox small.
         # Grid of architectural hyperparameters
         grid_widget = QWidget()
         grid = QGridLayout(grid_widget)
@@ -288,6 +311,7 @@ class MiniGptTab(QWidget):
         right_splitter = QSplitter(Qt.Orientation.Vertical)
         right_splitter.setHandleWidth(1)
 
+        # Text log and loss chart side by side.
         # Upper: Training Log view
         log_panel = QWidget()
         lpl = QVBoxLayout(log_panel)
@@ -313,6 +337,7 @@ class MiniGptTab(QWidget):
         lpl.addWidget(telemetry_row)
         right_splitter.addWidget(log_panel)
 
+        # Samples are shown periodically during training.
         # Lower: Live text generation stream
         gen_panel = QWidget()
         gpl = QVBoxLayout(gen_panel)
@@ -329,6 +354,7 @@ class MiniGptTab(QWidget):
 
         rl.addWidget(right_splitter, 1)
 
+        # Disabled until trained weights exist.
         # Bottom: Inference Sandbox Groupbox
         self._mini_inference_group = QWidget()
         self._mini_inference_group.setObjectName("panel")
@@ -382,26 +408,31 @@ class MiniGptTab(QWidget):
         splitter.setStretchFactor(1, 2)
         layout.addWidget(splitter)
 
+        # Weights, tokenizer and config must all be present.
         # Check if pre-existing weights exist to enable inference sandbox
         if os.path.exists("data/mini_gpt/weights.pt") and os.path.exists("data/mini_gpt/tokenizer.json") and os.path.exists("data/mini_gpt/config.json"):
             self._mini_inference_group.setEnabled(True)
             self._mini_generate_output.setHtml("<span style='color:#00C2FF;'>Pre-trained Sandbox weights found. Type a prompt above and generate text!</span>")
 
     def _on_mini_dataset_changed(self, text: str):
+        """Show the custom-file row only when Custom Text File is selected."""
         self._mini_custom_row.setVisible(text == "Custom Text File...")
 
     def _on_mini_browse_file(self):
+        """Let the user pick a custom text file and remember its path."""
         path, _ = QFileDialog.getOpenFileName(self, "Select Text File", "", "Text Files (*.txt *.md *.py *.jsonl);;All Files (*)")
         if path:
             self._mini_custom_file_path = path
             self._mini_file_label.setText(os.path.basename(path))
 
     def _get_mini_dataset_text(self) -> str:
+        """Return the training text for the selected dataset (built-in sample, past trace logs or a chosen file)."""
         dataset_type = self._mini_dataset_combo.currentText()
         if dataset_type == "Tiny Shakespeare":
             path = "data/tiny_shakespeare.txt"
             if not os.path.exists(path):
                 os.makedirs("data", exist_ok=True)
+                # Write a built-in sample text if the dataset file is missing; it is repeated 20 times to be long enough to train on.
                 default_shakespeare = (
                     "ROMEO:\n"
                     "But, soft! what light through yonder window breaks?\n"
@@ -446,6 +477,7 @@ class MiniGptTab(QWidget):
                 return f.read()
 
         elif dataset_type == "Karl's Trace Logs":
+            # Build text from saved trace logs: thinking inside think tags, then the response.
             log_dir = "data/logs/traces"
             text_parts = []
             if os.path.exists(log_dir):
@@ -465,6 +497,7 @@ class MiniGptTab(QWidget):
                             pass
             text = "".join(text_parts)
             if not text:
+                # Fallback text when there are no usable traces.
                 text = "SYSTEM: You are Karl. I am an AI assistant.\n" * 100
             return text
 
@@ -474,17 +507,21 @@ class MiniGptTab(QWidget):
                 with open(path, "r", encoding="utf-8", errors="ignore") as f:
                     return f.read()
             else:
+                # Surface a clear error; the caller shows it in a dialog.
                 raise ValueError("No custom text file selected. Please select a text file first.")
         
         return ""
 
     def _start_mini_training(self):
+        """Validate the dataset, lock the settings, and start the training thread with the chosen config."""
         try:
             text = self._get_mini_dataset_text()
+            # Too little text to train on.
             if len(text) < 500:
                 QMessageBox.warning(self, "Dataset Too Small", "Training dataset must be at least 500 characters long.")
                 return
             
+            # Lock the settings while training runs.
             # Disable configuration panel
             self._mini_dataset_combo.setEnabled(False)
             self._mini_browse_btn.setEnabled(False)
@@ -509,8 +546,10 @@ class MiniGptTab(QWidget):
             self._mini_loss_history.clear()
             self._mini_loss_chart.set_loss_history([])
 
+            # Free the main model's memory before training.
             ModelLoader.reset_instance()
 
+            # Hyperparameters passed to the training thread; evaluation every 50 steps and samples every 100.
             config = {
                 "batch_size": 32,
                 "block_size": self._mini_block_size.value(),
@@ -527,6 +566,7 @@ class MiniGptTab(QWidget):
                 dataset_text=text,
                 config=config
             )
+            # Wire the worker's signals to the UI slots.
             self._mini_train_thread.log.connect(self._on_mini_log)
             self._mini_train_thread.loss.connect(self._on_mini_loss)
             self._mini_train_thread.progress.connect(self._on_mini_progress)
@@ -543,23 +583,28 @@ class MiniGptTab(QWidget):
             QMessageBox.critical(self, "Training Initialization Error", f"Could not launch training:\n{e}")
 
     def _stop_mini_training(self):
+        """Ask the running training thread to stop."""
         if self._mini_train_thread and self._mini_train_thread.isRunning():
             self._mini_train_thread.stop()
             self._mini_stop_btn.setEnabled(False)
 
     def _on_mini_log(self, text: str):
+        """Append a training log line to the log view."""
         self._mini_log_view.append(text)
 
     def _on_mini_loss(self, step: int, val_loss: float):
+        """Record a validation loss, update the chart and log a telemetry line with a small bar."""
         self._mini_loss_history.append(val_loss)
         self._mini_loss_chart.set_loss_history(self._mini_loss_history)
         
+        # Small text bar to visualise the loss value.
         # ASCII loss bar
         bar_len = int(min(20, max(1, val_loss * 4.0)))
         bar = "█" * (21 - bar_len) + "░" * bar_len
         self._mini_log_view.append(f"<b>[Telemetry] Step {step} | Val Loss: {val_loss:.4f} [{bar}]</b>")
 
     def _on_mini_progress(self, step: int, max_steps: int, sample_text: str):
+        """Update the progress bar and show the latest sample generation."""
         self._mini_progress_bar.setValue(step)
         html_sample = (
             f"<div style='color:#9090A8; font-size:8.2pt; border-bottom:1px solid #1F1F35; padding-bottom:3px; margin-bottom:5px;'>"
@@ -570,11 +615,13 @@ class MiniGptTab(QWidget):
         self._mini_sample_view.setHtml(html_sample)
 
     def _on_mini_done(self, save_dir: str):
+        """Restore the controls, enable the inference sandbox and report where weights were saved."""
         self._mini_progress_bar.setValue(self._mini_max_iters.value())
         self._mini_progress_bar.setVisible(False)
         self._mini_train_btn.setEnabled(True)
         self._mini_stop_btn.setEnabled(False)
         
+        # Unlock the settings again.
         # Restore configuration inputs
         self._mini_dataset_combo.setEnabled(True)
         self._mini_browse_btn.setEnabled(True)
@@ -589,6 +636,7 @@ class MiniGptTab(QWidget):
         QMessageBox.information(self, "Mini-GPT Training Complete", f"Educational Mini-GPT trained successfully!\nWeights saved to: {save_dir}/weights.pt")
 
     def _on_mini_error(self, msg: str):
+        """Restore the controls and report the training failure."""
         self._mini_progress_bar.setVisible(False)
         self._mini_train_btn.setEnabled(True)
         self._mini_stop_btn.setEnabled(False)
@@ -607,6 +655,7 @@ class MiniGptTab(QWidget):
         QMessageBox.critical(self, "Mini-GPT Training Error", f"Training execution failed:\n{msg}")
 
     def _run_mini_inference(self):
+        """Load the saved tokenizer, config and weights and generate text from the typed prompt."""
         prompt = self._mini_prompt_input.text()
         self._mini_generate_btn.setEnabled(False)
         self._mini_generate_output.clear()
@@ -625,6 +674,7 @@ class MiniGptTab(QWidget):
             if not (os.path.exists(config_path) and os.path.exists(weights_path) and os.path.exists(vocab_path)):
                 raise FileNotFoundError("Mini-GPT weights or config file not found. Please run training first.")
                 
+            # Rebuild the character tokenizer from the saved vocabulary.
             # Load tokenizer
             with open(vocab_path, "r", encoding="utf-8") as f:
                 vocab_meta = json.load(f)
@@ -638,6 +688,7 @@ class MiniGptTab(QWidget):
             with open(config_path, "r", encoding="utf-8") as f:
                 arch = json.load(f)
             
+            # Rebuild the same architecture from the saved config, with dropout off for inference.
             # Recreate model
             model = MiniGPT(
                 vocab_size=arch["vocab_size"],
@@ -649,6 +700,7 @@ class MiniGptTab(QWidget):
             )
             
             # Load weights
+            # Load saved weights onto the GPU if available, otherwise the CPU.
             state_dict = torch.load(weights_path, map_location=device)
             model.load_state_dict(state_dict)
             model = model.to(device)
@@ -666,12 +718,14 @@ class MiniGptTab(QWidget):
             temp = self._mini_temp_spin.value()
             
             # Generate tokens
+            # Sample new tokens with temperature and top-k 20 and decode them back to text.
             gen_ids = model.generate(context_tensor, max_new_tokens=max_new, temperature=temp, top_k=20)[0].tolist()
             output_text = tokenizer.decode(gen_ids)
             
             self._mini_generate_output.setText(output_text)
             
         except Exception as e:
+            # Print the stack trace to the console and show the message in the output box.
             traceback.print_exc()
             self._mini_generate_output.setHtml(f"<span style='color:#FF3B30;'>Inference error: {html.escape(str(e))}</span>")
         finally:

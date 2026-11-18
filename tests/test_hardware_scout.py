@@ -1,8 +1,15 @@
+# Program: karl-offline-lab - test_hardware_scout.py
+# Programmer: Ethan-da-Tech-Wizard (written with Claude, an AI assistant)
+# Last Modified: 2026-11-18
+# Purpose: Tests for the hardware scout: profile structure, GPU memory probing with mocks and a stable hardware identifier.
+"""Tests for core.hardware_scout."""
+
 import io
 import os
 import sys
 import unittest.mock as mock
 
+# Make the repository root importable
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from core.hardware_scout import get_hardware_profile, get_hardware_uuid
@@ -31,7 +38,9 @@ def test_hardware_profile_structure():
 def test_hardware_profile_gpu_mocking():
     """Verify VRAM scanning behavior when GPUtil returns mock GPU specs."""
     class DummyGPU:
+        """Fake GPU object exposing only free memory."""
         def __init__(self, memory_free):
+            """Store the free memory value."""
             self.memoryFree = memory_free
             
     # Mock GPUtil.getGPUs to return custom mock GPUs
@@ -60,12 +69,14 @@ def test_hardware_uuid_permission_error_falls_through_to_next_path():
     restart. Regression test for that exact failure mode."""
 
     def fake_exists(path):
+        """Pretend only the two candidate identifier files exist."""
         return path in (
             "/sys/class/dmi/id/product_uuid",
             "/etc/machine-id",
         )
 
     def fake_open(path, mode="r", *args, **kwargs):
+        """Deny access to the first file and serve a fixed value for the second."""
         if path == "/sys/class/dmi/id/product_uuid":
             raise PermissionError(f"[Errno 13] Permission denied: '{path}'")
         if path == "/etc/machine-id":

@@ -1,3 +1,7 @@
+# Program: karl-offline-lab - test_cognitive_parser_fuzz.py
+# Programmer: Ethan-da-Tech-Wizard (written with Claude, an AI assistant)
+# Last Modified: 2026-11-18
+# Purpose: Fuzz and regression tests that feed thousands of odd inputs to the thought-stream parser and check it never crashes, returns two strings and stays within a time budget.
 """
 Fuzz Testing Suite — Karl Cognitive Parser Token Streams.
 
@@ -49,6 +53,7 @@ _EMOJI          = "😀🎉💻🔥🧠🤖⚡🌊🎯🔑"
 # ── Input generators ──────────────────────────────────────────────────────────
 
 def _rnd(rng: random.Random, max_len: int = 80) -> str:
+    """Return a random printable string of up to max_len characters."""
     return "".join(rng.choices(string.printable, k=rng.randint(0, max_len)))
 
 
@@ -204,6 +209,7 @@ _STRATEGIES: list[tuple[Callable[[random.Random], str], int]] = [
 
 
 def _build_inputs(n: int, seed: int) -> list[str]:
+    """Build a reproducible list of n fuzz inputs, choosing generator strategies by weight."""
     rng = random.Random(seed)
     fns, weights = zip(*_STRATEGIES)
     chosen = rng.choices(list(fns), weights=list(weights), k=n)
