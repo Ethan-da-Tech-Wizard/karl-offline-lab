@@ -1461,9 +1461,6 @@ class PromptLabWorkspace(QWidget):
         self._col_b._refresh_model_combo()
         self._refresh_compare_model_combos()
 
-    # NOTE: the tab indices used here look shifted by one relative to the tab order
-    # (0 playground, 1 diff, 2 tokenizer, 3 comparison, 4 optimize): index 1 focuses the
-    # tokenizer input and index 2 the comparison prompt.
     def focus_primary_input(self) -> bool:
         # Step 1: Validate input parameters, operational preconditions, and state
         # Tab order: 0 playground, 1 diff, 2 tokenizer, 3 comparison, 4 optimize.
