@@ -7,6 +7,15 @@
 #          loop logic, and streams intermediate reasoning to the UI.
 # ==============================================================================
 
+"""Autonomous multi-iteration generation worker (AgenticThread).
+
+Each iteration runs one full generation (same streaming/parsing machinery as
+llm_thread.LLMThread), then asks the hot-reloadable core.agentic_loop whether to
+continue (should_continue) and what prompt to feed next (build_next_prompt),
+until it says stop, the iteration cap is hit, or the user cancels. Many helper
+functions here intentionally mirror llm_thread.py (see Key Gotchas in AGENTS.md:
+a streaming-parser fix must be applied to both files).
+"""
 import json
 import logging
 import time
@@ -26,17 +35,20 @@ from app.utils.trace_logger import TraceLogger
 import core.interaction_loop
 import core.agentic_loop
 
+# Raw per-token archive directory (same location as llm_thread).
 RAW_LOG_DIR = "data/logs/raw"
 
 # Reserve this many tokens for the next generation's output.
 # The rest of the budget is used for history.
 _RESPONSE_RESERVE = 1024  # max_tokens headroom
+# Stall watchdog: abort if no token arrives for this long.
 _WATCHDOG_TIMEOUT_SECONDS = 30.0
 _WATCHDOG_ERROR = (
     "Inference Watchdog Timeout: Token generation froze for more than 30s. "
     "Inference terminated safely."
 )
 
+# Module logger.
 logger = logging.getLogger("karl.agentic_thread")
 
 # Set to True on Stage 3 emergency; cleared when GPU cools below 85°C.
@@ -89,6 +101,8 @@ def _get_gpu_temp() -> float | None:
         return None
 
 
+# True when `text` starts with "{" and its braces balance (string/escape aware):
+# detects the end of a compact "Machine Speak" JSON trace while streaming.
 def _json_object_complete(text: str) -> bool:
     # Step 1: Validate input parameters, operational preconditions, and state
     depth = 0
@@ -120,6 +134,7 @@ def _json_object_complete(text: str) -> bool:
     return False
 
 
+# Schema marker for the compact trace format (keys: "tk" thinking, "r" response).
 _COMPACT_TRACE_MARKER = "karl.trace.compact.v1"
 
 
@@ -133,6 +148,7 @@ def _salvage_compact_trace_fields(buffer: str) -> tuple[str, str]:
     doesn't leak raw JSON scaffolding to the user as the chat response."""
 
     # Step 1: Validate input parameters, operational preconditions, and state
+    # Local helper: regex-extract one JSON string value, decoding escapes when possible.
     def _extract(key: str) -> str:
         # Step 1: Validate input parameters, operational preconditions, and state
         match = re.search(rf'"{re.escape(key)}"\s*:\s*"((?:\\.|[^"\\])*)"', buffer)
@@ -150,6 +166,8 @@ def _salvage_compact_trace_fields(buffer: str) -> tuple[str, str]:
     return thought, response
 
 
+# Decode a compact trace and push its thought/response to the parser's emitters;
+# returns False when the buffer isn't a trace (caller falls back to raw text).
 def _emit_compacted_generation(buffer: str, parser: StreamingThoughtParser) -> bool:
     # Step 1: Validate input parameters, operational preconditions, and state
     stripped = buffer.strip()
@@ -200,6 +218,8 @@ class AgenticThread(QThread):
     It loops: generate → parse → check stop condition → inject next prompt → repeat.
     The hackable stop condition and next-prompt logic live in core/agentic_loop.py.
     """
+    # Signals mirror LLMThread's, plus per-iteration progress. All are emitted from
+    # the worker thread and delivered to the GUI thread by Qt.
     new_thought_token = pyqtSignal(str)
     new_chat_token = pyqtSignal(str)
     new_raw_token = pyqtSignal(str)                  # M7: every character pre-parser
@@ -230,6 +250,7 @@ class AgenticThread(QThread):
         # Step 1: Validate input parameters, operational preconditions, and state
         super().__init__()
         self.system_prompt = system_prompt
+        # Copy so appending assistant turns / injected prompts never mutates the caller's list.
         self.chat_history = list(initial_history)   # copy so we can mutate safely
         self.hyperparams = hyperparams
         self.retrieved_chunks = retrieved_chunks or []
@@ -255,6 +276,7 @@ class AgenticThread(QThread):
         self._stop_requested = True
         self._watchdog_stop.set()
 
+    # Watchdog and token-counting helpers below behave exactly like their llm_thread twins.
     def _mark_token_activity(self):
         # Step 1: Validate input parameters, operational preconditions, and state
         self.last_token_timestamp = time.time()
@@ -339,6 +361,8 @@ class AgenticThread(QThread):
         content = msg.get("content", "")
         return self._token_count(llm, f"<|im_start|>{role}\n{content}<|im_end|>\n")
 
+    # Remove <think> blocks from old assistant turns (never the newest) until the
+    # history fits the token budget.
     def _strip_historical_thoughts(self, history, llm, budget):
         """
         Iterates through history (oldest to newest) and strips <think> blocks
@@ -383,6 +407,7 @@ class AgenticThread(QThread):
         Always keeps the first user message (the seed) and the most recent turns.
         """
         # Step 1: Validate input parameters, operational preconditions, and state
+        # History budget = window - reply reserve - system prompt tokens (floor 256).
         context_budget = ModelLoader.context_limit()
         base_tokens = self._token_count(llm, system_prompt)
         budget = max(256, context_budget - _RESPONSE_RESERVE - base_tokens)
@@ -408,6 +433,7 @@ class AgenticThread(QThread):
         if history and history[0] not in kept:
             kept.insert(0, history[0])
 
+        # Tell the user in the thought stream when older turns were dropped.
         if len(kept) < len(history):
             self.new_thought_token.emit(
                 f"\n[Context Trim: kept {len(kept)}/{len(history)} messages to fit context window]\n"
@@ -475,6 +501,8 @@ class AgenticThread(QThread):
 
     def _is_repetitive_response(self, previous: str, current: str) -> bool:
         # Step 1: Validate input parameters, operational preconditions, and state
+        # Normalize whitespace/case, then treat two long (>=80 chars) responses that are
+        # >=96% similar as a loop: the model is repeating itself, so the loop should end.
         prev = " ".join((previous or "").split()).lower()
         curr = " ".join((current or "").split()).lower()
         if len(prev) < 80 or len(curr) < 80:
@@ -501,6 +529,7 @@ class AgenticThread(QThread):
         compact_buffer = ""
         compact_emitted = False
 
+        # Same continuation / compression guards as LLMThread (see that file for details).
         continuation_count = 0
         max_continuations = 5
         compression_reset_count = 0
@@ -511,6 +540,8 @@ class AgenticThread(QThread):
         _init_cache_stats = kv_cache_stats(llm, prompt)
         _gen_start = time.perf_counter()
 
+        # One streaming llama.cpp call per pass; passes repeat on length stops (continuation)
+        # or when the sampling profile switches after </think>.
         while continuation_count <= max_continuations:
             # Stage 3 emergency check at each continuation boundary
             if thermal_enabled:
@@ -521,6 +552,8 @@ class AgenticThread(QThread):
                         f"Emergency Thermal Suspension: GPU reached {_ct:.1f}°C."
                     )
 
+            # Dynamic Parameter Scheduling: exploratory temperature while thinking, near-greedy
+            # while answering.
             # Dynamic Parameter Scheduling
             current_temp = self.hyperparams.get("temperature", 0.7)
             current_top_p = self.hyperparams.get("top_p", 0.95)
@@ -602,6 +635,7 @@ class AgenticThread(QThread):
                     has_tokens = True
                     raw_output += text
 
+                    # M7: write raw token before parsing (raw archive survives parser bugs/crashes).
                     # M7: write raw token before parsing
                     micro_ts = f"{time.time():.6f}"
                     raw_file.write(f"{micro_ts}\t{text}\n")
@@ -609,6 +643,7 @@ class AgenticThread(QThread):
                     self.new_raw_token.emit(text)
                     EventBroker.get_instance().publish("tokens:raw", {"token": text})
 
+                    # Compact-trace ("Machine Speak") detection, as in LLMThread.
                     if compact_stream_mode is None:
                         stripped_raw = raw_output.lstrip()
                         if not stripped_raw:
@@ -646,6 +681,8 @@ class AgenticThread(QThread):
                     _close_fn()
                 self._active_response_generator = None
 
+            # After the stream: watchdog abort or user stop ends this generation; a profile
+            # switch re-enters the loop; only a length stop with output continues.
             if self._watchdog_timed_out:
                 break
 
@@ -726,6 +763,7 @@ class AgenticThread(QThread):
 
         return raw_output, parser.parsed_thought, parser.parsed_response, first_token_time
 
+    # Returns (raw_output, thought, response, first_token_time) for one full iteration.
     def run(self):
         """Run iterative generation until stop condition, max iterations, or error.
 
@@ -733,6 +771,7 @@ class AgenticThread(QThread):
         operator-facing circuit-breaker message.
         """
         # Step 1: Validate input parameters, operational preconditions, and state
+        # Register with the supervisor so the loop can be listed and cancelled.
         supervisor = TaskSupervisor.instance()
         if self.task_id is None:
             self.task_id = supervisor.register("Agentic loop", cancellable=self)
@@ -755,6 +794,7 @@ class AgenticThread(QThread):
         except Exception as e:
             logger.warning(f"Could not set CPU affinity: {e}")
 
+        # Hot-reload the user-editable prompt/loop modules so edits apply to this run.
         try:
             # Execute guarded operations and establish recovery boundaries
             core.interaction_loop = compile_and_reload(
@@ -770,6 +810,7 @@ class AgenticThread(QThread):
                 logger,
             )
 
+            # Optional per-run base model (custom agent) overrides the active selection.
             model_path = None
             if self.model_name:
                 model_path = os.path.join("data", "models", self.model_name)
@@ -778,11 +819,14 @@ class AgenticThread(QThread):
             # Fetch the actual (potentially fallback-scaled) context limit
             actual_context_budget = ModelLoader.context_limit()
 
+            # Main loop: one iteration = generate -> log -> store response -> ask
+            # core.agentic_loop.should_continue() -> inject build_next_prompt() as the next user turn.
             iteration = 0
             previous_response = ""
 
             global _thermal_suspended
             while not self._stop_requested:
+                # Thermal gate is re-checked every iteration (config may change mid-run).
                 # ── Thermal config & hysteresis gate ─────────────────────────────
                 from app.engine import config_store
                 cfg = config_store.get_ui_config()
@@ -828,6 +872,7 @@ class AgenticThread(QThread):
                 except Exception:
                     pass
 
+                # Per-iteration timing: prefill = until the first token, generation = after it.
                 start = time.perf_counter()
                 # M7: open raw archive file for this iteration
                 os.makedirs(RAW_LOG_DIR, exist_ok=True)
@@ -855,6 +900,7 @@ class AgenticThread(QThread):
                 total_tokens = prompt_tokens + generation_tokens
                 total_tps = total_tokens / total_time if total_time > 0 else 0.0
 
+                # Per-iteration diagnostics, forwarded with iteration_finished and into the trace log.
                 diagnostics = {
                     "prompt_tokens": prompt_tokens,
                     "prefill_time": prefill_time,
@@ -866,6 +912,7 @@ class AgenticThread(QThread):
                     "total_tps": total_tps,
                 }
 
+                # A stop request discards this iteration's results (nothing is logged or emitted).
                 if self._stop_requested:
                     break
 
@@ -884,6 +931,7 @@ class AgenticThread(QThread):
                     pass
 
                 cooling_duration = 0.0
+                # Post-iteration cooldown: >=98 C waits 15 s, >=95 C waits 5 s; >=100 C aborts.
                 # ── Multi-Stage Thermal Cooldown ──────────────────────────────────
                 if thermal_enabled and gpu_temp is not None:
                     cooling_start = time.perf_counter()
@@ -949,6 +997,9 @@ class AgenticThread(QThread):
                 iteration += 1
 
                 # Hot-reload stop condition and check it
+                # Stop conditions, in order: should_continue() False, then a near-duplicate
+                # response (the model is looping).
+                # Hot-reload stop condition and check it
                 core.agentic_loop = compile_and_reload(
                     core.agentic_loop,
                     "core/agentic_loop.py",
@@ -981,6 +1032,7 @@ class AgenticThread(QThread):
         except Exception as e:
             self.error_occurred.emit(f"Agentic Error: {str(e)}")
             supervisor.fail(self.task_id, str(e))
+        # Always release the inference lock, restore CPU affinity and trim heap memory.
         finally:
             ModelLoader.unlock_instance()
             # Restore original CPU affinity
