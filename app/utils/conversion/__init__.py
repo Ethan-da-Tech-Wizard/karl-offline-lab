@@ -21,6 +21,7 @@ from .base import (
     logger, _mistral_common_installed, _mistral_import_error_msg,
     get_model_architecture, LazyTorchTensor,
 )
+import importlib
 from typing import Type
 
 
@@ -337,9 +338,10 @@ def load_all_models() -> None:
         for module_name in _TEXT_MODEL_MODULES:
             if module_name not in _loaded_text_modules:
                 try:
-                    # Absolute import: assumes the directory containing this package is on sys.path.
+                    # Import relative to whatever name this package was loaded under ("conversion" when its
+                    # parent directory is on sys.path, "app.utils.conversion" when imported from the app).
                     # Importing the module executes its @ModelBase.register(...) decorators.
-                    __import__(f"conversion.{module_name}")
+                    importlib.import_module(f"{__package__}.{module_name}")
                     _loaded_text_modules.add(module_name)
                 except Exception as e:
                     logger.warning(f"Failed to load model module {module_name}: {e}")
@@ -348,7 +350,7 @@ def load_all_models() -> None:
         for module_name in _MMPROJ_MODEL_MODULES:
             if module_name not in _loaded_mmproj_modules:
                 try:
-                    __import__(f"conversion.{module_name}")
+                    importlib.import_module(f"{__package__}.{module_name}")
                     _loaded_mmproj_modules.add(module_name)
                 except Exception as e:
                     logger.warning(f"Failed to load model module {module_name}: {e}")
@@ -364,7 +366,7 @@ def get_model_class(name: str, mmproj: bool = False) -> Type[ModelBase]:
         raise NotImplementedError(f"Architecture {name!r} not supported!")
     module_name = relevant_map[name]
     # Importing the module runs its @ModelBase.register decorators, which fill ModelBase._model_classes; the lookup below only works after this import.
-    __import__(f"conversion.{module_name}")
+    importlib.import_module(f"{__package__}.{module_name}")
     # Registered classes are stored per ModelType, then by architecture name.
     model_type = ModelType.MMPROJ if mmproj else ModelType.TEXT
     return ModelBase._model_classes[model_type][name]
