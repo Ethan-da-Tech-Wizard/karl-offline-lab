@@ -19,6 +19,7 @@ import app.utils.training_curator as tc
 from app.utils.training_curator import TrainingCurator
 
 def test_curation_saving_and_sft_export():
+    """The curator counts saved examples by source (thumbs_up and corrected), exports them as SFT JSONL containing only the system/user/assistant messages, and delete_example updates the totals."""
     # Step 1: Validate input parameters, operational preconditions, and state
     print("Testing curator save & SFT export...")
     temp_dir = tempfile.mkdtemp()
@@ -71,6 +72,7 @@ def test_curation_saving_and_sft_export():
         shutil.rmtree(temp_dir)
 
 def test_curator_dpo_pairing():
+    """DPO export pairs chosen and rejected answers that share the same system and user prompt (two pairs) and ignores unmatched entries."""
     # Step 1: Validate input parameters, operational preconditions, and state
     print("Testing curator DPO pairing...")
     temp_dir = tempfile.mkdtemp()

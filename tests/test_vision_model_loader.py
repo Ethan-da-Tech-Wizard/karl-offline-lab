@@ -16,6 +16,7 @@ from app.vision.vision_model_loader import installed_vision_models, read_vision_
 
 
 def test_vision_registry_is_readable():
+    """The vision model registry loads, and every entry has an id and .gguf model and projector filenames."""
     # Step 1: Validate input parameters, operational preconditions, and state
     entries = read_vision_registry()
 
@@ -26,6 +27,7 @@ def test_vision_registry_is_readable():
 
 
 def test_installed_vision_models_reports_paths_and_install_state():
+    """installed_vision_models lists each model with its model/projector paths and whether each file is installed."""
     # Step 1: Validate input parameters, operational preconditions, and state
     rows = installed_vision_models()
 

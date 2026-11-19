@@ -176,6 +176,7 @@ class TestSwarmOrchestrator(unittest.TestCase):
         call_count = 0
 
         def stateful_mock_llm(prompt, **kwargs):
+            """Scripted model: first call returns the Architect plan, the next Coder call writes buggy code (a - b), and a Coder call that sees the earlier failure in its prompt returns the fix (a + b)."""
             # Step 1: Validate input parameters, operational preconditions, and state
             nonlocal call_count
             call_count += 1
@@ -270,6 +271,7 @@ class TestSwarmOrchestrator(unittest.TestCase):
         """Two independent tasks (no import dependency) are placed in a single layer and edited in parallel; both files are produced and the run succeeds."""
         # We simulate a stateful LLM to return Architect plan then Coder edits
         def stateful_mock_llm(prompt, **kwargs):
+            """Scripted model: returns an Architect plan with two independent files, then the matching Coder content for each file."""
             # Step 1: Validate input parameters, operational preconditions, and state
             if "Architect" in prompt or "tasks" in prompt:
                 plan = {
@@ -340,6 +342,7 @@ class TestSwarmOrchestrator(unittest.TestCase):
         call_count = 0
 
         def stateful_mock_llm(prompt, **kwargs):
+            """Scripted Architect and Coder replies that also count how many LLM calls are made."""
             # Step 1: Validate input parameters, operational preconditions, and state
             nonlocal call_count
             call_count += 1
@@ -381,6 +384,7 @@ class TestSwarmOrchestrator(unittest.TestCase):
         coder_call_count = 0
 
         def stateful_mock_llm(prompt, **kwargs):
+            """Scripted model: Architect plan, then three Coder candidates of which the first two are syntactically broken and the third is valid."""
             # Step 1: Validate input parameters, operational preconditions, and state
             nonlocal coder_call_count
             if "Architect" in prompt or "tasks" in prompt:
@@ -430,6 +434,7 @@ class TestSwarmOrchestrator(unittest.TestCase):
         seen_prompts = []
 
         def stateful_mock_llm(prompt, **kwargs):
+            """Scripted model that records every prompt; the first Coder turn emits a tool call so a second turn happens and can show the injected guidance."""
             # Step 1: Validate input parameters, operational preconditions, and state
             seen_prompts.append(prompt)
             if "Architect" in prompt or "tasks" in prompt:
@@ -473,6 +478,7 @@ class TestSwarmOrchestrator(unittest.TestCase):
         drift detector and auto-inject corrective guidance."""
         # Step 1: Validate input parameters, operational preconditions, and state
         def stateful_mock_llm(prompt, **kwargs):
+            """Scripted model that always returns the same broken syntax, so the failure trace repeats verbatim."""
             # Step 1: Validate input parameters, operational preconditions, and state
             if "Architect" in prompt or "tasks" in prompt:
                 plan = {
@@ -508,6 +514,7 @@ class TestSwarmOrchestrator(unittest.TestCase):
         """max_loops caps how many times a failing layer is retried."""
         # Step 1: Validate input parameters, operational preconditions, and state
         def stateful_mock_llm(prompt, **kwargs):
+            """Scripted model whose Coder output is always buggy (subtraction), so verification keeps failing."""
             # Step 1: Validate input parameters, operational preconditions, and state
             if "Architect" in prompt or "tasks" in prompt:
                 plan = {
@@ -546,6 +553,7 @@ class TestSwarmOrchestrator(unittest.TestCase):
         any layer work instead of hanging or crashing."""
         # Step 1: Validate input parameters, operational preconditions, and state
         def stateful_mock_llm(prompt, **kwargs):
+            """Scripted model returning a normal Architect plan and Coder output (the run is stopped by the deadline, not by the model)."""
             # Step 1: Validate input parameters, operational preconditions, and state
             plan = {
                 "explanation": "x",
@@ -584,6 +592,7 @@ class TestSwarmOrchestrator(unittest.TestCase):
         from app.engine.swarm_agents import CoderAgent
 
         def stateful_mock_llm(prompt, **kwargs):
+            """Scripted model whose Coder tries to write secret.py, a file outside the plan."""
             # Step 1: Validate input parameters, operational preconditions, and state
             return {"choices": [{"text": (
                 "<tool_call name='write_file'>\n"
@@ -658,6 +667,7 @@ class TestSwarmOrchestrator(unittest.TestCase):
         """With pause_on_step the orchestrator emits a paused event (file and layer index) at a step boundary and blocks until resume() is called."""
         # Step 1: Validate input parameters, operational preconditions, and state
         def stateful_mock_llm(prompt, **kwargs):
+            """Scripted Architect plan and Coder output for a one-file task."""
             # Step 1: Validate input parameters, operational preconditions, and state
             if "Architect" in prompt or "tasks" in prompt:
                 plan = {
@@ -681,6 +691,7 @@ class TestSwarmOrchestrator(unittest.TestCase):
         paused_events = []
 
         def _on_paused(info):
+            """Record the paused event and immediately resume the orchestrator."""
             # Step 1: Validate input parameters, operational preconditions, and state
             paused_events.append(info)
             orchestrator.resume()
@@ -700,6 +711,7 @@ class TestSwarmOrchestrator(unittest.TestCase):
         seen_prompts = []
 
         def stateful_mock_llm(prompt, **kwargs):
+            """Scripted model that records every Coder prompt so the overridden instructions can be checked."""
             # Step 1: Validate input parameters, operational preconditions, and state
             seen_prompts.append(prompt)
             if "Architect" in prompt or "tasks" in prompt:
@@ -723,6 +735,7 @@ class TestSwarmOrchestrator(unittest.TestCase):
         )
 
         def _on_paused(info):
+            """When paused, replace the active task's instructions with 'Define a subtract(a, b) function instead.' and resume."""
             # Step 1: Validate input parameters, operational preconditions, and state
             orchestrator.override_active_task(info["filepath"], "Define a subtract(a, b) function instead.")
             orchestrator.resume()

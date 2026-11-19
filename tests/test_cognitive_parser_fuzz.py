@@ -58,6 +58,7 @@ _EMOJI          = "😀🎉💻🔥🧠🤖⚡🌊🎯🔑"
 # ── Input generators ──────────────────────────────────────────────────────────
 
 def _rnd(rng: random.Random, max_len: int = 80) -> str:
+    """Random printable string of up to max_len characters."""
     # Step 1: Validate input parameters, operational preconditions, and state
     return "".join(rng.choices(string.printable, k=rng.randint(0, max_len)))
 
@@ -226,6 +227,7 @@ _STRATEGIES: list[tuple[Callable[[random.Random], str], int]] = [
 
 
 def _build_inputs(n: int, seed: int) -> list[str]:
+    """Generate n fuzz inputs deterministically from the seed by picking generator strategies according to the weight table."""
     # Step 1: Validate input parameters, operational preconditions, and state
     rng = random.Random(seed)
     fns, weights = zip(*_STRATEGIES)

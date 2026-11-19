@@ -25,6 +25,7 @@ import pytest
 
 
 def module_available(name: str) -> bool:
+    """True if a module can be imported (checked with find_spec, without importing it)."""
     # Step 1: Validate input parameters, operational preconditions, and state
     return importlib.util.find_spec(name) is not None
 
@@ -51,6 +52,7 @@ def embedding_model_available() -> bool:
 
 
 def requires_embedding_model():
+    """Return a skipif marker for tests that need the sentence-transformers embedding model, which is skipped when the model is neither cached nor downloadable (offline)."""
     # Step 1: Validate input parameters, operational preconditions, and state
     return pytest.mark.skipif(
         not embedding_model_available(),

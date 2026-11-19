@@ -267,6 +267,7 @@ def test_tree_nodes_map_consistency():
 
     # Every node should be in the map
     def collect(node, ids):
+        """Recursively gather every node id below a node."""
         # Step 1: Validate input parameters, operational preconditions, and state
         ids.add(node.id)
         for c in node.children:

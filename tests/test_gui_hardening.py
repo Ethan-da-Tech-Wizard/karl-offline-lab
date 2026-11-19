@@ -97,6 +97,7 @@ def test_prompt_column_ignores_run_when_thread_active():
     class FakeThread:
         """Thread double that always reports isRunning() True."""
         def isRunning(self):
+            """Always report that the thread is running."""
             # Step 1: Validate input parameters, operational preconditions, and state
             return True
 
@@ -305,11 +306,13 @@ def test_close_event_survives_active_kb_and_flywheel_threads(monkeypatch):
         finished_signal = pyqtSignal()
 
         def __init__(self):
+            """Create the release event used to hold the thread open."""
             # Step 1: Validate input parameters, operational preconditions, and state
             super().__init__()
             self.release_event = _threading.Event()
 
         def run(self):
+            """Block until the test releases the event."""
             # Step 1: Validate input parameters, operational preconditions, and state
             self.release_event.wait(timeout=5.0)
 
@@ -329,6 +332,7 @@ def test_close_event_survives_active_kb_and_flywheel_threads(monkeypatch):
         appearance_changed = pyqtSignal()
 
         def __init__(self, *args, **kwargs):
+            """Accept any constructor arguments; no real UI is built."""
             # Step 1: Validate input parameters, operational preconditions, and state
             super().__init__()
 

@@ -97,6 +97,7 @@ def test_llm_thread_continuation_loop_uses_the_clamp():
 
 
 def test_agentic_thread_continuation_loop_uses_the_clamp():
+    """Source-level guard: AgenticThread's continuation loop (in _run_single_generation) calls _clamp_max_tokens_to_context, passes the clamped max_tokens and keeps the early-stop condition."""
     # The continuation loop lives in _run_single_generation(), called from
     # run() once per agentic iteration -- not in run() itself.
     import app.engine.agentic_thread as agentic_thread_module

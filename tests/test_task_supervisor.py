@@ -179,7 +179,9 @@ class TestCancellation(unittest.TestCase):
         """cancel() on a task with a cancellable object returns True and moves the task to CANCELLING."""
         # Step 1: Validate input parameters, operational preconditions, and state
         class _Stoppable:
+            """Cancellable whose request_stop does nothing."""
             def request_stop(self):
+                """Accept the stop request and do nothing."""
                 # Step 1: Validate input parameters, operational preconditions, and state
                 pass
 
@@ -194,7 +196,9 @@ class TestCancellation(unittest.TestCase):
         stop_called = []
 
         class _Stoppable:
+            """Cancellable that records that it was asked to stop."""
             def request_stop(self):
+                """Record the call."""
                 # Step 1: Validate input parameters, operational preconditions, and state
                 stop_called.append(True)
 
@@ -231,7 +235,9 @@ class TestCancellation(unittest.TestCase):
         stop_counts = []
 
         class _Stoppable:
+            """Cancellable that counts stop requests."""
             def request_stop(self):
+                """Count the call."""
                 # Step 1: Validate input parameters, operational preconditions, and state
                 stop_counts.append(1)
 
@@ -253,7 +259,9 @@ class TestCancellation(unittest.TestCase):
         """A crashing request_stop() must not take down cancel()."""
         # Step 1: Validate input parameters, operational preconditions, and state
         class _Buggy:
+            """Cancellable whose request_stop always raises."""
             def request_stop(self):
+                """Raise RuntimeError to prove cancel() contains worker errors."""
                 # Step 1: Validate input parameters, operational preconditions, and state
                 raise RuntimeError("intentional crash in request_stop")
 
@@ -311,10 +319,12 @@ class TestCleanupHooks(unittest.TestCase):
         called = []
 
         def _bad():
+            """Hook that raises."""
             # Step 1: Validate input parameters, operational preconditions, and state
             raise RuntimeError("hook crash")
 
         def _good():
+            """Hook that records that it ran."""
             # Step 1: Validate input parameters, operational preconditions, and state
             called.append("good")
 
@@ -361,6 +371,7 @@ class TestSingleton(unittest.TestCase):
         results = []
 
         def _get():
+            """Fetch the singleton and record it."""
             # Step 1: Validate input parameters, operational preconditions, and state
             results.append(TaskSupervisor.instance())
 
@@ -396,11 +407,14 @@ class TestCancellationWithRealThread(unittest.TestCase):
         completed_normally = []
 
         class _Worker(threading.Thread):
+            """Thread that works in small steps until its stop event is set."""
             def request_stop(self):
+                """Set the stop event."""
                 # Step 1: Validate input parameters, operational preconditions, and state
                 stop_event.set()
 
             def run(self):
+                """Loop for up to ~2s, returning early when stopped; records completion only if it ran to the end."""
                 # Step 1: Validate input parameters, operational preconditions, and state
                 for _ in range(200):
                     # Iterate over items, evaluate loop invariant, and update progress
@@ -428,11 +442,14 @@ class TestCancellationWithRealThread(unittest.TestCase):
         ran = []
 
         class _Worker(threading.Thread):
+            """Short-lived worker thread that records that it ran."""
             def request_stop(self):
+                """Ignore stop requests (the thread is short and finishes on its own)."""
                 # Step 1: Validate input parameters, operational preconditions, and state
                 pass
 
             def run(self):
+                """Sleep briefly then record that it ran."""
                 # Step 1: Validate input parameters, operational preconditions, and state
                 time.sleep(0.02)
                 ran.append(True)

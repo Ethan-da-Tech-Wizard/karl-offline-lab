@@ -148,28 +148,34 @@ def test_agentic_stream_generator_closes_on_cancel():
     class FakeStream:
         """Fake token stream that records close()."""
         def __init__(self):
+            """Start not closed."""
             # Step 1: Validate input parameters, operational preconditions, and state
             self.closed = False
 
         def __iter__(self):
+            """Yield a single chunk."""
             # Step 1: Validate input parameters, operational preconditions, and state
             yield {"choices": [{"text": "ignored", "finish_reason": None}]}
 
         def close(self):
+            """Mark the stream closed."""
             # Step 1: Validate input parameters, operational preconditions, and state
             self.closed = True
 
     class FakeLLM:
         """Fake llama model that returns the fake stream and a trivial tokenizer."""
         def __init__(self):
+            """Create the fake stream."""
             # Step 1: Validate input parameters, operational preconditions, and state
             self.stream = FakeStream()
 
         def __call__(self, *args, **kwargs):
+            """Return the fake stream."""
             # Step 1: Validate input parameters, operational preconditions, and state
             return self.stream
 
         def tokenize(self, data, add_bos=False):
+            """Trivial tokenizer (one token per byte)."""
             # Step 1: Validate input parameters, operational preconditions, and state
             return [1]
 
@@ -195,28 +201,34 @@ def test_agentic_adapter_direct_answer_routes_to_chat_tokens():
     class FakeStream:
         """Fake stream yielding one direct answer chunk."""
         def __init__(self):
+            """Start not closed."""
             # Step 1: Validate input parameters, operational preconditions, and state
             self.closed = False
 
         def __iter__(self):
+            """Yield the direct answer chunk with finish_reason 'stop'."""
             # Step 1: Validate input parameters, operational preconditions, and state
             yield {"choices": [{"text": "Direct answer.", "finish_reason": "stop"}]}
 
         def close(self):
+            """Mark the stream closed."""
             # Step 1: Validate input parameters, operational preconditions, and state
             self.closed = True
 
     class FakeLLM:
         """Fake model returning that stream."""
         def __init__(self):
+            """Create the fake stream."""
             # Step 1: Validate input parameters, operational preconditions, and state
             self.stream = FakeStream()
 
         def __call__(self, *args, **kwargs):
+            """Return the fake stream."""
             # Step 1: Validate input parameters, operational preconditions, and state
             return self.stream
 
         def tokenize(self, data, add_bos=False):
+            """Trivial tokenizer."""
             # Step 1: Validate input parameters, operational preconditions, and state
             return [1]
 
@@ -290,10 +302,12 @@ def test_llm_thread_stop_flag_prevents_generation():
     class FakeStream:
         """Fake stream recording close()."""
         def __iter__(self):
+            """Yield one chunk."""
             # Step 1: Validate input parameters, operational preconditions, and state
             yield {"choices": [{"text": "x", "finish_reason": None}]}
 
         def close(self):
+            """Record that close() was called."""
             # Step 1: Validate input parameters, operational preconditions, and state
             close_calls.append(True)
 

@@ -276,6 +276,7 @@ def estimate_tokens(text: str) -> int:
 
 
 def passes_quality_checks(row: dict, max_tokens: int = DEFAULT_MAX_TOKENS) -> bool:
+    """Quality gate for a merged row: needs a messages list of at least two entries, an estimated size within max_tokens, at least one assistant turn, and valid Python in every assistant turn."""
     # Step 1: Validate input parameters, operational preconditions, and state
     messages = row.get("messages")
     if not isinstance(messages, list) or len(messages) < 2:
@@ -350,6 +351,7 @@ def merge_datasets(
 
 
 def main() -> int:
+    """CLI: read trace logs, write the SFT and DPO exports and, unless --skip-merge is given, merge with the other datasets into a validated, shuffled file. Returns 0."""
     # Step 1: Validate input parameters, operational preconditions, and state
     parser = argparse.ArgumentParser(description="Curate Karl trace logs into code SFT/DPO datasets.")
     parser.add_argument("--trace-dir", default="data/logs/traces", help="Trace log directory")

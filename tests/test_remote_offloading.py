@@ -27,15 +27,19 @@ def test_remote_rpc_timeout_disables_remote_and_streams_local_fallback(monkeypat
     }
 
     class FailingWebSocketContext:
+        """Async context manager whose entry raises a handshake TimeoutError."""
         async def __aenter__(self):
+            """Raise TimeoutError('handshake timeout')."""
             # Step 1: Validate input parameters, operational preconditions, and state
             raise TimeoutError("handshake timeout")
 
         async def __aexit__(self, exc_type, exc, tb):
+            """Do not suppress exceptions."""
             # Step 1: Validate input parameters, operational preconditions, and state
             return False
 
     def fake_connect(url, ssl=None, close_timeout=None):
+        """Replacement for websockets connect: record the URL, TLS context and close timeout, then return the failing context."""
         # Step 1: Validate input parameters, operational preconditions, and state
         captured["connect_url"] = url
         captured["ssl_context"] = ssl
@@ -49,13 +53,16 @@ def test_remote_rpc_timeout_disables_remote_and_streams_local_fallback(monkeypat
     monkeypatch.setitem(__import__("sys").modules, "websockets.asyncio.client", client_module)
 
     class LocalFallbackModel:
+        """Local model double that records the prompt and kwargs it was called with."""
         def __call__(self, prompt, **kwargs):
+            """Capture the prompt and kwargs and stream a single 'local answer' chunk."""
             # Step 1: Validate input parameters, operational preconditions, and state
             captured["local_prompt"] = prompt
             captured["local_kwargs"] = kwargs
             yield {"choices": [{"text": "local answer", "finish_reason": "stop"}]}
 
     def on_fallback(reason):
+        """Record the reason the remote client gave for falling back."""
         # Step 1: Validate input parameters, operational preconditions, and state
         captured["fallback_reason"] = reason
 
@@ -355,6 +362,7 @@ def test_local_fallback_factory_disables_remote_and_reenters_local_path(
     captured = {}
 
     def fake_remote_ctor(url, token, on_fallback=None, local_fallback_factory=None, **_kw):
+        """Fake RemoteRPCModel constructor that captures the on_fallback and local_fallback_factory callbacks and returns a mock remote."""
         # Step 1: Validate input parameters, operational preconditions, and state
         captured["on_fallback"] = on_fallback
         captured["local_fallback_factory"] = local_fallback_factory
@@ -364,6 +372,7 @@ def test_local_fallback_factory_disables_remote_and_reenters_local_path(
         return remote
 
     def fake_get_engine_config():
+        """Return a copy of the engine config, which set_remote_engine_config updates when remote mode is disabled."""
         # First call (remote-mode check) sees remote enabled; once
         # _remote_fallback() disables it, subsequent calls see it disabled —
         # mirroring what config_store.set_remote_engine_config(False, ...)

@@ -84,6 +84,7 @@ def test_coder_agent_injects_codebase_signature_reference(tmp_path):
     prompts = []
 
     def fake_llm(prompt, **kwargs):
+        """Record each prompt and return a canned completion that calls add()."""
         # Step 1: Validate input parameters, operational preconditions, and state
         prompts.append(prompt)
         return {"choices": [{"text": "def use_add(a, b):\n    return add(a, b)\n"}]}
