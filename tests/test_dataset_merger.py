@@ -414,3 +414,13 @@ class TestMergeFiles:
         """validate_file on a missing path returns zeros instead of raising."""
         result = DatasetMerger.validate_file("/nonexistent/path/data.jsonl")
         assert result == {"total": 0, "valid": 0, "invalid": 0}
+
+
+def test_parse_ts_naive_and_aware_are_comparable():
+    """Mixing naive and offset-aware timestamps used to raise TypeError when records were compared."""
+    from app.utils.dataset_merger import _parse_ts
+    naive = _parse_ts({"timestamp": "2026-01-01T00:00:00"})
+    aware = _parse_ts({"timestamp": "2026-01-01T01:00:00+00:00"})
+    zulu = _parse_ts({"timestamp": "2026-01-01T02:00:00Z"})
+    assert naive < aware < zulu
+    assert _parse_ts({"timestamp": "garbage"}) < naive
