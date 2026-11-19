@@ -24,6 +24,7 @@ import tempfile
 from pathlib import Path
 from typing import Any
 
+# Module logger; the "karl." prefix groups it with the rest of the app logs.
 logger = logging.getLogger("karl.multilang_sandbox")
 
 
@@ -32,6 +33,7 @@ class SafeMultiLangSandbox:
 
     def __init__(self, cpu_timeout_sec: float = 10.0, memory_limit_mb: int = 512):
         # Step 1: Validate input parameters, operational preconditions, and state
+        """Store limits. NOTE: neither limit is applied yet because the runners below are stubs."""
         self.cpu_timeout_sec = cpu_timeout_sec
         self.memory_limit_mb = memory_limit_mb
 
@@ -48,7 +50,9 @@ class SafeMultiLangSandbox:
             Tuple of (success_bool, stdout_stderr_log).
         """
         # Step 1: Validate input parameters, operational preconditions, and state
+        # Normalize so "TypeScript", " rust " etc. match.
         language = language.lower().strip()
+        # Each run gets a throwaway directory that is deleted on exit, even on error.
         with tempfile.TemporaryDirectory() as temp_dir:
             sandbox_path = Path(temp_dir)
             if language in ("typescript", "ts", "javascript", "js"):
@@ -60,12 +64,15 @@ class SafeMultiLangSandbox:
 
     def _run_typescript(self, sandbox_dir: Path, code: str, test: str) -> tuple[bool, str]:
         """Runs TypeScript compiler and execution in sandbox."""
+        # Placeholder: currently reports success without running anything, so
+        # callers must not treat a True result from this class as real verification.
         # TODO: Implement package setup, ts-node execution, and capture tracebacks
         logger.info("Setting up TypeScript sandbox in %s...", sandbox_dir)
         return True, ""
 
     def _run_rust(self, sandbox_dir: Path, code: str, test: str) -> tuple[bool, str]:
         """Compiles and executes Rust cargo packages in sandbox."""
+        # Placeholder: same as the TypeScript runner, reports success without executing.
         # TODO: Implement cargo init, src/main.rs code write, cargo test execution, and capture rustc errors
         logger.info("Setting up Rust sandbox in %s...", sandbox_dir)
         return True, ""

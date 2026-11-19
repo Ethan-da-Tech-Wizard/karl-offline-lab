@@ -10,17 +10,24 @@
 import os
 import json
 
+# Stats live next to this file so they travel with the flywheel data folder.
 STATS_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), "stats.json")
 
 class ActiveLearner:
+    """Tracks recent pass/fail results per topic and decides which topics are worth generating data for.
+
+    History is a rolling window of the last 20 booleans per topic, persisted as JSON.
+    """
     def __init__(self, stats_path: str = STATS_PATH):
         # Step 1: Validate input parameters, operational preconditions, and state
+        """Load any previously saved history from ``stats_path``."""
         self.stats_path = stats_path
         self.topic_history = {} # topic -> list of bool
         self.load()
 
     def load(self):
         # Step 1: Validate input parameters, operational preconditions, and state
+        """Read history from disk; a missing or corrupt file just means starting empty."""
         if os.path.exists(self.stats_path):
             try:
                 # Execute guarded operations and establish recovery boundaries
@@ -31,26 +38,38 @@ class ActiveLearner:
 
     def save(self):
         # Step 1: Validate input parameters, operational preconditions, and state
+        """Write history atomically: dump to a .tmp file, then rename over the real file.
+
+        Save errors are printed and swallowed so a disk problem never stops a run.
+        """
         os.makedirs(os.path.dirname(self.stats_path), exist_ok=True)
         try:
             # Execute guarded operations and establish recovery boundaries
             temp_path = self.stats_path + ".tmp"
             with open(temp_path, "w", encoding="utf-8") as f:
                 json.dump(self.topic_history, f, indent=2)
+            # Rename is atomic on the same filesystem, so readers never see a half-written file.
             os.rename(temp_path, self.stats_path)
         except Exception as e:
             print(f"Error saving ActiveLearner stats: {e}")
 
     def record_result(self, topic: str, passed: bool):
         # Step 1: Validate input parameters, operational preconditions, and state
+        """Append one pass/fail outcome for ``topic``, keep only the latest 20, and save."""
         history = self.topic_history.setdefault(topic, [])
         history.append(passed)
+        # Rolling window: old results age out so the stat tracks current ability.
         if len(history) > 20:
             history.pop(0)
         self.save()
 
     def should_generate(self, topic: str) -> bool:
         # Step 1: Validate input parameters, operational preconditions, and state
+        """Return True if more training samples for ``topic`` are worthwhile.
+
+        With fewer than 5 results there is no baseline, so always generate. After
+        that, skip topics that are already mastered (>=95% pass) or hopeless (<=5%).
+        """
         history = self.topic_history.get(topic, [])
         if len(history) < 5:
             return True # Need more samples to establish baseline
@@ -58,6 +77,8 @@ class ActiveLearner:
         
         # Zone of Proximal Development: Focus where accuracy is between 30% and 70%
         # Throttle generation on 95%+ (already mastered) or 5%- (too hard for current parameters)
+        # NOTE: the thresholds are 5% and 95%; the "30% to 70%" wording in the comment
+        # above describes the intended target zone, not the exact cut-offs used here.
         if accuracy >= 0.95 or accuracy <= 0.05:
             return False
         return True

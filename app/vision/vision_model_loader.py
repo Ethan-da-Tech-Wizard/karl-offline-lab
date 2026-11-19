@@ -69,7 +69,7 @@ class VisionModelEntry:
 
     def model_path(self) -> Path:
         # Step 1: Validate input parameters, operational preconditions, and state
-        """Absolute-ish path of the main model GGUF under data/vision_models."""
+        """Path of the main model GGUF under data/vision_models."""
         return MODEL_DIR / self.model_filename
 
     def projector_path(self) -> Path:
