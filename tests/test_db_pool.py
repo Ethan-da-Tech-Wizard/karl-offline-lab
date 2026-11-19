@@ -24,6 +24,7 @@ from app.utils.db_pool import SQLiteConnectionPool
 # ── Helpers ───────────────────────────────────────────────────────────────────
 
 def _create_table(db_path: str) -> None:
+    """Create the small test table in the SQLite file."""
     # Step 1: Validate input parameters, operational preconditions, and state
     conn = sqlite3.connect(db_path)
     conn.execute(
@@ -40,6 +41,7 @@ def _create_table(db_path: str) -> None:
 
 
 def _row_count(db_path: str) -> int:
+    """Count rows in the test table using a fresh connection."""
     # Step 1: Validate input parameters, operational preconditions, and state
     conn = sqlite3.connect(db_path, timeout=5.0)
     try:
@@ -114,6 +116,7 @@ def test_concurrent_inserts_complete_without_lock_errors(tmp_path):
     lock = threading.Lock()
 
     def worker(thread_id: int) -> None:
+        """Insert rows from one thread through the pool, recording any 'database is locked' errors."""
         # Step 1: Validate input parameters, operational preconditions, and state
         try:
             # Execute guarded operations and establish recovery boundaries
@@ -168,6 +171,7 @@ def test_final_row_count_matches_expected_acid_safety(tmp_path):
     errors: list[str] = []
 
     def worker(thread_id: int) -> None:
+        """Insert rows from one thread; used to verify the final total and per-thread data."""
         # Step 1: Validate input parameters, operational preconditions, and state
         try:
             # Execute guarded operations and establish recovery boundaries
@@ -253,6 +257,7 @@ def test_semaphore_gates_concurrent_access_to_pool_size(tmp_path):
     current_holders = [0]
 
     def holder() -> None:
+        """Hold a pooled connection briefly while tracking how many are in use at once."""
         # Step 1: Validate input parameters, operational preconditions, and state
         with pool.get_connection() as _conn:
             with hwm_lock:

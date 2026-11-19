@@ -17,7 +17,9 @@ from core.interaction_loop import strip_html_tags, matches_keyword, build_prompt
 from core.default_prompts import DEFAULT_SYSTEM_PROMPT
 
 class TestCodexIntegration(unittest.TestCase):
+    """Tests for the codex reference injection in core.interaction_loop: HTML stripping, keyword matching and prompt assembly."""
     def test_strip_html_tags(self):
+        """strip_html_tags removes scripts/styles and tags, keeps text and collapses whitespace."""
         # Step 1: Validate input parameters, operational preconditions, and state
         html_input = """
         <h2 style='color:#00C2FF;'>⚡ FastAPI</h2>
@@ -37,6 +39,7 @@ class TestCodexIntegration(unittest.TestCase):
         self.assertEqual(stripped, expected_output)
 
     def test_matches_keyword_word_boundaries(self):
+        """Keyword matching respects word boundaries: 'c++' and 'cpp' match, 'react' does not match 'reactive', and 'c' does not match C++, C# or the letter in other words."""
         # Test C++ matching
         self.assertTrue(matches_keyword("I write C++ code", "c++"))
         self.assertTrue(matches_keyword("cpp developer needed", "cpp"))
@@ -52,6 +55,7 @@ class TestCodexIntegration(unittest.TestCase):
         self.assertFalse(matches_keyword("A cat is here.", "c"))
 
     def test_build_prompt_codex_injection(self):
+        """When the user message mentions a language the matching codex page is injected under 'Codex Reference Context:' and absent otherwise."""
         # We need to make sure data/codex_library exists for this test,
         # or we can mock/write temp files if we want, but since they are seeded,
         # let's just make sure there is a mocked/real file on disk.
@@ -96,6 +100,7 @@ class TestCodexIntegration(unittest.TestCase):
                     f.write(original_content)
 
     def test_build_prompt_limits(self):
+        """At most two codex sheets are injected even if more keywords match (bounds prompt size)."""
         # Verify safety limit is enforced (at most 2 sheets)
         os.makedirs("data/codex_library", exist_ok=True)
         files_to_seed = ["Python.html", "React.html", "Rust.html"]
@@ -138,6 +143,7 @@ class TestCodexIntegration(unittest.TestCase):
                     f.write(content)
 
     def test_build_prompt_greetings_and_reasoning(self):
+        """Greetings get a clean prompt with no pre-seeded <think>, while reasoning questions get the <think> seed and the step-by-step instruction."""
         # 1. Test greeting input: should NOT pre-seed <think> and should use clean system prompt
         greeting_history = [{"role": "user", "content": "hello there"}]
         prompt_greeting = build_prompt(DEFAULT_SYSTEM_PROMPT, greeting_history)

@@ -11,6 +11,7 @@ import core.agentic_loop as agentic_loop
 
 
 def test_should_continue_stops_on_explicit_final_answer():
+    """The agentic loop stops when the model writes an explicit completion signal such as 'FINAL ANSWER:'."""
     # Step 1: Validate input parameters, operational preconditions, and state
     assert not agentic_loop.should_continue(
         1,
@@ -19,6 +20,7 @@ def test_should_continue_stops_on_explicit_final_answer():
 
 
 def test_should_continue_does_not_stop_on_ordinary_summary_phrase():
+    """Ordinary phrases like 'in summary' must not stop the loop; only the explicit signals do."""
     # Step 1: Validate input parameters, operational preconditions, and state
     assert agentic_loop.should_continue(
         1,

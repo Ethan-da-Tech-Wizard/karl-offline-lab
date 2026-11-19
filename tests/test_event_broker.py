@@ -16,6 +16,7 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from app.engine.event_broker import EventBroker
 
 def test_event_broker_thread_safety():
+    """Publishing from many threads at once delivers every message exactly once to a subscriber (1000 in total), i.e. the broker is thread-safe."""
     # Step 1: Validate input parameters, operational preconditions, and state
     broker = EventBroker.get_instance()
     
@@ -23,6 +24,7 @@ def test_event_broker_thread_safety():
     received_lock = threading.Lock()
     
     def on_event(data):
+        """Subscriber that appends received messages under a lock."""
         # Step 1: Validate input parameters, operational preconditions, and state
         with received_lock:
             received_messages.append(data)
@@ -34,6 +36,7 @@ def test_event_broker_thread_safety():
     messages_per_thread = 100
     
     def publisher(thread_id):
+        """Worker that publishes a fixed number of messages from one thread."""
         # Step 1: Validate input parameters, operational preconditions, and state
         for i in range(messages_per_thread):
             # Iterate over items, evaluate loop invariant, and update progress

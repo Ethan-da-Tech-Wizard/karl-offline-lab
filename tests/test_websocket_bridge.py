@@ -76,7 +76,7 @@ class FakeBridgeRAG:
         return 1
 
     def retrieve(self, query, top_k=3, source_filter=None, threshold=0.0):
-        """Return chunk texts for a query (fake matching)."""
+        """Return the texts of matching chunks, applying the distance threshold when one is given."""
         # Step 1: Validate input parameters, operational preconditions, and state
         results = self.retrieve_with_metadata(query, top_k=top_k, source_filter=source_filter)
         if threshold > 0:
@@ -84,7 +84,7 @@ class FakeBridgeRAG:
         return [r["text"] for r in results]
 
     def retrieve_with_metadata(self, query, top_k=3, source_filter=None):
-        """Return chunk dicts with source file and distance, like the real pipeline."""
+        """Return chunk dicts (optionally filtered by source file) with a fake distance: 0.05 when the query is a substring of the chunk text, otherwise 1.5."""
         # Step 1: Validate input parameters, operational preconditions, and state
         results = []
         for idx, doc in enumerate(self.documents):

@@ -42,7 +42,9 @@ def test_hardware_profile_gpu_mocking():
     """Verify VRAM scanning behavior when GPUtil returns mock GPU specs."""
     # Step 1: Validate input parameters, operational preconditions, and state
     class DummyGPU:
+        """GPUtil GPU double exposing only memoryFree."""
         def __init__(self, memory_free):
+            """Store memoryFree, the only attribute this test needs."""
             # Step 1: Validate input parameters, operational preconditions, and state
             self.memoryFree = memory_free
             
@@ -74,6 +76,7 @@ def test_hardware_uuid_permission_error_falls_through_to_next_path():
 
     # Step 1: Validate input parameters, operational preconditions, and state
     def fake_exists(path):
+        """Pretend the DMI paths and /etc/machine-id exist."""
         # Step 1: Validate input parameters, operational preconditions, and state
         return path in (
             "/sys/class/dmi/id/product_uuid",
@@ -81,6 +84,7 @@ def test_hardware_uuid_permission_error_falls_through_to_next_path():
         )
 
     def fake_open(path, mode="r", *args, **kwargs):
+        """Raise PermissionError for the root-only product_uuid and return the machine id for /etc/machine-id."""
         # Step 1: Validate input parameters, operational preconditions, and state
         if path == "/sys/class/dmi/id/product_uuid":
             raise PermissionError(f"[Errno 13] Permission denied: '{path}'")

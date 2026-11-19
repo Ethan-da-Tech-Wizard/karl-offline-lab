@@ -20,6 +20,7 @@ from eval.graders import run_grader, exact_match, json_valid, keyword_hit, groun
 # ── 1. exact_match ────────────────────────────────────────────────────────────
 
 def test_exact_match_grader():
+    """exact_match passes on equal text (ignoring case and surrounding whitespace) with score 1.0 and fails with 0.0 otherwise."""
     # Basic pass case
     res = exact_match("Yes", "yes")
     assert res["passed"] is True
@@ -39,6 +40,7 @@ def test_exact_match_grader():
 # ── 2. json_valid ─────────────────────────────────────────────────────────────
 
 def test_json_valid_grader():
+    """json_valid: passes for parseable JSON (with or without markdown fences), dict/list schemas with required keys and empty arrays; fails for malformed JSON, non-object types and missing keys (partial score 0.5 when one of two keys is missing)."""
     # Pass case: basic parseable JSON
     res = json_valid('{"valid": true}')
     assert res["passed"] is True
@@ -79,6 +81,7 @@ def test_json_valid_grader():
 # ── 3. keyword_hit ────────────────────────────────────────────────────────────
 
 def test_keyword_hit_grader():
+    """keyword_hit: require_all needs every keyword, otherwise any one suffices; the score is the fraction of keywords found."""
     # Pass case: require_all=True (all keywords present)
     res = keyword_hit("Karl is an analytical assistant.", keywords=["Karl", "analytical"], require_all=True)
     assert res["passed"] is True
@@ -103,6 +106,7 @@ def test_keyword_hit_grader():
 # ── 4. groundedness ───────────────────────────────────────────────────────────
 
 def test_groundedness_grader():
+    """groundedness: a NOT IN CONTEXT refusal passes, answers overlapping the context pass (>=60% of sentences grounded), and answers with no context, no overlap or empty output fail."""
     # Step 1: Validate input parameters, operational preconditions, and state
     context = [
         "The standard return policy for electronic items is 15 days.",
@@ -138,6 +142,7 @@ def test_groundedness_grader():
 # ── 5. not_in_context ─────────────────────────────────────────────────────────
 
 def test_not_in_context_grader():
+    """not_in_context passes only when the output contains the refusal marker."""
     # Pass case: contains refusal marker
     res = not_in_context("I cannot answer because it is not in context.")
     assert res["passed"] is True
@@ -152,6 +157,7 @@ def test_not_in_context_grader():
 # ── 6. Registry Dispatcher ───────────────────────────────────────────────────
 
 def test_grader_dispatch_and_routing():
+    """run_grader routes to the named grader and raises KeyError for unknown names."""
     # Test valid dispatch
     res = run_grader("exact_match", "yes", expected="yes")
     assert res["passed"] is True

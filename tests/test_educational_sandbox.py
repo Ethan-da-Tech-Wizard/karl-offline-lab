@@ -20,6 +20,7 @@ from app.utils.custom_embeddings import TfidfEmbedder
 from app.engine.mini_transformer import CharTokenizer, MiniGPT
 
 def test_tfidf_embedder():
+    """The teaching TF-IDF embedder: tokenizing drops stop words ('the'), fitting builds a vocabulary and document count, transform yields an L2-normalised vector (norm 1.0), and cosine similarity is 1.0 for identical text and lower for different text."""
     # Step 1: Validate input parameters, operational preconditions, and state
     embedder = TfidfEmbedder()
     
@@ -59,6 +60,7 @@ def test_tfidf_embedder():
 
 
 def test_char_tokenizer():
+    """The character tokenizer builds a vocabulary of the distinct characters, round-trips 'hello', and maps unknown characters to index 0."""
     # Step 1: Validate input parameters, operational preconditions, and state
     tokenizer = CharTokenizer()
     text = "hello world"
@@ -77,6 +79,7 @@ def test_char_tokenizer():
 
 
 def test_mini_gpt():
+    """The tiny GPT model returns logits of shape (batch, seq, vocab) with no loss when no targets are given, a tensor loss when targets are given, and generates the requested number of tokens."""
     # Step 1: Validate input parameters, operational preconditions, and state
     vocab_size = 10
     n_embd = 32

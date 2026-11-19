@@ -17,6 +17,7 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from app.utils.trace_logger import TraceLogger
 
 def test_log_retention_policy_enforcement():
+    """TraceLogger retention: log files older than the age limit (15 days) are deleted, and among newer files the oldest are deleted until the total size is under the quota (100 KB), leaving 2 of the 4 newer files."""
     # 1. Create a temporary folder for mock logs
     temp_dir = tempfile.mkdtemp()
     

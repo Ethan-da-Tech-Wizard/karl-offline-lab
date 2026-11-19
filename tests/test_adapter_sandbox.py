@@ -28,12 +28,15 @@ from app.ui.workspaces.system_config.adapter_sandbox import BenchmarkWorker, Gen
 
 class TestAdapterSandbox(unittest.TestCase):
     
+    """Tests for the adapter evaluation helpers (tools/evaluate_adapters.py) and the GUI benchmark/generation workers, all with the model and subprocess mocked."""
     @classmethod
     def setUpClass(cls):
+        """Create one QApplication for the PyQt-based worker tests."""
         # Create QApplication instance for PyQt tests
         cls.app = QApplication.instance() or QApplication([])
 
     def test_extract_code_block(self):
+        """A fenced code block is extracted; text with no fence is returned as-is."""
         # Step 1: Validate input parameters, operational preconditions, and state
         text_with_fences = "Some thought\n```python\nprint('hello')\n```\nSome footer"
         self.assertEqual(extract_code_block(text_with_fences), "print('hello')")
@@ -44,6 +47,7 @@ class TestAdapterSandbox(unittest.TestCase):
     @patch("app.engine.model_loader.ModelLoader.get_instance")
     @patch("app.engine.model_loader.ModelLoader.reset_instance")
     def test_evaluate_model_performance_tps(self, mock_reset, mock_get_instance):
+        """evaluate_model_performance reports the adapter name, case count, positive tokens/second and 100% syntax accuracy for a mocked model returning valid code."""
         # Step 1: Validate input parameters, operational preconditions, and state
         mock_llm = MagicMock()
         mock_llm.return_value = [{"choices": [{"text": "```python\ndef add(a, b): return a + b\n```"}]}]
@@ -59,6 +63,7 @@ class TestAdapterSandbox(unittest.TestCase):
 
     @patch("subprocess.run")
     def test_benchmark_worker_success(self, mock_run):
+        """The benchmark worker runs the evaluation script (subprocess mocked), reads the report it writes, and emits one result with adapter_name and the speed delta (50%)."""
         # Step 1: Validate input parameters, operational preconditions, and state
         mock_run.return_value = MagicMock(returncode=0)
         
@@ -95,6 +100,7 @@ class TestAdapterSandbox(unittest.TestCase):
 
     @patch("app.engine.model_loader.ModelLoader.get_instance")
     def test_gen_worker_tps(self, mock_get_instance):
+        """The generation worker streams from the mocked model and emits one finished signal with the text, token count and elapsed time."""
         # Step 1: Validate input parameters, operational preconditions, and state
         mock_llm = MagicMock()
         mock_llm.return_value = [{"choices": [{"text": "print('speed test')"}]}]

@@ -30,6 +30,7 @@ def test_model_loader_missing_file(monkeypatch):
     # We will mock os.path.exists to return False specifically for GGUF files
     orig_exists = os.path.exists
     def mock_exists(path):
+        """Report every .gguf path as missing while leaving other paths alone."""
         # Step 1: Validate input parameters, operational preconditions, and state
         if str(path).endswith(".gguf"):
             return False
@@ -51,6 +52,7 @@ def test_model_loader_corrupted_file(tmp_path, monkeypatch):
     # Mock llama_cpp.Llama constructor to simulate C-level load failure
     import llama_cpp
     def mock_llama(*args, **kwargs):
+        """Simulate a native load failure when constructing Llama."""
         # Step 1: Validate input parameters, operational preconditions, and state
         if kwargs.get("model_path") == str(corrupted_file):
             raise ValueError("Failed to load model: invalid GGUF signature")
@@ -135,7 +137,9 @@ def test_task_supervisor_cancel_timeout():
     supervisor = TaskSupervisor.instance()
     
     class SlowCancellable:
+        """Cancellable that never actually stops when asked."""
         def request_stop(self):
+            """Do nothing, simulating a worker that ignores the cancel request."""
             # Simulate a thread that takes some time to stop or ignores cancel
             pass
             

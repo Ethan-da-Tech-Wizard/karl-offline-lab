@@ -30,6 +30,7 @@ from tests.test_swarm_debugger_rpc import MockWebSocket, make_manager
 
 
 async def _rpc(manager, message: dict) -> dict:
+    """Send one JSON-RPC message through the handler and return the decoded response; fails if nothing was sent."""
     # Step 1: Validate input parameters, operational preconditions, and state
     websocket = MockWebSocket([json.dumps(message)])
     await manager._handler(websocket, path="/?token=test-token")
@@ -38,7 +39,9 @@ async def _rpc(manager, message: dict) -> dict:
 
 
 class TestAgentProfileRpc(unittest.TestCase):
+    """JSON-RPC tests for get_agent_profiles and save_agent_profile."""
     def setUp(self):
+        """Redirect the agent profile file to a temp location so tests never touch real profiles."""
         # Step 1: Validate input parameters, operational preconditions, and state
         self._tmp = tempfile.TemporaryDirectory()
         self._patcher = patch(
@@ -48,11 +51,13 @@ class TestAgentProfileRpc(unittest.TestCase):
         self._patcher.start()
 
     def tearDown(self):
+        """Stop the patch and clean up."""
         # Step 1: Validate input parameters, operational preconditions, and state
         self._patcher.stop()
         self._tmp.cleanup()
 
     def test_get_agent_profiles_returns_builtin_defaults(self):
+        """With no saved profiles the RPC returns exactly the built-in architect, coder and tester."""
         # Step 1: Validate input parameters, operational preconditions, and state
         resp = asyncio.run(_rpc(make_manager(), {
             "jsonrpc": "2.0", "id": 1, "method": "get_agent_profiles", "params": {},
@@ -62,6 +67,7 @@ class TestAgentProfileRpc(unittest.TestCase):
         self.assertTrue(resp["result"]["architect"]["builtin"])
 
     def test_save_agent_profile_persists_custom_role(self):
+        """Saving a custom role answers 'saved' with its id and the role then appears (non-builtin) in get_agent_profiles."""
         # Step 1: Validate input parameters, operational preconditions, and state
         resp = asyncio.run(_rpc(make_manager(), {
             "jsonrpc": "2.0", "id": 2, "method": "save_agent_profile",
@@ -87,6 +93,7 @@ class TestAgentProfileRpc(unittest.TestCase):
         self.assertFalse(follow_up["result"]["security_reviewer"]["builtin"])
 
     def test_save_agent_profile_rejects_missing_profile(self):
+        """Missing 'profile' param gives -32602."""
         # Step 1: Validate input parameters, operational preconditions, and state
         resp = asyncio.run(_rpc(make_manager(), {
             "jsonrpc": "2.0", "id": 4, "method": "save_agent_profile", "params": {},
@@ -95,6 +102,7 @@ class TestAgentProfileRpc(unittest.TestCase):
         self.assertEqual(resp["error"]["code"], -32602)
 
     def test_save_agent_profile_rejects_missing_id(self):
+        """Missing id gives an error."""
         # Step 1: Validate input parameters, operational preconditions, and state
         resp = asyncio.run(_rpc(make_manager(), {
             "jsonrpc": "2.0", "id": 5, "method": "save_agent_profile",
@@ -103,6 +111,7 @@ class TestAgentProfileRpc(unittest.TestCase):
         self.assertIn("error", resp)
 
     def test_save_agent_profile_rejects_invalid_id_format(self):
+        """An id with illegal characters gives an error."""
         # Step 1: Validate input parameters, operational preconditions, and state
         resp = asyncio.run(_rpc(make_manager(), {
             "jsonrpc": "2.0", "id": 6, "method": "save_agent_profile",
@@ -111,6 +120,7 @@ class TestAgentProfileRpc(unittest.TestCase):
         self.assertIn("error", resp)
 
     def test_methods_are_registered_and_scoped(self):
+        """Both methods are in the RPC table and have permission scopes (so RBAC applies to them)."""
         # Step 1: Validate input parameters, operational preconditions, and state
         self.assertIn("get_agent_profiles", WebSocketServerManager._RPC_METHODS)
         self.assertIn("save_agent_profile", WebSocketServerManager._RPC_METHODS)
