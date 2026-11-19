@@ -2,9 +2,9 @@
 # Program: memory_manager.py
 # Programmer: Ethan-da-Tech-Wizard
 # Last Modified: November 18, 2026
-# Purpose: Host RAM and VRAM resource monitor.
-#          Detects low-memory conditions and triggers garbage collection to
-#          prevent out-of-memory crashes.
+# Purpose: Crash-recovery store for the active chat workspace and swarm history.
+#          Writes autosave checkpoints through a SessionRepository (it does not
+#          monitor RAM or VRAM).
 # ==============================================================================
 
 """Crash-recovery checkpointing of the active chat workspace and swarm history.

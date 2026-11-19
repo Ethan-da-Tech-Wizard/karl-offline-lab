@@ -2,9 +2,9 @@
 # Program: topic_graph.py
 # Programmer: Ethan-da-Tech-Wizard
 # Last Modified: November 18, 2026
-# Purpose: Conceptual graph model connecting related knowledge base documents.
-#          Constructs semantic links between code entities, APIs, and
-#          architectural topics.
+# Purpose: Small fixed topic tree (math / coding, five leaf topics) used to
+#          balance which training problem the self-improvement flywheel
+#          generates next. It is a frequency sampler, not a knowledge graph.
 # ==============================================================================
 
 """

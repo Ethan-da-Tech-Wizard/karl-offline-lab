@@ -2,9 +2,9 @@
 # Program: custom_embeddings.py
 # Programmer: Ethan-da-Tech-Wizard
 # Last Modified: November 18, 2026
-# Purpose: Local vector embedding generator utilizing sentence-transformers.
-#          Transforms text chunks into dense vector representations for offline
-#          semantic search.
+# Purpose: Pure-Python/NumPy TF-IDF vectorizer (no sentence-transformers or
+#          other model download). Turns text into L2-normalised sparse-style
+#          vectors for transparent keyword search and teaching demos.
 # ==============================================================================
 
 """
