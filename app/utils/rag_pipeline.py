@@ -907,6 +907,20 @@ class RAGPipeline:
         """Always returns List[dict] with full attribution metadata."""
         return self.retrieve(query, top_k, source_filter, threshold, with_attribution=True, mode=mode)
 
+    def _sparse_model(self):
+        """Return a TfidfEmbedder fitted on the current corpus, refitting only when the corpus text changed."""
+        # The key covers every chunk's text in order; add/remove/rebuild all change it, plain re-reads do not.
+        key = hash(tuple(doc["text"] for doc in self.documents))
+        cached = getattr(self, "_sparse_cache", None)
+        if cached is not None and cached[0] == key:
+            return cached[1]
+        from app.utils.custom_embeddings import TfidfEmbedder
+        tfidf = TfidfEmbedder()
+        tfidf.fit([doc["text"] for doc in self.documents])
+        # Assigned as one tuple so a concurrent reader never sees a key from one build and a vectorizer from another.
+        self._sparse_cache = (key, tfidf)
+        return tfidf
+
     def retrieve_sparse(
         self,
         query: str,
@@ -917,14 +931,11 @@ class RAGPipeline:
         if not self.documents:
             return []
 
-        # The vectorizer is re-fitted on every call, which is simple but costs time proportional to the whole corpus.
-        # Fit TF-IDF on current documents
-        from app.utils.custom_embeddings import TfidfEmbedder
-        tfidf = TfidfEmbedder()
-        texts = [doc["text"] for doc in self.documents]
-        tfidf.fit(texts)
+        # Fitting scales with the whole corpus, so the fitted vectorizer is cached and refitted only when
+        # the corpus text changes.
+        tfidf = self._sparse_model()
 
-        # Transform query and docs
+        # Document vectors are still computed per call: caching dense (docs x vocab) matrices would cost far more memory.
         q_vec = tfidf.transform(query)
         if len(q_vec) == 0 or np.linalg.norm(q_vec) == 0.0:
             return []

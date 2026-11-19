@@ -30,3 +30,23 @@ def test_chunk_text_normal_overlap_unchanged():
     chunks = RAGPipeline.chunk_text(object(), text, chunk_size=4, overlap=2)
     assert chunks[0] == "w0 w1 w2 w3"
     assert chunks[1] == "w2 w3 w4 w5"
+
+
+def test_sparse_model_refits_only_when_corpus_changes():
+    """retrieve_sparse used to refit TF-IDF on every call; the fitted model is now cached by corpus content."""
+    fits = []
+
+    class FakeTfidf:
+        def fit(self, texts):
+            fits.append(list(texts))
+
+    fake_module = mock.MagicMock(TfidfEmbedder=FakeTfidf)
+    pipe = object.__new__(RAGPipeline)
+    pipe.documents = [{"text": "alpha beta"}, {"text": "gamma"}]
+    with mock.patch.dict(sys.modules, {"app.utils.custom_embeddings": fake_module}):
+        first = pipe._sparse_model()
+        assert pipe._sparse_model() is first
+        assert len(fits) == 1
+        pipe.documents.append({"text": "delta"})
+        assert pipe._sparse_model() is not first
+        assert len(fits) == 2
