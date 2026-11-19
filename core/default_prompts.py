@@ -48,6 +48,8 @@ KARL_IDENTITY = (
     "training, and evaluating LLMs. Always respond in English."
 )
 
+# Small local models tend to answer the first question in a long history again; this line
+# anchors them to the newest message.
 RECENCY_INSTRUCTION = (
     "Treat the latest user message as the active request; "
     "use earlier turns only as context when relevant."
@@ -68,6 +70,9 @@ REASONING_INSTRUCTION = (
     "and double-check your derivations."
 )
 
+# The default is composed from the three parts above and compared as a whole string by
+# is_default(), so any edit to a part changes the default: add the previous composed text to
+# LEGACY_DEFAULT_SYSTEM_PROMPTS below when you change one.
 DEFAULT_SYSTEM_PROMPT = f"{KARL_IDENTITY} {RECENCY_INSTRUCTION} {REASONING_INSTRUCTION}"
 
 # Used when a greeting is detected on the base model — see
@@ -116,11 +121,14 @@ LEGACY_DEFAULT_SYSTEM_PROMPTS = frozenset({
 # keys without the underscore prefix.
 
 SYSTEM_PROMPT_PRESETS: dict[str, dict[str, Any]] = {
+    # Keys beginning with "_" are the built-ins the UI will not let a user delete or overwrite.
     "_karl_default": {
         "label": "Karl Default",
         "description": "Balanced reasoning assistant. Thinks before answering complex questions.",
         "prompt": DEFAULT_SYSTEM_PROMPT,
     },
+    # Presets below reuse KARL_IDENTITY first so every mode keeps the same identity and the
+    # "respond in English" rule; only the behaviour paragraph differs per preset.
     "_concise": {
         "label": "Concise",
         "description": "Short, direct answers. No verbose preamble or over-explanation.",
@@ -165,6 +173,9 @@ SYSTEM_PROMPT_PRESETS: dict[str, dict[str, Any]] = {
             "Think step-by-step inside <think>...</think> blocks for all non-trivial questions."
         ),
     },
+    # The engineering/training presets repeat the conditional <think> sentence verbatim instead of
+    # importing REASONING_INSTRUCTION, because their own text above it already sets a mode and the
+    # shared sentence would read as a second, conflicting persona.
     "_swarm_engineer": {
         "label": "Swarm Engineer",
         "description": "Multi-agent codebase engineering: minimal diffs, explicit verification, dependency-aware.",
@@ -193,6 +204,8 @@ SYSTEM_PROMPT_PRESETS: dict[str, dict[str, Any]] = {
             "step-by-step inside <think>...</think> blocks before giving your final answer."
         ),
     },
+    # The two "bounded reasoning" presets exist because reasoning models can spend the whole
+    # token budget inside <think> and never emit an answer; they trade depth for always finishing.
     "_efficient_reasoning": {
         "label": "Efficient Reasoning",
         "description": (
@@ -210,6 +223,8 @@ SYSTEM_PROMPT_PRESETS: dict[str, dict[str, Any]] = {
             "A short answer is always better than no answer."
         ),
     },
+    # Tuned for the bundled 1.5B tier specifically; larger models do not need this and lose
+    # accuracy if forced to skip reasoning.
     "_small_model_safe": {
         "label": "Small Model Safe (1.5B)",
         "description": (
@@ -240,6 +255,8 @@ def load_prompt_presets() -> dict[str, dict[str, Any]]:
     dict; never raises — corrupt or missing files fall back to built-ins only.
     """
     # Step 1: Validate input parameters, operational preconditions, and state
+    # Shallow copy: the nested preset dicts are shared with the module constant, so callers
+    # must treat the returned entries as read-only.
     merged: dict[str, dict[str, Any]] = dict(SYSTEM_PROMPT_PRESETS)
     if not os.path.exists(SYSTEM_PROMPTS_PATH):
         return merged
@@ -257,6 +274,8 @@ def load_prompt_presets() -> dict[str, dict[str, Any]]:
             if not entry.get("label") or not entry.get("prompt"):
                 continue
             # Never allow user data to shadow built-in keys
+            # Renamed (not dropped) so a user who hand-edited the JSON with a reserved key still sees
+            # their preset, just under a suffixed name.
             safe_key = key if not key.startswith("_") else key.lstrip("_") + "_user"
             merged[safe_key] = {
                 "label": str(entry["label"]),
@@ -317,6 +336,8 @@ def delete_user_preset(key: str) -> bool:
     """
     # Step 1: Validate input parameters, operational preconditions, and state
     if key.startswith("_"):
+        # Built-ins live in code, not in the JSON file, so there is nothing to delete; reporting
+        # success keeps UI delete buttons idempotent.
         return True  # silently ignore
     if not os.path.exists(SYSTEM_PROMPTS_PATH):
         return True
@@ -352,6 +373,8 @@ def delete_user_preset(key: str) -> bool:
 # Defined here so they can be edited in one place rather than inside
 # swarm_agents.py class bodies. swarm_agents.py imports these constants.
 
+# The architect must answer in JSON only because the planner json-parses the whole reply;
+# any introductory text would make that parse fail, hence the strict last sentence.
 SWARM_ARCHITECT_SYSTEM_PROMPT = (
     "You are an Architect Agent. Your job is to analyze the user's objective and "
     "propose a step-by-step implementation plan. You must inspect the codebase files "
@@ -373,6 +396,10 @@ SWARM_ARCHITECT_SYSTEM_PROMPT = (
     "Do not output any introductory or concluding text. Output ONLY the JSON."
 )
 
+# The coder replies with <reasoning> then a write_file <tool_call> holding the COMPLETE file
+# (not a patch). Reasoning first is enforced by parse_reasoning_and_tool in swarm_agents.py.
+# Note the example uses double quotes around the tool name; keep the parsers that read this
+# output quote-agnostic.
 SWARM_CODER_SYSTEM_PROMPT = (
     "You are a Coder Agent. Your job is to modify a single file's contents "
     "based on the instructions provided. You will receive the current file contents, "
