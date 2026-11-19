@@ -1301,6 +1301,14 @@ class TextModel(ModelBase):
     hf_arch: str
 
     def __init__(self, *args, **kwargs):
+        """Normalise the loaded hparams so every text converter can read them uniformly.
+
+        On top of ModelBase's setup this resolves the HF architecture name, flattens a
+        nested `text_config` into the top-level hparams, derives `block_count` and the
+        GGUF tensor-name map for `model_arch`, and folds the many historical RoPE config
+        spellings (rope_theta / rope_scaling / rope_parameters, global vs local theta)
+        into a single `self.rope_parameters` dict that set_gguf_parameters reads later.
+        """
         super().__init__(*args, **kwargs)
         if not self.is_mistral_format:
             # HF architecture name (e.g. "LlamaForCausalLM"); Mistral-native checkpoints have none.
@@ -2888,6 +2896,8 @@ class LazyTorchTensor(gguf.LazyBase):
     def from_local_tensor(cls, t: gguf.utility.LocalTensor) -> Tensor:
         """Wrap a memory-mapped local safetensors tensor as a lazy tensor."""
         def load_tensor(tensor: gguf.utility.LocalTensor) -> Tensor:
+            # Runs only when the lazy graph is evaluated: mmap the raw bytes, reinterpret them
+            # with the torch dtype recorded in the safetensors header, then restore the shape.
             def byteswap_tensor(tensor: np.ndarray, dtype: type) -> np.ndarray:
                 # safetensors data is little-endian; byte-swap when running on a big-endian host.
                 if sys.byteorder == 'big':
@@ -2895,8 +2905,12 @@ class LazyTorchTensor(gguf.LazyBase):
                     tensor = tensor.view(dtype).byteswap(inplace=False)
                 return tensor
             dtype = cls._dtype_str_map[tensor.dtype]
+            # Byte-swapping needs a numpy dtype of the right item size (torch has no byteswap);
+            # bf16/fp8 map to same-width integer types since numpy lacks those formats.
             numpy_dtype = cls._dtype_byteswap_map[dtype]
             return torch.from_numpy(byteswap_tensor(tensor.mmap_bytes(), numpy_dtype)).view(dtype).reshape(tensor.shape)
+        # The meta tensor is built eagerly from header info only, so shape/dtype queries
+        # during conversion never touch the file; the data is read inside `func` later.
         dtype = cls._dtype_str_map[t.dtype]
         shape = t.shape
         lazy = cls(meta=cls.meta_with_dtype_and_shape(dtype, shape), args=(t,), func=lambda r: load_tensor(r))
@@ -2910,6 +2924,8 @@ class LazyTorchTensor(gguf.LazyBase):
                 # switch data back to big endian
                 tensor = tensor.view(dtype).byteswap(inplace=False)
             return tensor
+        # Remote tensors are fetched with HTTP range requests: r.data() performs the download
+        # only when the lazy graph is evaluated, so skipped tensors cost no bandwidth.
         dtype = cls._dtype_str_map[remote_tensor.dtype]
         numpy_dtype = cls._dtype_byteswap_map[dtype]
         shape = remote_tensor.shape
