@@ -13,7 +13,7 @@ for _mod in ("faiss", "numpy", "pymupdf", "fitz", "docx"):
     except ImportError:  # keep these tests runnable on machines without the ML stack
         sys.modules[_mod] = mock.MagicMock()
 
-from app.utils.rag_pipeline import RAGPipeline
+from app.utils.rag_pipeline import RAGPipeline  # noqa: E402 (must come after the sys.modules mocks above)
 
 
 def test_chunk_text_overlap_not_smaller_than_chunk_size_terminates():
