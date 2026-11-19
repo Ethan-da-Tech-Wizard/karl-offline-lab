@@ -29,6 +29,12 @@ Returns:
 
 from __future__ import annotations
 
+# Who calls this: main.py's `--diagnose` flag calls run_diagnostics() and exits with its return code, so the command can
+# be used in scripts and CI (exit 0 = ready, 1 = a critical problem). It reads only local state; it never loads a model or
+# opens a network connection except to test that one port can be bound.
+# Design: each check_* function returns a plain dict (JSON-serialisable) and never raises; _render() only formats those
+# dicts, so the same data feeds the terminal table and data/logs/diagnostics_report.json.
+# Tests: no dedicated test file exists yet; run `python main.py --diagnose` to exercise it.
 import importlib
 import importlib.metadata
 import json
@@ -66,6 +72,7 @@ def _dim(s: str) -> str:    return _c("2", s)
 
 # _green/_red/_yellow/_cyan/_bold/_dim are one-line wrappers around _c.
 # Pre-coloured status badges used by the table rows.
+# Badges are built once at import; their text is padded to the same width so table columns align.
 _OK   = _green("[OK  ]")
 _WARN = _yellow("[WARN]")
 _FAIL = _red("[FAIL]")
@@ -79,11 +86,14 @@ def _row(badge: str, label: str, detail: str = "") -> str:
 # ── 1. Dependency Audit ───────────────────────────────────────────────────────
 
 # Packages to audit: (display name, module to import, attribute holding its version).
+# Order is the display order in the Dependencies section. Import names differ from pip names (PyQt6.QtCore vs PyQt6).
 _PACKAGES: list[tuple[str, str, str]] = [
     # (display_name, importable_module,   version_attr_on_module)
     ("PyQt6",                "PyQt6.QtCore",          "PYQT_VERSION_STR"),
+    # llama_cpp is the inference engine; without it nothing can generate, hence it is critical below.
     ("llama_cpp",            "llama_cpp",             "__version__"),
     ("sentence_transformers","sentence_transformers",  "__version__"),
+    # faiss backs the RAG index; the app can still chat without it, so a missing faiss only warns.
     ("faiss",                "faiss",                 "__version__"),
 ]
 
@@ -108,6 +118,7 @@ def _metadata_version(name: str) -> str | None:
 def check_dependencies() -> dict[str, Any]:
     """Try importing each audited package; return per-package status and version or the import error.
     """
+    # Keyed by display name so the renderer can show the package name the user knows.
     results: dict[str, Any] = {}
     for display, module_path, attr in _PACKAGES:
         try:
@@ -115,6 +126,8 @@ def check_dependencies() -> dict[str, Any]:
             # Prefer the module's own version attribute, then package metadata, else 'unknown'.
             version = getattr(mod, attr, None) or _metadata_version(display) or "unknown"
             results[display] = {"status": "ok", "version": str(version)}
+
+        # Only ImportError is caught: a package that imports but crashes inside its own init is a real bug and should surface.
         except ImportError as exc:
             results[display] = {"status": "fail", "error": str(exc)}
     return results
@@ -125,6 +138,7 @@ def check_dependencies() -> dict[str, Any]:
 def _linux_cpu_flags() -> set[str]:
     """Return the CPU feature flags listed in /proc/cpuinfo (empty set if unavailable)."""
     try:
+        # Linux only; the first "flags" line is enough because all cores report the same feature set on common CPUs.
         with open("/proc/cpuinfo", "r", encoding="utf-8") as fh:
             for line in fh:
                 if line.startswith("flags"):
@@ -150,10 +164,14 @@ def check_hardware() -> dict[str, Any]:
     """Detect CPU SIMD support (AVX2/AVX-512/FMA) and GPU backends (CUDA, Metal) visible to PyTorch.
     """
     plat = platform.system()
+
+    # platform.system() gives "Linux", "Darwin" or "Windows".
     result: dict[str, Any] = {"platform": plat}
 
     # CPU instruction-set flags
     cpu_flags: dict[str, bool | None] = {}
+
+    # llama.cpp picks SIMD kernels at build time, so these flags tell the user whether a `-DGGML_NATIVE=ON` build is worthwhile.
     if plat == "Linux":
         flags = _linux_cpu_flags()
         # AVX-512 is a family of extensions; "avx512f" (foundation) is the one every AVX-512 CPU has,
@@ -182,11 +200,13 @@ def check_hardware() -> dict[str, Any]:
     gpu_info: dict[str, Any] = {}
     try:
         # Imported here, not at module level, so diagnostics still run when torch is not installed.
+        # torch is optional here: it is only used to ask about CUDA/Metal, and its absence is reported as torch_error, not a crash.
         import torch  # noqa: PLC0415
         cuda_ok = torch.cuda.is_available()
         gpu_info["torch_cuda"] = {
             "available":      cuda_ok,
             "device":         torch.cuda.get_device_name(0) if cuda_ok else None,
+            # Reports the CUDA toolkit version torch was built against, not the NVIDIA driver version.
             "driver_version": torch.version.cuda if cuda_ok else None,
         }
         # Older torch builds have no backends.mps attribute at all, so probe for it before calling.
@@ -225,6 +245,7 @@ def _gguf_magic_ok(path: str) -> bool:
 def check_models() -> dict[str, Any]:
     """Inspect data/models/: list GGUF files with size and magic check, and confirm the active model exists.
     """
+    # Relative to the working directory: run diagnostics from the repository root.
     models_dir = "data/models"
     active_filename = _read_active_filename()
     result: dict[str, Any] = {
@@ -238,6 +259,7 @@ def check_models() -> dict[str, Any]:
         result["message"] = f"models directory not found: {models_dir}"
         return result
 
+    # Only the .gguf extension is considered; partial downloads (.part) are ignored.
     gguf_files = sorted(f for f in os.listdir(models_dir) if f.endswith(".gguf"))
 
     for filename in gguf_files:
@@ -254,6 +276,7 @@ def check_models() -> dict[str, Any]:
             "active":      filename == active_filename,
             "size_bytes":  size_bytes,
             "size_gb":     round(size_bytes / (1024 ** 3), 2),
+            # A truncated or HTML-error-page download fails the magic check even though its name ends in .gguf.
             "gguf_magic_ok": magic_ok,
             "status":      "ok" if magic_ok else "fail",
         })
@@ -261,6 +284,8 @@ def check_models() -> dict[str, Any]:
     if not gguf_files:
         result["status"]  = "warn"
         result["message"] = "no .gguf files found in data/models/"
+
+    # Critical: the app would try to load a model that is not on disk. No active model at all is only a warning above.
     elif active_filename and active_filename not in gguf_files:
         result["status"]  = "fail"
         result["message"] = f"active model not found: {active_filename}"
@@ -293,6 +318,7 @@ def _render(report: dict[str, Any]) -> bool:
     Print the colour-coded diagnostics table.
     Returns True if no *critical* check failed.
     """
+    # Two rule styles: a double-line bar frames the report, single lines separate sections; 52 columns fits narrow terminals.
     div = _cyan("─" * 52)
     header_bar = _bold(_cyan("═" * 52))
 
@@ -302,6 +328,7 @@ def _render(report: dict[str, Any]) -> bool:
     print(header_bar)
 
     # Only missing critical dependencies, a missing active model and corrupt GGUF files are critical.
+    # Strings like "dependency:llama_cpp" are printed in the summary and decide the return value.
     critical_failures: list[str] = []
 
     # ── Dependencies ─────────────────────────────────────────────────────────
@@ -312,6 +339,7 @@ def _render(report: dict[str, Any]) -> bool:
         if info["status"] == "ok":
             print(_row(_OK, name, _dim(info.get("version", ""))))
         else:
+            # Non-critical missing packages (faiss, sentence_transformers) produce a warning row but do not fail the run.
             is_critical = name in _CRITICAL_DEPS
             badge = _FAIL if is_critical else _WARN
             print(_row(badge, name, _red(info.get("error", "import failed"))))
@@ -323,6 +351,8 @@ def _render(report: dict[str, Any]) -> bool:
     print(_bold("  Hardware"))
     print(div)
     hw = report["checks"]["hardware"]
+
+    # Tri-state: True / False / None (unknown platform) maps to OK / WARN "not detected" / WARN "unsupported".
     for flag, present in hw.get("cpu_flags", {}).items():
         label = f"CPU {flag.upper()}"
         if present is None:
@@ -346,6 +376,8 @@ def _render(report: dict[str, Any]) -> bool:
             print(_row(_WARN, "CUDA", "not available"))
 
         metal = gpu.get("torch_metal", {})
+
+        # Nothing is printed for an unavailable Metal because it is expected on non-Apple machines.
         if metal.get("available"):
             print(_row(_OK, "Metal (Apple Silicon)", ""))
 
@@ -360,6 +392,7 @@ def _render(report: dict[str, Any]) -> bool:
     elif mc["status"] == "warn":
         print(_row(_WARN, "models", _yellow(mc.get("message", ""))))
     else:
+        # Empty means the directory exists but has no models: a warning, not a failure.
         files = mc.get("files", [])
         if not files:
             print(_row(_WARN, "models", "no .gguf files found"))
@@ -372,6 +405,8 @@ def _render(report: dict[str, Any]) -> bool:
                 print(_row(_OK, label, _dim(detail)))
             else:
                 print(_row(_FAIL, label, _red(f"{detail}  — GGUF magic invalid (corrupt?)")))
+
+                # Every corrupt file fails the run, even if it is not the active one, so the user cleans up broken downloads.
                 critical_failures.append(f"model:{f['filename']}:corrupt")
 
     # ── Network ──────────────────────────────────────────────────────────────
@@ -397,6 +432,7 @@ def _render(report: dict[str, Any]) -> bool:
     print(header_bar)
     print()
 
+    # True means pass; run_diagnostics converts it to exit code 0.
     return not critical_failures
 
 
@@ -407,6 +443,7 @@ def run_diagnostics() -> int:
     Run all checks, print the terminal table, and write the JSON report.
     Returns 0 on success, 1 on critical failure.
     """
+    # UTC so reports from different machines compare cleanly.
     ts = datetime.now(timezone.utc).isoformat()
 
     report: dict[str, Any] = {
