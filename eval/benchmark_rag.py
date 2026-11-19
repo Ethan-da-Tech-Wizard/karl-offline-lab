@@ -29,6 +29,7 @@ import collections
 from dataclasses import dataclass
 import numpy as np
 
+# Make 'app' and 'core' importable when run as a script.
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from app.utils.rag_pipeline import RAGPipeline
@@ -90,6 +91,8 @@ def compute_bleu(reference, hypothesis, n_max=2):
             precision = 0.0
         precisions.append(precision)
     
+    # Penalise hypotheses shorter than the reference so a one-word answer cannot score a perfect
+    # precision.
     # Brevity Penalty (BP)
     # BP = 1 if c > r else e^(1 - r/c)
     if c > r:
@@ -149,6 +152,8 @@ def compute_rouge_l(reference, hypothesis, beta=1.0):
     if n == 0 or m == 0:
         return {"precision": 0.0, "recall": 0.0, "f1": 0.0}
     
+    # Classic O(n*m) table; dp[i][j] is the LCS length of the first i reference and j hypothesis
+    # tokens.
     # Dynamic programming for LCS length
     dp = [[0] * (m + 1) for _ in range(n + 1)]
     for i in range(1, n + 1):
@@ -177,6 +182,8 @@ def compute_rouge_l(reference, hypothesis, beta=1.0):
     return {"precision": precision, "recall": recall, "f1": f1}
 
 
+# Fixed four-document corpus (finance, returns policy, company, medical). Query expectations below
+# refer to CHUNK INDEXES into this list, so do not reorder it.
 # ── Synthetic benchmark corpus ────────────────────────────────────────────────
 
 CORPUS = [
@@ -194,6 +201,7 @@ CORPUS = [
     ("doc_d", "Patient was discharged April 5 with follow-up scheduled in two weeks."),
 ]
 
+# (query, expected chunk indexes). Query 1 deliberately has two relevant chunks.
 BENCHMARK_QUERIES = [
     ("What was Q3 2025 revenue?",                  [0, 1]),
     ("What is the return window for electronics?",  [4]),
@@ -208,6 +216,7 @@ BENCHMARK_QUERIES = [
 
 @dataclass
 class QueryResult:
+    """Retrieval outcome for one benchmark query: hit@1/@3/@k flags, reciprocal rank and wall-clock latency."""
     query: str
     hit_at_1: bool
     hit_at_3: bool
@@ -217,6 +226,7 @@ class QueryResult:
 
 
 def run_benchmark(top_k: int = 3, contextual_headers: bool = False) -> list[QueryResult]:
+    """Build a throwaway in-memory RAG index over the synthetic CORPUS and measure retrieval quality for each BENCHMARK_QUERIES entry. Returns a list of QueryResult."""
     # Step 1: Validate input parameters, operational preconditions, and state
     print(f"\n{'─'*60}")
     print(f"  Karl RAG Retrieval Benchmark")
@@ -224,12 +234,15 @@ def run_benchmark(top_k: int = 3, contextual_headers: bool = False) -> list[Quer
     print(f"{'─'*60}")
 
     rag = RAGPipeline(contextual_headers=contextual_headers)
+    # Clear any persisted index so the benchmark only sees its own synthetic data.
     rag.index.reset()
     rag.documents = []
 
     print(f"\n  Ingesting {len(CORPUS)} synthetic chunks...")
     for source, text in CORPUS:
         # Iterate over items, evaluate loop invariant, and update progress
+        # Bypass the file-ingestion path and add vectors directly, so chunk ids equal corpus
+        # positions.
         vec = rag.encoder.encode([text]).astype("float32")
         rag.index.add(vec)
         rag.documents.append({
@@ -261,6 +274,7 @@ def run_benchmark(top_k: int = 3, contextual_headers: bool = False) -> list[Quer
 
 
 def print_results(results: list[QueryResult], top_k: int):
+    """Print the per-query table and aggregate hit rates, MRR and mean latency; returns the four aggregate metrics for --compare."""
     # Step 1: Validate input parameters, operational preconditions, and state
     bar = "─" * 60
     print(f"\n  Per-query results (top_k={top_k}):\n")
@@ -298,6 +312,7 @@ def print_results(results: list[QueryResult], top_k: int):
 
 
 def calculate_metrics(retrieved_ids: list[int], expected_ids: list[int], top_k: int) -> dict:
+    """Retrieval metrics for one query: hit@1/@3/@k against the expected chunk ids and the reciprocal rank of the first relevant hit within top_k."""
     # Step 1: Validate input parameters, operational preconditions, and state
     expected_set = set(expected_ids)
     hit_at_1 = bool(retrieved_ids[:1] and retrieved_ids[0] in expected_set)
@@ -320,6 +335,7 @@ def calculate_metrics(retrieved_ids: list[int], expected_ids: list[int], top_k: 
 
 
 def run_code_review_benchmark(top_k: int = 3, output_path: str = "data/rag_benchmark_results.json"):
+    """Benchmark dense, sparse and hybrid retrieval over the code_review dataset (case i's own context is the only relevant chunk), generate an answer per mode with the local LLM, and score it with BLEU/ROUGE against the dataset's expected text. Writes a summary JSON plus a *_detailed.json with every query. Needs a loaded model."""
     # Step 1: Validate input parameters, operational preconditions, and state
     dataset_path = "eval/datasets/code_review.jsonl"
     if not os.path.exists(dataset_path):
@@ -374,6 +390,7 @@ def run_code_review_benchmark(top_k: int = 3, output_path: str = "data/rag_bench
         
     print(f"  Index size: {rag.index.ntotal} vectors\n")
     
+    # Compare the three retrieval strategies on identical cases.
     modes = ["dense", "sparse", "hybrid"]
     results_by_mode = {mode: [] for mode in modes}
     query_details = []
@@ -381,6 +398,7 @@ def run_code_review_benchmark(top_k: int = 3, output_path: str = "data/rag_bench
     for i, case in enumerate(cases):
         # Iterate over items, evaluate loop invariant, and update progress
         query_text = case["prompt"]
+        # Each case's own context was ingested at index i, so that is the single relevant chunk.
         expected_ids = [i]
         reference_answer = str(case.get("expected", ""))
         
@@ -414,6 +432,7 @@ def run_code_review_benchmark(top_k: int = 3, output_path: str = "data/rag_bench
                 [{"role": "user", "content": query_text}]
             )
             
+            # Greedy decoding so BLEU/ROUGE differences reflect retrieval, not sampling noise.
             # Inference (Temperature 0.0 for deterministic benchmark results)
             res = llm(prompt, max_tokens=256, temperature=0.0, stop=["<|im_end|>", "User:"])
             raw_text = res["choices"][0]["text"]
@@ -445,6 +464,7 @@ def run_code_review_benchmark(top_k: int = 3, output_path: str = "data/rag_bench
         
         query_details.append(case_info)
         
+    # Mean of each metric across cases, per retrieval mode.
     # Aggregate metrics using NumPy
     summary = {}
     for mode in modes:
@@ -476,6 +496,7 @@ def run_code_review_benchmark(top_k: int = 3, output_path: str = "data/rag_bench
     
     # Save to JSON
     os.makedirs(os.path.dirname(output_path), exist_ok=True)
+    # (Unused alias kept from earlier versions; the file written below is the summary dict itself.)
     output_data = summary # Request specified matching this schema
     
     # Also save full details for audit, but wrap the summary as the root keys
@@ -496,6 +517,7 @@ def run_code_review_benchmark(top_k: int = 3, output_path: str = "data/rag_bench
 
 
 def main():
+    """CLI entry: --compare (headers vs no headers), --synthetic (original synthetic benchmark) or, by default, the code-review benchmark."""
     # Step 1: Validate input parameters, operational preconditions, and state
     import argparse
     p = argparse.ArgumentParser(description="Karl RAG retrieval benchmark")

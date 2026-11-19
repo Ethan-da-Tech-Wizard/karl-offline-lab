@@ -26,12 +26,15 @@ import sys
 import textwrap
 from pathlib import Path
 
+# Repo root; ensures 'core' is importable and lets file paths be stored relative to it.
 ROOT = Path(__file__).resolve().parents[1]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
 from core.default_prompts import SWARM_CODER_SYSTEM_PROMPT
 
+# Source directories scraped by default. Tests are excluded through IGNORED_DIR_NAMES so the model
+# learns from implementation code.
 DEFAULT_ROOTS = ["app", "core", "eval"]
 DEFAULT_OUTPUT = ROOT / "data" / "training" / "code" / "synthetic_code_sft.jsonl"
 IGNORED_DIR_NAMES = {".git", "venv", ".venv", "__pycache__", "test", "tests"}
@@ -44,6 +47,7 @@ class DefinitionVisitor(ast.NodeVisitor):
     """
 
     def __init__(self, source: str, filepath: str):
+        """Keep the source lines (for slicing out each definition's text) and the file path recorded in each entry."""
         # Step 1: Validate input parameters, operational preconditions, and state
         self.lines = source.splitlines()
         self.filepath = filepath
@@ -51,6 +55,7 @@ class DefinitionVisitor(ast.NodeVisitor):
         self._class_stack: list[str] = []
 
     def visit_ClassDef(self, node: ast.ClassDef) -> None:
+        """Record the class itself, then record its direct methods only (nested classes are not descended into)."""
         # Step 1: Validate input parameters, operational preconditions, and state
         self.definitions.append(self._build_entry(node, kind="class", qualname=node.name))
         self._class_stack.append(node.name)
@@ -61,20 +66,24 @@ class DefinitionVisitor(ast.NodeVisitor):
         self._class_stack.pop()
 
     def visit_FunctionDef(self, node: ast.FunctionDef) -> None:
+        """Record a module-level function."""
         # Step 1: Validate input parameters, operational preconditions, and state
         self._record_function(node)
 
     def visit_AsyncFunctionDef(self, node: ast.AsyncFunctionDef) -> None:
+        """Record a module-level async function."""
         # Step 1: Validate input parameters, operational preconditions, and state
         self._record_function(node)
 
     def _record_function(self, node: ast.FunctionDef | ast.AsyncFunctionDef) -> None:
+        """Add a function/method entry; its qualname is prefixed with the enclosing class name when inside a class."""
         # Step 1: Validate input parameters, operational preconditions, and state
         qualname = ".".join(self._class_stack + [node.name])
         kind = "method" if self._class_stack else "function"
         self.definitions.append(self._build_entry(node, kind=kind, qualname=qualname))
 
     def _build_entry(self, node: ast.AST, kind: str, qualname: str) -> dict:
+        """Build the metadata dict for one definition: docstring, formatted args, return annotation, line span (including decorators) and its dedented source text."""
         # Step 1: Validate input parameters, operational preconditions, and state
         docstring = ast.get_docstring(node) or ""
         args = self._format_args(node) if kind != "class" else ""
@@ -82,6 +91,7 @@ class DefinitionVisitor(ast.NodeVisitor):
         if kind != "class" and getattr(node, "returns", None) is not None:
             returns = ast.unparse(node.returns)
 
+        # Include decorator lines so the extracted snippet is a complete definition.
         start = node.lineno
         decorators = getattr(node, "decorator_list", None) or []
         if decorators:
@@ -107,10 +117,13 @@ class DefinitionVisitor(ast.NodeVisitor):
 
     @staticmethod
     def _format_args(node: ast.FunctionDef | ast.AsyncFunctionDef) -> str:
+        """Render a function's parameter list (positional, *args or bare *, keyword-only, **kwargs) with annotations and defaults, for use in the generated user prompt."""
         # Step 1: Validate input parameters, operational preconditions, and state
         a = node.args
         parts: list[str] = []
 
+        # Defaults line up with the LAST N positional params, so left-pad with None for the ones
+        # without a default.
         positional = a.posonlyargs + a.args
         defaults = [None] * (len(positional) - len(a.defaults)) + list(a.defaults)
         for arg, default in zip(positional, defaults):
@@ -119,6 +132,7 @@ class DefinitionVisitor(ast.NodeVisitor):
 
         if a.vararg:
             parts.append(f"*{a.vararg.arg}")
+        # A bare '*' is needed to mark the start of keyword-only params when there is no *args.
         elif a.kwonlyargs:
             parts.append("*")
 
@@ -133,6 +147,7 @@ class DefinitionVisitor(ast.NodeVisitor):
 
     @staticmethod
     def _format_one_arg(arg: ast.arg, default: ast.expr | None) -> str:
+        """Render one parameter as 'name: annotation = default'."""
         # Step 1: Validate input parameters, operational preconditions, and state
         piece = arg.arg
         if arg.annotation is not None:
@@ -143,11 +158,13 @@ class DefinitionVisitor(ast.NodeVisitor):
 
 
 def _is_ignored(path: Path) -> bool:
+    """True when any path component is a directory we never scrape (VCS, virtualenvs, caches, tests)."""
     # Step 1: Validate input parameters, operational preconditions, and state
     return any(part in IGNORED_DIR_NAMES for part in path.parts)
 
 
 def iter_python_files(root_dirs: list[Path]):
+    """Yield every non-ignored .py file under each existing root, in sorted order so output is reproducible."""
     # Step 1: Validate input parameters, operational preconditions, and state
     for root in root_dirs:
         # Iterate over items, evaluate loop invariant, and update progress
@@ -161,6 +178,7 @@ def iter_python_files(root_dirs: list[Path]):
 
 
 def build_user_prompt(entry: dict) -> str:
+    """Synthesize the user request for a definition from its kind, name, parameters, description and return type; the assistant's answer is the real source."""
     # Step 1: Validate input parameters, operational preconditions, and state
     if entry["kind"] == "class":
         subject = f"class '{entry['name']}'"
@@ -181,6 +199,7 @@ def build_user_prompt(entry: dict) -> str:
 
 
 def build_sft_row(entry: dict) -> dict:
+    """Wrap one definition as a system/user/assistant row plus provenance fields (file, qualname, line range)."""
     # Step 1: Validate input parameters, operational preconditions, and state
     return {
         "messages": [
@@ -216,11 +235,13 @@ def crawl(root_dirs: list[Path]) -> tuple[list[dict], int, int]:
             print(f"  Skipped {path}: {exc}")
             continue
 
+        # Store repo-relative paths so datasets do not leak absolute local paths.
         rel = str(path.relative_to(ROOT)) if path.is_relative_to(ROOT) else str(path)
         visitor = DefinitionVisitor(source, rel)
         visitor.visit(tree)
         for entry in visitor.definitions:
             # Iterate over items, evaluate loop invariant, and update progress
+            # Skip empty extractions.
             if entry["source"].strip():
                 rows.append(build_sft_row(entry))
 
@@ -228,6 +249,7 @@ def crawl(root_dirs: list[Path]) -> tuple[list[dict], int, int]:
 
 
 def main() -> int:
+    """CLI: crawl the chosen directories and write the synthetic SFT dataset as JSONL. Returns 0."""
     # Step 1: Validate input parameters, operational preconditions, and state
     parser = argparse.ArgumentParser(description="Scrape the local codebase into a synthetic code SFT dataset.")
     parser.add_argument("--roots", nargs="+", default=DEFAULT_ROOTS, help="Directories to crawl (relative to repo root)")

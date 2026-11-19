@@ -40,6 +40,7 @@ from dataclasses import dataclass, field, asdict
 from typing import Optional
 
 # Allow running from repo root without install
+# Allow running from the repo root without installing the package.
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from eval.graders import run_grader
@@ -68,6 +69,9 @@ def _run_model_worker(
             model_path = os.path.join("data", "models", model_name)
         llm = ModelLoader.get_instance(model_path=model_path, adapter_name=adapter_name)
         history = [{"role": "user", "content": user_prompt}]
+        # build_prompt reads hyperparameter flags (e.g. machine speak) from this module global, so set
+        # it before building the prompt. This worker copy runs inside the spawned child process;
+        # EvalHarness._run_model has the in-process twin.
         import core.interaction_loop
         core.interaction_loop.ACTIVE_HYPERPARAMS = hyperparams
         prompt = build_prompt(system_prompt, history)
@@ -85,6 +89,8 @@ def _run_model_worker(
         raw = response["choices"][0]["text"]
         _thought, parsed = parse_thought_stream(raw, start_in_thought=prompt.rstrip().endswith("<think>"))
         output = parsed.strip() if parsed.strip() else raw.strip()
+        # Only plain dicts cross the process boundary; the parent turns {'ok': False} into an
+        # exception.
         queue.put({"ok": True, "output": output, "latency": latency})
     except Exception as exc:
         queue.put({"ok": False, "error": str(exc)})
@@ -92,6 +98,7 @@ def _run_model_worker(
 
 @dataclass
 class CaseResult:
+    """Outcome of one dataset case: what was asked, what the model produced, which grader scored it, the grade dict {passed, score, detail}, latency, the context used, and an error string when the case crashed or timed out."""
     case_id: str
     prompt: str
     workflow: str
@@ -106,6 +113,7 @@ class CaseResult:
 
 @dataclass
 class EvalReport:
+    """Aggregate result of a run (counts, pass rate, mean score and latency, timestamp) plus every CaseResult. 'failed' excludes cases that errored."""
     workflow: str
     template: str
     dataset: str
@@ -170,6 +178,7 @@ class EvalHarness:
         self._worker_target = _run_model_worker
 
     def _load_dataset(self, dataset_path: str) -> list[dict]:
+        """Read the JSONL dataset, skipping blank and '#' comment lines. Malformed lines are reported on stderr and skipped rather than aborting the run."""
         # Step 1: Validate input parameters, operational preconditions, and state
         cases = []
         with open(dataset_path, "r", encoding="utf-8") as f:
@@ -193,18 +202,22 @@ class EvalHarness:
         # Step 1: Validate input parameters, operational preconditions, and state
         top_k = workflow_cfg.get("rag_top_k", 3)
 
+        # Priority 1: live retrieval, only when a pipeline was injected and the workflow wants chunks
+        # (rag_top_k > 0).
         # Try RAG if available and workflow wants it
         if self.rag and top_k > 0:
             chunks = self.rag.retrieve(case["prompt"], top_k=top_k)
             if chunks:
                 return chunks
 
+        # Priority 2: a file named by the case.
         # Fall back to context_file
         ctx_file = case.get("context_file")
         if ctx_file and os.path.exists(ctx_file):
             with open(ctx_file, "r", encoding="utf-8", errors="ignore") as f:
                 return [f.read()]
 
+        # Priority 3: context text embedded in the dataset row.
         # Fall back to inline context
         inline = case.get("context", "")
         if inline:
@@ -213,6 +226,7 @@ class EvalHarness:
         return []
 
     def _build_system_prompt(self, template_name: str, context_chunks: list[str], case: dict) -> str:
+        """Render the named prompt template with this case's context chunks, schema and code, using placeholder text when a field is absent."""
         # Step 1: Validate input parameters, operational preconditions, and state
         rag_context = "\n\n".join(context_chunks) if context_chunks else "(No context retrieved.)"
         schema = case.get("schema", "(No schema specified.)")
@@ -241,6 +255,7 @@ class EvalHarness:
             model_path = os.path.join("data", "models", model_name)
         llm = ModelLoader.get_instance(model_path=model_path, adapter_name=adapter_name)
         history = [{"role": "user", "content": user_prompt}]
+        # Same: publish this run's hyperparameters for build_prompt to consult.
         import core.interaction_loop
         core.interaction_loop.ACTIVE_HYPERPARAMS = hyperparams
         prompt = build_prompt(system_prompt, history)
@@ -286,6 +301,8 @@ class EvalHarness:
                 adapter_name,
             )
 
+        # 'spawn' (not fork) so the child starts with a clean interpreter; forking a process that
+        # holds llama.cpp/GPU state is unsafe.
         ctx = mp.get_context("spawn")
         queue = ctx.Queue(maxsize=1)
         proc = ctx.Process(
@@ -294,9 +311,11 @@ class EvalHarness:
             daemon=True,
         )
         proc.start()
+        # Wait up to the timeout; a still-alive worker is wedged inside the native llama call.
         proc.join(timeout_limit)
 
         if proc.is_alive():
+            # Escalate terminate -> kill so a hung native call cannot stall the whole eval.
             proc.terminate()
             proc.join(timeout=5.0)
             if proc.is_alive():
@@ -309,6 +328,7 @@ class EvalHarness:
 
         try:
             # Execute guarded operations and establish recovery boundaries
+            # The child puts its result before exiting, so an empty queue means it died (crash, OOM).
             result = queue.get_nowait()
         except queue_mod.Empty:
             raise RuntimeError(
@@ -321,6 +341,7 @@ class EvalHarness:
         return result["output"], float(result["latency"])
 
     def _grade(self, output: str, case: dict, context_chunks: list[str]) -> dict:
+        """Dispatch to the case's grader (default keyword_hit), passing only the keyword arguments that grader understands, and return its {passed, score, detail} dict."""
         # Step 1: Validate input parameters, operational preconditions, and state
         grader_name = case.get("grader", "keyword_hit")
         kwargs: dict = {}
@@ -380,6 +401,8 @@ class EvalHarness:
             # Execute guarded operations and establish recovery boundaries
             llm = ModelLoader.get_instance(model_path=path_to_load, adapter_name=adapter_name)
             
+            # Multi-GPU models can load fine but fail on the first real forward pass; a 1-token dummy
+            # generation surfaces that before any case is scored.
             # ── Pre-Flight Device Synchronization Checks ──────────────────────
             # If the model is distributed across multiple GPUs, run a dummy query.
             active_model_name = getattr(ModelLoader, "_model_name", "unknown")
@@ -409,6 +432,7 @@ class EvalHarness:
             ) from e
 
         workflow_cfg = get_workflow(workflow_name)
+        # With an override there is no template; record a marker name in the report instead.
         template_name = "(system_prompt_override)" if system_prompt_override is not None else (template_override or workflow_cfg["template"])
         hp = hyperparams or {"max_tokens": 512, "temperature": 0.2, "top_p": 0.95}
 
@@ -435,6 +459,8 @@ class EvalHarness:
             user_prompt = case.get("prompt", "")
 
             # ── Thread Deadlock & Timeout Analysis ───────────────────────────
+            # Timeout adapts to the machine: 3x the mean latency so far, never under 60s. Before any
+            # case has finished, 40s is assumed, giving 120s.
             # Calculate dynamic timeout based on rolling average latency (3x avg)
             # Default to 120s for the first cases
             avg_lat = sum(latencies) / len(latencies) if latencies else 40.0
@@ -460,6 +486,9 @@ class EvalHarness:
                 grade = self._grade(output, case, context_chunks)
                 error = None
                 
+                # Every failed case feeds the training pipeline: the dataset's expected answer becomes
+                # a 'chosen' example and the model's own output a 'rejected' one (used for DPO
+                # pairing).
                 # Curate eval failures as SFT/DPO pairs
                 if not grade.get("passed"):
                     try:
@@ -486,6 +515,8 @@ class EvalHarness:
             except Exception as e:
                 output = ""
                 latency = 0.0
+                # A crashed case is graded as a failure with the exception text in 'detail' so the
+                # report still has a row for it.
                 grade = {"passed": False, "score": 0.0, "detail": f"EXCEPTION: {e}"}
                 error = str(e)
                 if "TIMEOUT" not in str(e):
@@ -508,6 +539,7 @@ class EvalHarness:
                 error=error,
             ))
             if not error:
+                # Only successful runs contribute to the latency average that drives timeouts.
                 latencies.append(latency)
             scores.append(grade.get("score", 0.0))
 
@@ -530,6 +562,8 @@ class EvalHarness:
             cases=results,
         )
 
+        # Small summary file read by the Flywheel dashboard; failure to write it must never fail the
+        # eval.
         # Persist last eval result for the Flywheel dashboard
         try:
             # Execute guarded operations and establish recovery boundaries
@@ -560,6 +594,8 @@ class EvalHarness:
 
         with open(path, "w", encoding="utf-8") as f:
             # Summary line
+            # First JSONL line is the summary, followed by one line per case, so tools can stream the
+            # file.
             summary = asdict(report)
             summary.pop("cases")
             f.write(json.dumps({"type": "summary", **summary}) + "\n")

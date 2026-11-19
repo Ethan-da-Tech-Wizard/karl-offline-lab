@@ -38,6 +38,7 @@ if str(ROOT) not in sys.path:
 from app.engine.model_loader import ModelLoader
 
 # Default mock tasks if evaluation files are missing
+# Built-in tasks so the benchmark still runs when no dataset file is supplied or readable.
 FALLBACK_TASKS = [
     {
         "instruction": "Write a python function to check if a number is prime.",
@@ -70,6 +71,8 @@ def evaluate_model_performance(
     """
     Runs generations across a benchmark dataset and returns performance statistics.
     """
+    # Always start from a freshly loaded model so a previous adapter cannot leak into this
+    # measurement.
     # Reset and reload the model with the specified adapter name
     ModelLoader.reset_instance()
     llm = ModelLoader.get_instance(adapter_name=adapter_name)
@@ -103,6 +106,7 @@ def evaluate_model_performance(
             continue
             
         eval_cases += 1
+        # ChatML prompt with <think> pre-seeded, same format the app uses for Qwen-style models.
         prompt = f"<|im_start|>user\n{instruction}<|im_end|>\n<|im_start|>assistant\n<think>\n"
         
         start_time = time.perf_counter()
@@ -127,6 +131,8 @@ def evaluate_model_performance(
         # Tokenize using model tokenizer to get exact count
         try:
             # Execute guarded operations and establish recovery boundaries
+            # Use the real tokenizer for tokens/sec; fall back to a whitespace word count if
+            # tokenizing fails.
             tokens = llm.tokenize(raw_output.encode("utf-8"))
             token_count = len(tokens)
         except Exception:
@@ -135,6 +141,7 @@ def evaluate_model_performance(
         tps = token_count / max(elapsed, 0.001)
         total_tps += tps
         
+        # Accuracy here is purely syntactic (does the code parse), not functional correctness.
         # Check syntax accuracy
         code_block = extract_code_block(raw_output)
         try:
@@ -147,6 +154,7 @@ def evaluate_model_performance(
     # Clean up model resources
     ModelLoader.reset_instance()
     
+    # 'vram_delta' is approximated by the adapter file size on disk, not measured GPU usage.
     # Estimate memory footprint
     vram_mb = 0.0
     if adapter_name:
@@ -167,6 +175,7 @@ def evaluate_model_performance(
 
 
 def main() -> int:
+    """Evaluate the base model and then the named adapter on the same tasks and write a comparison report (speed and syntax-accuracy deltas) to data/adapters/eval_report_<adapter>.json. Returns 0."""
     # Step 1: Validate input parameters, operational preconditions, and state
     parser = argparse.ArgumentParser(description="Evaluate code accuracy and inference speed delta for adapters.")
     parser.add_argument("--adapter", required=True, help="Directory name of the target adapter inside data/adapters/")
@@ -184,6 +193,7 @@ def main() -> int:
         "adapter_name": args.adapter,
         "baseline": baseline_stats,
         "adapted": adapter_stats,
+        # Relative speed change; the denominator is floored at 0.1 to avoid division by zero.
         "tps_improvement_percent": round(
             ((adapter_stats["avg_tps"] - baseline_stats["avg_tps"]) / max(baseline_stats["avg_tps"], 0.1)) * 100.0,
             2
