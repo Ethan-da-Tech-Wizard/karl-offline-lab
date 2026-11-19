@@ -491,7 +491,10 @@ class RAGPipeline:
         """
         words = text.split()
         chunks = []
-        for i in range(0, len(words), chunk_size - overlap):
+        # range() with a step <= 0 raises (or never advances), so clamp the step to at least one word
+        # when the caller passes overlap >= chunk_size.
+        step = max(1, chunk_size - overlap)
+        for i in range(0, len(words), step):
             chunk = " ".join(words[i : i + chunk_size])
             if chunk:
                 chunks.append(chunk)
