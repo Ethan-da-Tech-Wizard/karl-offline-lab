@@ -37,10 +37,14 @@ import json
 import logging
 import os
 
+# Module logger; warnings here usually mean a corrupt JSON file under data/.
 logger = logging.getLogger("karl.profiles")
 
 # ── Hardcoded built-in profiles ───────────────────────────────────────────────
 
+# Each entry has label (shown in the UI), description (tooltip text) and prompt
+# (text appended to the system prompt). The default "karl" profile has an empty
+# prompt, meaning no extra persona instructions.
 _BUILTIN_PROFILES: dict[str, dict] = {
     "karl": {
         "label": "Karl",
@@ -91,13 +95,19 @@ _BUILTIN_PROFILES: dict[str, dict] = {
 
 # Immutable snapshot — tests and external code can compare against this to
 # detect which profiles are built-in vs user-added.
+# NOTE: dict() makes a shallow copy, so the top-level mapping is separate from
+# _BUILTIN_PROFILES but the inner per-profile dicts are shared; reload_profiles
+# copies an entry before changing it so these inner dicts are never mutated.
 DEFAULT_PROFILES: dict = dict(_BUILTIN_PROFILES)
 
 # Live mutable registry.  Always access this after calling reload_profiles().
+# AGENT_PROFILES is mutated in place (clear/update) rather than rebound, so modules
+# that did `from ... import AGENT_PROFILES` keep seeing the refreshed contents.
 AGENT_PROFILES: dict = dict(_BUILTIN_PROFILES)
 
 # ── Paths ─────────────────────────────────────────────────────────────────────
 
+# Relative paths: resolved against the process working directory (the repo root when running the app).
 _CUSTOM_AGENTS_PATH    = os.path.join("data", "custom_agents.json")
 _OVERRIDES_PATH        = os.path.join("data", "profile_overrides.json")
 
@@ -115,7 +125,9 @@ def _load_overrides() -> dict[str, str]:
             data = json.load(f)
         if not isinstance(data, dict):
             return {}
+        # Keep only str->str pairs so a hand-edited file cannot inject other types into prompts.
         return {k: v for k, v in data.items() if isinstance(k, str) and isinstance(v, str)}
+    # A corrupt file is treated as "no overrides" so one bad edit cannot break the app.
     except (json.JSONDecodeError, OSError):
         logger.warning("profile_overrides.json is corrupt — ignoring overrides.")
         return {}
@@ -127,6 +139,7 @@ def _save_overrides(overrides: dict[str, str]) -> bool:
     try:
         # Execute guarded operations and establish recovery boundaries
         os.makedirs("data", exist_ok=True)
+        # Write to a temp file then os.replace (atomic) so a crash never leaves a half-written overrides file.
         tmp = _OVERRIDES_PATH + ".tmp"
         with open(tmp, "w", encoding="utf-8") as f:
             json.dump(overrides, f, indent=2, ensure_ascii=False)
