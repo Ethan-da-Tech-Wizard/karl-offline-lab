@@ -6,6 +6,14 @@
 //          Coordinates editor events, client state, and backend RPC messaging.
 // ==============================================================================
 
+// Where this file sits: it is the LAST script loaded by the webview page built in src/sidebarProvider.js
+// (after themes.js, karl_state.js, karl_render.js and karl_socket.js). Those earlier scripts declare the shared
+// globals used here without imports: $ (getElementById), vscode (acquireVsCodeApi), boot (window.KARL_BOOTSTRAP),
+// rpc(id, method, params), isConnected(), connect()/disconnect(), switchWorkspace(), hydrate()/persist() and the
+// render*/update* functions. karl.js itself only wires DOM events and routes messages; it holds no long-lived data.
+// Request ids: replies are matched by the numeric id passed to rpc(). Ids used in this file: 1 submit_task,
+// 2 stop_task, 21 get_codex_content, 30 heartbeat (host side), 32 set_active_model, 70 get_agent_profiles.
+// Keeping ids fixed per method lets karl_socket.js dispatch a reply without storing per-request callbacks.
 // Page start-up. Runs once the HTML is parsed. Order matters: appearance and saved state first,
 // then event handlers, then the initial (empty) renders; finally tell the extension host the page is
 // ready and auto-connect to the backend if enabled.
@@ -26,21 +34,30 @@ window.addEventListener('DOMContentLoaded', () => {
     renderBranches();
     renderDownloadRegistry([]);
     // Refresh the heartbeat age text every second.
+    // Timer handle declared in karl_state.js; kept in a global so the unload handler below can stop it.
     bridgeMetaTimer = setInterval(() => updateBridgeMeta(), 1000);
+
+    // Seeds the chat with a hint so a new user sees what to do before the first connection.
     appendMessageBubble('assistant', 'Karl command cockpit ready. Connect to the local backend to execute agentic workflows.');
 
     // Handshake: the host can now safely send state to this webview.
+    // The host queues messages until this arrives (see KarlSidebarProvider.resolveWebviewView), so it is sent last,
+    // after every listener above is installed.
     vscode.postMessage({ command: 'ready' });
 
+    // boot comes from the "karl.autoConnect" setting; connect() opens the page's own WebSocket (karl_socket.js).
     if (boot.autoConnect) connect();
 });
 
 // Clean-up when the webview is destroyed: stop timers and close the connection so nothing keeps
 // running in the background.
 window.addEventListener('unload', () => {
+    // Each timer is nulled after clearing so a repeated cleanup is harmless.
     if (bridgeMetaTimer) { clearInterval(bridgeMetaTimer); bridgeMetaTimer = null; }
     if (reconnectTimer)  { clearInterval(reconnectTimer);  reconnectTimer = null; }
     // runtimeStatusTimer and socket are cleaned up by teardownSocket/disconnect
+    // Two transport modes exist: the page owns a direct socket (default) or the extension host relays frames
+    // (KARL_USE_HOST_RELAY). Shutdown differs accordingly.
     if (window.KARL_USE_HOST_RELAY) {
         vscode.postMessage({ command: 'bridge_disconnect' });
     } else {
@@ -51,6 +68,7 @@ window.addEventListener('unload', () => {
 // Single inbox for messages from the extension host (see sidebarProvider.js). Every message has a
 // ``command``; most are handled by calling a function and returning early.
 window.addEventListener('message', event => {
+    // `|| {}` protects against messages with no data (for example from other extensions posting to the window).
     const message = event.data || {};
 
     // The host rotated the bridge token; cache it for the next (re)connect.
@@ -60,6 +78,8 @@ window.addEventListener('message', event => {
     }
 
     // From editor commands: put text in the chat box and optionally send it right away.
+    // Sent by editor commands such as "Fix selection" (commands.js): the prompt arrives pre-built and the file path is
+    // remembered so a later refactor result can be turned back into an edit on the same file.
     if (message.command === 'inject_chat') {
         const text = message.text || '';
         $('chatInput').value = text;
@@ -71,6 +91,7 @@ window.addEventListener('message', event => {
         return;
     }
 
+    // Pre-fills the swarm objective only; the user still presses Run, because swarm runs write files.
     if (message.command === 'inject_swarm') {
         const objective = message.objective || '';
         if ($('objective')) $('objective').value = objective;
@@ -82,6 +103,7 @@ window.addEventListener('message', event => {
     // ── Host-relay bridge events ──────────────────────────────────────────────
     // When KARL_USE_HOST_RELAY is active the extension host owns the WebSocket
     // and forwards frames/lifecycle events here via postMessage.
+    // `socket_message` is the older name of the same relay event; both are accepted for compatibility.
     if (message.command === 'bridge_message' || message.command === 'socket_message') {
         try {
             // Frames may arrive as a JSON string or an already-parsed object.
@@ -100,6 +122,8 @@ window.addEventListener('message', event => {
             lastConnectedAt = new Date();
             setConnectionState('connected', 'Connected');
             if (reconnectTimer) { clearInterval(reconnectTimer); reconnectTimer = null; }
+
+            // Immediately ask for the model/runtime status, then refresh every 4 s so the cockpit stays current.
             requestRuntimeStatus();
             loadAgentProfiles();
             runtimeStatusTimer = runtimeStatusTimer || setInterval(requestRuntimeStatus, 4000);
@@ -112,6 +136,8 @@ window.addEventListener('message', event => {
         }
         return;
     }
+
+    // Do not confuse with 'bridge_status': this one is host-side status, deliberately limited to outcomes the page cannot see.
     if (message.command === 'connection_state') {
         // Sent only for host-side connection outcomes the webview's own direct
         // socket can't observe itself (e.g. the host bridge's token being
@@ -128,6 +154,8 @@ window.addEventListener('message', event => {
     // Everything below updates the UI in response to host events: workflows, knowledge-base paths,
     // the review queue of proposed edits, swarm run history and cockpit state.
     // ── Webview ↔ host commands ───────────────────────────────────────────────
+    // Chain of else-ifs rather than a switch because several branches share the same early-return style above;
+    // each branch is a thin adapter from a host message to one render function.
     if (message.command === 'start_workflow') {
         startWorkflow(message.workflowId, message.data || {});
     } else if (message.command === 'set_kb_path') {
@@ -155,6 +183,8 @@ window.addEventListener('message', event => {
         renderSwarmRunHistory(message.runs || []);
     } else if (message.command === 'cockpit_state_update') {
         updateCockpitState(message.state || {});
+
+    // Reports a backend crash (segfault or out-of-memory kill) as a chat bubble with advice.
     } else if (message.command === 'completion_diagnostic_failed') {
         _renderCompletionDiagnostic(message);
     }
@@ -168,6 +198,7 @@ window.addEventListener('message', event => {
  * the clicked button's data-* attributes; this avoids adding and leaking handlers on every re-render.
  */
 function bindEvents() {
+    // Top-level workspace tabs: data-workspace holds the id suffix of the matching <section id="workspace-...">.
     document.querySelectorAll('.tab').forEach(btn => {
         btn.addEventListener('click', () => switchWorkspace(btn.dataset.workspace));
     });
@@ -175,6 +206,7 @@ function bindEvents() {
     // Sub-tabs inside a workspace: show only the matching ".subworkspace" panel.
     document.querySelectorAll('.subtab').forEach(btn => {
         btn.addEventListener('click', () => {
+            // Scoping to the nearest workspace keeps sub-tabs of different workspaces independent.
             const container = btn.closest('.workspace');
             container.querySelectorAll('.subtab').forEach(sb => sb.classList.remove('active'));
             btn.classList.add('active');
@@ -188,6 +220,7 @@ function bindEvents() {
 
     // Connection, swarm, chat, knowledge-base and prompt-lab buttons.
     // Cockpit buttons
+    // Both the cockpit and the settings workspace have connect buttons; they call the same functions so state stays consistent.
     $('cockpitConnectBtn').addEventListener('click', connect);
     $('cockpitDisconnectBtn').addEventListener('click', disconnect);
     $('clearRecentTasksBtn').addEventListener('click', () => {
@@ -207,6 +240,7 @@ function bindEvents() {
     $('chatSendBtn').addEventListener('click', sendChatMessage);
     // Enter sends the message.
     $('chatInput').addEventListener('keydown', event => {
+        // Enter sends the message immediately; there is no separate confirmation step.
         if (event.key === 'Enter') sendChatMessage();
     });
     $('refreshKbBtn').addEventListener('click', loadKbSources);
@@ -232,6 +266,8 @@ function bindEvents() {
     $('labSysA').addEventListener('input', () => {
         if ($('labLockSync').checked) $('labSysB').value = $('labSysA').value;
     });
+
+    // requiresBridgeSupport() tells the user when the connected bridge does not offer the 'tokenize_text' method.
     $('tokenizeLabBtn').addEventListener('click', () => requiresBridgeSupport('Prompt Lab tokenizer visualization', 'tokenize_text'));
     $('loadModelsBtn').addEventListener('click', loadModels);
     $('loadAdaptersBtn').addEventListener('click', loadAdapters);
@@ -242,6 +278,8 @@ function bindEvents() {
             return;
         }
         const adapter = $('adapterSelect').value;
+
+        // adapter: null (not undefined) so JSON keeps the key and the server clears any previous adapter.
         rpc(32, 'set_active_model', { 
             filename: activeModelFilename, 
             adapter: adapter || null 
@@ -252,6 +290,8 @@ function bindEvents() {
     
     // Git, diagnostics and vision buttons delegate to the host's runWorkflow command (commands.js).
     // Git Tab Actions
+    // The workflow ids (reviewStagedDiff etc.) are defined in src/commands.js; the host gathers the diff itself, because the
+    // webview has no access to git.
     $('gitReviewStagedBtn').addEventListener('click', () => vscode.postMessage({ command: 'runWorkflow', workflowId: 'reviewStagedDiff' }));
     $('gitReviewUnstagedBtn').addEventListener('click', () => vscode.postMessage({ command: 'runWorkflow', workflowId: 'reviewUnstagedDiff' }));
     $('gitReviewCombinedBtn').addEventListener('click', () => vscode.postMessage({ command: 'runWorkflow', workflowId: 'reviewCombinedDiff' }));
@@ -270,6 +310,7 @@ function bindEvents() {
     $('diagExplainWorkspaceBtn').addEventListener('click', () => vscode.postMessage({ command: 'runWorkflow', workflowId: 'explainDiagnostics' }));
 
     // Vision Tab Actions
+    // Reuses the file-picker round trip of the knowledge base; the host answers with set_kb_path.
     $('visionSelectBtn').addEventListener('click', () => vscode.postMessage({ command: 'choose_kb_file' }));
     $('visionActiveBtn').addEventListener('click', () => vscode.postMessage({ command: 'runWorkflow', workflowId: 'analyzeImage' }));
     // The image must be chosen first; the path is passed to the workflow as its payload.
@@ -292,6 +333,7 @@ function bindEvents() {
 
     // Clear or copy all three log panes (swarm, training, eval).
     // Logs Actions
+    // Resets each pane to its placeholder text instead of empty so the panes never look broken.
     $('clearLogsBtn').addEventListener('click', () => {
         $('terminal').innerText = '--- Swarm Logs ---';
         $('trainingLog').innerText = 'No training logs recorded.';
@@ -306,6 +348,7 @@ function bindEvents() {
     $('codexSearch').addEventListener('input', filterCodex);
     $('workspace').addEventListener('change', persist);
     // Changing the port while connected reconnects automatically to the new port.
+    // Mirrors the new port into the cockpit label, saves it and (if online) reconnects so the user does not have to.
     $('bridgePort').addEventListener('change', () => {
         const port = $('bridgePort').value;
         $('cockpitPort').innerText = port;
@@ -343,6 +386,7 @@ function bindEvents() {
     });
     
     // Defaults must match the defaults used by hydrate() in karl_state.js.
+    // The literal defaults below must be kept in sync with hydrate() in karl_state.js.
     $('resetAppearanceBtn').addEventListener('click', () => {
         $('themeSelect').value = 'obsidian-core';
         $('customAccent').value = '#00c2ff';
@@ -357,6 +401,8 @@ function bindEvents() {
     // One listener per container: buttons are looked up from event.target with closest(), so they work
     // even though the buttons are re-created on every render.
     // Delegated Event Listeners to prevent memory/event-listener leaks
+    // Review Bay buttons: each carries one data-* attribute naming its action and the edit id, so a single listener on the
+    // container handles preview, apply, reject, open, copy path and rollback.
     $('changeQueue').addEventListener('click', event => {
         const btn = event.target.closest('button');
         if (!btn) return;
@@ -375,6 +421,7 @@ function bindEvents() {
         }
     });
 
+    // Line/character come from data attributes as strings, so they are converted to numbers for the host.
     $('diagnosticsList').addEventListener('click', event => {
         const el = event.target.closest('[data-diag-file]');
         if (!el) return;
@@ -386,6 +433,7 @@ function bindEvents() {
         });
     });
 
+    // Clicking a theme card only sets the hidden <select>; applyAppearance() reads that select as the single source of truth.
     $('themeGrid').addEventListener('click', event => {
         const card = event.target.closest('[data-theme-id]');
         if (!card) return;
@@ -393,6 +441,7 @@ function bindEvents() {
         applyAppearance();
     });
 
+    // Selecting a source doubles as a search filter, then the snapshot is re-rendered to highlight it.
     $('kbSourceList').addEventListener('click', event => {
         const row = event.target.closest('[data-source]');
         if (!row) return;
@@ -442,6 +491,7 @@ function bindEvents() {
         searchKb();
     });
 
+    // "Send to chat" and "Send to swarm" prefill the target input with a citation header plus the chunk text; they never submit.
     $('kbResults').addEventListener('click', event => {
         const btn = event.target.closest('button');
         if (!btn) return;
@@ -479,6 +529,7 @@ function bindEvents() {
     });
 
     // Switch the active model (without an adapter).
+    // The reply (id 32) is handled in karl_socket.js.
     $('modelList').addEventListener('click', event => {
         const btn = event.target.closest('[data-model]');
         if (!btn) return;
@@ -500,6 +551,7 @@ function bindEvents() {
         persist();
     });
 
+    // The viewer's content is HTML from the backend; only the two action buttons are handled here.
     $('codexViewer').addEventListener('click', event => {
         const btn = event.target.closest('button');
         if (!btn) return;
@@ -524,18 +576,21 @@ function bindEvents() {
  * @param {any} data
  */
 function startWorkflow(workflowId, data) {
+    // Remembered so the response handler can route the result (for example a commit message) to the right panel.
     activeWorkflowId = workflowId;
     $('taskMode').value = workflowId;
     $('workspace').value = data.workspace_path || '';
     $('objective').value = data.objective || '';
     currentTargetFilepath = data.filepath || '';
     
+    // Shows what context (file, selection, diagnostics) the host attached, so the user can judge the prompt.
     renderContextMeta(data.context_meta);
     rememberTask(workflowId, data.mode || 'Task', data.objective || '', data.filepath || '');
     
     const tab = data.targetTab || 'swarm';
     switchWorkspace(tab);
 
+    // Each branch below prepares the placeholder UI of its tab; the real content arrives later as chat/swarm output.
     if (tab === 'git') {
         $('gitDiffContainer').style.display = 'block';
         $('gitDiffText').innerText = data.code || 'No changes or diff found.';
@@ -553,6 +608,8 @@ function startWorkflow(workflowId, data) {
     if (tab === 'vision') {
         $('visionImagePath').value = data.filepath || '';
         $('visionPreviewCard').style.display = 'block';
+
+        // escapeHtml is required: the file name comes from the filesystem and is inserted as HTML.
         $('visionImagePreview').innerHTML = `<span style="color:var(--karl-accent-2); font-weight:700;">Image: ${escapeHtml(data.filepath.split('/').pop())}</span>`;
         $('visionResult').style.display = 'block';
         $('visionResultText').innerText = 'Karl is inspecting image file...';
@@ -570,6 +627,7 @@ function startWorkflow(workflowId, data) {
     }
 
     if (tab === 'swarm') {
+        // Swarm workflows start immediately (unlike chat, which also auto-sends) because the host already built the objective.
         connectAndRun();
     }
 }
@@ -594,6 +652,7 @@ function connectAndRun() {
     connect();
     const started = Date.now();
     // Poll every 150 ms until the connection is up or the 8 s deadline passes.
+    // Polling is simpler than wiring a one-shot "connected" event, and bounded by the 8 s deadline.
     const timer = setInterval(() => {
         if (isConnected()) {
             clearInterval(timer);
@@ -623,6 +682,8 @@ function runSwarm() {
         connectAndRun();
         return;
     }
+
+    // Visually marks the bridge as busy until a finished_swarm notification resets it.
     setConnectionState('running', 'Running');
     // Track the run in the task queue and in the recent-task history.
     activeTaskId = addTask($('taskMode').value, objective);
@@ -634,12 +695,15 @@ function runSwarm() {
     rpc(1, 'submit_task', {
         objective,
         workspace_path: workspace,
+        // Empty string means "no command": the Tester stage then skips execution rather than guessing.
         test_command: testCommand,
         hyperparams: {
             ...hyperparams(),
+            // `|| 600` / `|| 5` cover empty or non-numeric inputs (Number('') is 0, Number('x') is NaN).
             timeout_seconds: Number($('swarmTimeout').value) || 600,
             max_loops: Number($('swarmMaxLoops').value) || 5,
             auto_steering_enabled: $('swarmAutoSteer').checked,
+            // Profile ids per stage; the server maps them to model/adapter/system-prompt overrides.
             agent_profiles: {
                 architect: $('swarmArchitectProfile').value || 'architect',
                 coder: $('swarmCoderProfile').value || 'coder',
