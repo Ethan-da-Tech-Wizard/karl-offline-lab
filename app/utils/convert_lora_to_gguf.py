@@ -17,6 +17,17 @@ Classes:
   LoraTorchTensor - Lazy low-rank tensor representing the weight delta W = B @ A.
 """
 
+# How it fits the app: auto_train.py and the Training Studio export/train threads (training_studio/threads.py) run this script as a
+# subprocess after a LoRA fine-tune, turning the PEFT adapter folder (data/adapters/<name>/) into a .gguf adapter that
+# llama.cpp can apply on top of the base GGUF without merging weights. It is adapted from llama.cpp's convert_lora_to_gguf.py and
+# reuses the per-architecture converters in app/utils/conversion/ (get_model_class) so tensor names and permutations match
+# a full-model conversion.
+# Background (LoRA): each adapted weight W gets two small matrices, A (rank x in_features) and B (out_features x rank). The
+# effective update is W' = W + (alpha / rank) * B @ A. GGUF stores A and B separately as <tensor>.lora_a / <tensor>.lora_b
+# plus the alpha scalar, and llama.cpp multiplies them at inference time.
+# Usage: python app/utils/convert_lora_to_gguf.py <adapter_dir> [--base <hf_dir> | --base-model-id <hf_id>] [--outtype f16]
+# Inputs: adapter_config.json plus adapter_model.safetensors (or .bin) in <adapter_dir>; the base model's config.json.
+# Output: a GGUF adapter file (default location: next to the adapter). Exit code 1 on unsupported or malformed adapters.
 from __future__ import annotations
 
 from dataclasses import dataclass
@@ -37,6 +48,7 @@ if TYPE_CHECKING:
 
 # Prefer the vendored gguf-py next to this script unless NO_LOCAL_GGUF is set,
 # so the converter and the GGUF library stay version-matched.
+# sys.path.insert(1, ...) (not 0) keeps the script's own directory first but still prefers the vendored gguf-py over site-packages.
 if 'NO_LOCAL_GGUF' not in os.environ:
     sys.path.insert(1, str(Path(__file__).parent / 'gguf-py'))
 import gguf
@@ -47,6 +59,7 @@ from gguf.constants import GGUFValueType
 # reuse model definitions from the conversion/ package
 from conversion import LazyTorchTensor, ModelBase, get_model_class
 
+# Uses its own logger name so converter output can be filtered separately from the app's "karl.*" loggers.
 logger = logging.getLogger("lora-to-gguf")
 
 
@@ -68,19 +81,26 @@ class LoraTorchTensor:
     implements those operations on A and B separately and rejects any that
     cannot be expressed on the factored form (NotImplementedError).
     """
+    # Shapes as stored here: A is (rank, in_features); B is (out_features, rank); the full update B @ A is never materialised, which
+    # keeps memory low for large layers.
     _lora_A: Tensor  # (n_rank, row_size)
     _lora_B: Tensor  # (col_size, n_rank)
     _rank: int
 
     def __init__(self, A: Tensor, B: Tensor):
         """Store the factors; promote both to float32 if their dtypes differ."""
+        # Factors must have the same number of dimensions; the inner dimension must be the shared LoRA rank.
         assert len(A.shape) == len(B.shape)
         assert A.shape[-2] == B.shape[-1]
+
+        # Mixed precision adapters (e.g. bf16 A with f32 B) are unified to float32 so later math is consistent.
         if A.dtype != B.dtype:
             A = A.to(torch.float32)
             B = B.to(torch.float32)
         self._lora_A = A
         self._lora_B = B
+
+        # The rank is the shared inner dimension r; reshape/permute use it to rebuild consistent factor shapes.
         self._rank = B.shape[-1]
 
     def get_lora_A_B(self) -> tuple[Tensor, Tensor]:
@@ -99,12 +119,14 @@ class LoraTorchTensor:
 
         Only the row (second-to-last) dimension lives in B and the column dimension in A.
         """
+        # Index operations act on the virtual (out x in) matrix; the code below maps each index to the matching factor index.
         shape = self.shape
         if isinstance(indices, SupportsIndex):
             if len(shape) > 2:
                 return LoraTorchTensor(self._lora_A[indices], self._lora_B[indices])
             else:
                 raise NotImplementedError  # can't return a vector
+        # Slicing rows only touches B (rows live in B); slicing batch dimensions of >2D tensors touches both factors.
         elif isinstance(indices, slice):
             if len(shape) > 2:
                 return LoraTorchTensor(self._lora_A[indices], self._lora_B[indices])
@@ -134,6 +156,7 @@ class LoraTorchTensor:
 
             # TODO (upstream): verify this index mapping for batched (>2D) tensors.
             # TODO: make sure this is correct
+            # For tensors with batch dimensions, A may have size-1 batch dims (shared across the batch), hence the modulo when mapping an index.
             indices_A = (
                 *(
                     (
@@ -146,6 +169,8 @@ class LoraTorchTensor:
                 slice(None, None),
                 indices[-1],
             )
+
+            # B carries every dimension except the final column dimension, so it takes all but the last index.
             indices_B = indices[:-1]
             return LoraTorchTensor(self._lora_A[indices_A], self._lora_B[indices_B])
         else:
@@ -161,6 +186,8 @@ class LoraTorchTensor:
     def shape(self) -> tuple[int, ...]:
         """Shape of the virtual product: B's leading dims, then B rows and A columns."""
         assert len(self._lora_A.shape) == len(self._lora_B.shape)
+
+        # Virtual shape = B's leading dims and row count, followed by A's column count (in_features).
         return (*self._lora_B.shape[:-1], self._lora_A.shape[-1])
 
     def size(self, dim=None):
@@ -195,9 +222,11 @@ class LoraTorchTensor:
             assert n_elems % n_new_elems == 0
             new_shape = (*(dim if dim != -1 else n_elems // n_new_elems for dim in new_shape),)
 
+        # Changing the row length would require mixing columns of A, which cannot be done on the factors.
         if new_shape[-1] != orig_shape[-1]:
             raise NotImplementedError  # can't reshape the row size trivially
 
+        # A keeps its (rank, in_features) core and gets size-1 batch dims; B takes the new leading dims.
         shape_A = (*(1 for _ in new_shape[:-2]), self._rank, orig_shape[-1])
         shape_B = (*new_shape[:-1], self._rank)
         return LoraTorchTensor(
@@ -217,11 +246,15 @@ class LoraTorchTensor:
         """Permute dimensions; supports moving the last dim, or a plain 2D transpose (which swaps A and B).
         """
         shape = self.shape
+
+        # Normalise to negative indices so the checks below can test the last two axes uniformly.
         dims = tuple(dim - len(shape) if dim >= 0 else dim for dim in dims)
         if dims[-1] == -1:
             # TODO: support higher dimensional A shapes bigger than 1
             assert all(dim == 1 for dim in self._lora_A.shape[:-2])
             return LoraTorchTensor(self._lora_A, self._lora_B.permute(*dims))
+
+        # Transposing a 2D low-rank matrix: (B @ A).T == A.T @ B.T, so the roles of A and B swap (each transposed).
         if len(shape) == 2 and dims[-1] == -2 and dims[-2] == -1:
             return LoraTorchTensor(self._lora_B.permute(*dims), self._lora_A.permute(*dims))
         else:
@@ -246,6 +279,8 @@ class LoraTorchTensor:
         ndim = len(shape)
         if dim < 0:
             dim += ndim
+
+        # Which factor holds which axis: columns live in A, rows live in B, batch dims may be in both.
         if dim == ndim - 1:
             A_chunks = self._lora_A.split(split_size, dim=-1)
             return tuple(LoraTorchTensor(a, self._lora_B) for a in A_chunks)
@@ -263,6 +298,7 @@ class LoraTorchTensor:
         """Move or cast both factors (same arguments as Tensor.to)."""
         return LoraTorchTensor(self._lora_A.to(*args, **kwargs), self._lora_B.to(*args, **kwargs))
 
+    # Scaling happens on B so that (s * B) @ A == s * (B @ A) without touching A.
     def __mul__(self, other) -> LoraTorchTensor:
         """Scale by a scalar or per-row factor (applied to B since W = B @ A)."""
         # Only output-side multiplication for now
@@ -284,6 +320,7 @@ class LoraTorchTensor:
         if kwargs is None:
             kwargs = {}
 
+        # __torch_function__ lets base converters call torch.permute/reshape/stack/cat/split on these wrapper objects as if they were tensors.
         if func is torch.permute:
             assert len(args)
             return type(args[0]).permute(*args, **kwargs)
@@ -309,6 +346,8 @@ class LoraTorchTensor:
                     torch.cat([a._lora_A for a in args[0]], dim),
                     torch.cat([b._lora_B for b in args[0]], dim),
                 )
+
+            # Concatenating rows is only possible when every piece shares the same A (for example when one fused projection was split into several pieces that share the same A).
             elif all(torch.equal(args[0][0]._lora_A, t._lora_A) for t in args[0][1:]):
                 return LoraTorchTensor(
                     args[0][0]._lora_A,
@@ -327,6 +366,7 @@ class LoraTorchTensor:
 
 def get_base_tensor_name(lora_tensor_name: str) -> str:
     """Map a PEFT adapter tensor name to the corresponding base-model tensor name."""
+    # PEFT prefixes every key with base_model.model. and suffixes lora_A/lora_B; stripping them yields the base tensor's own name.
     base_name = lora_tensor_name.replace("base_model.model.", "")
     base_name = base_name.replace(".lora_A.weight", ".weight")
     base_name = base_name.replace(".lora_B.weight", ".weight")
@@ -341,6 +381,8 @@ def parse_args() -> argparse.Namespace:
     """Parse command-line arguments for the LoRA conversion."""
     parser = argparse.ArgumentParser(
         description="Convert a Hugging Face PEFT LoRA adapter to a GGUF file")
+
+    # Argument groups below: output location/format, big-endian and lazy-evaluation switches, dry run, and the base model source.
     parser.add_argument(
         "--outfile", type=Path,
         help="path to write to; default: based on input. {ftype} will be replaced by the outtype.",
@@ -388,6 +430,7 @@ def load_hparams_from_hf(hf_model_id: str) -> tuple[dict[str, Any], Path | None]
 
     # Adapters don't ship the base config, so it must be resolved through AutoConfig.
     # normally, adapter does not come with base model config, we need to load it from AutoConfig
+    # Needs network access unless the config is already in the local Hugging Face cache (HF_HUB_OFFLINE=1 makes this cache-only).
     config = AutoConfig.from_pretrained(hf_model_id)
     cache_dir = try_to_load_from_cache(hf_model_id, "config.json")
     cache_dir = Path(cache_dir).parent if isinstance(cache_dir, str) else None
@@ -400,6 +443,7 @@ if __name__ == '__main__':
     args = parse_args()
     logging.basicConfig(level=logging.DEBUG if args.verbose else logging.INFO)
 
+    # CLI output type names -> GGUF file types; "auto" lets the gguf library pick the best 16-bit float type.
     ftype_map: dict[str, gguf.LlamaFileType] = {
         "f32": gguf.LlamaFileType.ALL_F32,
         "f16": gguf.LlamaFileType.MOSTLY_F16,
@@ -414,6 +458,7 @@ if __name__ == '__main__':
     dir_lora: Path = args.lora_path
     base_model_id: str | None = args.base_model_id
     # Expected adapter files: adapter_config.json plus adapter_model.safetensors (or .bin as a fallback).
+    # adapter_config.json holds lora_alpha, rank and the base model name; the weights file holds only the A/B matrices.
     lora_config = dir_lora / "adapter_config.json"
     input_model = dir_lora / "adapter_model.safetensors"
 
@@ -428,9 +473,12 @@ if __name__ == '__main__':
         # lazy import load_file only if lora is in safetensors format.
         from safetensors.torch import load_file
 
+        # Loaded on the CPU: conversion needs no GPU, and adapters are small.
         lora_model = load_file(input_model, device="cpu")
     else:
         input_model = os.path.join(dir_lora, "adapter_model.bin")
+
+        # weights_only=True refuses to unpickle arbitrary Python objects from an untrusted .bin file.
         lora_model = torch.load(input_model, map_location="cpu", weights_only=True)
 
     # load LoRA config
@@ -462,8 +510,10 @@ if __name__ == '__main__':
         hparams = ModelBase.load_hparams(dir_base_model, False)
 
     # Inference mode avoids autograd overhead while tensors are being transformed.
+    # No gradients are needed for conversion; this also reduces memory use.
     with torch.inference_mode():
         try:
+            # The first entry of the base config's `architectures` list picks the converter class (see conversion/__init__.py).
             model_class = get_model_class(hparams["architectures"][0])
         except NotImplementedError:
             logger.error(f"Model {hparams['architectures'][0]} is not supported")
@@ -475,6 +525,7 @@ if __name__ == '__main__':
             It is defined at run time because the parent class depends on the base
             model's architecture.
             """
+            # Reuse the base converter's GGUF architecture id so tensor names in the adapter match the base model file.
             model_arch = model_class.model_arch
 
             lora_alpha: float
@@ -485,8 +536,11 @@ if __name__ == '__main__':
                 super().__init__(*args, **kwargs)
 
                 self.dir_model_card = dir_lora_model
+
+                # alpha is stored in the GGUF so llama.cpp can apply the scaling alpha / rank at load time.
                 self.lora_alpha = float(lora_alpha)
 
+            # A LoRA adapter shares the base model's vocabulary, so none is written.
             def set_vocab(self):
                 """Adapters carry no vocabulary."""
                 pass
@@ -499,6 +553,8 @@ if __name__ == '__main__':
             def set_gguf_parameters(self):
                 """Write lora_alpha and, for activated LoRAs, the invocation token ids."""
                 logger.debug("GGUF KV: %s = %d", gguf.Keys.Adapter.LORA_ALPHA, self.lora_alpha)
+
+                # Single scalar for the whole adapter (per-layer alpha overrides in PEFT are not supported here).
                 self.gguf_writer.add_float32(gguf.Keys.Adapter.LORA_ALPHA, self.lora_alpha)
                 alora_invocation_tokens = lparams.get("alora_invocation_tokens")
                 invocation_string = lparams.get("invocation_string")
@@ -534,9 +590,11 @@ if __name__ == '__main__':
 
                 Norm tensors added by mergekit pass through; unexpected tensors abort the conversion.
                 """
+                # Collects A and B per base tensor; they can appear in either order in the checkpoint, hence PartialLoraTensor.
                 tensor_map: dict[str, PartialLoraTensor] = {}
 
                 for name, tensor in lora_model.items():
+                    # Lazy tensors defer reading data until it is written, keeping peak memory near one tensor instead of the whole adapter.
                     if self.lazy:
                         tensor = LazyTorchTensor.from_eager(tensor)
                     base_name = get_base_tensor_name(name)
@@ -573,6 +631,7 @@ if __name__ == '__main__':
                         else:
                             tensor_map[base_name] = PartialLoraTensor(B=tensor)
 
+                # Every A must have a B: the asserts catch half-saved adapters before any output is written.
                 for name, tensor in tensor_map.items():
                     assert tensor.A is not None
                     assert tensor.B is not None
@@ -581,6 +640,7 @@ if __name__ == '__main__':
             def modify_tensors(self, data_torch: Tensor, name: str, bid: int | None) -> Iterable[tuple[str, Tensor]]:
                 """Convert each base-named LoRA tensor to GGUF .lora_a/.lora_b pairs (norms pass through).
                 """
+                # The parent converter renames/splits/permutes exactly as for the full model; here the data is a LoraTorchTensor.
                 dest = list(super().modify_tensors(data_torch, name, bid))
                 # Some archs tie lm_head to the token embedding; adapters targeting lm_head then break
                 # llama-export-lora, so they are rejected here.
@@ -607,10 +667,12 @@ if __name__ == '__main__':
                     if "token_embd.weight" in dest_name:
                         lora_a = lora_a.T
 
+                    # Two GGUF tensors per adapted weight, following llama.cpp's naming convention.
                     yield (dest_name + ".lora_a", lora_a)
                     yield (dest_name + ".lora_b", lora_b)
 
         # Build the converter instance and write the adapter GGUF.
+        # Raises KeyError for adapters whose config lacks lora_alpha, which is the desired hard failure (the scale would be unknown).
         alpha: float = lparams["lora_alpha"]
 
         model_instance = LoraModel(
@@ -619,6 +681,7 @@ if __name__ == '__main__':
             fname_out,
             is_big_endian=args.bigendian,
             use_temp_file=False,
+            # --no-lazy trades RAM for simplicity when lazy evaluation misbehaves for an architecture.
             eager=args.no_lazy,
             dry_run=args.dry_run,
             dir_lora_model=dir_lora,
@@ -628,5 +691,7 @@ if __name__ == '__main__':
         )
 
         logger.info("Exporting model...")
+
+        # Writes the GGUF header, metadata (adapter type, alpha) and all tensors; dry-run mode only prints what it would do.
         model_instance.write()
         logger.info(f"Model successfully exported to {model_instance.fname_out}")

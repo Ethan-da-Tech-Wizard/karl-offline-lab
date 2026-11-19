@@ -13,7 +13,8 @@
 # lookup tables (HF architecture name -> module name) so that only the module
 # needed for a given checkpoint is imported, and re-exports the public base API.
 # How conversion is dispatched
-#   1. convert_lora_to_gguf.py / the Training Studio export tab reads config.json of a checkpoint and takes architectures[0].
+#   1. A caller (convert_lora_to_gguf.py, which auto_train.py and the Training Studio threads run) reads the base model's
+#      config.json and takes architectures[0].
 #   2. get_model_class(name) looks that string up in TEXT_MODEL_MAP (or MMPROJ_MODEL_MAP for vision/audio encoders) to find
 #      the module, imports ONLY that module (cheap start-up), and returns the class the module registered.
 #   3. The class (a TextModel or MmprojModel subclass from base.py) writes the GGUF file.
