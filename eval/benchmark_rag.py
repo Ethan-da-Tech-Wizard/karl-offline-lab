@@ -18,8 +18,11 @@ Usage:
   python eval/benchmark_rag.py --top-k 5 --headers
 """
 
+import atexit
 import os
+import shutil
 import sys
+import tempfile
 import time
 import textwrap
 import json
@@ -36,6 +39,18 @@ from app.utils.rag_pipeline import RAGPipeline
 from app.engine.model_loader import ModelLoader
 from core.interaction_loop import build_prompt
 from core.cognitive_parser import parse_thought_stream
+
+
+def _scratch_pipeline(contextual_headers):
+    """Build a RAGPipeline whose index lives in a throwaway temp directory.
+
+    RAGPipeline defaults to the persisted app index (data/vector_db), and the benchmark
+    resets the index before ingesting its synthetic corpus, so using the default would wipe
+    the user's real documents. The temp dir is removed at interpreter exit.
+    """
+    scratch = tempfile.mkdtemp(prefix="karl_rag_bench_")
+    atexit.register(shutil.rmtree, scratch, ignore_errors=True)
+    return RAGPipeline(index_path=scratch, contextual_headers=contextual_headers)
 
 
 # ── NLP Metric Helpers (Pure Python & NumPy) ──────────────────────────────────
@@ -243,10 +258,8 @@ def run_benchmark(top_k: int = 3, contextual_headers: bool = False) -> list[Quer
     print(f"  top_k={top_k} | contextual_headers={contextual_headers}")
     print(f"{'─'*60}")
 
-    # WARNING: RAGPipeline defaults to the persisted index under data/vector_db, so the reset()
-    # below clears whatever index the app is using. Run this benchmark only on a scratch checkout
-    # or accept losing the ingested documents.
-    rag = RAGPipeline(contextual_headers=contextual_headers)
+    # Isolated temp index: never touches the persisted data/vector_db.
+    rag = _scratch_pipeline(contextual_headers)
     # Clear any persisted index so the benchmark only sees its own synthetic data.
     rag.index.reset()
     rag.documents = []
@@ -389,7 +402,7 @@ def run_code_review_benchmark(top_k: int = 3, output_path: str = "data/rag_bench
     print(f"  Model active: {ModelLoader.model_name()}\n")
     
     # Build a fresh in-memory RAG index
-    rag = RAGPipeline(contextual_headers=False)
+    rag = _scratch_pipeline(False)
     rag.index.reset()
     rag.documents = []
     
