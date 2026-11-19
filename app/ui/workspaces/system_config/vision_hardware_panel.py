@@ -32,16 +32,23 @@ from .common import _section
 
 logger = logging.getLogger("karl.system_config")
 
+# Mixin, not a widget: it is combined into the System workspace class, which
+# owns self.state (AppState) and the 2 s QTimer that drives _update_live_hardware.
+# Every widget created here is stored on self under a leading underscore so the
+# sibling panel mixins and the timer can reach it; nothing here emits signals of
+# its own, all coupling is through those attributes and AppState fields.
 class VisionHardwarePanelMixin:
     """Mixin that builds the Vision and Hardware tabs and their refresh/config handlers."""
     def _build_vision_tab(self) -> QWidget:
         """Build the Vision tab: runtime status, model picker with action buttons, and registry viewer."""
-        # Step 1: Validate input parameters, operational preconditions, and state
         w = QWidget()
         layout = QVBoxLayout(w)
         layout.setContentsMargins(12, 12, 12, 12)
         layout.setSpacing(12)
 
+        # Two stacked "panel" cards (objectName drives the QSS card look). The runtime
+        # card is fixed-height content; the registry card gets stretch=1 below so the
+        # registry list absorbs all spare vertical space when the window is resized.
         runtime_panel = QWidget()
         runtime_panel.setObjectName("panel")
         rp = QVBoxLayout(runtime_panel)
@@ -58,6 +65,8 @@ class VisionHardwarePanelMixin:
         desc.setWordWrap(True)
         rp.addWidget(desc)
 
+        # Filled by _refresh_vision_status from VisionModelLoader.status(); empty until
+        # the first refresh at the end of this builder runs.
         self._vision_runtime_status = QLabel("")
         self._vision_runtime_status.setObjectName("lbl-muted")
         self._vision_runtime_status.setWordWrap(True)
@@ -67,9 +76,16 @@ class VisionHardwarePanelMixin:
         mr = QHBoxLayout(model_row)
         mr.setContentsMargins(0, 0, 0, 0)
         mr.setSpacing(8)
+        # Item text is human-readable; item data is the registry id, which is what the
+        # button handlers read back with currentData(). Stretch 1 lets the combo take
+        # the row while the three buttons keep their natural width.
         self._vision_model_combo = QComboBox()
         mr.addWidget(self._vision_model_combo, 1)
 
+        # Three-step lifecycle, deliberately separate buttons: "set active" only
+        # records the choice (cheap, persisted), "load now" pays the multi-GB load, and
+        # "reset" unloads to free RAM/VRAM. Splitting them lets a user pick a model
+        # without committing memory, and lets the chat path load it lazily instead.
         active_btn = QPushButton("set active")
         active_btn.setObjectName("btn-secondary")
         active_btn.clicked.connect(self._set_active_vision_model_from_combo)
@@ -104,6 +120,8 @@ class VisionHardwarePanelMixin:
         vp.addWidget(header)
 
         self._vision_registry_view = QTextBrowser()
+        # 260 px keeps roughly two registry entries visible even in the Compact Laptop
+        # layout, where the surrounding panels are squeezed.
         self._vision_registry_view.setMinimumHeight(260)
         vp.addWidget(self._vision_registry_view, 1)
         layout.addWidget(registry_panel, 1)
@@ -114,10 +132,12 @@ class VisionHardwarePanelMixin:
 
     def _refresh_vision_status(self):
         """Refresh the runtime status text, the model combo and the registry HTML view."""
-        # Step 1: Validate input parameters, operational preconditions, and state
         if not hasattr(self, "_vision_runtime_status"):
             return
 
+        # status() is a cheap in-memory snapshot (no model load), so it is safe to call
+        # from button handlers on the GUI thread. backend_available is False when the
+        # llama-cpp multimodal bindings cannot be imported; backend_error says why.
         status = VisionModelLoader.status()
         backend = "available" if status["backend_available"] else "blocked"
         loaded = "loaded" if status["loaded"] else "not loaded"
@@ -134,13 +154,19 @@ class VisionHardwarePanelMixin:
         self._vision_runtime_status.setText("\n".join(lines))
 
         # Preserve the user's selection across the rebuild, with signals blocked to avoid side effects.
+        # Refresh runs on a timer-less button and after every action, so it must
+        # rebuild the combo from disk each time (files may have been copied in since).
+        # Signals are blocked so clear()/addItem() do not fire currentIndexChanged
+        # handlers while the list is momentarily empty.
         current = self._vision_model_combo.currentData()
         self._vision_model_combo.blockSignals(True)
         self._vision_model_combo.clear()
         rows = installed_vision_models()
         for row in rows:
-            # Iterate over items, evaluate loop invariant, and update progress
             # A model is usable only when both the model file and its projector are installed.
+            # Vision GGUFs are two files: the language model and an mmproj projector that
+            # maps image embeddings into its token space. Either one missing means image
+            # input cannot work, so only both present counts as ready.
             ready = row.get("model_installed") and row.get("projector_installed")
             suffix = "ready" if ready else "missing files"
             self._vision_model_combo.addItem(f"{row['name']} ({suffix})", row["id"])
@@ -151,9 +177,12 @@ class VisionHardwarePanelMixin:
         self._vision_model_combo.blockSignals(False)
 
         # Registry entries come from disk and a JSON file, so every string is HTML-escaped.
+        # Entries are rendered as inline-styled divs because QTextBrowser supports only
+        # a small HTML4/CSS2 subset: no classes, no flexbox, so styling stays per-element.
         html_rows = []
         for row in rows:
-            # Iterate over items, evaluate loop invariant, and update progress
+            # Paths are shown even when files are absent so the user can see exactly where
+            # to drop the downloaded weights.
             model_state = "present" if row.get("model_installed") else "missing"
             projector_state = "present" if row.get("projector_installed") else "missing"
             html_rows.append(
@@ -180,10 +209,12 @@ class VisionHardwarePanelMixin:
 
     def _set_active_vision_model_from_combo(self):
         """Persist the selected vision model as active and reset the loaded runtime so it reloads lazily."""
-        # Step 1: Validate input parameters, operational preconditions, and state
         model_id = self._vision_model_combo.currentData()
         if not model_id:
             return
+        # Order matters: persist the choice first, then reset the loader, so a lazy
+        # reload triggered by the very next vision request already sees the new id and
+        # never reloads the old model.
         set_active_vision_model(model_id)
         VisionModelLoader.reset()
         self._refresh_vision_status()
@@ -192,24 +223,27 @@ class VisionHardwarePanelMixin:
 
     def _load_active_vision_model(self):
         """Load the selected vision model now and refresh the status."""
-        # Step 1: Validate input parameters, operational preconditions, and state
         model_id = self._vision_model_combo.currentData()
+        # Synchronous on the GUI thread: a multi-GB GGUF load can freeze the window for
+        # seconds. Failures are not raised; they are recorded in last_error, which the
+        # refresh below surfaces in the status label.
         VisionModelLoader.load(model_id=model_id)
         self._refresh_vision_status()
 
 
     def _reset_vision_runtime(self):
         """Unload the vision runtime and refresh the status."""
-        # Step 1: Validate input parameters, operational preconditions, and state
         VisionModelLoader.reset()
         self._refresh_vision_status()
 
+    # The meters below are plain QProgressBars driven by _update_live_hardware (a
+    # workspace timer, 2 s period); the builder only sets range 0-100 and the format
+    # string is rewritten on every tick.
     # ── hardware tab ──────────────────────────────────────────────────────────
 
 
     def _build_hardware_tab(self) -> QWidget:
         """Build the Hardware tab: meters, profile view, remote engine, thermal protection and About panels."""
-        # Step 1: Validate input parameters, operational preconditions, and state
         w = QWidget()
         layout = QVBoxLayout(w)
         layout.setContentsMargins(12, 12, 12, 12)
@@ -223,6 +257,8 @@ class VisionHardwarePanelMixin:
         hwp_layout.setContentsMargins(16, 16, 16, 16)
         hwp_layout.setSpacing(12)
 
+        # Row pattern repeated three times (label + bar): kept explicit rather than
+        # looped because each bar is stored under its own attribute for the timer.
         hwp_layout.addWidget(_section("HARDWARE PROFILE & METERS"))
 
         # CPU meter
@@ -230,11 +266,14 @@ class VisionHardwarePanelMixin:
         cpu_l = QHBoxLayout(cpu_row)
         cpu_l.setContentsMargins(0, 0, 0, 0)
         cpu_lbl = QLabel("CPU Load:")
+        # Fixed 100 px label column so the three meter bars (and the 180 px label column
+        # of the config rows below) start at the same x and read as one aligned grid.
         cpu_lbl.setFixedWidth(100)
         cpu_lbl.setObjectName("lbl-muted")
         self._cpu_progress = QProgressBar()
         self._cpu_progress.setRange(0, 100)
         self._cpu_progress.setValue(0)
+        # 14 px: thin HUD-style bar; the percentage text is drawn inside via setFormat.
         self._cpu_progress.setFixedHeight(14)
         cpu_l.addWidget(cpu_lbl)
         cpu_l.addWidget(self._cpu_progress)
@@ -245,6 +284,7 @@ class VisionHardwarePanelMixin:
         ram_l = QHBoxLayout(ram_row)
         ram_l.setContentsMargins(0, 0, 0, 0)
         ram_lbl = QLabel("Memory:")
+        # Same 100 px label column as the CPU row above.
         ram_lbl.setFixedWidth(100)
         ram_lbl.setObjectName("lbl-muted")
         self._ram_progress = QProgressBar()
@@ -261,6 +301,7 @@ class VisionHardwarePanelMixin:
         disk_l = QHBoxLayout(disk_row)
         disk_l.setContentsMargins(0, 0, 0, 0)
         disk_lbl = QLabel("Disk Free:")
+        # Same 100 px label column as the CPU/RAM rows.
         disk_lbl.setFixedWidth(100)
         disk_lbl.setObjectName("lbl-muted")
         self._disk_progress = QProgressBar()
@@ -272,10 +313,15 @@ class VisionHardwarePanelMixin:
         hwp_layout.addWidget(disk_row)
 
         self._hw_view = QTextBrowser()
+        # Fixed height fits exactly the three RAM/VRAM/STORAGE rows from
+        # _refresh_hardware without a scrollbar.
         self._hw_view.setFixedHeight(120)
         hwp_layout.addWidget(self._hw_view)
 
         refresh_btn = QPushButton("refresh profiles")
+        # Scouting is separate from the live meters on purpose: meters poll cheap
+        # psutil counters every tick, the profile re-probes hardware (VRAM, disks) and
+        # is therefore manual.
         refresh_btn.setToolTip("Re-scout RAM, VRAM, and storage specifications")
         refresh_btn.clicked.connect(self._refresh_hardware)
         hwp_layout.addWidget(refresh_btn)
@@ -284,6 +330,9 @@ class VisionHardwarePanelMixin:
 
         # Remote offloading: when enabled prompts go to a remote Karl bridge over JSON-RPC/WSS
         # instead of the local llama-cpp-python model.
+        # Offload settings live on this tab (not in Defaults) because they change which
+        # machine runs inference, which is a hardware-level choice. Values are mirrored
+        # into AppState for the engine and into config_store for the next launch.
         engine_panel = QWidget()
         engine_panel.setObjectName("panel")
         ep_layout = QVBoxLayout(engine_panel)
@@ -297,6 +346,9 @@ class VisionHardwarePanelMixin:
             bool(getattr(self.state, "remote_engine_enabled", False))
             or getattr(self.state, "engine_mode", "local") == "remote"
         )
+        # stateChanged (not toggled) also fires on programmatic setChecked, but this
+        # connect happens after the initial setChecked so construction does not write
+        # config. The handler persists to disk, so it must not run during build.
         self._remote_engine_check.stateChanged.connect(self._on_engine_config_changed)
         ep_layout.addWidget(self._remote_engine_check)
 
@@ -305,9 +357,13 @@ class VisionHardwarePanelMixin:
         url_lay.setContentsMargins(0, 0, 0, 0)
         url_lbl = QLabel("Remote Server URL:")
         url_lbl.setObjectName("lbl-muted")
+        # 180 px label column shared by the URL, token and threshold rows so the input
+        # fields line up across the two panels.
         url_lbl.setFixedWidth(180)
         url_lay.addWidget(url_lbl)
         self._remote_url_input = QLineEdit()
+        # Placeholder doubles as documentation: wss:// (TLS WebSocket) is the expected
+        # scheme for the Karl bridge, and 8080 its default port.
         self._remote_url_input.setPlaceholderText("wss://localhost:8080")
         # URL fallback chain: new remote_engine_url, legacy remote_server_url, then localhost default.
         self._remote_url_input.setText(
@@ -315,6 +371,8 @@ class VisionHardwarePanelMixin:
             or getattr(self.state, "remote_server_url", "")
             or "wss://localhost:8080"
         )
+        # editingFinished (focus loss / Enter) instead of textChanged: avoids writing the
+        # config file on every keystroke while a URL is half typed.
         self._remote_url_input.editingFinished.connect(self._on_engine_config_changed)
         url_lay.addWidget(self._remote_url_input, 1)
         ep_layout.addWidget(url_row)
@@ -328,6 +386,8 @@ class VisionHardwarePanelMixin:
         token_lay.addWidget(token_lbl)
         self._remote_token_input = QLineEdit()
         # Token is masked on screen; it is persisted via config_store.set_remote_engine_config.
+        # Token is a credential: masked on screen, and the only place it is stored is the
+        # config store, never logged here.
         self._remote_token_input.setEchoMode(QLineEdit.EchoMode.Password)
         self._remote_token_input.setPlaceholderText("bridge token or password")
         self._remote_token_input.setText(
@@ -348,6 +408,10 @@ class VisionHardwarePanelMixin:
 
         # Thermal protection pauses/throttles work above the threshold (handlers in defaults_panel).
         # Thermal Protection Settings Panel
+        # Thermal protection: when the sensed temperature exceeds the threshold below,
+        # work is paused or throttled. Only the two settings are held here: the change
+        # handlers in defaults_panel write them to AppState and the config store
+        # (which clamps the value to 50-105 C), and the engine reads them from there.
         thermal_panel = QWidget()
         thermal_panel.setObjectName("panel")
         tp_layout = QVBoxLayout(thermal_panel)
@@ -357,6 +421,8 @@ class VisionHardwarePanelMixin:
         tp_layout.addWidget(_section("THERMAL PROTECTION SETTINGS"))
 
         self._thermal_protection_check = QCheckBox("Enable Thermal Protection")
+        # Default True: protection is opt-out because an unprotected laptop running
+        # long generations is the failure this feature exists to prevent.
         self._thermal_protection_check.setChecked(getattr(self.state, "thermal_protection_enabled", True))
         self._thermal_protection_check.stateChanged.connect(self._on_thermal_protection_enabled_changed)
         tp_layout.addWidget(self._thermal_protection_check)
@@ -364,6 +430,8 @@ class VisionHardwarePanelMixin:
         threshold_row = QWidget()
         tr_lay = QHBoxLayout(threshold_row)
         tr_lay.setContentsMargins(0, 0, 0, 0)
+        # Threshold is degrees Celsius; the 95 default (see getattr below) sits just
+        # under typical laptop CPU throttle points (~100 C).
         tr_lbl = QLabel("Protection Threshold (°C):")
         tr_lbl.setObjectName("lbl-muted")
         tr_lbl.setFixedWidth(180)
@@ -371,6 +439,7 @@ class VisionHardwarePanelMixin:
         self._thermal_threshold_spin = QSpinBox()
         # 70-105 C: below 70 would trigger too often, above ~105 is past most CPU/GPU limits.
         self._thermal_threshold_spin.setRange(70, 105)
+        # Falls back to 95 C if the saved state predates the setting.
         self._thermal_threshold_spin.setValue(getattr(self.state, "thermal_protection_threshold", 95))
         self._thermal_threshold_spin.setFixedWidth(80)
         self._thermal_threshold_spin.valueChanged.connect(self._on_thermal_threshold_changed)
@@ -381,6 +450,8 @@ class VisionHardwarePanelMixin:
         layout.addWidget(thermal_panel)
 
         # About Panel
+        # Static identity blurb; kept at the bottom so the settings panels above stay
+        # in the first screenful.
         about_panel = QWidget()
         about_panel.setObjectName("panel")
         ap_layout = QVBoxLayout(about_panel)
@@ -397,10 +468,14 @@ class VisionHardwarePanelMixin:
         about.setObjectName("lbl-muted")
         about.setWordWrap(True)
         about.setTextFormat(Qt.TextFormat.RichText)
+        # The one deliberate external link in an otherwise offline app: opened by the
+        # system browser on click only, never fetched by Karl itself.
         about.setOpenExternalLinks(True)
         ap_layout.addWidget(about)
 
         layout.addWidget(about_panel)
+        # Stretch pushes all four panels to the top instead of letting the layout
+        # spread them evenly down a tall window.
         layout.addStretch()
         return w
 
@@ -409,19 +484,24 @@ class VisionHardwarePanelMixin:
 
     def _update_live_hardware(self):
         """Timer callback: refresh the CPU, RAM and disk meters and the circuit-breaker label."""
-        # Step 1: Validate input parameters, operational preconditions, and state
         # Everything is inside try so a missing psutil or a transient error only logs a warning
         # instead of killing the timer-driven slot.
         try:
-            # Execute guarded operations and establish recovery boundaries
             import psutil
+            # cpu_percent() with no interval reports usage since the previous call, so the
+            # first tick after startup reads 0.0 and later ticks are non-blocking.
             cpu = psutil.cpu_percent()
+            # virtual_memory().percent already accounts for reclaimable cache on each OS,
+            # so it matches what Activity Monitor / Task Manager call memory pressure.
             mem = psutil.virtual_memory()
             
+            # setValue takes an int; the exact float goes into the format text so the bar
+            # and the label can disagree by <1%, which is intended.
             self._cpu_progress.setValue(int(cpu))
             self._cpu_progress.setFormat(f"%p% ({cpu:.1f}%)")
             
             self._ram_progress.setValue(int(mem.percent))
+            # 1_073_741_824 = 2**30: binary gigabytes (GiB), labelled "GB" for brevity.
             used_gb = mem.used / 1_073_741_824
             total_gb = mem.total / 1_073_741_824
             self._ram_progress.setFormat(f"%p% ({used_gb:.1f} GB / {total_gb:.1f} GB)")
@@ -429,7 +509,12 @@ class VisionHardwarePanelMixin:
             # Disk is measured on "/" only; models living on another volume are not reflected.
             # Disk space
             import shutil
+            # The bar shows percent USED (fills as the disk fills, so the red zone in the
+            # QSS means "nearly full") while the text shows free space, the number users
+            # actually care about.
             total, used, free = shutil.disk_usage("/")
+            # Guard against total == 0 is unnecessary on a mounted "/" and any
+            # ZeroDivisionError would be caught and logged by the surrounding except.
             free_percent = (free / total) * 100
             self._disk_progress.setValue(int(100 - free_percent))
             free_gb = free / 1_073_741_824
@@ -439,6 +524,9 @@ class VisionHardwarePanelMixin:
             # Colours: COOLDOWN red, HALF_OPEN amber, otherwise green (closed).
             # Update circuit breaker status label if it exists
             if hasattr(self, "_cb_status_lbl") and self._cb_status_lbl is not None:
+                # Imported lazily inside the tick: the engine package pulls in heavy deps, and
+                # this panel must stay importable (and the tick harmless) when it is missing;
+                # any failure lands in the except below.
                 from app.engine.model_loader import ModelLoader
                 state = ModelLoader.get_circuit_breaker_state()
                 if state == "COOLDOWN":
@@ -454,20 +542,26 @@ class VisionHardwarePanelMixin:
 
     def _refresh_hardware(self):
         """Re-scout RAM, VRAM and storage and render them in the profile box."""
-        # Step 1: Validate input parameters, operational preconditions, and state
+        # Lazy import: hardware_scout probes GPUs via subprocess/driver calls, which is
+        # only worth paying for when the user presses "refresh profiles".
         from core.hardware_scout import get_hardware_profile
         p = get_hardware_profile()
         
         # Values may be missing; '?' and 'N/A' are shown verbatim instead of failing.
+        # The scout returns only the keys it could detect, so every read has a default.
         ram = p.get('ram_gb', '?')
         vram = p.get('vram_gb', 'N/A')
         storage = p.get('storage_gb', '?')
         
+        # vram is a number on GPU machines and a string such as "N/A" otherwise; only
+        # numbers can take the :.1f format.
         if isinstance(vram, (int, float)):
             vram_str = f"{vram:.1f} GB"
         else:
             vram_str = str(vram)
             
+        # Inline-styled flex-looking divs: QTextBrowser ignores display:flex, so the
+        # label column is faked with a fixed-width inline-block span (120 px).
         html_content = (
             f"<div style='font-family:{MONO}; color:#E4E4F0; line-height:1.6;'>"
             f"<div style='margin-bottom:8px; display:flex;'>"
@@ -490,8 +584,11 @@ class VisionHardwarePanelMixin:
     def _on_engine_config_changed(self, *_args):
         """Copy the remote-engine controls into app state, persist them and update enabled/disabled UI."""
         # Controls may not exist yet (signals can fire during construction), hence the hasattr guards.
-        # Step 1: Validate input parameters, operational preconditions, and state
+        # Each widget is looked up defensively: Qt can fire stateChanged while the
+        # builder is still creating the later widgets.
         enabled = bool(self._remote_engine_check.isChecked()) if hasattr(self, "_remote_engine_check") else False
+        # engine_mode is the older single-string switch; remote_engine_enabled is the
+        # newer boolean. Both are written below so either generation of reader agrees.
         mode = "remote" if enabled else "local"
         url = self._remote_url_input.text().strip() if hasattr(self, "_remote_url_input") else "wss://localhost:8080"
         token = self._remote_token_input.text() if hasattr(self, "_remote_token_input") else ""
@@ -502,6 +599,7 @@ class VisionHardwarePanelMixin:
         self.state.remote_engine_enabled = enabled
         self.state.remote_engine_url = url
         self.state.remote_engine_token = token
+        # Imported here to avoid an import cycle with app.engine at module load time.
         from app.engine import config_store
         config_store.set_remote_engine_config(enabled, url, token)
         self._sync_engine_controls_enabled()
@@ -509,10 +607,13 @@ class VisionHardwarePanelMixin:
 
     def _sync_engine_controls_enabled(self):
         """Enable the URL/token fields only in remote mode and show matching help text."""
-        # Step 1: Validate input parameters, operational preconditions, and state
         if not hasattr(self, "_remote_engine_check"):
             return
+        # Greying out (rather than hiding) the fields keeps the layout stable and shows
+        # users that URL/token exist but only apply in remote mode.
         remote = self._remote_engine_check.isChecked()
+        # Disabled widgets keep their text, so toggling remote off and on again does
+        # not lose a typed URL or token.
         self._remote_url_input.setEnabled(remote)
         self._remote_token_input.setEnabled(remote)
         if remote:
