@@ -11,6 +11,7 @@
 
 # setup_gpu.sh — Script to configure NVIDIA GPU, compile DKMS, reinstall CUDA PyTorch, and verify CUDA.
 
+# Stop on the first error so later steps do not run against a broken driver install.
 set -e
 
 # Colors for output
@@ -23,6 +24,7 @@ NC='\033[0m' # No Color
 echo -e "${BLUE}=== Karl GPU & PyTorch Setup Script ===${NC}"
 
 # 1. Check if running with sudo/root permissions for system installs
+# Needs root for pacman, dkms and modprobe (this script targets Arch-based systems).
 if [ "$EUID" -ne 0 ]; then
     echo -e "${YELLOW}[!] Warning: This script needs root privileges to install packages and load kernel modules.${NC}"
     echo -e "${YELLOW}    Please run: sudo ./setup_gpu.sh${NC}"
@@ -30,6 +32,8 @@ if [ "$EUID" -ne 0 ]; then
 fi
 
 # Get the original user (who invoked sudo) to locate venv correctly
+# sudo hides the real user; pip installs below run as that user so the venv files keep the right
+# ownership.
 ORIGINAL_USER=${SUDO_USER:-$USER}
 ORIGINAL_HOME=$(getent passwd "$ORIGINAL_USER" | cut -d: -f6)
 PROJECT_DIR="$(pwd)"
@@ -41,6 +45,7 @@ echo -e "${BLUE}[*] Project directory: $PROJECT_DIR${NC}"
 RUNNING_KERNEL=$(uname -r)
 echo -e "${BLUE}[*] Current running kernel: $RUNNING_KERNEL${NC}"
 
+# DKMS needs headers for the running kernel to build the NVIDIA modules.
 if pacman -Qi linux-headers &>/dev/null; then
     echo -e "${GREEN}[✓] linux-headers is already installed.${NC}"
 else
@@ -51,9 +56,11 @@ fi
 
 # 3. Compile and Load NVIDIA modules
 echo -e "${BLUE}[*] Registering/Building DKMS modules...${NC}"
+# Non-zero is tolerated (|| warning) because modules may already be built for this kernel.
 dkms autoinstall || echo -e "${YELLOW}[!] DKMS autoinstall returned non-zero. Modules might already be built.${NC}"
 
 echo -e "${BLUE}[*] Checking if NVIDIA modules are loaded...${NC}"
+# Load the modules only if they are not already present.
 if ! lsmod | grep -q "^nvidia"; then
     echo -e "${YELLOW}[*] NVIDIA modules not loaded. Attempting to load...${NC}"
     modprobe nvidia
@@ -65,6 +72,8 @@ else
 fi
 
 # Verify nvidia-smi works
+# End-to-end check that the userspace tools can talk to the GPU driver; failing here usually means a
+# reboot or hybrid-graphics switch is needed.
 if command -v nvidia-smi &>/dev/null && nvidia-smi &>/dev/null; then
     echo -e "${GREEN}[✓] nvidia-smi is working! GPU is active.${NC}"
 else
@@ -74,6 +83,7 @@ else
 fi
 
 # 4. Reinstall PyTorch and training tools in the project venv
+# Assumes the script is run from the repo root where karl.sh/setup_karl.py created venv/.
 VENV_DIR="$PROJECT_DIR/venv"
 if [ ! -d "$VENV_DIR" ]; then
     echo -e "${RED}[✗] Virtual environment not found at $VENV_DIR.${NC}"
@@ -86,6 +96,7 @@ echo -e "${BLUE}[*] Upgrading pip and installing CUDA-enabled PyTorch in virtual
 sudo -u "$ORIGINAL_USER" "$VENV_DIR/bin/pip" install --upgrade pip
 
 echo -e "${BLUE}[*] Installing PyTorch with CUDA 12.1...${NC}"
+# CUDA 12.1 wheels from the official PyTorch index; --force-reinstall replaces any CPU-only torch.
 sudo -u "$ORIGINAL_USER" "$VENV_DIR/bin/pip" install torch --index-url https://download.pytorch.org/whl/cu121 --force-reinstall
 
 echo -e "${BLUE}[*] Installing HuggingFace training dependencies (transformers, peft, trl, datasets, bitsandbytes, accelerate)...${NC}"

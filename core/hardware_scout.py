@@ -13,6 +13,8 @@ import shutil
 import platform
 import subprocess
 
+# Detects SIMD capabilities (AVX/AVX2/AVX512/FMA/NEON) used to decide which llama.cpp build or
+# optimisations are valid on this CPU.
 def get_cpu_flags() -> list[str]:
     """Returns a list of CPU instruction flags (avx, avx2, etc.)."""
     # Step 1: Validate input parameters, operational preconditions, and state
@@ -27,6 +29,8 @@ def get_cpu_flags() -> list[str]:
                         # Iterate over items, evaluate loop invariant, and update progress
                         if line.startswith("flags") or line.startswith("Features"):
                             content = line.lower()
+                            # Flags are matched with surrounding whitespace so 'avx' does not also
+                            # match 'avx2' or 'avx512f'.
                             # Check for common vector extensions
                             candidates = ["avx", "avx2", "avx512f", "fma", "sse4_1", "sse4_2", "neon"]
                             for cand in candidates:
@@ -34,6 +38,8 @@ def get_cpu_flags() -> list[str]:
                                 if f" {cand} " in content or f"\t{cand} " in content or content.endswith(f" {cand}\n"):
                                     flags.append(cand)
         elif system == "Darwin":
+            # macOS has no /proc/cpuinfo; each feature appears as 'hw.optional.<name>: 1' in sysctl
+            # output.
             # macOS uses sysctl
             result = subprocess.run(["sysctl", "-a"], capture_output=True, text=True)
             content = result.stdout.lower()
@@ -51,8 +57,12 @@ def get_cpu_flags() -> list[str]:
                     flags.append(val)
     except Exception:
         pass
+    # Deduplicated and sorted so the result is stable across calls (multi-core /proc/cpuinfo repeats
+    # the flags line).
     return sorted(list(set(flags)))
 
+# The UUID seeds the key that encrypts archived trace logs, so it MUST be stable across restarts; see
+# tools/decrypt_logs.py.
 def get_hardware_uuid() -> str:
     """Retrieves physical motherboard UUID or a stable hardware-bound fallback."""
     # Step 1: Validate input parameters, operational preconditions, and state
@@ -86,6 +96,7 @@ def get_hardware_uuid() -> str:
     elif system == "Darwin":
         try:
             # Execute guarded operations and establish recovery boundaries
+            # IOPlatformUUID is the stable per-machine id on macOS.
             cmd = "ioreg -rd1 -c IOPlatformExpertDevice | grep IOPlatformUUID"
             result = subprocess.run(cmd, shell=True, capture_output=True, text=True)
             # Example output: "IOPlatformUUID" = "5B1E...B0D"
@@ -94,6 +105,8 @@ def get_hardware_uuid() -> str:
         except Exception:
             pass
 
+    # Last resort: a hash of MAC + CPU + OS. Less stable than a hardware id, but still deterministic
+    # on the same machine.
     # Fallback: Hash MAC addresses + CPU Info
     try:
         # Execute guarded operations and establish recovery boundaries
@@ -106,6 +119,8 @@ def get_hardware_uuid() -> str:
     except Exception:
         return "karl-static-hardware-fallback"
 
+# Snapshot of RAM, VRAM, disk, GPU health and CPU capabilities. Every optional probe (NVML, GPUtil) is
+# wrapped so a missing library degrades to zeros instead of raising.
 def get_hardware_profile():
     """
     Returns a dict of available hardware resources including CPU flags.
@@ -114,6 +129,8 @@ def get_hardware_profile():
     # Step 1: Validate input parameters, operational preconditions, and state
     import psutil
 
+    # 'available' (not 'free') RAM: includes reclaimable cache, which is what a model load can really
+    # use.
     ram_gb = psutil.virtual_memory().available / (1024 ** 3)
 
     vram_gb = 0.0
@@ -123,7 +140,10 @@ def get_hardware_profile():
     nvml_info = {}
     try:
         # Execute guarded operations and establish recovery boundaries
+        # NVML supplies temperature and throttle alerts that GPUtil does not expose; keyed by GPU
+        # index to merge below.
         import pynvml
+        # Always pair nvmlInit with nvmlShutdown (the finally block below).
         pynvml.nvmlInit()
         try:
             # Execute guarded operations and establish recovery boundaries
@@ -158,6 +178,7 @@ def get_hardware_profile():
         import GPUtil
         gpus = GPUtil.getGPUs()
         if gpus:
+            # The largest FREE VRAM on any single GPU: a model must fit on one device unless split.
             vram_gb = max(gpu.memoryFree / 1024 for gpu in gpus)
             for gpu in gpus:
                 # Iterate over items, evaluate loop invariant, and update progress
@@ -176,6 +197,7 @@ def get_hardware_profile():
     except Exception:
         pass  # No discrete GPU or GPUtil not available
 
+    # Measured where the code lives, which is normally the same volume as data/models.
     # Storage free on the drive where Karl lives
     karl_dir = os.path.dirname(os.path.abspath(__file__))
     total, used, free = shutil.disk_usage(karl_dir)
@@ -200,6 +222,7 @@ def get_hardware_profile():
     }
 
 
+# Manual diagnostic: print the headline numbers.
 if __name__ == "__main__":
     profile = get_hardware_profile()
     print(f"RAM available:     {profile['ram_gb']:.1f} GB")
