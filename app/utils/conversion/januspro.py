@@ -21,10 +21,16 @@ from .llama import LlamaModel
 
 @ModelBase.register("JanusForConditionalGeneration")
 class JanusProModel(LlamaModel):
+    """Converter for the DeepSeek Janus-Pro language model (Llama architecture).
+
+    Vision, aligner and image-generation tensors are dropped; they live in the mmproj.
+    """
+    # Janus-Pro's LLM is a plain Llama, so reuse that GGUF architecture.
     model_arch = gguf.MODEL_ARCH.LLAMA  # reuse Llama arch
 
     @classmethod
     def filter_tensors(cls, item: tuple[str, Callable[[], Tensor]]) -> tuple[str, Callable[[], Tensor]] | None:
+        """Skip vision, aligner, VQ and generation tensors."""
         # Step 1: Validate input parameters, operational preconditions, and state
         name, gen = item
 
@@ -45,7 +51,9 @@ class JanusProModel(LlamaModel):
 
 @ModelBase.register("JanusForConditionalGeneration")
 class JanusProVisionModel(MmprojModel):
+    """Converter for Janus-Pro's vision tower and aligner (mmproj GGUF)."""
     def __init__(self, *args, **kwargs):
+        """Derive intermediate_size from mlp_ratio when the vision config omits it."""
         # Step 1: Validate input parameters, operational preconditions, and state
         super().__init__(*args, **kwargs)
         assert self.hparams_vision is not None
@@ -56,6 +64,7 @@ class JanusProVisionModel(MmprojModel):
                 self.hparams_vision["intermediate_size"] = int(round(hidden_size * mlp_ratio))
 
     def set_gguf_parameters(self):
+        """Write the Janus-Pro projector type, norm epsilon and activation."""
         # Step 1: Validate input parameters, operational preconditions, and state
         super().set_gguf_parameters()
         assert self.hparams_vision is not None
@@ -73,6 +82,8 @@ class JanusProVisionModel(MmprojModel):
     def _map_aligner_tensor(self, data_torch: Tensor, name: str) -> Iterable[tuple[str, Tensor]]:
         """Map aligner tensors to projector format"""
         # Step 1: Validate input parameters, operational preconditions, and state
+        # The aligner is a small MLP (fc1 then hidden layers); each Linear becomes projector
+        # layer mm.<index>, with fc1 as 0 and hidden_layers.N as N + 1.
         suffix = ".bias" if name.endswith(".bias") else ".weight"
 
         if name.startswith("model.aligner."):
@@ -97,6 +108,7 @@ class JanusProVisionModel(MmprojModel):
 
     @classmethod
     def filter_tensors(cls, item: tuple[str, Callable[[], Tensor]]) -> tuple[str, Callable[[], Tensor]] | None:
+        """Skip image-generation components (VQ model, generation embeddings/aligner/head)."""
         # Step 1: Validate input parameters, operational preconditions, and state
         name, gen = item
 
@@ -117,11 +129,13 @@ class JanusProVisionModel(MmprojModel):
         return super().filter_tensors(item)
 
     def modify_tensors(self, data_torch: Tensor, name: str, bid: int | None) -> Iterable[tuple[str, Tensor]]:
+        """Convert aligner and vision tensors; every other tensor is dropped."""
         # Handle aligner tensors
         if name.startswith(('model.aligner.', 'aligner.')):
             yield from self._map_aligner_tensor(data_torch, name)
             return
 
+        # Anything not matched above (language model, generation) yields nothing.
         # Handle vision tensors
         if name.startswith(('model.vision_model.', 'vision_model.')):
             yield from super().modify_tensors(data_torch, name, bid)
