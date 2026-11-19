@@ -12,6 +12,14 @@
 # its converter class with ModelBase via a decorator. This __init__ keeps two
 # lookup tables (HF architecture name -> module name) so that only the module
 # needed for a given checkpoint is imported, and re-exports the public base API.
+# How conversion is dispatched
+#   1. convert_lora_to_gguf.py / the Training Studio export tab reads config.json of a checkpoint and takes architectures[0].
+#   2. get_model_class(name) looks that string up in TEXT_MODEL_MAP (or MMPROJ_MODEL_MAP for vision/audio encoders) to find
+#      the module, imports ONLY that module (cheap start-up), and returns the class the module registered.
+#   3. The class (a TextModel or MmprojModel subclass from base.py) writes the GGUF file.
+# Adding an architecture: create <module>.py with a class decorated @ModelBase.register("<HF architecture>"), then add the
+# architecture string to the right map below. A missing map entry raises NotImplementedError in get_model_class.
+# This package is excluded from ruff (pyproject.toml) because it mirrors upstream llama.cpp code style.
 from __future__ import annotations
 
 # Re-export the shared base classes/helpers so callers can import everything
@@ -40,7 +48,11 @@ __all__ = [
 # share one module (e.g. all BERT variants map to "bert"). Keys are matched
 # exactly, so a new architecture needs an entry here AND a registered class.
 TEXT_MODEL_MAP: dict[str, str] = {
+    # Map layout: keys are HuggingFace `architectures[0]` strings, values are module file names in this package; the
+    # list is alphabetical by architecture name, so related families are not always adjacent.
     "AfmoeForCausalLM": "afmoe",
+    # Several decoder-only architectures reuse the "llama" module because their tensor layout is LLaMA-compatible
+    # (Mistral/Mixtral and Llama 4 are routed there too, see below).
     "ApertusForCausalLM": "llama",
     "ArceeForCausalLM": "llama",
     "ArcticForCausalLM": "arctic",
@@ -89,8 +101,10 @@ TEXT_MODEL_MAP: dict[str, str] = {
     "ExaoneMoEForCausalLM": "exaone",
     "FalconForCausalLM": "falcon",
     "FalconH1ForCausalLM": "falcon_h1",
+    # State-space (Mamba/Mamba2) models are converted by the "mamba" module; they have no attention tensors.
     "FalconMambaForCausalLM": "mamba",
     "GPT2LMHeadModel": "gpt2",
+    # StarCoder family (GPT-BigCode) shares the "starcoder" module.
     "GPTBigCodeForCausalLM": "starcoder",
     "GPTNeoXForCausalLM": "gptneox",
     "GPTRefactForCausalLM": "refact",
@@ -221,6 +235,7 @@ TEXT_MODEL_MAP: dict[str, str] = {
     "Qwen3_5MoeForConditionalGeneration": "qwen",
     "RND1": "qwen",
     "RWForCausalLM": "falcon",
+    # RWKV (recurrent) architectures live in the "rwkv" module; they have time-mix/channel-mix tensors instead of attention.
     "RWKV6Qwen2ForCausalLM": "rwkv",
     "RWKV7ForCausalLM": "rwkv",
     "RobertaForSequenceClassification": "bert",
@@ -238,6 +253,7 @@ TEXT_MODEL_MAP: dict[str, str] = {
     "StableLMEpochForCausalLM": "stablelm",
     "StableLmForCausalLM": "stablelm",
     "Starcoder2ForCausalLM": "starcoder",
+    # Step-3 family models are converted by the "step3" module.
     "Step3p5ForCausalLM": "step3",
     "StepVLForConditionalGeneration": "step3",
     "T5EncoderModel": "t5",
@@ -300,6 +316,7 @@ MMPROJ_MODEL_MAP: dict[str, str] = {
     "PaddleOCRVisionModel": "ernie",
     "Phi4ForCausalLMV": "phi",
     "Qwen2AudioForConditionalGeneration": "ultravox",
+    # Qwen vision-language models: the language side maps to the qwen modules, the vision tower to qwenvl/qwen3vl.
     "Qwen2VLForConditionalGeneration": "qwenvl",
     "Qwen2VLModel": "qwenvl",
     "Qwen2_5OmniModel": "qwenvl",
@@ -321,6 +338,7 @@ MMPROJ_MODEL_MAP: dict[str, str] = {
 
 
 # Distinct module names, precomputed so load_all_models imports each exactly once.
+# Sorted for deterministic import order; a set because many architectures share a module.
 _TEXT_MODEL_MODULES = sorted(set(TEXT_MODEL_MAP.values()))
 _MMPROJ_MODEL_MODULES = sorted(set(MMPROJ_MODEL_MAP.values()))
 
@@ -359,7 +377,20 @@ def load_all_models() -> None:
 # Lazy path: import only the single module needed for this architecture instead
 # of all of them.
 def get_model_class(name: str, mmproj: bool = False) -> Type[ModelBase]:
-    """Dynamically import and return a model class by its HuggingFace architecture name."""
+    """Dynamically import and return a model class by its HuggingFace architecture name.
+
+    Args:
+        name: HuggingFace architecture string, e.g. "LlamaForCausalLM".
+        mmproj: True to look in MMPROJ_MODEL_MAP (vision/audio encoder GGUF) instead of the text map.
+
+    Returns:
+        The registered ModelBase subclass for that architecture and model type.
+
+    Raises:
+        NotImplementedError: the architecture has no entry in the selected map.
+        ImportError: the mapped module (or one of its optional dependencies) cannot be imported.
+        KeyError: the module imported but did not register a class under this name (map and decorator out of sync).
+    """
     # Pick the table that matches the requested model kind.
     relevant_map = MMPROJ_MODEL_MAP if mmproj else TEXT_MODEL_MAP
     if name not in relevant_map:
