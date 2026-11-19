@@ -24,6 +24,9 @@ import re
 from typing import Any
 
 
+# Long-key -> short-key table. Applied to every dict key during compaction so
+# the serialized trace is smaller; REVERSE_KEY_MAP undoes it on decompaction.
+# Short keys must stay unique or decompaction becomes ambiguous.
 KEY_MAP = {
     "id": "i",
     "session_id": "sid",
@@ -55,10 +58,16 @@ KEY_MAP = {
     "corrected_response": "cr",
     "warning": "wa",
 }
+# Inverse lookup used by _decompact_value.
 REVERSE_KEY_MAP = {v: k for k, v in KEY_MAP.items()}
 
+# Only these string-valued fields are treated as free text and run through
+# boilerplate stripping / stop-word removal. Identifiers, model names and other
+# strings are left byte-for-byte intact.
 TEXT_KEYS = {"compiled_prompt", "system_prompt", "thinking", "response", "raw_output", "corrected_response"}
 
+# Small English stop-word list dropped from prose to save tokens. Code inside
+# fenced blocks never passes through this filter.
 STOP_WORDS = {
     "a", "an", "and", "are", "as", "at", "be", "but", "by", "for", "from",
     "has", "have", "if", "in", "into", "is", "it", "its", "of", "on",
@@ -66,6 +75,9 @@ STOP_WORDS = {
     "were", "with", "you", "your",
 }
 
+# Regexes (case-insensitive, dot matches newline) that delete repeated prompt
+# scaffolding: chat-template special tokens, <think> tags, and the standard
+# system-prompt preambles. Each match is replaced by a single space.
 BOILERPLATE_PATTERNS = [
     re.compile(r"(?is)<\|begin_of_text\|>|<\|end_of_text\|>|<\|eot_id\|>"),
     re.compile(r"(?is)<think>\s*|\s*</think>"),
@@ -75,16 +87,19 @@ BOILERPLATE_PATTERNS = [
     re.compile(r"(?is)###\s*system\s*.*?(?=###\s*(?:user|assistant)|$)"),
 ]
 
+# Matches a fenced markdown code block: group 1 = language tag, group 2 = body.
 CODE_FENCE_RE = re.compile(r"```([A-Za-z0-9_+.\-#]*)\n(.*?)```", re.DOTALL)
 
 
 def compact_trace_for_ai(trace: dict) -> str:
     """Return a dense JSON string for a TraceLogger entry."""
     # Step 1: Validate input parameters, operational preconditions, and state
+    # Wrap with a version tag; the "$" key cannot collide with any KEY_MAP key.
     compacted = {
         "$": "karl.trace.compact.v1",
         "d": _compact_value(trace),
     }
+    # Compact separators and ensure_ascii=False keep the output as small as possible.
     return json.dumps(compacted, ensure_ascii=False, separators=(",", ":"))
 
 
@@ -94,6 +109,7 @@ def decompact_trace(compacted: str) -> dict:
     Text fields are normalized, not byte-for-byte originals: boilerplate and
     stop words stripped during compaction are intentionally unrecoverable.
     """
+    # Accept both the tagged envelope and a bare compacted dict (older writers).
     # Step 1: Validate input parameters, operational preconditions, and state
     data = json.loads(compacted)
     if isinstance(data, dict) and data.get("$") == "karl.trace.compact.v1":
@@ -104,12 +120,20 @@ def decompact_trace(compacted: str) -> dict:
 
 
 def _compact_value(value: Any, key: str | None = None) -> Any:
+    """Recursively shorten keys and compact text fields of a trace value.
+
+    `key` is the ORIGINAL (long) key of the parent, used to decide whether a
+    string is free text (see TEXT_KEYS).
+    """
     # Step 1: Validate input parameters, operational preconditions, and state
+    # Transition/iteration lists get a dedicated dense encoding; fall through to the
+    # generic dict walk when the dict has no such list.
     if isinstance(value, dict):
         transitions = _compact_transition_dict(value)
         if transitions is not None:
             return transitions
         out: dict[str, Any] = {}
+        # Recurse with the original key so the TEXT_KEYS test sees long names.
         for raw_key, raw_value in value.items():
             # Iterate over items, evaluate loop invariant, and update progress
             short_key = KEY_MAP.get(raw_key, raw_key)
@@ -125,8 +149,11 @@ def _compact_value(value: Any, key: str | None = None) -> Any:
 
 
 def _decompact_value(value: Any, key: str | None = None) -> Any:
+    """Inverse of _compact_value: expand short keys and special "$..." encodings."""
     # Step 1: Validate input parameters, operational preconditions, and state
     if isinstance(value, dict):
+        # Marker keys identify the compact encodings produced by _compact_text
+        # ("$parts" / "$diff") and _compact_transition_dict ("$tr").
         if "$parts" in value:
             return _decompact_parts(value["$parts"])
         if "$diff" in value:
@@ -145,12 +172,18 @@ def _decompact_value(value: Any, key: str | None = None) -> Any:
 
 
 def _compact_text(text: str) -> Any:
+    """Compact free text: strip boilerplate, then either drop stop words (plain
+    prose) or split around code fences and store each code block as a diff against
+    the previous block.
+    """
     # Step 1: Validate input parameters, operational preconditions, and state
     cleaned = _strip_boilerplate(text)
     matches = list(CODE_FENCE_RE.finditer(cleaned))
     if not matches:
         return _remove_stop_words(cleaned)
 
+    # Build an ordered list of prose strings and {"$diff"} dicts; order is the
+    # original order, so decompaction can simply join them.
     parts: list[Any] = []
     cursor = 0
     previous_code = ""
@@ -161,10 +194,13 @@ def _compact_text(text: str) -> Any:
             parts.append(_remove_stop_words(prefix))
         lang = (match.group(1) or "text").strip()
         code = match.group(2)
+        # Diff against the previous code block so iterative coder rewrites only store
+        # the changed lines. The first block diffs against "" (i.e. it is stored whole).
         diff = _unified_diff(previous_code, code, fromfile=f"code_{index - 1}", tofile=f"code_{index}")
         parts.append({
             "$diff": diff,
             "l": lang,
+            # Short hash of the full code body identifies the block without storing it twice.
             "h": hashlib.sha256(code.encode("utf-8")).hexdigest()[:12],
         })
         previous_code = code
@@ -177,6 +213,7 @@ def _compact_text(text: str) -> Any:
 
 
 def _strip_boilerplate(text: str) -> str:
+    """Remove repeated prompt scaffolding and collapse whitespace."""
     # Step 1: Validate input parameters, operational preconditions, and state
     out = text
     for pattern in BOILERPLATE_PATTERNS:
@@ -188,12 +225,16 @@ def _strip_boilerplate(text: str) -> str:
 
 
 def _remove_stop_words(text: str) -> str:
+    """Drop common English stop words from prose (lossy by design)."""
     # Step 1: Validate input parameters, operational preconditions, and state
+    # Case-insensitive lookup; non-stop-words are returned unchanged.
     def repl(match: re.Match[str]) -> str:
         # Step 1: Validate input parameters, operational preconditions, and state
         word = match.group(0)
         return "" if word.lower() in STOP_WORDS else word
 
+    # Only whole alphabetic words are candidates, so punctuation and numbers survive.
+    # The two follow-up substitutions tidy the gaps left by removed words.
     out = re.sub(r"\b[A-Za-z]+\b", repl, text)
     out = re.sub(r"[ \t]{2,}", " ", out)
     out = re.sub(r" *\n *", "\n", out)
@@ -201,6 +242,7 @@ def _remove_stop_words(text: str) -> str:
 
 
 def _unified_diff(old: str, new: str, fromfile: str = "prev", tofile: str = "next") -> list[str]:
+    """Return unified-diff lines (no trailing newlines) turning `old` into `new`."""
     # Step 1: Validate input parameters, operational preconditions, and state
     old_lines = old.splitlines()
     new_lines = new.splitlines()
@@ -208,6 +250,11 @@ def _unified_diff(old: str, new: str, fromfile: str = "prev", tofile: str = "nex
 
 
 def _new_text_from_unified_diff(diff_lines: list[str]) -> str:
+    """Rebuild the "new" side of a unified diff.
+
+    Keeps added ("+") and context (" ") lines; headers and hunk markers are
+    skipped and removed ("-") lines are ignored.
+    """
     # Step 1: Validate input parameters, operational preconditions, and state
     new_lines: list[str] = []
     for line in diff_lines:
@@ -222,6 +269,7 @@ def _new_text_from_unified_diff(diff_lines: list[str]) -> str:
 
 
 def _decompact_parts(parts: list[Any]) -> str:
+    """Re-assemble text produced by _compact_text from its parts list."""
     # Step 1: Validate input parameters, operational preconditions, and state
     restored: list[str] = []
     for part in parts:
@@ -236,7 +284,13 @@ def _decompact_parts(parts: list[Any]) -> str:
 
 
 def _compact_transition_dict(value: dict) -> dict | None:
+    """Densely encode a list of transitions/iterations/steps, if the dict has one.
+
+    Returns None when the dict has no such list so the caller handles it as an
+    ordinary dict. Each row is [index, state, output-or-diff].
+    """
     # Step 1: Validate input parameters, operational preconditions, and state
+    # Different writers name the list differently; take the first non-empty one.
     steps = value.get("transitions") or value.get("iterations") or value.get("steps")
     if not isinstance(steps, list) or not steps:
         return None
@@ -249,6 +303,9 @@ def _compact_transition_dict(value: dict) -> dict | None:
             continue
         state = step.get("state") or step.get("status") or step.get("phase") or ""
         output = step.get("output") or step.get("response") or step.get("content") or ""
+        # Outputs containing code fences use the code-aware compactor; other text is
+        # stored as a diff against the previous step's text, since consecutive steps
+        # usually differ only slightly.
         if isinstance(output, str) and "```" in output:
             compacted = _compact_text(output)
         elif isinstance(output, str):
@@ -261,6 +318,7 @@ def _compact_transition_dict(value: dict) -> dict | None:
 
 
 def _decompact_transition_array(value: dict) -> dict:
+    """Inverse of _compact_transition_dict. Malformed rows are skipped."""
     # Step 1: Validate input parameters, operational preconditions, and state
     steps = []
     for row in value.get("$tr", []):

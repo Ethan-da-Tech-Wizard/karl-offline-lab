@@ -19,24 +19,38 @@ from .base import ModelBase, TextModel, gguf, logger
 
 @ModelBase.register("BaichuanForCausalLM", "BaiChuanForCausalLM")
 class BaichuanModel(TextModel):
+    """Converter for Baichuan / BaiChuan causal LMs (7B/13B).
+
+    Baichuan packs Q, K and V into one fused W_pack matrix, which this class
+    splits and un-permutes into separate GGUF attention tensors.
+    """
+    # GGUF architecture id written into the output file.
     model_arch = gguf.MODEL_ARCH.BAICHUAN
 
     def set_vocab(self):
+        """Baichuan ships a SentencePiece tokenizer.model; use the standard loader."""
         # Step 1: Validate input parameters, operational preconditions, and state
         self._set_vocab_sentencepiece()
 
     def set_gguf_parameters(self):
+        """Write base parameters plus tensor layout and RoPE dimension count."""
         # Step 1: Validate input parameters, operational preconditions, and state
         super().set_gguf_parameters()
 
+        # Marks the weights as stored in the original Meta/Llama pth layout so the
+        # loader applies the matching RoPE convention.
         self.gguf_writer.add_tensor_data_layout("Meta AI original pth")
         self.gguf_writer.add_rope_dimension_count(self.hparams["hidden_size"] // self.hparams["num_attention_heads"])
 
     def modify_tensors(self, data_torch: Tensor, name: str, bid: int | None) -> Iterable[tuple[str, Tensor]]:
+        """Split the fused W_pack tensor into Q/K/V; delegate all other tensors."""
         # Step 1: Validate input parameters, operational preconditions, and state
         head_count = self.hparams["num_attention_heads"]
+        # Falls back to the full head count when the config has no GQA setting.
         head_count_kv = self.hparams.get("num_key_value_heads", head_count)
 
+        # W_pack stacks Q, K and V along dim 0 in three equal parts (index 0/1/2).
+        # Q and K must additionally be un-permuted from the HF rotary layout; V is a plain slice.
         if bid is not None and name == f"model.layers.{bid}.self_attn.W_pack.weight":
             logger.info(f"Unpacking and permuting layer {bid}")
             yield from [
@@ -51,6 +65,10 @@ class BaichuanModel(TextModel):
             yield from self.modify_tensors(data_torch, self.map_tensor_name(name), bid)
 
     def _reverse_hf_permute(self, weights: Tensor, n_head: int, n_kv_head: int | None = None) -> Tensor:
+        """Undo the HF rotary-embedding head permutation (inverse of the permute done by HF).
+
+        When K/V use fewer heads (GQA) the head count is divided by n_kv_head.
+        """
         # Step 1: Validate input parameters, operational preconditions, and state
         if n_kv_head is not None and n_head != n_kv_head:
             n_head //= n_kv_head
@@ -64,11 +82,14 @@ class BaichuanModel(TextModel):
     def _reverse_hf_permute_part(
         self, weights: Tensor, n_part: int, n_head: int, n_head_kv: int | None = None,
     ) -> Tensor:
+        """Slice one third (Q, K or V by n_part) out of a fused matrix and un-permute it."""
         # Step 1: Validate input parameters, operational preconditions, and state
+        # Size of one third of the fused first dimension.
         r = weights.shape[0] // 3
         return self._reverse_hf_permute(weights[r * n_part:r * n_part + r, ...], n_head, n_head_kv)
 
     def _reverse_hf_part(self, weights: Tensor, n_part: int) -> Tensor:
+        """Slice one third (Q, K or V by n_part) out of a fused matrix without permuting."""
         # Step 1: Validate input parameters, operational preconditions, and state
         r = weights.shape[0] // 3
         return weights[r * n_part:r * n_part + r, ...]

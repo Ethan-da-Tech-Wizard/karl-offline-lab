@@ -7,8 +7,15 @@
 #          and writes compliant GGUF data structures for llama.cpp.
 # ==============================================================================
 
+# Package overview: this package is a split-up copy of llama.cpp's
+# convert_hf_to_gguf.py. Each architecture lives in its own module and registers
+# its converter class with ModelBase via a decorator. This __init__ keeps two
+# lookup tables (HF architecture name -> module name) so that only the module
+# needed for a given checkpoint is imported, and re-exports the public base API.
 from __future__ import annotations
 
+# Re-export the shared base classes/helpers so callers can import everything
+# from `conversion` without knowing about conversion.base.
 from .base import (
     ModelBase, TextModel, MmprojModel, ModelType, SentencePieceTokenTypes,
     logger, _mistral_common_installed, _mistral_import_error_msg,
@@ -17,6 +24,8 @@ from .base import (
 from typing import Type
 
 
+# Public surface of the package (underscore names are re-exported on purpose
+# because callers check mistral_common availability through them).
 __all__ = [
     "ModelBase", "TextModel", "MmprojModel", "ModelType", "SentencePieceTokenTypes",
     "get_model_architecture", "LazyTorchTensor", "logger",
@@ -25,6 +34,10 @@ __all__ = [
 ]
 
 
+# Text (language-model) architectures: HuggingFace `architectures[0]` string ->
+# name of the conversion module whose class handles it. Several architectures
+# share one module (e.g. all BERT variants map to "bert"). Keys are matched
+# exactly, so a new architecture needs an entry here AND a registered class.
 TEXT_MODEL_MAP: dict[str, str] = {
     "AfmoeForCausalLM": "afmoe",
     "ApertusForCausalLM": "llama",
@@ -243,6 +256,9 @@ TEXT_MODEL_MAP: dict[str, str] = {
 }
 
 
+# Multimodal projector (mmproj) architectures. Same idea as TEXT_MODEL_MAP but
+# used when converting the vision/audio encoder to a separate GGUF; the same HF
+# architecture may map to a different module than in the text table.
 MMPROJ_MODEL_MAP: dict[str, str] = {
     "AudioFlamingo3ForConditionalGeneration": "ultravox",
     "CogVLMForCausalLM": "cogvlm",
@@ -296,10 +312,13 @@ MMPROJ_MODEL_MAP: dict[str, str] = {
 }
 
 
+# Distinct module names, precomputed so load_all_models imports each exactly once.
 _TEXT_MODEL_MODULES = sorted(set(TEXT_MODEL_MAP.values()))
 _MMPROJ_MODEL_MODULES = sorted(set(MMPROJ_MODEL_MAP.values()))
 
 
+# Bookkeeping of modules already imported successfully, so repeated calls to
+# load_all_models skip the work (and retry only the ones that failed).
 _loaded_text_modules: set[str] = set()
 _loaded_mmproj_modules: set[str] = set()
 
@@ -307,12 +326,15 @@ _loaded_mmproj_modules: set[str] = set()
 def load_all_models() -> None:
     """Import all model modules to trigger @ModelBase.register() decorators."""
     # Step 1: Validate input parameters, operational preconditions, and state
+    # Cheap length comparison: only walk the list if something is still unloaded.
     if len(_loaded_text_modules) != len(_TEXT_MODEL_MODULES):
         for module_name in _TEXT_MODEL_MODULES:
             # Iterate over items, evaluate loop invariant, and update progress
             if module_name not in _loaded_text_modules:
                 try:
                     # Execute guarded operations and establish recovery boundaries
+                    # Absolute import: assumes the directory containing this package is on sys.path.
+                    # Importing the module executes its @ModelBase.register(...) decorators.
                     __import__(f"conversion.{module_name}")
                     _loaded_text_modules.add(module_name)
                 except Exception as e:
@@ -330,19 +352,27 @@ def load_all_models() -> None:
                     logger.warning(f"Failed to load model module {module_name}: {e}")
 
 
+# Lazy path: import only the single module needed for this architecture instead
+# of all of them.
 def get_model_class(name: str, mmproj: bool = False) -> Type[ModelBase]:
     """Dynamically import and return a model class by its HuggingFace architecture name."""
     # Step 1: Validate input parameters, operational preconditions, and state
+    # Pick the table that matches the requested model kind.
     relevant_map = MMPROJ_MODEL_MAP if mmproj else TEXT_MODEL_MAP
     if name not in relevant_map:
         raise NotImplementedError(f"Architecture {name!r} not supported!")
     module_name = relevant_map[name]
     __import__(f"conversion.{module_name}")
+    # Registered classes are stored per ModelType, then by architecture name.
     model_type = ModelType.MMPROJ if mmproj else ModelType.TEXT
     return ModelBase._model_classes[model_type][name]
 
 
 def print_registered_models() -> None:
+    """Log every supported architecture name (text, then mmproj) at error level.
+
+    Used for the "unknown architecture" help output, hence logger.error.
+    """
     # Step 1: Validate input parameters, operational preconditions, and state
     load_all_models()
     logger.error("TEXT models:")

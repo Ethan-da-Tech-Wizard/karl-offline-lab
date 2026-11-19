@@ -14,15 +14,20 @@ from .base import ModelBase, TextModel, gguf
 
 @ModelBase.register("CodeShellForCausalLM")
 class CodeShellModel(TextModel):
+    """Converter for CodeShell (GPT-style code model with multi-query attention)."""
+    # GGUF architecture id written into the output file.
     model_arch = gguf.MODEL_ARCH.CODESHELL
 
     def set_gguf_parameters(self):
+        """Write CodeShell hyperparameters (GPT-2-style key names, linear RoPE scaling 1.0)."""
         # Step 1: Validate input parameters, operational preconditions, and state
         self.gguf_writer.add_context_length(self.hparams["n_positions"])
         self.gguf_writer.add_embedding_length(self.hparams["n_embd"])
+        # The FFN width is fixed at 4x the embedding size.
         self.gguf_writer.add_feed_forward_length(4 * self.hparams["n_embd"])
         self.gguf_writer.add_block_count(self.block_count)
         self.gguf_writer.add_head_count(self.hparams["n_head"])
+        # num_query_groups is the number of KV heads (grouped/multi-query attention).
         self.gguf_writer.add_head_count_kv(self.hparams["num_query_groups"])
         self.gguf_writer.add_layer_norm_eps(self.hparams["layer_norm_epsilon"])
         self.gguf_writer.add_file_type(self.ftype)
