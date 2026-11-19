@@ -95,7 +95,7 @@ class TestCustomAgents(unittest.TestCase):
             "test_websocket_chat_custom_agent_routing"
         )
 
-        # Port 8082 avoids colliding with the app's default bridge port (8080/8081).
+        # Port 8082 avoids colliding with the app's manager default (8080), so a running app does not clash.
         if needs_server and not _running_under_bwrap():
             self.app = QCoreApplication.instance() or QCoreApplication(sys.argv)
             self.port = 8082
