@@ -43,6 +43,8 @@ logger = logging.getLogger("karl.auto_train")
 # (see train_adapter/convert_adapter_to_gguf below). Restrict the charset so
 # a caller (e.g. the WebSocket start_auto_train RPC) can't path-traverse out
 # of data/adapters/ via "../" sequences.
+# The same pattern is duplicated in websocket_server.py (RPC-level check); this one is the
+# last line of defence because the script can also be launched by hand.
 _SAFE_ADAPTER_NAME_RE = re.compile(r"^[A-Za-z0-9_\-]{1,64}$")
 
 # Project paths
@@ -83,6 +85,10 @@ def generate_tasks_for_topic(topic: str, count: int, llm) -> list[dict]:
     # Step 1: Validate input parameters, operational preconditions, and state
     logger.info("Generating %d synthetic tasks for topic: '%s'...", count, topic)
 
+    # The generator is asked for the verifier as Python source inside JSON, which small models
+    # often get wrong (bad escaping, missing verify()). That is expected: JSON parse failures fall
+    # back to templates below, and a broken verifier simply makes its task fail verification later
+    # and get discarded.
     meta_prompt = f"""You are a synthetic dataset generator. Generate a JSON list of exactly {count} distinct, high-quality, and challenging programming exercises or word problems about the topic: "{topic}".
 
 Each task MUST be in this exact JSON format:
@@ -117,7 +123,10 @@ Return ONLY the raw JSON list starting with [ and ending with ]. Do not include 
         output_chunks = []
         for chunk in llm(
             prompt,
+            # Large budget because the model reasons first and then emits `count` full tasks as JSON;
+            # a truncated list fails json.loads and triggers the fallback templates.
             max_tokens=4096,
+            # High temperature on purpose: the goal is a varied set of tasks, not one best answer.
             temperature=0.85,
             stop=["User:"],
             stream=True
@@ -164,6 +173,9 @@ Return ONLY the raw JSON list starting with [ and ending with ]. Do not include 
         return generate_fallback_tasks(topic, count)
 
 
+# Fallback tasks are trivial and topic-agnostic: they keep the pipeline testable offline but
+# produce a dataset that teaches almost nothing about `topic`. Check the logs for the
+# "Falling back" warning before trusting an adapter trained on them.
 def generate_fallback_tasks(topic: str, count: int) -> list[dict]:
     """Generates simple placeholder tasks if LLM task generation fails."""
     # Step 1: Validate input parameters, operational preconditions, and state
@@ -197,6 +209,8 @@ def solve_task(task: dict, llm) -> tuple[str, str]:
     """Queries LLM to solve the problem, returning (thought, response)."""
     # Step 1: Validate input parameters, operational preconditions, and state
     problem = task.get("problem_statement", "")
+    # Stop on "<think>" as well as "User:" (see the llm call below) so a second reasoning block
+    # cannot start after the answer and get merged into the response.
     logger.info("Solving task: %s...", task.get("id"))
     # Plain User/Assistant prompt with a seeded <think>; temperature 0.7 keeps some diversity between
     # attempts.
@@ -239,6 +253,8 @@ def verify_solution(task: dict, solution: str) -> tuple[bool, str]:
         "    print('verify() raised:', _e, file=_sys.stderr)\n"
         "    _sys.exit(2)\n"
     )
+    # Only a clean sandbox exit counts as a pass; a verifier that crashes or times out yields
+    # (False, trace), and the trace is what the self-reflection step shows the model.
     passed, trace = sandbox.run_code(script, test_code)
     return passed, trace
 
@@ -252,6 +268,8 @@ def reflect_and_correct(task: dict, failed_thought: str, failed_response: str, t
     ground_truth = task.get("ground_truth_answer", "")
     problem = task.get("problem_statement", "")
     
+    # The prompt includes the failed answer and traceback but deliberately not the ground truth,
+    # so the model must repair its own reasoning rather than copy the reference.
     correction_prompt = (
         f"You are correcting your own mistake.\n\n"
         f"Problem:\n{problem}\n\n"
@@ -277,6 +295,8 @@ def reflect_and_correct(task: dict, failed_thought: str, failed_response: str, t
         output_chunks.append(text)
         
     full_output = "".join(output_chunks)
+    # build_prompt may or may not pre-seed <think> depending on the model, so the parser is told
+    # only when the prompt really ends inside a think block.
     thought, response = parse_thought_stream(full_output, start_in_thought=prompt_text.rstrip().endswith("<think>"))
     passed, trace = verify_solution(task, response)
     return thought, response, passed
@@ -307,6 +327,7 @@ def train_adapter(dataset_path: str, base_model_path: str, adapter_name: str, ar
         tokenizer.pad_token = tokenizer.eos_token
 
     # CPU fallback uses float32 because fp16 math is unsupported/slow on CPU.
+    # float16 only exists as a fast path on CUDA; on CPU it would be slow or unsupported.
     torch_dtype = torch.float16 if torch.cuda.is_available() else torch.float32
     device_map = {"": 0} if torch.cuda.is_available() else "auto"
 
@@ -331,6 +352,8 @@ def train_adapter(dataset_path: str, base_model_path: str, adapter_name: str, ar
             device_map=device_map
         )
 
+    # Rank/alpha default to 16/32 (alpha = 2 x rank), a common LoRA ratio that keeps the update
+    # scale stable when only rank is changed.
     lora_config = LoraConfig(
         r=args.rank,
         lora_alpha=args.alpha,
@@ -348,6 +371,8 @@ def train_adapter(dataset_path: str, base_model_path: str, adapter_name: str, ar
     adapter_path = ADAPTERS_DIR / adapter_name
     adapter_path.mkdir(parents=True, exist_ok=True)
 
+    # adapter_name was validated against _SAFE_ADAPTER_NAME_RE in main(), so the adapter path
+    # built above cannot escape ADAPTERS_DIR.
     training_args = SFTConfig(
         output_dir=str(adapter_path / "temp_checkpoints"),
         dataset_text_field="messages",
@@ -358,6 +383,8 @@ def train_adapter(dataset_path: str, base_model_path: str, adapter_name: str, ar
         learning_rate=args.lr,
         logging_steps=1,
         num_train_epochs=args.epochs,
+        # Epoch checkpoints land in temp_checkpoints/ next to the adapter and are intentionally not
+        # deleted (see the note after training); remove them manually to reclaim disk space.
         save_strategy="epoch",
         report_to="none",
         fp16=True if torch.cuda.is_available() else False,
@@ -404,6 +431,8 @@ def convert_adapter_to_gguf(base_model_path: str, adapter_name: str):
         str(adapter_path)
     ]
     
+    # Run as a separate process so converter crashes or sys.exit calls cannot take down this
+    # training script, and so its heavy imports do not stay loaded afterwards.
     res = subprocess.run(cmd, capture_output=True, text=True)
     # Surface the converter's stderr in both log and exception so failures are diagnosable from the
     # RPC caller.
@@ -431,6 +460,8 @@ def main():
     parser.add_argument("--rank", type=int, default=16, help="LoRA rank")
     parser.add_argument("--alpha", type=int, default=32, help="LoRA alpha")
     parser.add_argument("--dropout", type=float, default=0.05, help="LoRA dropout")
+    # NOTE: store_true with default=True means this flag is always on; QLoRA cannot be disabled
+    # from the CLI. Non-CUDA machines still skip 4-bit via the torch.cuda check in train_adapter.
     parser.add_argument("--qlora", action="store_true", default=True, help="Use QLoRA 4-bit SFT")
     parser.add_argument("--base_model", type=str, default=None, help="Path to HF base model folder")
     args = parser.parse_args()
@@ -455,6 +486,8 @@ def main():
     base_model = args.base_model
     if not base_model:
         # scan data/hf_models/
+        # Filesystem order, not sorted: with several models installed the pick is arbitrary, so pass
+        # --base_model when it matters.
         dirs = [d for d in HF_MODELS_DIR.iterdir() if d.is_dir()]
         if dirs:
             base_model = str(dirs[0])
