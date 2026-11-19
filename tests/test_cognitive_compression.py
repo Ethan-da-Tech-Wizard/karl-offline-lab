@@ -40,6 +40,7 @@ class MockLlama:
         if "You are a cognitive compression tool" in text:
             return [0] * 50
         if "trigger_compression" in text:
+            # The compression trigger compares the prompt token count with a fraction of n_ctx; this value is just over the threshold, so the history is judged too long.
             # Exceed 80% context budget (80% of 4096 is 3276)
             return [0] * 3500
         return [0] * (len(text) // 4 + 1)
@@ -60,6 +61,7 @@ class MockLlama:
                 ]
             }
 
+        # finish_reason='length' mimics a generation cut off by the context budget mid-<think>, which is the condition that makes the thread compress and resume.
         # First call: return length continuation trigger
         if "trigger_compression" in prompt and self.call_count == 1:
             return [
@@ -110,6 +112,7 @@ def test_cognitive_compression_and_live_stats():
     mock_llama = MockLlama()
     ModelLoader.get_instance = lambda *args, **kwargs: mock_llama
     ModelLoader.model_name = lambda: "mock-r1-model.gguf"
+    # A fixed small context makes the 80% threshold (3276 tokens) a known number that MockLlama.tokenize can exceed deterministically.
     ModelLoader.n_ctx = lambda: 4096
 
     try:
@@ -146,6 +149,7 @@ def test_cognitive_compression_and_live_stats():
         thread.generation_finished.connect(on_done)
 
         # Run thread logic synchronously
+        # Calling run() directly executes the QThread body synchronously on the test thread, so no event loop is needed and signals are delivered immediately.
         thread.run()
 
         # Assertions
@@ -162,6 +166,7 @@ def test_cognitive_compression_and_live_stats():
 
         assert "Compressed summary of thoughts" in thought, "Thought should contain the compressed summary"
         assert "Response" in response, "Response should be retrieved correctly after resuming"
+        # truncated is reserved for a final 'length' stop; the intermediate length stop was handled by compression and must not leak into the result.
         assert not truncated, "Final run finished with stop reason, should not be marked truncated"
         assert diagnostics is not None, "Diagnostics payload must be returned"
         assert diagnostics["prompt_tokens"] > 0
@@ -195,6 +200,7 @@ def test_agentic_cognitive_compression_and_live_stats():
     ModelLoader.n_ctx = lambda: 4096
 
     # Force Agentic Loop to stop after the first generation turn
+    # Without this the agentic loop would request further iterations, and the mock's call-count-based script would not match; stopping after one turn isolates the compression behaviour.
     core.agentic_loop.should_continue = lambda iteration, response: False
     core.agentic_loop.build_next_prompt = lambda response, iteration: "next"
 
