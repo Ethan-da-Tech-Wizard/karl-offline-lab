@@ -121,8 +121,9 @@ class TestMetaPromptAndParsing(unittest.TestCase):
 
 
 class TestGenerateSftQa(unittest.TestCase):
-    @patch("scrape_library_docs.ModelLoader.get_instance")
     """generate_sft_qa with the local model mocked."""
+
+    @patch("scrape_library_docs.ModelLoader.get_instance")
     def test_builds_sft_row_from_well_formed_output(self, mock_get_instance):
         """A good model reply becomes a system/user/assistant row tagged source=library_scrape with the package and qualname."""
         # Step 1: Validate input parameters, operational preconditions, and state
