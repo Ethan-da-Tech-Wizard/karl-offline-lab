@@ -33,9 +33,14 @@ from .base import ModelBase, TextModel, gguf
 class MiniMaxM2Model(TextModel):
     """Converter for MiniMax-M2 MoE models; stacks per-expert weights into 3D tensors."""
     model_arch = gguf.MODEL_ARCH.MINIMAXM2
-    # Per-layer buffer of expert tensors awaiting merge. Note: class-level dict is shared by
-    # all instances, which is fine for one conversion per process.
-    _experts_cache: dict[int, dict[str, Tensor]] = {}
+    # Per-layer buffer of expert tensors awaiting merge; created per instance in __init__ so that
+    # converting two models in one process never mixes their expert weights.
+    _experts_cache: dict[int, dict[str, Tensor]]
+
+    def __init__(self, *args, **kwargs):
+        """Create this converter's private expert-weight cache."""
+        super().__init__(*args, **kwargs)
+        self._experts_cache = {}
 
     def set_gguf_parameters(self):
         """Add expert FFN size and rotary dimension from the MiniMax config keys."""

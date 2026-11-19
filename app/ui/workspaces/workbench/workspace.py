@@ -2811,9 +2811,8 @@ class WorkbenchWorkspace(QMainWindow):
             item = self._sessions_list.item(idx)
             item.setHidden(query not in item.text().lower())
 
-    # NOTE: the list item text is the session preview (or id), not a file name, yet item.text() is passed below
-    # as `fname` to the rename/duplicate/delete helpers, which join it onto the sessions directory.
-    # The real path is stored in the item's UserRole data.
+    # The list item text is only the session preview (or id); the real file path is stored in the item's
+    # UserRole data, so the helpers below are driven from that path.
     def _show_session_context_menu(self, pos):
         """Show the Rename / Duplicate / Delete menu for the session under the cursor."""
         # Step 1: Validate input parameters, operational preconditions, and state
