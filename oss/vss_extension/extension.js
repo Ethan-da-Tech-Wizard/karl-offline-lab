@@ -7,6 +7,8 @@
 //          Coordinates editor events, client state, and backend RPC messaging.
 // ==============================================================================
 
+// Imports: "vscode" is provided by the editor at runtime; the rest are Node built-ins
+// plus the two local modules that hold the sidebar webview and the workflow commands.
 const vscode = require('vscode');
 const fs = require('fs');
 const os = require('os');
@@ -37,10 +39,20 @@ function readServiceDiscovery() {
     }
 }
 
+/**
+ * Extension entry point, called by VS Code when the extension starts.
+ *
+ * Creates the sidebar webview provider, registers every command, wires editor events to
+ * the webview and installs the Mini-GPT inline completion provider. Everything pushed onto
+ * ``context.subscriptions`` is disposed automatically when the extension is deactivated.
+ * @param {vscode.ExtensionContext} context
+ */
 function activate(context) {
     // Step 1: Initialize function scope and validate execution context
     const sidebarProvider = new KarlSidebarProvider(context);
 
+    // The Python app writes ~/.karl/service_discovery.json; reading it lets the extension
+    // find the bridge port and auth token without manual configuration.
     // Pre-populate the provider with the discovered endpoint so that
     // connectToBridge() can use the correct port without manual config.
     const discovery = readServiceDiscovery();
@@ -48,7 +60,9 @@ function activate(context) {
         sidebarProvider.discoveredPort = discovery.active_port;
         sidebarProvider.discoveredToken = discovery.token || '';
     }
+    // Alias used by the inline-command helpers below.
     const provider = sidebarProvider;
+    // Expose ``_view`` as a read-only alias of webviewView (used by _sendToKarlWebview).
     Object.defineProperty(provider, '_view', {
         get() { return this.webviewView; }
     });
@@ -57,6 +71,7 @@ function activate(context) {
         vscode.window.registerWebviewViewProvider('karl.sidebarView', sidebarProvider)
     );
 
+    // Small helper that registers a command and tracks it for automatic disposal.
     const register = (command, handler) => {
         context.subscriptions.push(vscode.commands.registerCommand(command, handler));
     };
@@ -77,12 +92,14 @@ function activate(context) {
     // WORKFLOW_REGISTRY entry itself is kept intact so `runWorkflowById()` (used
     // by the webview's task-mode dropdown/quick actions via the `runWorkflow`
     // postMessage) keeps working.
+    // See the long note above: ids that are registered separately must be skipped here.
     const WORKFLOW_IDS_WITH_DEDICATED_COMMAND = new Set(['explainSelection']);
     Object.keys(WORKFLOW_REGISTRY).forEach(id => {
         if (WORKFLOW_IDS_WITH_DEDICATED_COMMAND.has(id)) return;
         register(`karl.${id}`, (uri) => runWorkflow(sidebarProvider, WORKFLOW_REGISTRY[id], uri));
     });
 
+    // Knowledge-base ingestion commands and the Review Bay opener.
     register('karl.ingestActiveFile', (uri) => sendActiveFileToKb(sidebarProvider, uri));
     register('karl.ingestWorkspaceFolder', (uri) => sendWorkspaceFolderToKb(sidebarProvider, uri));
     register('karl.openReviewBay', async () => {
@@ -92,6 +109,10 @@ function activate(context) {
 
     // ── Inline Editor Commands ─────────────────────────────────────────────────────
   
+    /**
+     * Return the selected text, or the whole document if nothing is selected ("" with no editor).
+     * @param {vscode.TextEditor | undefined} editor
+     */
     function _getSelectionOrFile(editor) {
         // Step 1: Initialize function scope and validate execution context
         if (!editor) return '';
@@ -102,6 +123,11 @@ function activate(context) {
         return editor.document.getText();
     }
 
+    /**
+     * Post a message to the Karl webview, or warn the user if the panel has not been opened yet.
+     * @param {string} command message type the webview script understands
+     * @param {object} payload extra fields merged into the message
+     */
     function _sendToKarlWebview(command, payload) {
         // Step 1: Initialize function scope and validate execution context
         if (provider && provider._view) {
@@ -112,6 +138,8 @@ function activate(context) {
     }
 
     context.subscriptions.push(
+        // "Explain" sends a ready-made prompt (code capped at 4000 characters to keep the request small)
+        // and auto-sends it so the answer starts streaming immediately.
         vscode.commands.registerCommand('karl.explainSelection', async () => {
             const editor = vscode.window.activeTextEditor;
             const code = _getSelectionOrFile(editor);
@@ -127,6 +155,7 @@ function activate(context) {
     );
 
     context.subscriptions.push(
+        // Refactor requires an explicit selection, because rewriting a whole file blindly is risky.
         vscode.commands.registerCommand('karl.refactorSelection', async () => {
             const editor = vscode.window.activeTextEditor;
             if (!editor || editor.selection.isEmpty) {
@@ -142,6 +171,7 @@ function activate(context) {
     );
 
     context.subscriptions.push(
+        // Free-form question via a VS Code input box.
         vscode.commands.registerCommand('karl.askKarl', async () => {
             const question = await vscode.window.showInputBox({
                 prompt: 'Ask Karl anything...',
@@ -154,6 +184,7 @@ function activate(context) {
     );
 
     context.subscriptions.push(
+        // Hands the code to the swarm tab as an "improve and refactor" objective (first 2000 characters).
         vscode.commands.registerCommand('karl.sendToSwarm', async () => {
             const editor = vscode.window.activeTextEditor;
             const code = _getSelectionOrFile(editor);
@@ -165,6 +196,8 @@ function activate(context) {
     );
 
     context.subscriptions.push(
+        // Starts the self-training flywheel for a topic: asks for a topic and adapter name, then
+        // sends a ``start_auto_train`` RPC and streams progress into a dedicated output channel.
         vscode.commands.registerCommand('karl.autoTrain', async () => {
             const topic = await vscode.window.showInputBox({
                 prompt: 'Enter the topic/behavior for Karl to learn (e.g., modular arithmetic):',
@@ -178,6 +211,7 @@ function activate(context) {
             });
             if (!adapterName) return;
 
+            // Create the output channel lazily, then reveal and clear it for a fresh run.
             // Trigger training channel setup
             if (!sidebarProvider.autoTrainChannel) {
                 sidebarProvider.autoTrainChannel = vscode.window.createOutputChannel("Karl Auto-Train Logs");
@@ -187,6 +221,7 @@ function activate(context) {
             sidebarProvider.autoTrainChannel.appendLine(`[SYSTEM] Starting auto-training for topic: "${topic}"...`);
 
             // Send RPC command
+            // Hard-coded training settings: 15 generated examples, 3 epochs, learning rate 2e-4.
             const ok = sidebarProvider.sendRpc('start_auto_train', {
                 topic,
                 adapter_name: adapterName,
@@ -203,6 +238,7 @@ function activate(context) {
         })
     );
 
+    // Refresh the webview whenever the active editor or its diagnostics change.
     // Synchronize cockpit state on events
     context.subscriptions.push(
         vscode.window.onDidChangeActiveTextEditor(() => {
@@ -216,6 +252,7 @@ function activate(context) {
         })
     );
 
+    // Use the first workspace folder as the project root (home directory if none is open).
     // Register Mini-GPT Inline Completion Provider
     const workspaceFolders = vscode.workspace.workspaceFolders;
     const workspacePath = workspaceFolders && workspaceFolders.length > 0
@@ -225,12 +262,19 @@ function activate(context) {
     const inlineProvider = new MiniGptInlineCompletionProvider(workspacePath, sidebarProvider);
     context.subscriptions.push(
         vscode.languages.registerInlineCompletionItemProvider(
+            // Matches every file, so the Mini-GPT completion is offered in all languages.
             { pattern: '**' },
             inlineProvider
         )
     );
 }
 
+/**
+ * Inline (ghost-text) completions from the small character-level MiniGPT model.
+ *
+ * The model weights live in <workspace>/data/mini_gpt (created by the training tab). Each
+ * completion runs a short-lived Python process so the extension needs no bundled ML runtime.
+ */
 class MiniGptInlineCompletionProvider {
     /**
      * @param {string} workspacePath
@@ -239,6 +283,7 @@ class MiniGptInlineCompletionProvider {
     constructor(workspacePath, sidebarProvider) {
         this.workspacePath = workspacePath;
         this.sidebarProvider = sidebarProvider || null;
+        // Timer handle for the typing debounce; _pendingProc is the Python process currently running.
         /** @type {ReturnType<typeof setTimeout> | null} */
         this.debounceTimeout = null;
         /** @type {import('child_process').ChildProcess | null} */
@@ -246,6 +291,11 @@ class MiniGptInlineCompletionProvider {
     }
 
     /**
+     * VS Code calls this on typing. It debounces 500 ms, then asks the model for a continuation.
+     *
+     * Returns undefined (no suggestion) when no weights exist, the line is blank, the request
+     * is cancelled, or generation fails. Cancellation also kills any running subprocess.
+     *
      * @param {vscode.TextDocument} document
      * @param {vscode.Position} position
      * @param {vscode.InlineCompletionContext} context
@@ -253,16 +303,19 @@ class MiniGptInlineCompletionProvider {
      * @returns {Promise<vscode.InlineCompletionItem[] | undefined>}
      */
     provideInlineCompletionItems(document, position, context, token) {
+        // No trained model means no completions; skip silently without spawning anything.
         const weightsPath = path.join(this.workspacePath, "data", "mini_gpt", "weights.pt");
         if (!fs.existsSync(weightsPath)) {
             return Promise.resolve(undefined);
         }
 
+        // Only the text before the cursor is used as the prompt.
         const lineText = document.lineAt(position.line).text.substring(0, position.character);
         if (!lineText.trim()) {
             return Promise.resolve(undefined);
         }
 
+        // Restart the debounce window: only the final keystroke in a burst triggers generation.
         // Clear any pending debounce from the previous keypress
         if (this.debounceTimeout !== null) {
             clearTimeout(this.debounceTimeout);
@@ -290,6 +343,7 @@ class MiniGptInlineCompletionProvider {
                 resolve(undefined);
             });
 
+            // Wait 500 ms of quiet before spending CPU on a completion.
             this.debounceTimeout = setTimeout(async () => {
                 this.debounceTimeout = null;
                 cancelListener.dispose();
@@ -303,6 +357,7 @@ class MiniGptInlineCompletionProvider {
                     const completion = await this.generateCompletion(lineText, token);
                     if (!token.isCancellationRequested && completion && completion.trim().length > 0) {
                         const item = new vscode.InlineCompletionItem(completion);
+                        // A zero-width range at the cursor makes the suggestion an insertion, not a replacement.
                         item.range = new vscode.Range(position, position);
                         resolve([item]);
                     } else {
@@ -317,6 +372,11 @@ class MiniGptInlineCompletionProvider {
     }
 
     /**
+     * Run the MiniGPT model in a Python subprocess and return the generated continuation.
+     *
+     * The embedded script rebuilds the tokenizer and model from the saved files and prints up to
+     * 40 new characters (temperature 0.7, top-k 5). Hard limit: 2 seconds, then the process is killed.
+     *
      * @param {string} prompt
      * @param {vscode.CancellationToken} [token]
      * @returns {Promise<string>}
@@ -324,6 +384,8 @@ class MiniGptInlineCompletionProvider {
     generateCompletion(prompt, token) {
         const sidebarProvider = this.sidebarProvider;
         return new Promise((resolve, reject) => {
+            // The script is passed with "python3 -c"; the workspace root and prompt arrive as argv[1] and argv[2],
+            // so no user text is interpolated into the code.
             const pythonScript = `
 import os
 import sys
@@ -380,11 +442,13 @@ completion = tokenizer.decode(completion_ids)
 print(completion, end="")
 `;
 
+            // Arguments are passed as an array (no shell), so the prompt cannot inject shell commands.
             const proc = cp.spawn('python3', ['-c', pythonScript, this.workspacePath, prompt]);
             this._pendingProc = proc;
 
             // Settled flag — prevents double-resolve/reject when both the hard
             // timeout and the close event fire (e.g. kill → close with code -2).
+            // Guards against settling twice, since timeout, cancellation and "close" can all fire.
             let settled = false;
 
             /** @type {ReturnType<typeof setTimeout> | null} */
@@ -395,12 +459,14 @@ print(completion, end="")
             let cancelListener = null;
 
             // Escalating kill: SIGTERM first, SIGKILL after 500 ms if process hangs.
+            // Ask nicely first (SIGTERM); force-kill after 500 ms if the process ignores it.
             const killProc = () => {
                 proc.kill('SIGTERM');
                 sigkillTimer = setTimeout(() => { proc.kill('SIGKILL'); }, 500);
             };
 
             // Single-call settle — clears all timers and listeners then calls fn.
+            // Single exit point: stop all timers/listeners, then resolve or reject exactly once.
             const settle = (fn, value) => {
                 if (settled) return;
                 settled = true;
@@ -426,6 +492,8 @@ print(completion, end="")
             let stderr = '';
 
             // Hard 2-second execution guard.
+            // Typing assistance must be instant; abandon anything slower than 2 seconds.
+            // NOTE: starting Python and loading torch can exceed this on a cold start.
             hardTimer = setTimeout(() => {
                 killProc();
                 settle(reject, new Error('Mini-GPT generation timed out.'));
@@ -440,6 +508,8 @@ print(completion, end="")
                 settle(reject, err);
             });
 
+            // Translate crash signatures into a diagnostic message for the webview, then settle:
+            // exit code 0 gives the printed text, anything else an error.
             proc.on('close', (/** @type {number | null} */ code, /** @type {string | null} */ signal) => {
                 // SIGSEGV: exit code 139 or SIGSEGV signal — likely AVX incompatibility in llama-cpp-python
                 if ((code === 139 || signal === 'SIGSEGV') && sidebarProvider) {
@@ -471,9 +541,13 @@ print(completion, end="")
     }
 }
 
+/**
+ * Called by VS Code on shutdown; disposables registered in activate() are cleaned up automatically.
+ */
 function deactivate() {
     // Step 1: Initialize function scope and validate execution context
     console.log('Karl extension deactivated.');
 }
 
+// VS Code looks up these two exports by name.
 module.exports = { activate, deactivate };

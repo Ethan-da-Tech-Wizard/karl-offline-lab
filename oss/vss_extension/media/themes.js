@@ -6,6 +6,17 @@
 //          Coordinates editor events, client state, and backend RPC messaging.
 // ==============================================================================
 
+/**
+ * Catalog of colour themes for the Karl webview.
+ *
+ * Each theme has an ``id`` (stored in saved settings), a display ``name``, a ``description``
+ * and ``vars``: CSS custom properties applied to the document root by applyAppearance()
+ * in karl_state.js. Keys: --karl-bg (page), --karl-panel / --karl-panel-hi (surfaces),
+ * --karl-border, --karl-accent / --karl-accent-2 (highlights) and --karl-good / --karl-warn /
+ * --karl-danger (status colours). All themes are dark. This file is a plain browser script
+ * that attaches data to ``window``; it must load before karl_state.js.
+ * @type {Array<{id: string, name: string, description: string, vars: Record<string, string>}>}
+ */
 window.KARL_THEMES = [
     {
         id: "obsidian-core",
@@ -14,6 +25,7 @@ window.KARL_THEMES = [
         vars: { "--karl-bg": "#020817", "--karl-panel": "#07111f", "--karl-panel-hi": "#0b2038", "--karl-border": "#0d6b94", "--karl-accent": "#00c2ff", "--karl-accent-2": "#a7efff", "--karl-good": "#72f5a4", "--karl-warn": "#f6d365", "--karl-danger": "#ff6b7a" }
     },
     {
+        // The remaining themes follow the same shape; only the colour values differ.
         id: "abyssal-blue",
         name: "Abyssal Blue Engine",
         description: "Deep navy machine room with cyan-white energy rails, tuned for long coding sessions.",
@@ -129,6 +141,13 @@ window.KARL_THEMES = [
     }
 ];
 
+/**
+ * Layout presets selectable in the UI.
+ *
+ * The chosen ``id`` is written to ``document.body.dataset.layout`` so CSS rules can
+ * rearrange the panels for that layout.
+ * @type {Array<{id: string, name: string, description: string}>}
+ */
 window.KARL_LAYOUTS = [
     { id: "cockpit", name: "Cockpit", description: "Balanced command layout for everyday Karl work." },
     { id: "review-bay", name: "Review Bay", description: "Prioritizes pending file changes, previews, and safe apply/reject decisions." },

@@ -6,6 +6,10 @@
 //          Coordinates editor events, client state, and backend RPC messaging.
 // ==============================================================================
 
+// Page start-up. Runs once the HTML is parsed. Order matters: appearance and saved state first,
+// then event handlers, then the initial (empty) renders; finally tell the extension host the page is
+// ready and auto-connect to the backend if enabled.
+// All functions called here live in karl_state.js, karl_render.js, karl_socket.js or later in this file.
 window.addEventListener('DOMContentLoaded', () => {
     initializeAppearance();
     hydrate();
@@ -21,14 +25,18 @@ window.addEventListener('DOMContentLoaded', () => {
     renderKbQueue();
     renderBranches();
     renderDownloadRegistry([]);
+    // Refresh the heartbeat age text every second.
     bridgeMetaTimer = setInterval(() => updateBridgeMeta(), 1000);
     appendMessageBubble('assistant', 'Karl command cockpit ready. Connect to the local backend to execute agentic workflows.');
 
+    // Handshake: the host can now safely send state to this webview.
     vscode.postMessage({ command: 'ready' });
 
     if (boot.autoConnect) connect();
 });
 
+// Clean-up when the webview is destroyed: stop timers and close the connection so nothing keeps
+// running in the background.
 window.addEventListener('unload', () => {
     if (bridgeMetaTimer) { clearInterval(bridgeMetaTimer); bridgeMetaTimer = null; }
     if (reconnectTimer)  { clearInterval(reconnectTimer);  reconnectTimer = null; }
@@ -40,14 +48,18 @@ window.addEventListener('unload', () => {
     }
 });
 
+// Single inbox for messages from the extension host (see sidebarProvider.js). Every message has a
+// ``command``; most are handled by calling a function and returning early.
 window.addEventListener('message', event => {
     const message = event.data || {};
 
+    // The host rotated the bridge token; cache it for the next (re)connect.
     if (message.command === 'update_token') {
         if (boot) boot.token = message.token || '';
         return;
     }
 
+    // From editor commands: put text in the chat box and optionally send it right away.
     if (message.command === 'inject_chat') {
         const text = message.text || '';
         $('chatInput').value = text;
@@ -66,11 +78,13 @@ window.addEventListener('message', event => {
         return;
     }
 
+    // Relay mode: frames and connection state come in as messages instead of through a local WebSocket.
     // ── Host-relay bridge events ──────────────────────────────────────────────
     // When KARL_USE_HOST_RELAY is active the extension host owns the WebSocket
     // and forwards frames/lifecycle events here via postMessage.
     if (message.command === 'bridge_message' || message.command === 'socket_message') {
         try {
+            // Frames may arrive as a JSON string or an already-parsed object.
             const data = typeof message.data === 'string'
                 ? JSON.parse(message.data)
                 : message.data;
@@ -106,10 +120,13 @@ window.addEventListener('message', event => {
         lastBridgeError = message.lastError || lastBridgeError;
         setConnectionState(message.state || 'offline', message.label || 'Offline');
         if (reconnectTimer) { clearInterval(reconnectTimer); reconnectTimer = null; }
+        // Prevents an endless retry loop against a token the server already rejected.
         manualDisconnect = true; // Don't let the webview's own reconnect loop retry a rejected token
         return;
     }
 
+    // Everything below updates the UI in response to host events: workflows, knowledge-base paths,
+    // the review queue of proposed edits, swarm run history and cockpit state.
     // ── Webview ↔ host commands ───────────────────────────────────────────────
     if (message.command === 'start_workflow') {
         startWorkflow(message.workflowId, message.data || {});
@@ -143,12 +160,20 @@ window.addEventListener('message', event => {
     }
 });
 
+/**
+ * Attach every button/input handler once at start-up.
+ *
+ * Elements are guaranteed to exist because this runs after DOMContentLoaded. Lists that are re-rendered
+ * often (review queue, sources, results...) use ONE delegated click handler on the container and read
+ * the clicked button's data-* attributes; this avoids adding and leaking handlers on every re-render.
+ */
 function bindEvents() {
     // Step 1: Initialize function scope and validate execution context
     document.querySelectorAll('.tab').forEach(btn => {
         btn.addEventListener('click', () => switchWorkspace(btn.dataset.workspace));
     });
 
+    // Sub-tabs inside a workspace: show only the matching ".subworkspace" panel.
     document.querySelectorAll('.subtab').forEach(btn => {
         btn.addEventListener('click', () => {
             const container = btn.closest('.workspace');
@@ -162,6 +187,7 @@ function bindEvents() {
         });
     });
 
+    // Connection, swarm, chat, knowledge-base and prompt-lab buttons.
     // Cockpit buttons
     $('cockpitConnectBtn').addEventListener('click', connect);
     $('cockpitDisconnectBtn').addEventListener('click', disconnect);
@@ -180,6 +206,7 @@ function bindEvents() {
     $('agentProfileSelect')?.addEventListener('change', renderSelectedAgentProfile);
     $('saveAgentProfileBtn')?.addEventListener('click', saveSelectedAgentProfile);
     $('chatSendBtn').addEventListener('click', sendChatMessage);
+    // Enter sends the message.
     $('chatInput').addEventListener('keydown', event => {
         if (event.key === 'Enter') sendChatMessage();
     });
@@ -202,12 +229,14 @@ function bindEvents() {
     $('deletePairBtn').addEventListener('click', deletePromptPair);
     $('labRunBtn').addEventListener('click', runLab);
     $('diffBtn').addEventListener('click', computeLabDiff);
+    // When "lock sync" is ticked, system prompt B mirrors A so both runs differ only in the user prompt.
     $('labSysA').addEventListener('input', () => {
         if ($('labLockSync').checked) $('labSysB').value = $('labSysA').value;
     });
     $('tokenizeLabBtn').addEventListener('click', () => requiresBridgeSupport('Prompt Lab tokenizer visualization', 'tokenize_text'));
     $('loadModelsBtn').addEventListener('click', loadModels);
     $('loadAdaptersBtn').addEventListener('click', loadAdapters);
+    // Adapters sit on top of a base model, so a base model filename must be known first.
     $('activateAdapterBtn').addEventListener('click', () => {
         if (!activeModelFilename) {
             vscode.postMessage({ command: 'show_error', text: 'No active baseline model is loaded yet. Select a GGUF model first.' });
@@ -222,11 +251,13 @@ function bindEvents() {
     $('branchLatestBtn').addEventListener('click', branchFromLatest);
     $('newBranchBtn').addEventListener('click', createConversationBranch);
     
+    // Git, diagnostics and vision buttons delegate to the host's runWorkflow command (commands.js).
     // Git Tab Actions
     $('gitReviewStagedBtn').addEventListener('click', () => vscode.postMessage({ command: 'runWorkflow', workflowId: 'reviewStagedDiff' }));
     $('gitReviewUnstagedBtn').addEventListener('click', () => vscode.postMessage({ command: 'runWorkflow', workflowId: 'reviewUnstagedDiff' }));
     $('gitReviewCombinedBtn').addEventListener('click', () => vscode.postMessage({ command: 'runWorkflow', workflowId: 'reviewCombinedDiff' }));
     $('gitCommitMsgBtn').addEventListener('click', () => vscode.postMessage({ command: 'runWorkflow', workflowId: 'generateCommitMessage' }));
+    // Do not copy the placeholder text shown while the message is still being generated.
     $('gitCopyCommitBtn').addEventListener('click', async () => {
         const text = $('gitCommitText').innerText;
         if (text && text !== 'Generating commit message...') {
@@ -242,6 +273,7 @@ function bindEvents() {
     // Vision Tab Actions
     $('visionSelectBtn').addEventListener('click', () => vscode.postMessage({ command: 'choose_kb_file' }));
     $('visionActiveBtn').addEventListener('click', () => vscode.postMessage({ command: 'runWorkflow', workflowId: 'analyzeImage' }));
+    // The image must be chosen first; the path is passed to the workflow as its payload.
     $('visionAskBtn').addEventListener('click', () => {
         const path = $('visionImagePath').value.trim();
         if (!path) {
@@ -259,6 +291,7 @@ function bindEvents() {
         vscode.postMessage({ command: 'runWorkflow', workflowId: 'reviewScreenshotError', payload: { filepath: path } });
     });
 
+    // Clear or copy all three log panes (swarm, training, eval).
     // Logs Actions
     $('clearLogsBtn').addEventListener('click', () => {
         $('terminal').innerText = '--- Swarm Logs ---';
@@ -273,6 +306,7 @@ function bindEvents() {
 
     $('codexSearch').addEventListener('input', filterCodex);
     $('workspace').addEventListener('change', persist);
+    // Changing the port while connected reconnects automatically to the new port.
     $('bridgePort').addEventListener('change', () => {
         const port = $('bridgePort').value;
         $('cockpitPort').innerText = port;
@@ -285,6 +319,7 @@ function bindEvents() {
     });
     $('taskMode').addEventListener('change', persist);
     
+    // Every appearance control re-applies the whole look (applyAppearance also saves it).
     // Look workspace styling hooks
     $('themeSelect').addEventListener('change', applyAppearance);
     $('customAccent').addEventListener('input', applyAppearance);
@@ -302,11 +337,13 @@ function bindEvents() {
     }));
     $('copySummaryBtn').addEventListener('click', () => vscode.postMessage({ command: 'copy_patch_summary' }));
     $('changeFilter').addEventListener('change', renderPendingEdits);
+    // Clearing keeps tasks that are still running.
     $('clearTasksBtn').addEventListener('click', () => {
         taskQueue = taskQueue.filter(task => task.status === 'running');
         renderTaskQueue();
     });
     
+    // Defaults must match the defaults used by hydrate() in karl_state.js.
     $('resetAppearanceBtn').addEventListener('click', () => {
         $('themeSelect').value = 'obsidian-core';
         $('customAccent').value = '#00c2ff';
@@ -318,6 +355,8 @@ function bindEvents() {
         applyAppearance();
     });
 
+    // One listener per container: buttons are looked up from event.target with closest(), so they work
+    // even though the buttons are re-created on every render.
     // Delegated Event Listeners to prevent memory/event-listener leaks
     $('changeQueue').addEventListener('click', event => {
         const btn = event.target.closest('button');
@@ -380,6 +419,7 @@ function bindEvents() {
         });
     });
 
+    // Re-run a recent task by sending its workflow id plus the saved objective and file.
     $('recentTasksHistory').addEventListener('click', event => {
         const btn = event.target.closest('[data-task-idx]');
         if (!btn) return;
@@ -425,6 +465,7 @@ function bindEvents() {
     $('swarmRagQuery').addEventListener('keydown', event => {
         if (event.key === 'Enter') searchSwarmRag();
     });
+    // "Copy" copies the chunk text; "inject" prepends it as a reference in the swarm objective.
     $('swarmRagResults').addEventListener('click', event => {
         const btn = event.target.closest('button');
         if (!btn) return;
@@ -438,6 +479,7 @@ function bindEvents() {
         }
     });
 
+    // Switch the active model (without an adapter).
     $('modelList').addEventListener('click', event => {
         const btn = event.target.closest('[data-model]');
         if (!btn) return;
@@ -474,6 +516,14 @@ function bindEvents() {
     });
 }
 
+/**
+ * Handle the host's ``start_workflow`` message: prefill the UI for the chosen workflow and open the target tab.
+ *
+ * The tab decides what happens next: git/diagnostics/vision tabs show their result panels, chat auto-sends
+ * the prompt after 100 ms, and the swarm tab connects (if needed) and starts a run.
+ * @param {string} workflowId
+ * @param {any} data
+ */
 function startWorkflow(workflowId, data) {
     // Step 1: Initialize function scope and validate execution context
     activeWorkflowId = workflowId;
@@ -510,6 +560,7 @@ function startWorkflow(workflowId, data) {
         $('visionResultText').innerText = 'Karl is inspecting image file...';
     }
 
+    // The short delay lets the tab finish switching before the message is sent.
     if (tab === 'chat') {
         const chatInput = $('chatInput');
         if (chatInput && data.prompt) {
@@ -525,6 +576,9 @@ function startWorkflow(workflowId, data) {
     }
 }
 
+/**
+ * Run the swarm on the typed objective, or on a default "review this workspace" objective if empty.
+ */
 function askWorkspace() {
     // Step 1: Initialize function scope and validate execution context
     const objective = $('objective').value.trim() || 'Review this workspace and identify the highest value next improvements.';
@@ -532,6 +586,9 @@ function askWorkspace() {
     runSwarm();
 }
 
+/**
+ * Start a swarm run, connecting to the bridge first if necessary (gives up after 8 seconds).
+ */
 function connectAndRun() {
     // Step 1: Initialize function scope and validate execution context
     if (isConnected()) {
@@ -540,6 +597,7 @@ function connectAndRun() {
     }
     connect();
     const started = Date.now();
+    // Poll every 150 ms until the connection is up or the 8 s deadline passes.
     const timer = setInterval(() => {
         if (isConnected()) {
             clearInterval(timer);
@@ -551,6 +609,12 @@ function connectAndRun() {
     }, 150);
 }
 
+/**
+ * Validate the form and send the ``submit_task`` request (rpc id 1) to start the swarm.
+ *
+ * Needs an objective and a workspace path. If the bridge is down it connects first. Settings such as timeout
+ * (default 600 s), max loops (default 5), auto-steering and the three agent profiles are sent as hyperparams.
+ */
 function runSwarm() {
     // Step 1: Initialize function scope and validate execution context
     const objective = $('objective').value.trim();
@@ -565,6 +629,7 @@ function runSwarm() {
         return;
     }
     setConnectionState('running', 'Running');
+    // Track the run in the task queue and in the recent-task history.
     activeTaskId = addTask($('taskMode').value, objective);
     rememberTask($('taskMode').value, $('taskMode').selectedOptions?.[0]?.text || 'Task', objective, workspace);
     $('terminal').innerText = '--- Swarm Logs ---';
@@ -589,16 +654,25 @@ function runSwarm() {
     });
 }
 
+/**
+ * Ask the backend to stop the running swarm task (rpc id 2).
+ */
 function stopSwarm() {
     // Step 1: Initialize function scope and validate execution context
     rpc(2, 'stop_task');
 }
 
+/**
+ * Request the available agent profiles from the backend (rpc id 70).
+ */
 function loadAgentProfiles() {
     // Step 1: Initialize function scope and validate execution context
     rpc(70, 'get_agent_profiles', {});
 }
 
+/**
+ * Fill all profile dropdowns, keeping the user's current choice or falling back to the architect/coder/tester defaults.
+ */
 function renderAgentProfileOptions() {
     // Step 1: Initialize function scope and validate execution context
     const entries = Object.entries(swarmAgentProfiles || {});
@@ -625,6 +699,9 @@ function renderAgentProfileOptions() {
     renderSelectedAgentProfile();
 }
 
+/**
+ * Copy the selected profile (name, icon, prompt, temperature, context limit...) into the edit form.
+ */
 function renderSelectedAgentProfile() {
     // Step 1: Initialize function scope and validate execution context
     const id = $('agentProfileSelect')?.value || '';
@@ -638,6 +715,7 @@ function renderSelectedAgentProfile() {
     $('agentProfilePrompt').value = profile.system_prompt || profile.prompt || '';
     $('agentProfileTemp').value = profile.temperature ?? 0.2;
     $('agentProfileContext').value = profile.context_limit ?? 2048;
+    // Tool permissions are stored as booleans: read files, write files, run code in the sandbox, query RAG.
     const tools = profile.tools || {};
     $('agentToolRead').checked = !!tools.read_files;
     $('agentToolWrite').checked = !!tools.write_files;
@@ -649,6 +727,12 @@ function renderSelectedAgentProfile() {
     `;
 }
 
+/**
+ * Send the edited profile form to the backend (rpc id 71 ``save_agent_profile``).
+ *
+ * Blank name/icon fall back to the id; a missing context limit falls back to 2048. The reply triggers
+ * a reload of all profiles (see handleRpcResult in karl_socket.js).
+ */
 function saveSelectedAgentProfile() {
     // Step 1: Initialize function scope and validate execution context
     const id = $('agentProfileSelect')?.value || '';
@@ -677,6 +761,8 @@ function saveSelectedAgentProfile() {
 // ── thoughts panel initialisation ─────────────────────────────────────────────
 // Transforms the static HTML inside #introspectionBox into a collapsible
 // reasoning panel matching Karl's Obsidian aesthetic. Called once on load.
+// Detail: replaces the plain label with a clickable header (token count + pulse dot) and makes the
+// text body collapsible by toggling max-height/padding.
 function _initThoughtsPanel() {
     // Step 1: Initialize function scope and validate execution context
     const box = $('introspectionBox');
@@ -704,6 +790,7 @@ function _initThoughtsPanel() {
     thoughts.classList.add('thoughts-body');
 
     // Wire the collapse/expand toggle
+    // Collapse state lives in this closure; clicking the header flips it and updates the arrow.
     let _collapsed = false;
     header.addEventListener('click', () => {
         _collapsed = !_collapsed;
@@ -721,8 +808,15 @@ function _initThoughtsPanel() {
     });
 }
 
+// Raw text of the response being streamed (including any <think> markup); used to extract refactored code.
 let _lastAssistantContent = '';
 
+/**
+ * Send the chat box text to the backend (rpc id 3 ``submit_chat``) and prepare the streaming bubbles.
+ *
+ * Ignored when the box is empty or a reply is still streaming. Adds the user bubble and an empty assistant
+ * bubble that tokens will fill, then locks the send button until the reply finishes.
+ */
 function sendChatMessage() {
     // Step 1: Initialize function scope and validate execution context
     const input = $('chatInput');
@@ -737,9 +831,11 @@ function sendChatMessage() {
     appendMessageBubble('assistant', '');
     currentConversationInput = text;
     _lastAssistantContent = '';
+    // Remember what was sent: handleChatFinished() checks whether it started with "refactor".
     $('chatInput').dataset.lastSent = $('chatInput').value;
     input.value = '';
     chatFinished = false;
+    // CSS hook: lets styles show a "generating" state.
     document.body.dataset.wsState = 'generating';
     $('chatSendBtn').disabled = true;
     // Reset the reasoning panel for this new generation
@@ -752,11 +848,19 @@ function sendChatMessage() {
     });
 }
 
+/**
+ * Route one streamed response token to its destination.
+ *
+ * Prompt-lab runs fill output A or B; git/diagnostics/vision workflows show the text in their own panel;
+ * normal chat appends to the assistant bubble. The accumulated text is also kept for later use.
+ * @param {string} token
+ */
 function handleResponseToken(token) {
     // Step 1: Initialize function scope and validate execution context
     _lastAssistantContent += token;
     currentResponseText += token;
     
+    // Prompt-lab mode takes priority: tokens go to the A/B boxes, not the chat.
     if (labRunning) {
         if (currentLabTarget === 'A') {
             labOutputA += token;
@@ -779,6 +883,13 @@ function handleResponseToken(token) {
     appendChatToken(token);
 }
 
+/**
+ * Finish a generation.
+ *
+ * In prompt-lab mode it chains A then B and finally computes the diff. Otherwise it removes the cursor,
+ * re-enables sending, records the turn in the conversation branch and, for "refactor ..." prompts, sends the
+ * first code block of the answer to the host so the editor can apply it.
+ */
 function handleChatFinished() {
     // Step 1: Initialize function scope and validate execution context
     if (labRunning) {
@@ -796,6 +907,7 @@ function handleChatFinished() {
     finalizeThoughts();
     chatFinished = true;
     $('chatSendBtn').disabled = false;
+    // Return the body state to whatever the connection dot says (connected/busy/...).
     // Restore ws-state indicator (use statusDot class as source of truth)
     const _dot = $('statusDot');
     if (_dot) {
@@ -809,6 +921,7 @@ function handleChatFinished() {
 
     // Check if this was a refactor request — extract code block and notify host
     const lastInput = $('chatInput').dataset.lastSent || '';
+    // Refactor results are applied by the host (``refactor_result`` message), not by this page.
     if (lastInput.toLowerCase().startsWith('refactor')) {
         const fullResponse = _lastAssistantContent || '';
         const codeMatch = fullResponse.match(/```[\w]*\n([\s\S]*?)```/);
@@ -822,12 +935,19 @@ function handleChatFinished() {
     }
 }
 
+/**
+ * Return the active conversation branch, creating one if none exists yet.
+ */
 function activeBranch() {
     // Step 1: Initialize function scope and validate execution context
     if (!activeBranchId) createConversationBranch();
     return conversationBranches.find(branch => branch.id === activeBranchId) || conversationBranches[0];
 }
 
+/**
+ * Create a new empty conversation branch at the top of the list, make it active and save.
+ * @param {string} [seedTitle]
+ */
 function createConversationBranch(seedTitle = '') {
     // Step 1: Initialize function scope and validate execution context
     const id = `branch-${Date.now()}-${Math.random().toString(16).slice(2)}`;
@@ -843,6 +963,9 @@ function createConversationBranch(seedTitle = '') {
     persist();
 }
 
+/**
+ * Fork the active branch, dropping its last turn (so the user can retry from just before the latest answer).
+ */
 function branchFromLatest() {
     // Step 1: Initialize function scope and validate execution context
     const current = activeBranch();
@@ -860,6 +983,13 @@ function branchFromLatest() {
     persist();
 }
 
+/**
+ * Store a finished user/assistant exchange in the active branch (the branch title becomes the first 48 characters of the prompt).
+ *
+ * The branch moves to the front; at most 20 branches are kept.
+ * @param {string} user
+ * @param {string} assistant
+ */
 function recordConversationTurn(user, assistant) {
     // Step 1: Initialize function scope and validate execution context
     const prompt = String(user || '').trim();
@@ -874,6 +1004,10 @@ function recordConversationTurn(user, assistant) {
     persist();
 }
 
+/**
+ * Add (or replace) a proposed file edit in the review queue and redraw it.
+ * @param {any} edit
+ */
 function addPendingEdit(edit) {
     // Step 1: Initialize function scope and validate execution context
     if (!edit || !edit.id) return;
@@ -881,6 +1015,11 @@ function addPendingEdit(edit) {
     renderPendingEdits();
 }
 
+/**
+ * Set an edit's status (previewed, applied, rolled_back...) and redraw the queue.
+ * @param {string} editId
+ * @param {string} status
+ */
 function markPendingEdit(editId, status) {
     // Step 1: Initialize function scope and validate execution context
     const edit = pendingEdits.get(editId);
@@ -891,6 +1030,11 @@ function markPendingEdit(editId, status) {
     }
 }
 
+/**
+ * Mark the first approved/submitted edit for ``filepath`` with ``status`` (used when the backend reports a write).
+ * @param {string} filepath
+ * @param {string} status
+ */
 function markPendingEditByPath(filepath, status) {
     // Step 1: Initialize function scope and validate execution context
     if (!filepath) return;
@@ -902,6 +1046,10 @@ function markPendingEditByPath(filepath, status) {
     }
 }
 
+/**
+ * Fill the rollback dropdown with the 5 most recent swarm runs.
+ * @param {any[]} runs
+ */
 function renderSwarmRunHistory(runs) {
     // Step 1: Initialize function scope and validate execution context
     swarmRunHistory = Array.isArray(runs) ? runs.slice(0, 5) : [];
@@ -919,6 +1067,11 @@ function renderSwarmRunHistory(runs) {
     }).join('');
 }
 
+/**
+ * Remove an edit from the queue (e.g. rejected) and log it.
+ * @param {string} editId
+ * @param {string} state label used in the log line
+ */
 function removePendingEdit(editId, state) {
     // Step 1: Initialize function scope and validate execution context
     pendingEdits.delete(editId);
@@ -926,6 +1079,11 @@ function removePendingEdit(editId, state) {
     log(`[Changes] ${state} pending edit ${editId}.`);
 }
 
+/**
+ * Start a Prompt Lab comparison: run prompt A first; handleChatFinished() then runs B and the diff.
+ *
+ * Needs a user message and a live connection; a second click while running is ignored.
+ */
 function runLab() {
     // Step 1: Initialize function scope and validate execution context
     if (labRunning) return;
@@ -948,6 +1106,12 @@ function runLab() {
     sendLabMessage('A', $('labSysA').value, $('labUser').value);
 }
 
+/**
+ * Submit one lab run. The rpc id is 10 for A and 11 for B so replies can be told apart.
+ * @param {string} target "A" or "B"
+ * @param {string} systemPrompt
+ * @param {string} userMsg
+ */
 function sendLabMessage(target, systemPrompt, userMsg) {
     // Step 1: Initialize function scope and validate execution context
     currentLabTarget = target;
@@ -959,17 +1123,28 @@ function sendLabMessage(target, systemPrompt, userMsg) {
     });
 }
 
+/**
+ * Render the diff of the two lab outputs.
+ */
 function computeLabDiff() {
     // Step 1: Initialize function scope and validate execution context
     renderLabDiff(labOutputA, labOutputB);
 }
 
+/**
+ * Ask the backend for the selected (or typed) saved prompt pair (rpc id 41).
+ */
 function loadSelectedPromptPair() {
     // Step 1: Initialize function scope and validate execution context
     const name = $('promptPairSelect').value || $('promptPairName').value.trim();
     if (name) rpc(41, 'get_prompt_pair', { name });
 }
 
+/**
+ * Save the current lab setup and outputs under the given name (rpc id 42).
+ *
+ * Both sides currently share the same user message and the same RAG/loop checkboxes.
+ */
 function savePromptPair() {
     // Step 1: Initialize function scope and validate execution context
     const name = $('promptPairName').value.trim();
@@ -995,12 +1170,19 @@ function savePromptPair() {
     });
 }
 
+/**
+ * Delete the selected (or typed) saved prompt pair (rpc id 43).
+ */
 function deletePromptPair() {
     // Step 1: Initialize function scope and validate execution context
     const name = $('promptPairSelect').value || $('promptPairName').value.trim();
     if (name) rpc(43, 'delete_prompt_pair', { name });
 }
 
+/**
+ * Fill the lab form (prompts, toggles, saved outputs) from a loaded pair and redraw the diff.
+ * @param {any} result
+ */
 function applyPromptPair(result) {
     // Step 1: Initialize function scope and validate execution context
     if (!result || typeof result !== 'object') return;
@@ -1020,6 +1202,9 @@ function applyPromptPair(result) {
     log(`[Prompt Lab] Loaded pair: ${result.name || '(unnamed)'}`);
 }
 
+/**
+ * Add the path in the knowledge-base path box to the ingest queue (newest first, no duplicates, max 50).
+ */
 function addKbQueuePath() {
     // Step 1: Initialize function scope and validate execution context
     const ingestPath = $('kbPath').value.trim();
@@ -1031,6 +1216,9 @@ function addKbQueuePath() {
     renderKbQueue();
 }
 
+/**
+ * Start processing the knowledge-base queue (adds the typed path first if the queue is empty).
+ */
 function ingestKbQueue() {
     // Step 1: Initialize function scope and validate execution context
     if (!kbQueue.length) {
@@ -1040,6 +1228,9 @@ function ingestKbQueue() {
     ingestNextQueuedPath();
 }
 
+/**
+ * Start ingesting the next queued path; clears the running flag when none are left.
+ */
 function ingestNextQueuedPath() {
     // Step 1: Initialize function scope and validate execution context
     const next = kbQueue.find(item => item.status === 'queued');
@@ -1222,6 +1413,8 @@ function hyperparams() {
 // ── WS-state MutationObserver ─────────────────────────────────────────────────
 // Watches #statusDot className changes and mirrors the state to
 // body.dataset.wsState so CSS can drive the chat-border animation.
+// Detail: a MutationObserver reacts to class changes on the status dot. While a reply is generating,
+// the "generating" state is left alone so the animation is not interrupted.
 function _initWsStateObserver() {
     // Step 1: Initialize function scope and validate execution context
     const dot = $('statusDot');
@@ -1240,10 +1433,13 @@ function _initWsStateObserver() {
 // ── Chat workspace inner tabs ─────────────────────────────────────────────────
 // Injects a 3-tab sub-layout (Chat / Reasoning / Swarm) inside #workspace-chat.
 // Runs after _initThoughtsPanel() so #introspectionBox already has its header.
+// Detail: the Chat tab is restructured at run time (existing elements are moved into new panels), guarded by
+// a data attribute so it only happens once.
 function _initChatInnerTabs() {
     // Step 1: Initialize function scope and validate execution context
     const chatSection = $('workspace-chat');
     if (!chatSection || chatSection.dataset.innerTabsReady) return;
+    // Guard: never restructure the tab twice.
     chatSection.dataset.innerTabsReady = '1';
 
     const thoughtsBox  = $('introspectionBox');
@@ -1297,6 +1493,7 @@ function _initChatInnerTabs() {
     `;
 
     // Insert all panels right after the section-head
+    // Insert the new panels right under the section header; without one, fall back to prepending them.
     if (sectionHead) {
         sectionHead.after(tabBar, chatPanel, reasoningPanel, swarmPanel);
     } else {
@@ -1309,6 +1506,7 @@ function _initChatInnerTabs() {
     });
 
     // ── Thoughts inline visibility toggle ─────────────────────────────────────
+    // Button that hides/shows the inline reasoning box in the Chat panel.
     const toggleBtn = $('thoughtsVisToggle');
     if (toggleBtn) {
         toggleBtn.addEventListener('click', () => {
@@ -1319,6 +1517,10 @@ function _initChatInnerTabs() {
     }
 }
 
+/**
+ * Show one of the chat sub-panels (chatPanel, reasoningPanel, swarmPanel) and mark its tab button active.
+ * @param {string} panelId
+ */
 function _switchChatInnerTab(panelId) {
     // Step 1: Initialize function scope and validate execution context
     const panels = ['chatPanel', 'reasoningPanel', 'swarmPanel'];
@@ -1337,6 +1539,7 @@ function _switchChatInnerTab(panelId) {
 // ── Logs workspace subtabs ────────────────────────────────────────────────────
 // Adds three subtabs (Swarm / Training / Eval) inside #workspace-logs,
 // wrapping the existing #terminal, #trainingLog, #evalLog into panels.
+// Detail: existing log elements are moved into panels, guarded by a data attribute so it only happens once.
 function _initLogsSubtabs() {
     // Step 1: Initialize function scope and validate execution context
     const logsSection = $('workspace-logs');
@@ -1351,6 +1554,7 @@ function _initLogsSubtabs() {
     if (!terminal || !trainingLog || !evalLog) return;
 
     // Remove orphaned eyebrow labels that belonged to trainingLog / evalLog
+    // Old static labels would now be duplicated by the sub-tab buttons, so remove them.
     logsSection.querySelectorAll(':scope > .eyebrow').forEach(el => el.remove());
 
     // ── Subtab bar ────────────────────────────────────────────────────────────
@@ -1379,6 +1583,7 @@ function _initLogsSubtabs() {
     evalLogPanel.appendChild(evalLog);
 
     // Insert after action-row (or section-head as fallback)
+    // Place the sub-tabs below the action row, or below the header if there is no action row.
     const insertRef = actionRow || sectionHead;
     if (insertRef) {
         insertRef.after(subtabBar, swarmLogPanel, trainingLogPanel, evalLogPanel);
@@ -1398,11 +1603,21 @@ function _initLogsSubtabs() {
 }
 
 // ── Educational Sandbox Workspace ─────────────────────────────────────────────
+// State for the educational Mini-GPT / TF-IDF simulations further below.
 let miniGptSimTimer = null;
 let currentMiniStep = 0;
 
+/**
+ * Build a TF-IDF model for a few short documents (teaching demo; the same maths as scikit-learn's defaults).
+ *
+ * Steps: lower-case words (2+ chars, minus common stop words); idf = ln((1+N)/(1+df)) + 1 (smoothed);
+ * weight = term count x idf; each document vector is scaled to unit length (L2 norm).
+ * @param {string[]} documents
+ * @returns {{vocabulary: {word: string, df: number, idf: number}[], vectors: Object<string, number>[]}}
+ */
 function fitTfidfVectorizer(documents) {
     // Step 1: Initialize function scope and validate execution context
+    // Very small stop-word list; only meant to keep the demo output readable.
     const stopWords = new Set(["the", "a", "an", "and", "or", "but", "is", "are", "was", "were", "to", "of", "in", "on", "at", "for", "with", "by", "about", "as"]);
     
     function tokenize(text) {
@@ -1426,6 +1641,7 @@ function fitTfidfVectorizer(documents) {
     const vocabulary = [];
     
     for (const [word, df] of Object.entries(termDocCounts)) {
+        // Smoothing (+1) avoids division by zero and keeps idf positive for terms found in every document.
         const idf = Math.log((1 + N) / (1 + df)) + 1.0;
         vocabulary.push({ word, df, idf });
     }
@@ -1448,6 +1664,7 @@ function fitTfidfVectorizer(documents) {
             normSq += tfidf * tfidf;
         });
         
+        // L2 normalisation so that long documents do not dominate cosine similarity.
         const norm = Math.sqrt(normSq);
         const normVector = {};
         vocabulary.forEach(v => {
@@ -1461,6 +1678,12 @@ function fitTfidfVectorizer(documents) {
     return { vocabulary, vectors };
 }
 
+/**
+ * Show the vocabulary table (word, document frequency, idf) and each document's non-zero TF-IDF terms.
+ * @param {{word: string, df: number, idf: number}[]} vocabulary
+ * @param {Object<string, number>[]} vectors
+ * @param {string[]} docs
+ */
 function renderVectorizerResults(vocabulary, vectors, docs) {
     // Step 1: Initialize function scope and validate execution context
     const vocabBody = $('vocabTable').querySelector('tbody');
@@ -1493,6 +1716,13 @@ function renderVectorizerResults(vocabulary, vectors, docs) {
     $('vectorizerOutput').style.display = 'block';
 }
 
+/**
+ * Parse a backend log line from the Mini-GPT trainer and update the sandbox training display.
+ *
+ * Recognises "Step N | Loss: x" lines and JSON-style "loss": x values (the latter increments a local step counter),
+ * replaces the sample output panel for "Generation Output" lines, and appends other training messages to the log.
+ * @param {string} msg
+ */
 function handleInterceptedTelemetry(msg) {
     // Step 1: Initialize function scope and validate execution context
     if (typeof msg !== 'string') return;
@@ -1501,6 +1731,7 @@ function handleInterceptedTelemetry(msg) {
     if (!statusPanel) return;
     statusPanel.style.display = 'block';
     
+    // Matches the trainer's log format, e.g. "Step 50 | Val Loss: 2.1234".
     const stepLossRegex = /Step\s*(\d+)\s*\|\s*(?:Val\s+)?Loss:\s*([0-9.]+)/i;
     const match = msg.match(stepLossRegex);
     if (match) {
@@ -1510,6 +1741,7 @@ function handleInterceptedTelemetry(msg) {
         return;
     }
     
+    // Fallback for metrics printed as a dict/JSON fragment such as {'loss': 1.23}.
     const jsonLossRegex = /['"]loss['"]\s*:\s*([0-9.]+)/i;
     const jsonMatch = msg.match(jsonLossRegex);
     if (jsonMatch) {
@@ -1519,6 +1751,7 @@ function handleInterceptedTelemetry(msg) {
         return;
     }
     
+    // Sample text from the model. HTML tags are stripped and the rest is escaped before display.
     if (msg.includes('Generation Output') || msg.includes('--- Generation')) {
         const cleanMsg = msg.replace(/<[^>]*>/g, '');
         $('miniTypewriterOutput').innerHTML = `<div style="color: var(--karl-accent);">${escapeHtml(cleanMsg)}</div>`;
@@ -1537,6 +1770,14 @@ function handleInterceptedTelemetry(msg) {
     }
 }
 
+/**
+ * Run a purely local, fake training animation (loss falls from about 4.5 towards 0.12 with noise, random words as "samples").
+ *
+ * It is a teaching visual that runs alongside the real ``start_mini_train`` request; it is NOT real training data.
+ * It advances 5 steps every 500 ms.
+ * @param {number} maxIters
+ * @param {number} lr
+ */
 function startMiniGptSimulation(maxIters, lr) {
     // Step 1: Initialize function scope and validate execution context
     if (miniGptSimTimer) {
@@ -1578,11 +1819,13 @@ function startMiniGptSimulation(maxIters, lr) {
             return;
         }
         
+        // Loss drifts down linearly by up to 3.0 over the run; the random term adds +/-0.2 jitter; never below 0.12.
         const decay = (step / maxIters) * 3.0;
         currentLoss = Math.max(0.12, (4.5 - decay) + (Math.random() * 0.4 - 0.2));
         
         updateMiniGptTelemetryUi(step, currentLoss);
         
+        // Every 20 steps, show a new random "generated" sentence.
         if (step % 20 === 0) {
             const text = generateTypewriterTokens();
             streamTypewriterTokens(step, maxIters, text);
@@ -1590,6 +1833,11 @@ function startMiniGptSimulation(maxIters, lr) {
     }, 500);
 }
 
+/**
+ * Show the current step/loss and append a log line (green once the loss drops below 1.0).
+ * @param {number} step
+ * @param {number} loss
+ */
 function updateMiniGptTelemetryUi(step, loss) {
     // Step 1: Initialize function scope and validate execution context
     const stepEl = $('miniCurrentStep');
@@ -1608,6 +1856,12 @@ function updateMiniGptTelemetryUi(step, loss) {
     }
 }
 
+/**
+ * Show ``text`` one character at a time (every 20 ms) under a "Step N / M" heading, like a model typing.
+ * @param {number} step
+ * @param {number} maxIters
+ * @param {string} text
+ */
 function streamTypewriterTokens(step, maxIters, text) {
     // Step 1: Initialize function scope and validate execution context
     const container = $('miniTypewriterOutput');
@@ -1630,6 +1884,12 @@ function streamTypewriterTokens(step, maxIters, text) {
     }, 20);
 }
 
+/**
+ * Wire the two sandbox buttons and hook the socket message handler.
+ *
+ * "Fit vectorizer" sends the documents to the backend (rpc id 60) and also computes TF-IDF locally for instant display.
+ * "Start training" sends ``start_mini_train`` (rpc id 61) and starts the local animation.
+ */
 function _initEducationalSandbox() {
     // Step 1: Initialize function scope and validate execution context
     const fitBtn = $('fitVectorizerBtn');
@@ -1676,6 +1936,9 @@ function _initEducationalSandbox() {
     }
 
     if (typeof handleSocketMessage === 'function') {
+        // Wrap handleSocketMessage (monkey-patch): run the original handler, then also feed trainer log lines to the
+        // sandbox display. This avoids editing karl_socket.js. It relies on the function being reassignable
+        // (a plain, non-module script).
         const originalHandleSocketMessage = handleSocketMessage;
         handleSocketMessage = function(data) {
             originalHandleSocketMessage(data);
@@ -1691,6 +1954,8 @@ function _initEducationalSandbox() {
     }
 }
 
+// Second DOMContentLoaded handler (the first is at the top of this file); it runs after it, so the
+// elements and handleSocketMessage already exist.
 window.addEventListener('DOMContentLoaded', () => {
     _initEducationalSandbox();
 });
@@ -1702,6 +1967,7 @@ window.addEventListener('DOMContentLoaded', () => {
  */
 function _renderCompletionDiagnostic(msg) {
     // Step 1: Initialize function scope and validate execution context
+    // Pick colours/text per crash type: SIGSEGV (warning, usually a CPU without AVX) or OOM kill (danger).
     const chatEl = $('chatMessages');
     if (!chatEl) return;
 
@@ -1718,6 +1984,7 @@ function _renderCompletionDiagnostic(msg) {
         ? 'The local completion binary crashed with <strong>SIGSEGV</strong>. This usually means your CPU does not support the AVX/AVX2 instruction sets the binary was compiled for.'
         : 'The local completion subprocess was <strong>killed by the OS</strong> due to insufficient memory. Try loading a smaller model or reducing context size.';
 
+    // Only the SIGSEGV case shows the rebuild command (CPU-compatible build of llama-cpp-python).
     const rebuildBlock = isSegv ? `
 <div style="margin-top:.6rem">
   <div style="font-size:.7rem;opacity:.55;text-transform:uppercase;letter-spacing:.06em;margin-bottom:.25rem">Rebuild command</div>
@@ -1728,6 +1995,7 @@ function _renderCompletionDiagnostic(msg) {
         ? `<div style="margin-top:.45rem;font-size:.7rem;opacity:.45;font-family:monospace">exit&nbsp;${msg.exitCode ?? '—'} &nbsp;·&nbsp; signal&nbsp;${escapeHtml(msg.exitSignal || '—')}</div>`
         : '';
 
+    // All dynamic text is escaped; bodyText/rebuildBlock are fixed strings defined above, not user data.
     const card = document.createElement('div');
     card.className = 'message assistant';
     card.dataset.diagnosticType = calloutType;
