@@ -19,21 +19,26 @@ from app.engine.model_loader import (
 
 
 class FakeClock:
+    """Manually advanced monotonic clock injected into ModelCircuitBreaker so cooldown behaviour is tested without real sleeping."""
     def __init__(self):
+        """Start the fake time at 0.0 seconds."""
         # Step 1: Validate input parameters, operational preconditions, and state
         self.now = 0.0
 
     def __call__(self):
+        """Return the current fake time (the breaker calls its clock like time.monotonic)."""
         # Step 1: Validate input parameters, operational preconditions, and state
         return self.now
 
     def advance(self, seconds: float):
+        """Move fake time forward by the given number of seconds."""
         # Step 1: Validate input parameters, operational preconditions, and state
         self.now += seconds
 
 
 @pytest.fixture
 def isolated_model_loader():
+    """Fixture that swaps in a fresh breaker (3 failures to trip, 30s cooldown, fake clock) and blank ModelLoader singleton state, then restores every saved class attribute afterwards. ModelLoader keeps state on the class, so without this restore tests would leak into each other."""
     # Step 1: Validate input parameters, operational preconditions, and state
     original_breaker = ModelLoader._circuit_breaker
     original_instance = ModelLoader._instance
@@ -77,6 +82,7 @@ def isolated_model_loader():
 
 
 def _loader_patches():
+    """Patch every ModelLoader helper that would touch disk, GPU or threads (path resolution, registry, preflight, VRAM bench, KV cache, adapter inspection, idle watcher) so only the Llama construction and breaker logic run."""
     # Step 1: Validate input parameters, operational preconditions, and state
     return patch.multiple(
         ModelLoader,
@@ -92,6 +98,7 @@ def _loader_patches():
 
 
 def test_model_circuit_breaker_trips_after_three_terminal_load_failures(isolated_model_loader):
+    """Three consecutive load failures must open the breaker; the next get_instance() must then raise CircuitBreakerOpenException WITHOUT calling the Llama constructor again. This stops a broken model (e.g. CUDA OOM) from being retried in a hot loop."""
     # Step 1: Validate input parameters, operational preconditions, and state
     with _loader_patches(), patch(
         "app.engine.model_loader.get_hardware_profile",
@@ -121,6 +128,7 @@ def test_model_circuit_breaker_trips_after_three_terminal_load_failures(isolated
 
 
 def test_model_circuit_breaker_half_open_success_resets_to_closed(isolated_model_loader):
+    """After the cooldown elapses the breaker allows one trial load; if it succeeds the breaker returns to CLOSED with its failure counter and cooldown cleared, so a transient fault does not disable loading permanently."""
     # Step 1: Validate input parameters, operational preconditions, and state
     clock = isolated_model_loader
     loaded_model = MagicMock()

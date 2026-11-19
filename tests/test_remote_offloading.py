@@ -16,6 +16,7 @@ from unittest.mock import MagicMock, patch
 
 
 def test_remote_rpc_timeout_disables_remote_and_streams_local_fallback(monkeypatch):
+    """If the websocket handshake to the remote engine times out, RemoteRPCModel must (1) report the reason via on_fallback, (2) connect with the token in the URL and a relaxed (LAN self-signed) TLS context, and (3) stream the answer from the local fallback model with the caller's sampling parameters unchanged. The websockets package is faked entirely so no network is used."""
     # Step 1: Validate input parameters, operational preconditions, and state
     from app.engine.remote_rpc_client import RemoteRPCModel
 
@@ -90,6 +91,7 @@ def test_remote_rpc_timeout_disables_remote_and_streams_local_fallback(monkeypat
 
 
 def test_model_loader_remote_fallback_persists_disabled(monkeypatch):
+    """ModelLoader._remote_fallback must persist remote_engine_enabled=False (keeping url/token), drop the cached remote instance and remember the reason, so a dead remote is not retried on every request or after restart."""
     # Step 1: Validate input parameters, operational preconditions, and state
     from app.engine.model_loader import ModelLoader
 
@@ -135,6 +137,7 @@ def test_model_loader_remote_fallback_persists_disabled(monkeypatch):
 
 @pytest.fixture
 def isolated_model_loader_remote_state():
+    """Fixture: blank ModelLoader class-level state (local and remote) and restore the saved values afterwards, because the loader is a class-level singleton."""
     # Step 1: Validate input parameters, operational preconditions, and state
     from app.engine.model_loader import ModelLoader
 
@@ -171,6 +174,7 @@ def isolated_model_loader_remote_state():
 
 
 def _local_load_patches():
+    """Patch ModelLoader's disk/GPU/thread helpers so the local llama-cpp load path can run entirely with mocks."""
     # Step 1: Validate input parameters, operational preconditions, and state
     from app.engine.model_loader import ModelLoader
     return patch.multiple(
@@ -187,6 +191,7 @@ def _local_load_patches():
 
 
 def test_get_instance_routes_to_remote_when_enabled(isolated_model_loader_remote_state):
+    """With remote mode enabled, get_instance() builds a RemoteRPCModel (with url, token and fallback callbacks), caches it and never touches the local Llama constructor."""
     # Step 1: Validate input parameters, operational preconditions, and state
     from app.engine.model_loader import ModelLoader
 
@@ -226,6 +231,7 @@ def test_get_instance_routes_to_remote_when_enabled(isolated_model_loader_remote
 def test_get_instance_reuses_cached_remote_instance_for_same_url_and_token(
     isolated_model_loader_remote_state,
 ):
+    """Repeated get_instance() calls with unchanged url/token reuse one RemoteRPCModel instead of reconnecting every time."""
     # Step 1: Validate input parameters, operational preconditions, and state
     from app.engine.model_loader import ModelLoader
 
@@ -254,6 +260,7 @@ def test_get_instance_reuses_cached_remote_instance_for_same_url_and_token(
 def test_get_instance_reconstructs_remote_instance_when_url_changes(
     isolated_model_loader_remote_state,
 ):
+    """Changing the configured remote URL invalidates the cached client and a new RemoteRPCModel is built."""
     # Step 1: Validate input parameters, operational preconditions, and state
     from app.engine.model_loader import ModelLoader
 
