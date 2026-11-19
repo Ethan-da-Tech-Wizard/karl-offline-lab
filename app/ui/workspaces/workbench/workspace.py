@@ -2253,10 +2253,11 @@ class WorkbenchWorkspace(QMainWindow):
         html_parts = []
         for chunk in chunks[:5]:
             # Iterate over items, evaluate loop invariant, and update progress
-            src = chunk.get("source_file", "?")
+            # Chunk text and file names come from user documents, so escape every interpolated value.
+            import html
+            src = html.escape(str(chunk.get("source_file", "?")))
             dist = chunk.get("distance", 0.0)
-            # Only "<" is escaped in the preview text; "&" and the source name are inserted unescaped.
-            text_preview = chunk.get("text", "")[:120].replace("<", "&lt;")
+            text_preview = html.escape(chunk.get("text", "")[:120])
             html_parts.append(
                 f"<div style='margin-bottom:8px; padding:6px; background:#0D0D1E; "
                 f"border-left:2px solid #2DD4A0; border-radius:2px;'>"
