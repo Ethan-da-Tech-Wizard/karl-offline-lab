@@ -688,20 +688,27 @@ function runSwarm() {
     // Track the run in the task queue and in the recent-task history.
     activeTaskId = addTask($('taskMode').value, objective);
     rememberTask($('taskMode').value, $('taskMode').selectedOptions?.[0]?.text || 'Task', objective, workspace);
+    // Reset the visible swarm output so logs from a previous run do not mix with this one.
     $('terminal').innerText = '--- Swarm Logs ---';
+    // The timeline is rebuilt by incoming progress events (task plan, layer, file edited...).
     $('timeline').innerHTML = '';
+    // First timeline entry records which task mode (e.g. general/refactor) was launched.
     addTimeline('Launch', $('taskMode').value);
     log('[Swarm] Deploying Karl agents.');
+    // rpc id 1 is reserved for submit_task; karl_socket.js uses the id to recognise the reply.
     rpc(1, 'submit_task', {
         objective,
         workspace_path: workspace,
         // Empty string means "no command": the Tester stage then skips execution rather than guessing.
         test_command: testCommand,
+        // hyperparams() (karl_state.js) supplies shared sampling settings; the swarm-specific limits
+        // below override or extend them for this one task.
         hyperparams: {
             ...hyperparams(),
             // `|| 600` / `|| 5` cover empty or non-numeric inputs (Number('') is 0, Number('x') is NaN).
             timeout_seconds: Number($('swarmTimeout').value) || 600,
             max_loops: Number($('swarmMaxLoops').value) || 5,
+            // Boolean: when true the orchestrator may auto-inject corrective guidance (drift detector).
             auto_steering_enabled: $('swarmAutoSteer').checked,
             // Profile ids per stage; the server maps them to model/adapter/system-prompt overrides.
             agent_profiles: {
@@ -717,6 +724,7 @@ function runSwarm() {
  * Ask the backend to stop the running swarm task (rpc id 2).
  */
 function stopSwarm() {
+    // No params: the server stops whatever task this connection started.
     rpc(2, 'stop_task');
 }
 
@@ -724,6 +732,7 @@ function stopSwarm() {
  * Request the available agent profiles from the backend (rpc id 70).
  */
 function loadAgentProfiles() {
+    // Empty params object keeps the JSON-RPC payload well-formed ("params": {}).
     rpc(70, 'get_agent_profiles', {});
 }
 
@@ -731,27 +740,36 @@ function loadAgentProfiles() {
  * Fill all profile dropdowns, keeping the user's current choice or falling back to the architect/coder/tester defaults.
  */
 function renderAgentProfileOptions() {
+    // swarmAgentProfiles is a map id -> profile filled by the get_agent_profiles reply.
     const entries = Object.entries(swarmAgentProfiles || {});
+    // One shared <option> list is rendered for every dropdown, so all selects offer the same profiles.
     const optionHtml = entries.map(([id, profile]) => {
         const label = `${profile.icon || ''} ${profile.name || id}`.trim();
+        // escapeHtml (karl_render.js) is mandatory: profile names are user-editable text.
         return `<option value="${escapeHtml(id)}">${escapeHtml(label)}</option>`;
     }).join('');
+    // Preferred defaults when nothing was chosen yet or the old choice no longer exists.
     const defaultSelections = {
         swarmArchitectProfile: 'architect',
         swarmCoderProfile: 'coder',
         swarmTesterProfile: 'tester'
     };
+    // The three swarm stage selectors plus the editor's own selector all show the same profile list.
     ['swarmArchitectProfile', 'swarmCoderProfile', 'swarmTesterProfile', 'agentProfileSelect'].forEach(id => {
         const el = $(id);
+        // Some dropdowns may not exist if the HTML variant omits a panel, so skip silently.
         if (!el) return;
+        // Remember the user's selection across the re-render.
         const previous = el.value;
         el.innerHTML = optionHtml || '<option value="">No profiles loaded</option>';
+        // Keep the previous choice only if that profile still exists after the reload.
         if (previous && entries.some(([profileId]) => profileId === previous)) {
             el.value = previous;
         } else if (defaultSelections[id] && swarmAgentProfiles[defaultSelections[id]]) {
             el.value = defaultSelections[id];
         }
     });
+    // Refresh the edit form and spec card to match whatever is now selected.
     renderSelectedAgentProfile();
 }
 
@@ -759,8 +777,10 @@ function renderAgentProfileOptions() {
  * Copy the selected profile (name, icon, prompt, temperature, context limit...) into the edit form.
  */
 function renderSelectedAgentProfile() {
+    // Optional chaining: the select may be missing in a minimal layout.
     const id = $('agentProfileSelect')?.value || '';
     const profile = swarmAgentProfiles[id] || null;
+    // No selection: show a hint and leave the form fields as they were.
     if (!profile) {
         $('agentProfileSpec').textContent = 'No profile selected.';
         return;
@@ -768,14 +788,17 @@ function renderSelectedAgentProfile() {
     $('agentProfileName').value = profile.name || id;
     $('agentProfileIcon').value = profile.icon || '';
     $('agentProfilePrompt').value = profile.system_prompt || profile.prompt || '';
+    // `??` rather than `||` so a legitimate temperature of 0 is not replaced by the default.
     $('agentProfileTemp').value = profile.temperature ?? 0.2;
     $('agentProfileContext').value = profile.context_limit ?? 2048;
+    // Tool permissions are stored as booleans: read files, write files, run code in the sandbox, query RAG.
     // Tool permissions are stored as booleans: read files, write files, run code in the sandbox, query RAG.
     const tools = profile.tools || {};
     $('agentToolRead').checked = !!tools.read_files;
     $('agentToolWrite').checked = !!tools.write_files;
     $('agentToolExec').checked = !!tools.execute_sandbox;
     $('agentToolRag').checked = !!tools.query_rag;
+    // The spec card is a read-only summary; innerHTML is safe here because every value is escaped.
     $('agentProfileSpec').innerHTML = `
         <div><strong>${escapeHtml(profile.name || id)}</strong> <span class="muted">${escapeHtml(id)}</span></div>
         <div class="muted">Temp ${Number(profile.temperature ?? 0).toFixed(2)} · Context ${profile.context_limit || 2048} · ${profile.builtin ? 'built-in' : 'custom'}</div>
@@ -790,18 +813,25 @@ function renderSelectedAgentProfile() {
  */
 function saveSelectedAgentProfile() {
     const id = $('agentProfileSelect')?.value || '';
+    // The Save button is meaningless without a selected profile, so surface an error via the host,
+    // which shows it as a VS Code notification.
     if (!id) {
         vscode.postMessage({ command: 'show_error', text: 'Select an agent profile first.' });
         return;
     }
+    // rpc id 71 pairs with the "save_agent_profile" reply handled in karl_socket.js.
     rpc(71, 'save_agent_profile', {
         profile: {
             id,
             name: $('agentProfileName').value.trim() || id,
+            // Fall back to the first letter of the id so the profile always has some icon.
             icon: $('agentProfileIcon').value.trim() || id.slice(0, 1).toUpperCase(),
             system_prompt: $('agentProfilePrompt').value,
+            // Number('') is 0 and Number('x') is NaN; `|| 0` maps both to a usable temperature.
             temperature: Number($('agentProfileTemp').value) || 0,
+            // 2048 tokens is the smallest context the backend accepts for a profile.
             context_limit: Number($('agentProfileContext').value) || 2048,
+            // Tool permissions: each box becomes a strict boolean the Python side checks before a tool runs.
             tools: {
                 read_files: $('agentToolRead').checked,
                 write_files: $('agentToolWrite').checked,
@@ -818,13 +848,17 @@ function saveSelectedAgentProfile() {
 // Detail: replaces the plain label with a clickable header (token count + pulse dot) and makes the
 // text body collapsible by toggling max-height/padding.
 function _initThoughtsPanel() {
+    // Both elements come from the static HTML in sidebarProvider.js; exit quietly if the layout lacks them.
     const box = $('introspectionBox');
     const thoughts = $('introspectionThoughts');
     if (!box || !thoughts) return;
 
     // Replace the static .eyebrow div with a full interactive header
+    // Keep a reference to the original label so it can be swapped for the interactive header.
     const oldEyebrow = box.querySelector('.eyebrow');
     const header = document.createElement('div');
+    // These ids are used by updateThoughts()/finalizeThoughts() (karl_render.js) to update the token
+    // counter and stop the pulse dot.
     header.id = 'thoughtsHeader';
     header.className = 'thoughts-header';
     header.innerHTML = `
@@ -833,18 +867,24 @@ function _initThoughtsPanel() {
         <span id="thoughtsTokenCount" class="thoughts-token-count">0 tokens</span>
         <span id="thoughtsPulseDot" class="thoughts-pulse-dot"></span>
     `;
+    // replaceChild keeps the header at the same position the old label occupied.
     if (oldEyebrow) {
         box.replaceChild(header, oldEyebrow);
     } else {
+        // No old label found: put the header before the reasoning text instead.
         box.insertBefore(header, thoughts);
     }
 
     // Mark the <pre> so CSS targets it as the scrollable body
+    // Mark the <pre> so CSS targets it as the scrollable body
     thoughts.classList.add('thoughts-body');
 
     // Wire the collapse/expand toggle
+    // Collapse is done with max-height 0 and zero padding (not display:none) so that the CSS height
+    // transition can animate and streaming text keeps being appended while hidden.
     // Collapse state lives in this closure; clicking the header flips it and updates the arrow.
     let _collapsed = false;
+    // One listener on the header toggles both states.
     header.addEventListener('click', () => {
         _collapsed = !_collapsed;
         if (_collapsed) {
@@ -852,15 +892,19 @@ function _initThoughtsPanel() {
             thoughts.style.paddingTop = '0';
             thoughts.style.paddingBottom = '0';
         } else {
+            // Empty strings remove the inline style, handing control back to the stylesheet.
             thoughts.style.maxHeight = '';
             thoughts.style.paddingTop = '';
             thoughts.style.paddingBottom = '';
         }
+        // Arrow glyphs: right-pointing = collapsed, down-pointing = expanded.
         $('thoughtsToggle').textContent = _collapsed ? '▶' : '▼';
+        // The modifier class lets CSS also restyle the header while collapsed.
         header.classList.toggle('thoughts-header--collapsed', _collapsed);
     });
 }
 
+// Module-level so handleChatFinished() can read what the stream produced after the bubbles are gone.
 // Raw text of the response being streamed (including any <think> markup); used to extract refactored code.
 let _lastAssistantContent = '';
 
@@ -873,14 +917,21 @@ let _lastAssistantContent = '';
 function sendChatMessage() {
     const input = $('chatInput');
     const text = input.value.trim();
+    // Two guards: nothing to send, or a reply is still streaming (chatFinished false). The second
+    // guard prevents interleaved streams in the single shared bubble.
     if (!text || !chatFinished) return;
+    // Fail fast with a visible message instead of letting rpc() silently drop the request.
     if (!isConnected()) {
         vscode.postMessage({ command: 'show_error', text: 'Karl is disconnected.' });
         return;
     }
+    // The file the user is working on (from the cockpit status) becomes the target for refactor results.
     currentTargetFilepath = currentTargetFilepath || $('cockpitFile').title || '';
+    // The user bubble appears immediately; the assistant bubble starts empty and is filled by
+    // handleResponseToken().
     appendMessageBubble('user', text);
     appendMessageBubble('assistant', '');
+    // Saved so recordConversationTurn() can pair the answer with its question.
     currentConversationInput = text;
     _lastAssistantContent = '';
     // Remember what was sent: handleChatFinished() checks whether it started with "refactor".
@@ -891,10 +942,13 @@ function sendChatMessage() {
     document.body.dataset.wsState = 'generating';
     $('chatSendBtn').disabled = true;
     // Reset the reasoning panel for this new generation
+    // Reset the reasoning panel for this new generation
     resetThoughtsPanel();
     currentResponseText = '';
+    // rpc id 3 pairs with submit_chat; tokens then arrive as notifications, not as a reply.
     rpc(3, 'submit_chat', {
         message: text,
+        // workspace_path lets the server resolve relative file mentions and codebase memory.
         workspace_path: $('workspace').value.trim(),
         hyperparams: hyperparams()
     });
@@ -908,10 +962,13 @@ function sendChatMessage() {
  * @param {string} token
  */
 function handleResponseToken(token) {
+    // Two accumulators: one for refactor extraction (raw, with think tags) and one for per-workflow panels.
     _lastAssistantContent += token;
     currentResponseText += token;
     
     // Prompt-lab mode takes priority: tokens go to the A/B boxes, not the chat.
+    // Prompt-lab mode takes priority: tokens go to the A/B boxes, not the chat.
+    // Lab runs reuse the chat stream; labRunning tells this router to divert instead of rendering a bubble.
     if (labRunning) {
         if (currentLabTarget === 'A') {
             labOutputA += token;
@@ -923,6 +980,8 @@ function handleResponseToken(token) {
         return;
     }
 
+    // Workflow helpers (git commit message, diagnostics, vision) mirror the stream in their own panel
+    // in addition to the chat bubble (the append below still runs).
     if (activeWorkflowId === 'generateCommitMessage') {
         $('gitCommitText').innerText = currentResponseText;
     } else if (activeWorkflowId === 'explainDiagnostics' || activeWorkflowId === 'explainCurrentFileDiagnostics') {
@@ -931,6 +990,7 @@ function handleResponseToken(token) {
         $('visionResultText').innerText = currentResponseText;
     }
 
+    // Normal chat rendering: appends to the open bubble using the cheap streaming path (no re-parse).
     appendChatToken(token);
 }
 
@@ -942,6 +1002,7 @@ function handleResponseToken(token) {
  * first code block of the answer to the host so the editor can apply it.
  */
 function handleChatFinished() {
+    // A and B share one connection and run serially; finishing A starts B, finishing B ends the lab run.
     if (labRunning) {
         if (currentLabTarget === 'A') {
             currentLabTarget = 'B';
@@ -953,10 +1014,13 @@ function handleChatFinished() {
         return;
     }
     // Remove streaming cursor and stop the pulse dot before recording the turn
+    // Remove streaming cursor and stop the pulse dot before recording the turn
     removeStreamingCursor();
     finalizeThoughts();
+    // Unlock sending only now: guarantees the previous reply is complete before the next submit.
     chatFinished = true;
     $('chatSendBtn').disabled = false;
+    // Return the body state to whatever the connection dot says (connected/busy/...).
     // Return the body state to whatever the connection dot says (connected/busy/...).
     // Restore ws-state indicator (use statusDot class as source of truth)
     const _dot = $('statusDot');
@@ -964,18 +1028,23 @@ function handleChatFinished() {
         const _st = [..._dot.classList].find(c => c !== 'status-dot') || 'connected';
         document.body.dataset.wsState = _st;
     }
+    // Read the rendered text (not the raw stream) so the stored turn matches what the user saw.
     const lastAssistant = $('chatMessages').querySelector('.message.assistant:last-child .message-content');
     recordConversationTurn(currentConversationInput, lastAssistant ? lastAssistant.innerText : '');
+    // Clear per-turn state so a stray notification cannot attach to the next turn.
     currentConversationInput = '';
     activeWorkflowId = '';
 
+    // Check if this was a refactor request — extract code block and notify host
     // Check if this was a refactor request — extract code block and notify host
     const lastInput = $('chatInput').dataset.lastSent || '';
     // Refactor results are applied by the host (``refactor_result`` message), not by this page.
     if (lastInput.toLowerCase().startsWith('refactor')) {
         const fullResponse = _lastAssistantContent || '';
+        // Matches the first fenced block (```lang\n ... ```); the lazy group stops at the first closing fence.
         const codeMatch = fullResponse.match(/```[\w]*\n([\s\S]*?)```/);
         if (codeMatch) {
+            // The extension host applies it to the editor; this page never edits files itself.
             vscode.postMessage({
                 command: 'refactor_result',
                 code: codeMatch[1],
@@ -989,7 +1058,9 @@ function handleChatFinished() {
  * Return the active conversation branch, creating one if none exists yet.
  */
 function activeBranch() {
+    // Lazily create the first branch so recording a turn never fails on a fresh install.
     if (!activeBranchId) createConversationBranch();
+    // Fall back to the first branch if the id is stale (e.g. after a persisted-state schema change).
     return conversationBranches.find(branch => branch.id === activeBranchId) || conversationBranches[0];
 }
 
@@ -998,6 +1069,7 @@ function activeBranch() {
  * @param {string} [seedTitle]
  */
 function createConversationBranch(seedTitle = '') {
+    // Unique enough for client-side ids: millisecond time plus random hex; ids are only compared locally.
     const id = `branch-${Date.now()}-${Math.random().toString(16).slice(2)}`;
     const branch = {
         id,
@@ -1005,8 +1077,10 @@ function createConversationBranch(seedTitle = '') {
         turns: [],
         createdAt: new Date().toISOString()
     };
+    // unshift puts the newest branch first in the sidebar list.
     conversationBranches.unshift(branch);
     activeBranchId = id;
+    // renderBranches updates the list; persist() writes webview state so branches survive a reload.
     renderBranches();
     persist();
 }
@@ -1015,6 +1089,7 @@ function createConversationBranch(seedTitle = '') {
  * Fork the active branch, dropping its last turn (so the user can retry from just before the latest answer).
  */
 function branchFromLatest() {
+    // slice(0, -1) copies all turns except the last one, so the fork re-asks the final question.
     const current = activeBranch();
     const id = `branch-${Date.now()}-${Math.random().toString(16).slice(2)}`;
     const branch = {
@@ -1026,6 +1101,7 @@ function branchFromLatest() {
     conversationBranches.unshift(branch);
     activeBranchId = id;
     renderBranches();
+    // Tell the user where the new branch appears.
     vscode.postMessage({ command: 'show_message', text: 'Karl conversation branch created in the Chat panel.' });
     persist();
 }
@@ -1038,12 +1114,16 @@ function branchFromLatest() {
  * @param {string} assistant
  */
 function recordConversationTurn(user, assistant) {
+    // Coerce to string: callers may pass undefined when a stream was cancelled.
     const prompt = String(user || '').trim();
     const response = String(assistant || '').trim();
+    // Nothing to record (cancelled before any text).
     if (!prompt && !response) return;
     const branch = activeBranch();
     branch.turns.push({ user: prompt, assistant: response, at: new Date().toISOString() });
+    // Titles are the first 48 characters of the question; keep the old title for empty prompts.
     branch.title = prompt.slice(0, 48) || branch.title;
+    // Move the active branch to the front and cap the history at 20 so persisted state stays small.
     conversationBranches = [branch, ...conversationBranches.filter(item => item.id !== branch.id)].slice(0, 20);
     activeBranchId = branch.id;
     renderBranches();
@@ -1055,7 +1135,9 @@ function recordConversationTurn(user, assistant) {
  * @param {any} edit
  */
 function addPendingEdit(edit) {
+    // Map keyed by edit id preserves insertion order for rendering and makes replace-by-id trivial.
     if (!edit || !edit.id) return;
+    // Same id re-sent by the server updates the existing entry instead of duplicating it.
     pendingEdits.set(edit.id, edit);
     renderPendingEdits();
 }
@@ -1067,6 +1149,7 @@ function addPendingEdit(edit) {
  */
 function markPendingEdit(editId, status) {
     const edit = pendingEdits.get(editId);
+    // Edit objects are shared references, but set() keeps the Map and any future cloning logic consistent.
     if (edit) {
         edit.status = status;
         pendingEdits.set(editId, edit);
@@ -1080,8 +1163,10 @@ function markPendingEdit(editId, status) {
  * @param {string} status
  */
 function markPendingEditByPath(filepath, status) {
+    // Matching by path is a fallback for server events that report a write without an edit id.
     if (!filepath) return;
     for (const [editId, edit] of pendingEdits.entries()) {
+        // Only edits already approved/submitted can be written, so unrelated pending edits are skipped.
         if (edit.filepath === filepath && ['approved', 'submitted'].includes(edit.status)) {
             markPendingEdit(editId, status);
             return;
@@ -1094,17 +1179,21 @@ function markPendingEditByPath(filepath, status) {
  * @param {any[]} runs
  */
 function renderSwarmRunHistory(runs) {
+    // Show only the 5 latest runs; older ones remain on disk but the dropdown stays short.
     swarmRunHistory = Array.isArray(runs) ? runs.slice(0, 5) : [];
     const select = $('swarmRunSelect');
     if (!select) return;
+    // Empty state text so the Rollback button has an explanation instead of a blank list.
     if (!swarmRunHistory.length) {
         select.innerHTML = '<option value="">No swarm runs yet</option>';
         return;
     }
     select.innerHTML = swarmRunHistory.map(run => {
+        // Locale string is for display only; the real timestamp stays in the history array.
         const when = run.timestamp ? new Date(run.timestamp).toLocaleString() : 'unknown time';
         const files = Array.isArray(run.changedFiles) ? run.changedFiles.length : 0;
         const objective = (run.objective || run.summary || 'Swarm run').slice(0, 48);
+        // value is the runId that the rollback RPC needs; everything else is label text, escaped.
         return `<option value="${escapeHtml(run.runId || '')}">${escapeHtml(when)} · ${escapeHtml(objective)} · ${files} file(s)</option>`;
     }).join('');
 }
@@ -1115,6 +1204,7 @@ function renderSwarmRunHistory(runs) {
  * @param {string} state label used in the log line
  */
 function removePendingEdit(editId, state) {
+    // Removing instead of marking keeps rejected edits out of the review queue.
     pendingEdits.delete(editId);
     renderPendingEdits();
     log(`[Changes] ${state} pending edit ${editId}.`);
@@ -1126,6 +1216,7 @@ function removePendingEdit(editId, state) {
  * Needs a user message and a live connection; a second click while running is ignored.
  */
 function runLab() {
+    // Re-entrancy guard: a second click while A/B is already running would start parallel streams.
     if (labRunning) return;
     if (!$('labUser').value.trim()) {
         vscode.postMessage({ command: 'show_error', text: 'Prompt Lab needs a user message.' });
