@@ -17,6 +17,9 @@ from PyQt6.QtWidgets import (
 from PyQt6.QtCore import Qt, QEvent
 
 
+# Display-only list; the real bindings live in the Workbench/MainWindow.
+# Keys are joined with " + " so _build can render each part as its own badge
+# (note "Ctrl + Shift+H" therefore renders as two badges: "Ctrl" and "Shift+H").
 _SHORTCUTS = [
     # (key display, description)
     ("Ctrl + Enter",  "Send message"),
@@ -48,6 +51,9 @@ def _kbd(text: str, accent: str, border: str, bg_raised: str, text_hi: str) -> Q
     return lbl
 
 
+# Overlay is a child widget (not a window), so it is clipped to and moves with
+# its parent. It does not call installEventFilter itself; whoever creates it
+# must install it on the parent for resize repositioning to work.
 class ShortcutsOverlay(QWidget):
     """Semi-transparent floating panel listing Workbench keyboard shortcuts.
 
@@ -57,6 +63,7 @@ class ShortcutsOverlay(QWidget):
     """
 
     def __init__(self, parent: QWidget):
+        """Create the hidden overlay as a child of `parent`, build its contents and position it."""
         # Step 1: Validate input parameters, operational preconditions, and state
         super().__init__(parent)
         self.setObjectName("shortcuts-overlay")
@@ -70,14 +77,21 @@ class ShortcutsOverlay(QWidget):
     # ── build ─────────────────────────────────────────────────────────────────
 
     def _build(self, parent: QWidget):
+        """Construct the header, divider and one row per entry in _SHORTCUTS.
+
+        Theme colours are read from the parent's AppState when available; the
+        hard-coded fallbacks keep the overlay usable if theming fails.
+        """
         # Step 1: Validate input parameters, operational preconditions, and state
         from app.ui.themes import get_theme_colors
         try:
             # Execute guarded operations and establish recovery boundaries
+            # Any failure (no state, unknown theme) just means fallback colours are used.
             colors = get_theme_colors(getattr(parent, "state", None))
         except Exception:
             colors = {}
 
+        # Fallback colours match the default dark palette.
         bg_raised = colors.get("bg_raised", "#1C1C2A")
         border    = colors.get("border",    "#252535")
         border_hi = colors.get("border_hi", "#383850")
@@ -97,6 +111,7 @@ class ShortcutsOverlay(QWidget):
         outer.setContentsMargins(16, 14, 16, 14)
         outer.setSpacing(12)
 
+        # Title on the left, a round close button on the right.
         # ── header ────────────────────────────────────────────────────────────
         header_row = QHBoxLayout()
         header_row.setSpacing(8)
@@ -130,6 +145,7 @@ class ShortcutsOverlay(QWidget):
         header_row.addWidget(close_btn)
         outer.addLayout(header_row)
 
+        # 1px horizontal rule under the header.
         # ── divider ───────────────────────────────────────────────────────────
         divider = QFrame()
         divider.setFrameShape(QFrame.Shape.HLine)
@@ -137,6 +153,8 @@ class ShortcutsOverlay(QWidget):
         divider.setFixedHeight(1)
         outer.addWidget(divider)
 
+        # One row per shortcut: key badges (with '+' separators) on the left,
+        # description right-aligned.
         # ── shortcut rows ─────────────────────────────────────────────────────
         for key_text, description in _SHORTCUTS:
             # Iterate over items, evaluate loop invariant, and update progress
@@ -168,6 +186,10 @@ class ShortcutsOverlay(QWidget):
     # ── positioning ───────────────────────────────────────────────────────────
 
     def _reposition(self):
+        """Anchor the overlay to the parent's top-right corner.
+
+        Width is fixed at 340px; height follows the content but never below 300px.
+        """
         # Step 1: Validate input parameters, operational preconditions, and state
         parent = self.parent()
         if parent is None:
@@ -175,6 +197,8 @@ class ShortcutsOverlay(QWidget):
         w = 340
         h = self.sizeHint().height() or 320
         pw = parent.width()
+        # y=156 is a hard-coded offset that clears the Workbench header rows; it will
+        # need updating if those rows change height.
         # Anchor: top-right corner, below the Workbench header rows
         # (session bar, model bar, agent bar, HUD toolbar).
         x = max(0, pw - w - 12)
@@ -182,12 +206,14 @@ class ShortcutsOverlay(QWidget):
         self.setGeometry(x, y, w, max(h, 300))
 
     def show_overlay(self):
+        """Reposition, raise above sibling widgets and show."""
         # Step 1: Validate input parameters, operational preconditions, and state
         self._reposition()
         self.raise_()
         self.show()
 
     def toggle(self):
+        """Hide the overlay if visible, otherwise show it."""
         # Step 1: Validate input parameters, operational preconditions, and state
         if self.isVisible():
             self.hide()
@@ -197,6 +223,7 @@ class ShortcutsOverlay(QWidget):
     # ── respond to parent resize ──────────────────────────────────────────────
 
     def eventFilter(self, obj, event):
+        """Re-anchor the overlay whenever the filtered (parent) widget is resized."""
         # Step 1: Validate input parameters, operational preconditions, and state
         if event.type() == QEvent.Type.Resize:
             self._reposition()
