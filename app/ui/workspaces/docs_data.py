@@ -14,6 +14,10 @@ Provides complete, self-contained documentation of grammar, compilers, runtime l
 APIs, and optimization tactics for offline code generation.
 """
 
+# Inline-CSS fragments interpolated into the HTML below. Qt's rich-text engine
+# (QTextBrowser) supports only a subset of CSS and ignores external stylesheets
+# for this content, so styles are written inline on every element. The colours
+# mirror the dark theme palette (cyan accent #00C2FF on near-black).
 # Heavenscape Styling Tokens
 STYLE_H2 = "color:#00C2FF; margin-top:0; border-bottom: 1px solid #1F1F3D; padding-bottom: 4px;"
 STYLE_H4 = "color:#E4E4F0; margin-bottom:4px; margin-top:16px;"
@@ -25,7 +29,12 @@ STYLE_TABLE = "width:100%; border-collapse:collapse; margin:10px 0;"
 STYLE_TH = "text-align:left; color:#00C2FF; border-bottom:1px solid #1F1F3D; padding:8px;"
 STYLE_TD = "padding:8px; border-bottom:1px solid #10101C; color:#9090A8;"
 
+# Topic title -> HTML body. The dict key is what the Codex sidebar lists and
+# searches; each value is an f-string, so literal braces in embedded code
+# samples are doubled ({{ }}) and backslashes are escaped. Content is static
+# data: editing text here changes the documentation, never behaviour.
 DEFAULT_LIBRARY = {
+    # Guide: chat workspace, HUD panels, shortcuts, generation settings.
     "Workbench": f"""
         <h2 style='{STYLE_H2}'>◈ Workbench: Primary Interaction Space</h2>
         <p style='{STYLE_P}'>The Workbench is Karl's central nervous system, providing a high-bandwidth interface for local LLM introspection and generation.</p>
@@ -57,6 +66,7 @@ DEFAULT_LIBRARY = {
           <li style='{STYLE_LI}'><b>Feedback Curation:</b> Use the 👍/👎/✎ buttons to rate responses. Thumbs up saves to SFT curator; Thumbs down for DPO; Correct (✎) saves the user's manual fix as the new ground truth.</li>
         </ul>
     """,
+    # Guide: multi-agent swarm orchestration.
     "Swarm Studio": f"""
         <h2 style='{STYLE_H2}'>☄ Swarm Studio: Multi-Agent Codegen</h2>
         <p style='{STYLE_P}'>Karl's Swarm Studio orchestrates multiple specialized agents (Architect, Coder, Tester) to solve complex coding objectives autonomously.</p>
@@ -72,6 +82,7 @@ DEFAULT_LIBRARY = {
         <h4 style='{STYLE_H4}'>Task Lifecycle</h4>
         <pre style='{STYLE_PRE}'>PENDING ➔ IN_PROGRESS ➔ VERIFYING ➔ [ COMPLETED | FAILED ]</pre>
     """,
+    # Guide: fine-tuning pipelines (auto-train, burst train fixtures).
     "Training Studio": f"""
         <h2 style='{STYLE_H2}'>⬡ Training Studio: Local Fine-Tuning</h2>
         <p style='{STYLE_P}'>Perform hardware-accelerated LoRA and QLoRA fine-tuning on your curated datasets without leaving Karl.</p>
@@ -100,6 +111,7 @@ def get_examples():
         {{"instruction": "Extract date", "output": "{{\\"date\\": \\"2026-06-13\\"}}"}}
     ]</pre>
     """,
+    # Guide: RAG ingestion, chunking and retrieval tuning.
     "Knowledge Base": f"""
         <h2 style='{STYLE_H2}'>⊞ Knowledge Base: RAG Mechanics</h2>
         <p style='{STYLE_P}'>Manage and optimize the local Retrieval-Augmented Generation (RAG) pipeline for grounding LLM responses in your own data.</p>
@@ -117,6 +129,7 @@ def get_examples():
           <li style='{STYLE_LI}'><b>Top-K:</b> The maximum number of chunks to inject into the prompt. High K provides more breadth but consumes more context budget.</li>
         </ul>
     """,
+    # Guide: how documentation search works (semantic first, keyword fallback).
     "Codex Search": f"""
         <h2 style='{STYLE_H2}'>🔍 Codex: Semantic Information Discovery</h2>
         <p style='{STYLE_P}'>Karl uses a hybrid search strategy to locate relevant documentation in real-time.</p>
@@ -127,6 +140,7 @@ def get_examples():
         <h4 style='{STYLE_H4}'>2. Keyword & Regex Fallback</h4>
         <p style='{STYLE_P}'>If the vector engine is offline, Karl falls back to high-speed alphanumeric pattern matching to find specific IDs or technical terms.</p>
     """,
+    # Guide: steering model behaviour with LoRA/QLoRA adapters.
     "AI Steering": f"""
         <h2 style='{STYLE_H2}'>◈ AI Steering & Adapter Control</h2>
         <p style='{STYLE_P}'>Steering refers to the fine-grained control of model behavior using lightweight adapters (LoRA/QLoRA).</p>
@@ -135,18 +149,23 @@ def get_examples():
           <li style='{STYLE_LI}'><b>Dynamic Scheduling:</b> Karl automatically adjusts entropy based on the generation state (Thinking vs. Answering).</li>
         </ul>
     """,
+    # Short stub guide (placeholder text only).
     "Python": f"""
         <h2 style='{STYLE_H2}'>Python Development Guide</h2>
         <p style='{STYLE_P}'>Best practices for writing Python code with Karl's local assistance.</p>
     """,
+    # Short stub guide on sandboxed verification of generated code.
     "Docker": f"""
         <h2 style='{STYLE_H2}'>Docker & Sandboxing</h2>
         <p style='{STYLE_P}'>Guidelines for using Docker containers to safely verify model-generated code.</p>
     """,
+    # Short stub guide on FastAPI/Pydantic.
     "FastAPI": f"""
         <h2 style='{STYLE_H2}'>FastAPI Implementation</h2>
         <p style='{STYLE_P}'>Reference for building robust APIs using FastAPI and Pydantic.</p>
     """,
+    # Reference: the maths behind retrieval (TF-IDF, cosine similarity) and
+    # transformer attention, written as plain-text formulas inside <pre> blocks.
     "Mathematical Introspection": f"""
         <h2 style='{STYLE_H2}'>◈ Mathematical Introspection</h2>
         <p style='{STYLE_P}'>This reference guide details the mathematical foundations underlying Karl's vector space search retrieval and deep learning transformer self-attention mechanisms.</p>
