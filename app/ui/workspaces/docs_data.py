@@ -19,13 +19,32 @@ APIs, and optimization tactics for offline code generation.
 # for this content, so styles are written inline on every element. The colours
 # mirror the dark theme palette (cyan accent #00C2FF on near-black).
 # Heavenscape Styling Tokens
+# Style constants are module-level strings (not a QSS file) because QTextBrowser
+# renders each HTML fragment with its own default stylesheet; the only way to get
+# consistent colours is to repeat these inline on every tag. Each constant is
+# interpolated into the f-strings below, so changing a value here restyles every
+# guide at once. H2 carries the accent colour and underline; margin-top:0 stops
+# the first heading leaving a gap at the top of the page.
 STYLE_H2 = "color:#00C2FF; margin-top:0; border-bottom: 1px solid #1F1F3D; padding-bottom: 4px;"
 STYLE_H4 = "color:#E4E4F0; margin-bottom:4px; margin-top:16px;"
+# Body text uses the muted grey (#9090A8) rather than the near-white heading colour
+# so long guides stay readable on the dark background without glare; line-height
+# 1.6 is the one value tuned for paragraphs, lists use a tighter 1.4.
 STYLE_P = "color:#9090A8; line-height:1.6;"
+# Code blocks: fixed monospace with a darker background than the page so they
+# read as insets. QTextBrowser does not honour white-space overflow scrolling
+# reliably, so long lines depend on the viewer's horizontal scrollbar.
 STYLE_PRE = "background:#050510; border:1px solid #1F1F3D; color:#A0AEC0; padding:12px; font-family:'JetBrains Mono', monospace; border-radius:4px; margin: 10px 0;"
+# Inline code gets the accent colour plus a slightly lighter chip background so it
+# is distinguishable from body text even for colour-blind readers (shape + tint).
 STYLE_CODE = "color:#00C2FF; background:#10101C; padding:2px 4px; border-radius:3px;"
 STYLE_LI = "color:#9090A8; margin-bottom:8px; line-height:1.4;"
+# Tables: border-collapse and 100% width are among the few table properties
+# Qt's rich-text engine respects; cell padding is therefore set per cell via
+# STYLE_TH / STYLE_TD rather than on the table.
 STYLE_TABLE = "width:100%; border-collapse:collapse; margin:10px 0;"
+# Header cells reuse the H2 accent and underline so tables visually match the
+# section headings above them.
 STYLE_TH = "text-align:left; color:#00C2FF; border-bottom:1px solid #1F1F3D; padding:8px;"
 STYLE_TD = "padding:8px; border-bottom:1px solid #10101C; color:#9090A8;"
 
@@ -33,8 +52,19 @@ STYLE_TD = "padding:8px; border-bottom:1px solid #10101C; color:#9090A8;"
 # searches; each value is an f-string, so literal braces in embedded code
 # samples are doubled ({{ }}) and backslashes are escaped. Content is static
 # data: editing text here changes the documentation, never behaviour.
+# Consumed by DocsWorkspace._init_library (docs.py), which writes each entry to
+# data/codex_library/<title>.html when the stored ".version" marker differs from
+# its own. Editing any text below therefore has no effect on existing installs
+# until that version string is bumped. The entries are also fed to the codex
+# RAG index, so headings should stay descriptive: they are what search matches.
+# Because values are f-strings, a stray single "{" or "}" in new prose raises a
+# SyntaxError/NameError at import time, which would take the Codex down with it.
 DEFAULT_LIBRARY = {
     # Guide: chat workspace, HUD panels, shortcuts, generation settings.
+    # Dict order only matters for seeding: DocsWorkspace re-reads the directory with
+    # sorted(os.listdir(...)), so the sidebar is alphabetical by file name regardless
+    # of where an entry sits here. Keys become file names (non-alphanumerics other
+    # than space, '_' and '-' are stripped), so avoid punctuation in new titles.
     "Workbench": f"""
         <h2 style='{STYLE_H2}'>◈ Workbench: Primary Interaction Space</h2>
         <p style='{STYLE_P}'>The Workbench is Karl's central nervous system, providing a high-bandwidth interface for local LLM introspection and generation.</p>
@@ -112,6 +142,9 @@ def get_examples():
     ]</pre>
     """,
     # Guide: RAG ingestion, chunking and retrieval tuning.
+    # Note on the "Training Studio" entry above: its get_examples() snippet shows a
+    # burst fixture as a function returning a list of instruction/output dicts; the
+    # doubled braces in it are f-string escapes, not a typo.
     "Knowledge Base": f"""
         <h2 style='{STYLE_H2}'>⊞ Knowledge Base: RAG Mechanics</h2>
         <p style='{STYLE_P}'>Manage and optimize the local Retrieval-Augmented Generation (RAG) pipeline for grounding LLM responses in your own data.</p>
@@ -150,6 +183,9 @@ def get_examples():
         </ul>
     """,
     # Short stub guide (placeholder text only).
+    # The three short topics below (Python, Docker, FastAPI) are placeholders that
+    # keep the sidebar categories populated; they are intentionally stubs and carry
+    # no behaviour a test could depend on.
     "Python": f"""
         <h2 style='{STYLE_H2}'>Python Development Guide</h2>
         <p style='{STYLE_P}'>Best practices for writing Python code with Karl's local assistance.</p>
@@ -166,6 +202,8 @@ def get_examples():
     """,
     # Reference: the maths behind retrieval (TF-IDF, cosine similarity) and
     # transformer attention, written as plain-text formulas inside <pre> blocks.
+    # Formulas are plain text in <pre> because Qt rich text has no MathML/LaTeX
+    # support; alignment depends on the monospace STYLE_PRE font, so avoid tabs.
     "Mathematical Introspection": f"""
         <h2 style='{STYLE_H2}'>◈ Mathematical Introspection</h2>
         <p style='{STYLE_P}'>This reference guide details the mathematical foundations underlying Karl's vector space search retrieval and deep learning transformer self-attention mechanisms.</p>
