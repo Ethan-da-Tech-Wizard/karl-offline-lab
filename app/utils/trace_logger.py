@@ -22,6 +22,7 @@ import uuid
 import gzip
 import shutil
 import threading
+import time
 import hashlib
 import base64
 import ctypes
@@ -69,6 +70,9 @@ class TraceLogger:
     Entries go to data/logs/traces/trace_<date>.jsonl with a .compact companion;
     full files are gzip-compressed and Fernet-encrypted into the archive folder.
     """
+    # Minimum seconds between retention sweeps triggered by log_generation.
+    RETENTION_SWEEP_INTERVAL_SEC = 60.0
+
     def __init__(self, log_dir: str = "data/logs/traces", archive_dir: str = "data/logs/archive"):
         """Create log/archive folders, pick today's file and start a background retention sweep.
         """
@@ -80,6 +84,8 @@ class TraceLogger:
         self._log_file: str | None = None
         self._lock = threading.Lock()
         self._refresh_path()
+        # Monotonic time of the last sweep; log_generation uses it to avoid re-scanning the folder on every write.
+        self._last_sweep = time.monotonic()
         # Retention runs on a daemon thread so startup is not delayed by scanning large log folders.
         threading.Thread(target=self.enforce_retention_policy, daemon=True).start()
 
@@ -437,8 +443,12 @@ class TraceLogger:
 
         The JSONL schema is compatible with Unsloth SFT and DPO export.
         """
-        # Retention is enforced on every write so size/age limits hold without a scheduler.
-        self.prune_logs()
+        # Retention is enforced from the write path (no scheduler), but at most once per interval:
+        # the sweep walks and stats every log file, which is far too slow to repeat per generation.
+        now = time.monotonic()
+        if now - self._last_sweep >= self.RETENTION_SWEEP_INTERVAL_SEC:
+            self._last_sweep = now
+            self.prune_logs()
         
         # _refresh_path handles locking internally; it also rotates when the file is full.
         # _refresh_path handles locking internally
