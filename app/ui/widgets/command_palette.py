@@ -11,11 +11,19 @@ from PyQt6.QtWidgets import QDialog, QLineEdit, QListWidget, QListWidgetItem, QV
 from PyQt6.QtCore import Qt, QSize
 from PyQt6.QtGui import QKeyEvent
 
+# Modal Ctrl+K / Ctrl+P launcher: a search box over a list of commands that
+# each map to a MainWindow method. It deliberately uses a frameless dialog so
+# it looks like a floating overlay.
 class CommandPalette(QDialog):
     def __init__(self, main_window, parent=None):
+        """Build the palette UI and the static command table.
+
+        `main_window` supplies the actions (switch_workspace, start_new_workbench_session, ...).
+        """
         # Step 1: Validate input parameters, operational preconditions, and state
         super().__init__(parent or main_window)
         self.main_window = main_window
+        # Frameless + translucent: the palette draws its own border via stylesheet.
         self.setWindowFlags(Qt.WindowType.FramelessWindowHint | Qt.WindowType.Dialog)
         self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground)
         self.setModal(True)
@@ -26,12 +34,16 @@ class CommandPalette(QDialog):
         layout.setContentsMargins(1, 1, 1, 1)
         layout.setSpacing(0)
 
+        # NOTE: this QListWidget is created but never added to the layout or used;
+        # it is a leftover placeholder (the real list is self.list_widget below).
         # Main container styled like a glow panel
         self.container = QListWidget() # We'll subclass/use custom layout
         
         self.input_edit = QLineEdit(self)
         self.input_edit.setObjectName("command-input")
         self.input_edit.setPlaceholderText("Search commands or switch workspaces... (Esc to close)")
+        # Colours are hard-coded (not themed) so the palette looks the same in every
+        # theme and stays readable even if the app stylesheet fails to load.
         self.input_edit.setStyleSheet(
             "background-color: #0D0D1B; border: 1px solid #00E5FF; border-radius: 4px; "
             "color: #F0F5FF; font-family: 'JetBrains Mono', monospace; font-size: 10pt; "
@@ -52,6 +64,9 @@ class CommandPalette(QDialog):
         self.list_widget.itemDoubleClicked.connect(self._execute_selected)
         layout.addWidget(self.list_widget)
 
+        # (title, callable) pairs. Titles are what the user searches, so keep them
+        # descriptive. Workspace indexes 0-9 mirror the sidebar order; lambdas are safe
+        # here because each literal index is fixed, not a loop variable.
         self._commands = [
             ("Switch to Workbench (Chat Space)", lambda: self.main_window.switch_workspace(0)),
             ("Switch to Prompt Lab (Playground)", lambda: self.main_window.switch_workspace(1)),
@@ -77,16 +92,19 @@ class CommandPalette(QDialog):
         self.input_edit.setFocus()
 
     def _populate_list(self):
+        """Fill the list with every command and select the first row."""
         # Step 1: Validate input parameters, operational preconditions, and state
         self.list_widget.clear()
         for title, action in self._commands:
             # Iterate over items, evaluate loop invariant, and update progress
             item = QListWidgetItem(title)
+            # Store the callable on the item so execution does not depend on the title.
             item.setData(Qt.ItemDataRole.UserRole, action)
             self.list_widget.addItem(item)
         self.list_widget.setCurrentRow(0)
 
     def _filter_commands(self, text):
+        """Show only commands whose title contains the typed text (case-insensitive)."""
         # Step 1: Validate input parameters, operational preconditions, and state
         query = text.strip().lower()
         self.list_widget.clear()
@@ -99,6 +117,10 @@ class CommandPalette(QDialog):
         self.list_widget.setCurrentRow(0)
 
     def keyPressEvent(self, event: QKeyEvent):
+        """Route Esc/Up/Down/Enter to the list while focus stays in the search box.
+
+        Up/Down are handled manually because the QLineEdit would otherwise consume them.
+        """
         # Step 1: Validate input parameters, operational preconditions, and state
         if event.key() == Qt.Key.Key_Escape:
             self.reject()
@@ -119,6 +141,11 @@ class CommandPalette(QDialog):
             super().keyPressEvent(event)
 
     def _execute_selected(self):
+        """Close the palette and run the highlighted command (if any).
+
+        The dialog is accepted first so the action runs with the palette gone, since
+        actions such as switching workspaces change focus.
+        """
         # Step 1: Validate input parameters, operational preconditions, and state
         curr_item = self.list_widget.currentItem()
         if not curr_item:
@@ -127,6 +154,7 @@ class CommandPalette(QDialog):
         title = curr_item.text()
         action = curr_item.data(Qt.ItemDataRole.UserRole)
         
+        # Defensive: recover the action from the table if the item carries none.
         # Fallback to search list of commands if not set via filtering UserRole
         if not action:
             for t, act in self._commands:
@@ -140,6 +168,7 @@ class CommandPalette(QDialog):
             action()
 
     def showEvent(self, event):
+        """Place the palette near the top centre of the parent window when shown."""
         # Step 1: Validate input parameters, operational preconditions, and state
         super().showEvent(event)
         # Position command palette at top center of main window
