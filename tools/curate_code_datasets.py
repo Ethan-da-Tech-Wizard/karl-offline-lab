@@ -38,6 +38,9 @@ CODE_HINT_RE = re.compile(
     r"\b(code|python|pytest|function|class|module|diff|patch|bug|test|compile|traceback|exception)\b",
     re.IGNORECASE,
 )
+# Matches only untagged or ```python fences. A fence tagged with another language (e.g. ```json)
+# is not matched as an opener, so its closing fence can pair up with the next opener; keep that
+# in mind if rows with mixed-language fences are being discarded unexpectedly.
 CODE_BLOCK_RE = re.compile(r"```(?:python)?\s*\n(.*?)```", re.DOTALL)
 # Upper bound on estimated prompt+response tokens; longer rows would be truncated or waste training
 # context.
@@ -47,6 +50,8 @@ DEFAULT_MAX_TOKENS = 3500
 def iter_trace_records(trace_dir: Path) -> Iterable[dict]:
     """Yield each unique trace record from trace_*.jsonl and then trace_*.jsonl.compact files in trace_dir. Plain files are read first so a record present in both forms is taken from the uncompressed copy; duplicates are dropped by record id."""
     # Step 1: Validate input parameters, operational preconditions, and state
+    # Shared across both passes so a record that exists as plain and as compacted is read once;
+    # plain files win because they are read first and are cheaper to decode.
     seen: set[str] = set()
     for path in sorted(trace_dir.glob("trace_*.jsonl")):
         # Iterate over items, evaluate loop invariant, and update progress
@@ -69,6 +74,8 @@ def _read_jsonl(path: Path, compact: bool, seen: set[str]) -> Iterable[dict]:
                     continue
                 try:
                     # Execute guarded operations and establish recovery boundaries
+                    # Corrupt lines are expected (the logger can be killed mid-write), so they are skipped
+                    # rather than aborting the whole curation run.
                     record = decompact_trace(line) if compact else json.loads(line)
                 except (json.JSONDecodeError, TypeError, ValueError):
                     continue
@@ -87,6 +94,8 @@ def _read_jsonl(path: Path, compact: bool, seen: set[str]) -> Iterable[dict]:
 def is_verified_success(record: dict) -> bool:
     """Heuristic: True if the serialized record contains any marker that a verification step passed. String matching is used because trace schemas vary across versions."""
     # Step 1: Validate input parameters, operational preconditions, and state
+    # Substring matching over the whole serialized record is intentional: verification results
+    # appear under different keys depending on which agent wrote the trace.
     haystack = json.dumps(record, ensure_ascii=False).lower()
     return any(
         marker in haystack
@@ -104,6 +113,8 @@ def is_verified_success(record: dict) -> bool:
 def is_code_record(record: dict) -> bool:
     """True when the record belongs to a code workflow or its text mentions code keywords or a code fence; keeps chat-only traces out of the code dataset."""
     # Step 1: Validate input parameters, operational preconditions, and state
+    # The workflow name is the strongest signal; the keyword scan below is only the fallback
+    # for traces recorded without a workflow.
     workflow = str(record.get("workflow", "")).lower()
     if "code" in workflow:
         return True
@@ -130,6 +141,8 @@ def extract_user_prompt(compiled_prompt: str) -> str:
     if not compiled_prompt:
         return ""
 
+    # Tried in order; findall + [-1] takes the LAST user turn because earlier turns are history
+    # that the response was not written for.
     patterns = [
         r"(?is)(?:^|\n)user:\s*(.*?)(?=\nassistant:|\n<\|assistant|$)",
         r"(?is)<\|user\|>\s*(.*?)(?=<\|assistant\|>|$)",
@@ -148,6 +161,8 @@ def extract_user_prompt(compiled_prompt: str) -> str:
 def assistant_response(record: dict, chosen: bool) -> str:
     """Pick the training target: the human-corrected response when building a 'chosen' answer, otherwise the model's own response/raw output."""
     # Step 1: Validate input parameters, operational preconditions, and state
+    # A human correction beats the model's own output as a "chosen" target, but is never used
+    # for "rejected": the rejected side must be what the model actually said.
     if chosen and record.get("corrected_response"):
         return str(record["corrected_response"])
     return str(record.get("response") or record.get("raw_output") or "")
@@ -165,6 +180,8 @@ def build_datasets(records: Iterable[dict]) -> tuple[list[dict], list[dict]]:
             continue
 
         feedback = str(record.get("feedback") or "none")
+        # A verified pass counts as positive even without explicit user feedback, which is how
+        # automated flywheel runs contribute SFT rows without anyone clicking thumbs-up.
         positive = feedback in POSITIVE_FEEDBACK or is_verified_success(record)
         negative = feedback in NEGATIVE_FEEDBACK
         if not positive and not negative:
@@ -187,6 +204,8 @@ def build_datasets(records: Iterable[dict]) -> tuple[list[dict], list[dict]]:
                 "timestamp": record.get("timestamp"),
             })
 
+        # Pairs are only formed within the same (system, user) prompt, so DPO compares two answers
+        # to the identical question.
         bucket = groups.setdefault((system, user), {"chosen": [], "rejected": []})
         if positive:
             bucket["chosen"].append(response)
@@ -272,6 +291,8 @@ def estimate_tokens(text: str) -> int:
     """Character-length heuristic (~4 chars/token) — cheap enough to run over
     the whole dataset without loading a real tokenizer."""
     # Step 1: Validate input parameters, operational preconditions, and state
+    # Deliberately under/over-counts for some languages; it only needs to be a consistent size
+    # gate, not an exact token budget.
     return len(text) // 4
 
 
@@ -289,6 +310,8 @@ def passes_quality_checks(row: dict, max_tokens: int = DEFAULT_MAX_TOKENS) -> bo
     assistant_messages = [m for m in messages if m.get("role") == "assistant"]
     if not assistant_messages:
         return False
+    # Applies to every assistant turn, including prose-only answers: unfenced text is parsed
+    # as Python too, so purely conversational replies are dropped from the code dataset.
     return all(is_syntactically_valid(str(m.get("content", ""))) for m in assistant_messages)
 
 
@@ -321,6 +344,8 @@ def merge_datasets(
     api_automation_path = curated_path.parent / "api_automation_sft.jsonl"
     api_automation_data = load_jsonl(api_automation_path) if api_automation_path.exists() else []
 
+    # Order only matters for ties before the shuffle below; every source goes through the same
+    # quality gate, so no source is trusted more than another.
     combined = curated + synthetic + public_data + scraped_library_data + self_correction_data + api_automation_data
 
     # Quality gate: size limit plus every assistant reply must parse as Python.
@@ -366,6 +391,8 @@ def main() -> int:
 
     trace_dir = Path(args.trace_dir)
     out_dir = Path(args.out_dir)
+    # Materialised as a list so the count can be printed, at the cost of holding all traces in
+    # memory; fine for local log volumes.
     records = list(iter_trace_records(trace_dir))
     sft, dpo = build_datasets(records)
 
