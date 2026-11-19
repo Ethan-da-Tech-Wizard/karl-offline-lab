@@ -52,8 +52,10 @@ class Phi2Model(TextModel):
         self.gguf_writer.add_feed_forward_length(4 * n_embd)
         self.gguf_writer.add_block_count(self.block_count)
         self.gguf_writer.add_head_count(n_head)
+        # Phi-2 uses plain multi-head attention, so the KV head count equals the query head count (no GQA).
         self.gguf_writer.add_head_count_kv(n_head)
         self.gguf_writer.add_layer_norm_eps(self.find_hparam(["layer_norm_epsilon", "layer_norm_eps"]))
+        # Phi-2 only rotates a fraction (partial_rotary_factor) of each head: rotary dims = fraction * head_dim, and head_dim = n_embd // n_head. llama.cpp needs the absolute count, not the ratio.
         self.gguf_writer.add_rope_dimension_count(int(rot_pct * n_embd) // n_head)
         self.gguf_writer.add_file_type(self.ftype)
         self.gguf_writer.add_add_bos_token(False)
@@ -73,6 +75,7 @@ class Phi3MiniModel(TextModel):
         if tokenizer_config_file.is_file():
             with open(tokenizer_config_file, "r", encoding="utf-8") as f:
                 tokenizer_config_json = json.load(f)
+                # Phi-4 keeps the Phi-3 architecture string but ships a GPT-2 BPE tokenizer (no tokenizer.model), so tokenizer_class is the only reliable way to tell the two apart.
                 tokenizer_class = tokenizer_config_json['tokenizer_class']
                 if tokenizer_class == 'GPT2Tokenizer':
                     return self._set_vocab_gpt2()
@@ -87,6 +90,7 @@ class Phi3MiniModel(TextModel):
         tokenizer = SentencePieceProcessor()
         tokenizer.LoadFromFile(str(tokenizer_path))
 
+        # The embedding matrix can be larger than the SentencePiece vocab (padded for hardware alignment); the GGUF token list must cover every embedding row or llama.cpp rejects the file.
         vocab_size = self.hparams.get('vocab_size', tokenizer.vocab_size())
 
         # Pre-fill every id with a PAD placeholder so ids beyond the SentencePiece vocab stay valid.
@@ -111,6 +115,7 @@ class Phi3MiniModel(TextModel):
                 toktype = SentencePieceTokenTypes.BYTE
 
             tokens[token_id] = text
+            # SentencePiece unigram scores are log-probabilities used by the runtime tokenizer to pick the best segmentation, so they are copied verbatim for normal pieces.
             scores[token_id] = score
             toktypes[token_id] = toktype
 
@@ -128,6 +133,7 @@ class Phi3MiniModel(TextModel):
                         continue
 
                     tokens[token_id] = key.encode("utf-8")
+                    # Added tokens are matched literally and never produced by unigram segmentation, so they get a very low score instead of a real one.
                     scores[token_id] = -1000.0
                     toktypes[token_id] = SentencePieceTokenTypes.USER_DEFINED
 
@@ -139,6 +145,7 @@ class Phi3MiniModel(TextModel):
                 for token_id, foken_data in added_tokens_decoder.items():
                     token_id = int(token_id)
                     token = foken_data["content"].encode("utf-8")
+                    # Only warn when overwriting a slot that held a real token; replacing the UNUSED placeholder is the normal case for added tokens.
                     if toktypes[token_id] != SentencePieceTokenTypes.UNUSED:
                         if tokens[token_id] != token:
                             logger.warning(f'replacing token {token_id}: {tokens[token_id].decode("utf-8")!r} -> {token.decode("utf-8")!r}')
@@ -211,6 +218,7 @@ class Phi3MiniModel(TextModel):
         max_pos_embds = self.find_hparam(["n_positions", "max_position_embeddings"])
         orig_max_pos_embds = self.find_hparam(["original_max_position_embeddings"])
         rot_pct = self.hparams.get("partial_rotary_factor", 1.0)
+        # Same partial-rotary arithmetic as Phi-2, but the factor defaults to 1.0 (full rotation) because Phi-3 configs usually omit it.
         rope_dims = int(rot_pct * n_embd) // n_head
 
         # write rope scaling for long context (128k) model
@@ -219,6 +227,7 @@ class Phi3MiniModel(TextModel):
             return
 
         # Ratio of extended to original context length drives the attention factor.
+        # Same attention-temperature correction as in HF's Phi-3 LongRoPE implementation: it grows with the context extension ratio and is 1 when no extension is used.
         scale = max_pos_embds / orig_max_pos_embds
 
         rope_scaling_type = rope_scaling.get('rope_type', rope_scaling.get('type', '')).lower()
@@ -241,9 +250,11 @@ class Phi3MiniModel(TextModel):
         if long_factors is None or short_factors is None:
             raise KeyError('Missing the required key rope_scaling.long_factor or rope_scaling_short_factor')
 
+        # LongRoPE keeps one frequency-scaling factor per rotary pair, hence rope_dims / 2 entries; a mismatch would silently misalign positions at runtime.
         if len(long_factors) != len(short_factors) or len(long_factors) != rope_dims / 2:
             raise ValueError(f'The length of rope long and short factors must be {rope_dims / 2}. long_factors = {len(long_factors)}, short_factors = {len(short_factors)}.')
 
+        # The factors are exported as float32 tensors (not metadata) because llama.cpp's rope kernel reads them as a tensor input; the runtime picks long or short based on the context length in use.
         yield (self.format_tensor_name(gguf.MODEL_TENSOR.ROPE_FACTORS_LONG), torch.tensor(long_factors, dtype=torch.float32))
         yield (self.format_tensor_name(gguf.MODEL_TENSOR.ROPE_FACTORS_SHORT), torch.tensor(short_factors, dtype=torch.float32))
 
@@ -308,6 +319,7 @@ class Phi4VisionMmprojModel(MmprojModel):
         if min_num_patches is None or max_num_patches is None:
             raise KeyError("Phi-4 vision mmproj conversion requires min_num_patches and max_num_patches")
 
+        # The preprocessor config counts patches; the runtime wants pixels, so multiply by patch_size squared.
         self.min_pixels = int(min_num_patches) * patch_size * patch_size
         self.max_pixels = int(max_num_patches) * patch_size * patch_size
 
@@ -363,6 +375,7 @@ class Phi4VisionMmprojModel(MmprojModel):
 
                 num_channels = in_features // patch_area
                 patch_size = self.hparams_vision["patch_size"]
+                # The linear weight is [out, patch*patch*channels] with the flattened patch in (h, w, c) order, so view it as [out, h, w, c] and permute to the [out, c, h, w] layout conv2d (and the runtime's patch-embed) expects.
                 data_torch = data_torch.view(data_torch.shape[0], patch_size, patch_size, num_channels)
                 data_torch = data_torch.permute(0, 3, 1, 2)
 
