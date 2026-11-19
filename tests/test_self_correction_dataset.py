@@ -25,6 +25,7 @@ from tools.generate_code_sft_dataset import DefinitionVisitor, build_user_prompt
 def test_normalize_problem_record_accepts_verifiable_task():
     """A record with a verification_script is turned into a CodingProblem: the id is kept, and supplied code is appended to the prompt as 'Context/code'. Pins the normalisation contract the STaR generator relies on."""
     # Step 1: Validate input parameters, operational preconditions, and state
+    # A minimal executable problem: id, statement, verifier and the starting code.
     record = {
         "id": "task-1",
         "problem_statement": "Write solve(x).",
@@ -50,6 +51,7 @@ def test_normalize_problem_record_rejects_missing_verifier():
 def test_extract_code_and_thought_blocks():
     """The <think> body and the fenced python code are extracted separately and stripped."""
     # Step 1: Validate input parameters, operational preconditions, and state
+    # Typical model output: reasoning block followed by a fenced solution.
     text = "<think>\nfix off by one\n</think>\n```python\ndef solve():\n    return 1\n```"
 
     assert extract_thought_block(text) == "fix off by one"
@@ -78,6 +80,8 @@ def test_build_self_correction_row_format():
         prompt="Return 2.",
         verification_script="def verify(response): return '2' in response",
     )
+    # Two attempts: iteration 1 fails the verifier, iteration 2 fixes it; only such a trajectory
+    # becomes training data.
     attempts = [
         {
             "iteration": 1,
@@ -108,6 +112,7 @@ def test_build_self_correction_row_format():
     assert "<think>" in assistant
     assert "correction_diff" in assistant
     assert "+    return 2" in assistant
+    # The transition block embedded in the answer must itself be valid JSON.
     json.loads(assistant.split("```json\n", 1)[1].split("\n```", 1)[0])
 
 
@@ -126,6 +131,8 @@ def test_build_correction_prompt_includes_traceback():
 def test_code_scrape_docstring_parsing_feeds_prompt_formatting():
     """The AST scraper in generate_code_sft_dataset captures docstring, argument string and return annotation for a function, and build_user_prompt then embeds the description and file path (cross-tool integration of the two generators)."""
     # Step 1: Validate input parameters, operational preconditions, and state
+    # Source text for the AST scraper, written with a docstring and annotations so all fields are
+    # exercised.
     source = '''
 def add(a: int, b: int) -> int:
     """Return the sum of two integers."""

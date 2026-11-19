@@ -46,6 +46,8 @@ def test_remote_rpc_timeout_disables_remote_and_streams_local_fallback(monkeypat
         captured["close_timeout"] = close_timeout
         return FailingWebSocketContext()
 
+    # Install stub websockets modules in sys.modules so the client's lazy imports resolve to the fakes
+    # below; no real network library is touched.
     monkeypatch.setitem(__import__("sys").modules, "websockets", types.ModuleType("websockets"))
     monkeypatch.setitem(__import__("sys").modules, "websockets.asyncio", types.ModuleType("websockets.asyncio"))
     client_module = types.ModuleType("websockets.asyncio.client")
@@ -66,6 +68,7 @@ def test_remote_rpc_timeout_disables_remote_and_streams_local_fallback(monkeypat
         # Step 1: Validate input parameters, operational preconditions, and state
         captured["fallback_reason"] = reason
 
+    # handshake_timeout is tiny so the failure path is exercised immediately.
     model = RemoteRPCModel(
         server_url="wss://192.168.1.50:8080",
         auth_token="secret-token",
@@ -85,8 +88,10 @@ def test_remote_rpc_timeout_disables_remote_and_streams_local_fallback(monkeypat
     ))
 
     assert chunks == [{"choices": [{"text": "local answer", "finish_reason": "stop"}]}]
+    # The auth token travels as a query parameter on the websocket URL.
     assert captured["connect_url"] == "wss://192.168.1.50:8080?token=secret-token"
     assert captured["close_timeout"] == 2
+    # LAN peers use self-signed certificates, so hostname checking is relaxed for the remote engine.
     assert captured["ssl_context"].check_hostname is False
     assert "handshake timeout" in captured["fallback_reason"]
     assert captured["local_prompt"] == "hello remote"
@@ -124,6 +129,7 @@ def test_model_loader_remote_fallback_persists_disabled(monkeypatch):
     original_reason = ModelLoader._remote_fallback_reason
     try:
         # Execute guarded operations and establish recovery boundaries
+        # Pretend a remote client is cached so the fallback has something to drop.
         ModelLoader._remote_instance = object()
         ModelLoader._remote_fallback("connection dropped")
 
@@ -225,6 +231,7 @@ def test_get_instance_routes_to_remote_when_enabled(isolated_model_loader_remote
 
     assert result is fake_remote
     assert ModelLoader._remote_instance is fake_remote
+    # Remote mode must not also load a local model (that would defeat offloading and waste VRAM).
     # The local llama-cpp load path must never run in remote mode.
     llama_ctor.assert_not_called()
     remote_ctor.assert_called_once()
@@ -373,6 +380,8 @@ def test_local_fallback_factory_disables_remote_and_reenters_local_path(
 
     def fake_get_engine_config():
         """Return a copy of the engine config, which set_remote_engine_config updates when remote mode is disabled."""
+        # engine_cfg is shared with the set_remote_engine_config stub below, so disabling remote mode
+        # is visible to later calls.
         # First call (remote-mode check) sees remote enabled; once
         # _remote_fallback() disables it, subsequent calls see it disabled —
         # mirroring what config_store.set_remote_engine_config(False, ...)
@@ -407,6 +416,8 @@ def test_local_fallback_factory_disables_remote_and_reenters_local_path(
         # Simulate the remote bridge failing mid-stream, exactly as
         # RemoteRPCModel._stream() does: call on_fallback(reason) first,
         # then local_fallback_factory().
+        # Same order as RemoteRPCModel._stream: report the failure first, then ask for the local
+        # model.
         captured["on_fallback"]("connection dropped")
         assert engine_cfg["remote_engine_enabled"] is False
         assert ModelLoader._remote_instance is None

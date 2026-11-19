@@ -28,6 +28,7 @@ class TestUIImprovements(unittest.TestCase):
             self.assertIsNotNone(qss)
             self.assertGreater(len(qss), 100)
             # Check that formatting keys were properly substituted
+            # A leftover {placeholder} means the template substitution missed a key.
             self.assertNotIn("{accent}", qss)
             self.assertNotIn("{bg_deep}", qss)
 
@@ -37,6 +38,7 @@ class TestUIImprovements(unittest.TestCase):
         from app.ui.themes import darken_hex_color, _tint_hex_color, get_theme_colors
         
         # Test color darkening helper
+        # Exact expected hex strings pin the colour maths so theme tweaks cannot silently drift.
         self.assertEqual(darken_hex_color("#00C2FF", 0.5), "#00617F")
         
         # Test color tinting helper

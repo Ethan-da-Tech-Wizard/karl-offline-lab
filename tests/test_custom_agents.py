@@ -45,6 +45,8 @@ class TestCustomAgents(unittest.TestCase):
     """Tests for user-defined agent profiles (custom_agents.json): loading, the create/list RPCs with validation, and routing of a custom agent's model and adapter into LLMThread."""
     def setUp(self):
         """Back up any real custom_agents.json, reset AGENT_PROFILES to the defaults and create dummy model/adapter asset files that the create-agent path validates."""
+        # The test writes the real custom_agents.json path, so the original is saved and restored in
+        # tearDown.
         # Back up existing custom_agents.json
         self.custom_agents_path = os.path.join("data", "custom_agents.json")
         self.backup_content = None
@@ -52,6 +54,7 @@ class TestCustomAgents(unittest.TestCase):
             with open(self.custom_agents_path, "r", encoding="utf-8") as f:
                 self.backup_content = f.read()
 
+        # Profiles are module-level state shared across tests; start from the built-in defaults.
         # Reset AGENT_PROFILES to defaults
         reload_profiles()
 
@@ -179,6 +182,8 @@ class TestCustomAgents(unittest.TestCase):
             """Run the five checks in order over one connection: invalid name, conflict with a default profile, successful creation (with the broadcast notification), conflict with an existing custom profile, and listing."""
             # Step 1: Validate input parameters, operational preconditions, and state
             async with websockets.connect(self._get_uri(), ssl=self._get_ssl_context(), close_timeout=2) as ws:
+                # Each numbered step uses the same connection; the order matters because step 3
+                # creates the profile that step 4 conflicts with.
                 # 1. Test invalid name (non-alphanumeric)
                 payload_invalid = {
                     "jsonrpc": "2.0",

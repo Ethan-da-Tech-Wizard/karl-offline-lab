@@ -32,6 +32,7 @@ class TestSwarmOrchestrator(unittest.TestCase):
         """Create a temp workspace with a dummy test script that asserts add(2, 3) == 5, and disable Machine Speak so prompts are not compacted and mock LLMs can match plain text."""
         # Create a temporary sandbox directory for code editing and testing
         self.sandbox_dir = tempfile.TemporaryDirectory()
+        # All file edits happen inside this temp directory, never in the real repo.
         self.workspace_path = self.sandbox_dir.name
 
         # Patch config_store to disable machine speak in tests to avoid prompt compaction
@@ -208,6 +209,8 @@ class TestSwarmOrchestrator(unittest.TestCase):
             # Catch-all
             return {"choices": [{"text": ""}]}
 
+        # The mock returns different text per call (plan, buggy code, fixed code) based on prompt
+        # contents and call order.
         # Register the stateful mock
         mock_llm_callable = MagicMock(side_effect=stateful_mock_llm)
         mock_get_llm.return_value = mock_llm_callable
@@ -222,6 +225,8 @@ class TestSwarmOrchestrator(unittest.TestCase):
             test_command=test_command
         )
 
+        # Collect every Qt signal the orchestrator emits so assertions can inspect the full event
+        # sequence.
         # Track signals emitted
         signals = {
             "status_messages": [],
