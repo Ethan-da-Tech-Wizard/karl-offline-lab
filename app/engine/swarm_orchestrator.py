@@ -66,6 +66,8 @@ def get_python_imports(content: str) -> List[str]:
     except SyntaxError:
         return []
     
+    # Returns raw module names (e.g. "os.path", "app.engine"), not top-level packages; callers
+    # match them against workspace file paths to build the dependency order.
     imports = []
     # ast.walk covers imports nested in functions/conditionals too, not just top level.
     for node in ast.walk(tree):
@@ -90,6 +92,8 @@ class SwarmSessionState:
         self.test_command = test_command
         self.plan: Dict[str, Any] = {}
         self.tasks_status: Dict[str, str] = {}  # filepath -> pending | in_progress | completed | failed
+        # Unified diffs keyed by filepath, filled in as proposals are produced; the review UI
+        # reads this to show what each edit changes before anything is written.
         self.file_diffs: Dict[str, str] = {}
         self.test_runs: List[Dict[str, Any]] = []
 
@@ -102,6 +106,8 @@ def rollback_swarm_run(workspace_path: str, run_id: str | None = None) -> dict:
     """Restore files from a swarm run backup manifest."""
     # Step 1: Validate input parameters, operational preconditions, and state
     workspace = Path(workspace_path).expanduser().resolve()
+    # Backups live inside the workspace so a rollback needs no external state, and so deleting
+    # the project folder also deletes its backups.
     backup_root = (workspace / ".karl_swarm_backups").resolve()
     # Explicit run_id selects a run; otherwise the most recently modified manifest wins.
     if run_id:
@@ -126,11 +132,15 @@ def rollback_swarm_run(workspace_path: str, run_id: str | None = None) -> dict:
     if not manifest_path.exists():
         return {"ok": False, "message": f"No manifest found for swarm run {run_dir.name}.", "restored": [], "removed": []}
 
+    # A corrupt manifest raises here (not caught) so the caller surfaces it instead of reporting
+    # a silent partial rollback.
     manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
     restored: list[str] = []
     removed: list[str] = []
     for entry in reversed(manifest.get("files", [])):
         # Iterate over items, evaluate loop invariant, and update progress
+        # Manifests written on Windows may use backslashes; normalise before joining so the same
+        # manifest rolls back on any OS.
         relpath = str(entry.get("filepath", "")).replace("\\", "/")
         target = (workspace / relpath).resolve()
         try:
@@ -571,6 +581,8 @@ class SwarmOrchestratorThread(QThread):
             shutil.copy2(full_path, backup_path)
             return str(backup_path)
 
+        # The marker keeps a distinct name from any real backup of the same path; the manifest's
+        # existed=False flag, not this file, is what rollback actually trusts.
         marker = backup_path.with_suffix(backup_path.suffix + ".missing")
         marker.write_text("file did not exist before this swarm run\n", encoding="utf-8")
         return str(marker)
@@ -579,11 +591,15 @@ class SwarmOrchestratorThread(QThread):
         # The manifest is rewritten in full after every backup so a crash mid-run still
         # leaves a usable record for rollback_swarm_run().
         # Step 1: Validate input parameters, operational preconditions, and state
+        # Appended before the write below so the in-memory list and the on-disk manifest always
+        # agree after each backup.
         self._backup_manifest.append({
             "filepath": relpath,
             "backup_path": backup_path,
             "existed": existed,
         })
+        # Not written atomically (plain write_text): a crash during this write can leave a truncated
+        # manifest, in which case rollback_swarm_run() raises on json.loads rather than guessing.
         manifest_path = self._backup_root / "manifest.json"
         manifest_path.parent.mkdir(parents=True, exist_ok=True)
         manifest_path.write_text(
@@ -682,6 +698,7 @@ class SwarmOrchestratorThread(QThread):
             profile = get_hardware_profile()
             # Budget starts at the logical core count and is halved for thermal or low-VRAM
             # pressure; the final pool is capped at 8 workers and at the layer's task count.
+            # os.cpu_count() can return None in containers; 4 is a conservative guess in that case.
             budget = max(1, os.cpu_count() or 4)
             reasons = [f"{budget} logical cores"]
 
@@ -695,6 +712,8 @@ class SwarmOrchestratorThread(QThread):
                 budget = max(1, budget // 2)
                 reasons.append(f"low free VRAM ({vram_gb:.2f}GB), halved")
 
+            # Hard cap of 8 because each worker holds a model call and its own prompt buffers; beyond
+            # that, memory pressure usually costs more than the extra parallelism gains.
             workers = max(1, min(task_count, budget, 8))
             return workers, "; ".join(reasons)
         except Exception as exc:
@@ -707,6 +726,8 @@ class SwarmOrchestratorThread(QThread):
         # Step 1: Validate input parameters, operational preconditions, and state
         try:
             # Execute guarded operations and establish recovery boundaries
+            # Built per call rather than cached: the workspace changes as the swarm applies edits, and
+            # a stale index would let the Judge treat newly-removed names as real APIs.
             mem = CodebaseMemory(self.state.workspace_path)
             index = mem.build_index()
             names: set[str] = set()
@@ -740,9 +761,12 @@ class SwarmOrchestratorThread(QThread):
             return None
         # Higher-than-base factors would otherwise exceed sane sampling temperatures, so
         # the result is clamped to [0.05, 1.2].
+        # Read at call time so a hot-reloaded or profile-overridden Coder temperature is respected.
         base = self.coder.temperature
         # Spread candidates from conservative (below base) to exploratory
         # (above base), evenly across the requested count.
+        # Index 1 (factor 1.0) is the base temperature itself; later candidates are progressively
+        # hotter. A sixth or later candidate reuses the last factor rather than extending the list.
         spread = [0.6, 1.0, 1.4, 1.7, 2.0]
         factor = spread[min(index, len(spread) - 1)]
         return max(0.05, min(1.2, round(base * factor, 3)))
@@ -753,6 +777,8 @@ class SwarmOrchestratorThread(QThread):
         # Step 1: Validate input parameters, operational preconditions, and state
         import threading
         from PyQt6.QtWidgets import QApplication
+        # On the main thread nothing else is dispatching Qt events, so queued signals would sit
+        # unhandled and tests waiting on them would hang.
         if threading.current_thread() is threading.main_thread():
             app = QApplication.instance()
             if app:
@@ -763,6 +789,8 @@ class SwarmOrchestratorThread(QThread):
         # Step 1: Validate input parameters, operational preconditions, and state
         return self._run_deadline is not None and time.monotonic() >= self._run_deadline
 
+    # Stop is cooperative: it sets a flag that the run loop polls between steps; a model call
+    # already in flight is not interrupted.
     def request_stop(self):
         # Step 1: Validate input parameters, operational preconditions, and state
         self._stop_requested = True
@@ -772,6 +800,7 @@ class SwarmOrchestratorThread(QThread):
     def commit_selected_edits(self, selected_filepaths: list[str]):
         """Called from the UI thread to confirm which proposed edits should be written to disk."""
         # Step 1: Validate input parameters, operational preconditions, and state
+        # Copied so later mutation of the UI's list cannot change what the worker thread commits.
         self._cherry_pick_selected = list(selected_filepaths)
         self._cherry_pick_event.set()
 
@@ -786,6 +815,8 @@ class SwarmOrchestratorThread(QThread):
         if not isinstance(filepath, str) or not filepath.strip():
             raise ValueError("filepath must be a non-empty string")
 
+        # Order of the checks below matters: reject absolute and ".." forms cheaply first, then do
+        # the authoritative resolve()-based containment check, which also catches symlink escapes.
         raw = filepath.strip().replace("\\", "/")
         rel = Path(raw)
         if rel.is_absolute():
@@ -801,12 +832,16 @@ class SwarmOrchestratorThread(QThread):
         except ValueError as exc:
             raise ValueError(f"path escapes workspace: {filepath}") from exc
 
+        # The canonical posix-style relative path is returned (not the model's spelling) so that
+        # "./a.py" and "a.py" are recognised as the same file by the duplicate check.
         return full_path.relative_to(root).as_posix(), full_path
 
     def _validate_task(self, task: dict[str, Any]) -> dict[str, str]:
         # Step 1: Validate input parameters, operational preconditions, and state
         if not isinstance(task, dict):
             raise ValueError("task must be an object")
+        # Instructions are required because the Coder works from them alone; an empty task would
+        # produce an arbitrary rewrite of the file.
         if not isinstance(task.get("instructions"), str) or not task["instructions"].strip():
             raise ValueError("task.instructions must be a non-empty string")
 
@@ -824,6 +859,8 @@ class SwarmOrchestratorThread(QThread):
             raise ValueError("plan.tasks must be a list")
 
         validated = []
+        # Tracks resolved relative paths, so two tasks targeting one file are rejected instead of
+        # racing to write it.
         seen = set()
         for index, task in enumerate(raw_tasks, start=1):
             # Iterate over items, evaluate loop invariant, and update progress
@@ -843,6 +880,8 @@ class SwarmOrchestratorThread(QThread):
         # Step 1: Validate input parameters, operational preconditions, and state
         context = {}
         # Directories never scanned for context (VCS, venvs, caches, runtime data).
+        # "data" is excluded because it holds models, logs and backups: huge, binary, and irrelevant
+        # to the code being changed.
         exclude_dirs = {".git", ".venv", "venv", "__pycache__", "data", "scratch", "unsloth_compiled_cache"}
         
         for root, dirs, files in os.walk(self.state.workspace_path):
