@@ -323,11 +323,11 @@ class DefaultsPanelMixin:
 
         # Shows the selected preset's description (italic, muted).
         # Preset description label
-        self._preset_desc_lbl = QLabel("")
-        self._preset_desc_lbl.setObjectName("lbl-muted")
-        self._preset_desc_lbl.setWordWrap(True)
-        self._preset_desc_lbl.setStyleSheet("font-size: 8pt; font-style: italic;")
-        ip_layout.addWidget(self._preset_desc_lbl)
+        self._inference_preset_desc_lbl = QLabel("")
+        self._inference_preset_desc_lbl.setObjectName("lbl-muted")
+        self._inference_preset_desc_lbl.setWordWrap(True)
+        self._inference_preset_desc_lbl.setStyleSheet("font-size: 8pt; font-style: italic;")
+        ip_layout.addWidget(self._inference_preset_desc_lbl)
         self._preset_combo.currentIndexChanged.connect(self._on_preset_combo_changed)
         # Populate the description for the initial selection.
         # Trigger once to populate description for the initial selection
@@ -391,9 +391,9 @@ class DefaultsPanelMixin:
         key = self._preset_combo.itemData(index)
         if key and key in self._presets_data:
             desc = self._presets_data[key].get("description", "")
-            self._preset_desc_lbl.setText(desc)
+            self._inference_preset_desc_lbl.setText(desc)
         else:
-            self._preset_desc_lbl.setText("")
+            self._inference_preset_desc_lbl.setText("")
         self._update_delete_btn_state()
 
     def _update_delete_btn_state(self) -> None:
