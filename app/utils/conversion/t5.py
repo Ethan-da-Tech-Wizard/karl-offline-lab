@@ -31,6 +31,7 @@ if TYPE_CHECKING:
 from .base import ModelBase, SentencePieceTokenTypes, TextModel, gguf, logger
 
 
+# T5, mT5 and UMT5 all export through this class: they differ in vocabulary and FFN details inside the HF model, but the GGUF tensors and keys written here are identical. Each name needs its own register call.
 @ModelBase.register("T5WithLMHeadModel")
 @ModelBase.register("T5ForConditionalGeneration")
 @ModelBase.register("MT5ForConditionalGeneration")
@@ -43,6 +44,7 @@ class T5Model(TextModel):
     def __init__(self, *args, **kwargs):
         """Track whether the shared token-embedding tensor has already been taken."""
         super().__init__(*args, **kwargs)
+        # T5 checkpoints store the one tied embedding matrix under up to three names (see modify_tensors); this flag makes sure it is written exactly once.
         self.shared_token_embeddings_found = False
 
     def set_vocab(self):
@@ -77,8 +79,10 @@ class T5Model(TextModel):
         else:
             assert sentencepiece_model.trainer_spec.model_type == 1  # UNIGRAM
 
+        # The normalizer settings are read from the protobuf because they change how text is pre-processed: T5 inserts a dummy leading space, and the runtime must replicate that or token ids shift.
         add_prefix = sentencepiece_model.normalizer_spec.add_dummy_prefix
         remove_whitespaces = sentencepiece_model.normalizer_spec.remove_extra_whitespaces
+        # The charsmap is SentencePiece's compiled Unicode normalisation table (NFKC-like); the runtime applies it before tokenising, so it is stored verbatim as bytes.
         precompiled_charsmap = sentencepiece_model.normalizer_spec.precompiled_charsmap
 
         tokenizer = SentencePieceProcessor()
@@ -126,6 +130,7 @@ class T5Model(TextModel):
                     toktypes[token_id] = SentencePieceTokenTypes.USER_DEFINED
 
         # Defensive padding in case the vocab ended up shorter than declared.
+        # tokens was allocated with exactly vocab_size entries above, so this branch is effectively a no-op safeguard kept for parity with llama.cpp's converter.
         if vocab_size > len(tokens):
             pad_count = vocab_size - len(tokens)
             logger.debug(f"Padding vocab with {pad_count} token(s) - [PAD1] through [PAD{pad_count}]")
@@ -157,13 +162,16 @@ class T5Model(TextModel):
         self.gguf_writer.add_feed_forward_length(self.hparams["d_ff"])
         self.gguf_writer.add_block_count(self.block_count)
         if (dec_n_layer := self.hparams.get("num_decoder_layers")) is not None:
+            # The decoder depth can differ from the encoder depth (block_count), so it is written separately when the config gives it.
             self.gguf_writer.add_decoder_block_count(dec_n_layer)
         self.gguf_writer.add_head_count(self.hparams["num_heads"])
+        # T5's attention width is num_heads * d_kv and is NOT tied to d_model, so key/value length must be written explicitly instead of being derived from the embedding size.
         self.gguf_writer.add_key_length(self.hparams["d_kv"])
         self.gguf_writer.add_value_length(self.hparams["d_kv"])
         self.gguf_writer.add_layer_norm_eps(self.hparams["layer_norm_epsilon"])
         self.gguf_writer.add_relative_attn_buckets_count(self.hparams["relative_attention_num_buckets"])
         self.gguf_writer.add_layer_norm_rms_eps(self.hparams["layer_norm_epsilon"])
+        # An encoder-decoder model starts decoding from a dedicated token (pad for T5), which the runtime cannot guess from the vocab.
         self.gguf_writer.add_decoder_start_token_id(self.hparams["decoder_start_token_id"])
         self.gguf_writer.add_file_type(self.ftype)
 
