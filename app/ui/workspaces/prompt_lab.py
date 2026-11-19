@@ -352,7 +352,6 @@ class _PromptColumn(QWidget):
         self._active_threads = set()
         self._last_agentic_response = ""
         self._last_agentic_diagnostics = {}
-        # (Original note retained below.)
         # ModelComboBox already scans+populates itself in its own __init__;
         # this second pass matters when `state` was None at construction
         # (see the PromptLabWorkspace call site) and gets set afterward.
