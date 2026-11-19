@@ -16,6 +16,7 @@ from app.utils.tracing import Span, Tracer
 def read_trace_file(trace_dir):
     """Read the single trace JSONL file in trace_dir and return its one payload (asserts exactly one file and one line)."""
     files = list(trace_dir.glob("spans_*.jsonl"))
+    # Only root spans are written: children are nested inside the root's JSON, so one root run produces exactly one file with one line.
     assert len(files) == 1
     lines = files[0].read_text(encoding="utf-8").splitlines()
     assert len(lines) == 1
@@ -24,9 +25,11 @@ def read_trace_file(trace_dir):
 
 def test_nested_spans_register_under_parent_and_persist_schema(tmp_path):
     """A child span registers under its parent with the same trace id and is persisted in the root's JSON: name, status OK, attributes, duration and children."""
+    # A per-test trace directory keeps spans_*.jsonl files out of the real data folder and lets read_trace_file assert on exactly one file.
     tracer = Tracer(trace_dir=tmp_path)
 
     with Span("Swarm Run", {"objective": "test"}, tracer=tracer) as root:
+        # A tiny sleep guarantees a strictly positive measured duration even on coarse clocks, so the > 0 assertions are meaningful.
         time.sleep(0.002)
         with Span("Retrieve Context", {"query": "test"}, tracer=tracer) as child:
             child.set_attribute("chunks", 3)
@@ -57,6 +60,7 @@ def test_span_exception_marks_error_and_preserves_exception(tmp_path):
     try:
         with tracer.span("Swarm Run"):
             with tracer.span("Test Execution"):
+                # A failure in the innermost span must mark every ancestor ERROR as well, and the exception must still propagate (the context manager must not swallow it).
                 raise RuntimeError("verification failed")
     except RuntimeError:
         pass
@@ -74,6 +78,7 @@ def test_execution_time_is_calculated_accurately_enough(tmp_path):
     tracer = Tracer(trace_dir=tmp_path)
 
     with tracer.span("Timed Work") as span:
+        # The assertion allows 5 ms of slack (>= 15 ms for a 20 ms sleep) so scheduler jitter cannot make it flaky, while still catching a clearly under-reported duration.
         time.sleep(0.02)
 
     payload = read_trace_file(tmp_path)
