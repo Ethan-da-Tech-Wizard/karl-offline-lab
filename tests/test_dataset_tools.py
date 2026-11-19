@@ -273,6 +273,16 @@ class TestCurateAndMergeDatasets(unittest.TestCase):
             self.assertEqual(stats["combined_total"], 0)
             self.assertEqual(stats["valid_total"], 0)
 
+    def test_json_fence_does_not_break_following_python_block(self):
+        """A ```json block before a ```python block must not make the python body unparseable.
+
+        The old regex only matched python/untagged openers, so the json block's closing fence
+        paired with the python opener and the snippet became garbage.
+        """
+        reply = "Config:\n```json\n{\"a\": 1}\n```\nCode:\n```python\nx = 1\n```\n"
+        self.assertEqual(curate._code_snippets(reply), ["x = 1\n"])
+        self.assertTrue(curate.is_syntactically_valid(reply))
+
 
 if __name__ == "__main__":
     unittest.main()
