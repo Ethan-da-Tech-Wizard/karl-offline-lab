@@ -13,7 +13,10 @@ Unit and Integration Tests for Custom Agent Profiles
 Verifies profile reloading, JSON-RPC validation, and correct model/adapter configuration.
 """
 
+# Side-effect import: prepares a Qt application context for the QCoreApplication-based tests.
 import tests.qt_test_helper  # noqa: F401
+# os/json/asyncio drive the profile files and the async websocket client; unittest is the runner
+# style; sys is used to hand argv to QCoreApplication.
 import os
 import json
 import asyncio
@@ -21,15 +24,24 @@ import unittest
 import sys
 from unittest.mock import patch, MagicMock
 
+# websockets is the client library for the end-to-end RPC tests; it is imported at module level
+# because the two bridge tests cannot run without it.
 import websockets
 import pytest
+# QCoreApplication (not QApplication) is enough: the bridge server only needs an event loop for
+# cross-thread signals, no widgets.
 from PyQt6.QtCore import QCoreApplication
 
+# WebSocketServerManager hosts the JSON-RPC bridge; AGENT_PROFILES/reload_profiles are the
+# module-level profile registry that merges built-ins with data/custom_agents.json.
 from app.engine.websocket_server import WebSocketServerManager
 from app.ui.workspaces.workbench.profiles import AGENT_PROFILES, reload_profiles, DEFAULT_PROFILES
+# LLMThread is used to prove the custom agent's model/adapter reach ModelLoader.
 from app.engine.llm_thread import LLMThread
 
 
+# Inside a bubblewrap sandbox localhost sockets are blocked, so the websocket tests skip instead
+# of hanging until timeout. PID 1's comm name is how bwrap announces itself.
 def _running_under_bwrap() -> bool:
     """True when PID 1 is bubblewrap (sandboxed environment where sockets may be restricted)."""
     try:
@@ -39,10 +51,16 @@ def _running_under_bwrap() -> bool:
         return False
 
 
+# Feature under test: users can define their own agents (custom_agents.json or the
+# create_custom_agent RPC). Pins three layers: file merge, RPC validation, and the model/adapter
+# routing that makes a custom agent actually use its own weights.
 class TestCustomAgents(unittest.TestCase):
     """Tests for user-defined agent profiles (custom_agents.json): loading, the create/list RPCs with validation, and routing of a custom agent's model and adapter into LLMThread."""
     def setUp(self):
         """Back up any real custom_agents.json, reset AGENT_PROFILES to the defaults and create dummy model/adapter asset files that the create-agent path validates."""
+        # The test writes the real custom_agents.json path, so the original is saved and restored in
+        # tearDown. A crash between setUp and tearDown could still lose edits, hence the backup is held
+        # in memory first.
         # The test writes the real custom_agents.json path, so the original is saved and restored in
         # tearDown.
         # Back up existing custom_agents.json
@@ -53,38 +71,48 @@ class TestCustomAgents(unittest.TestCase):
                 self.backup_content = f.read()
 
         # Profiles are module-level state shared across tests; start from the built-in defaults.
+        # Profiles are module-level state shared across tests; start from the built-in defaults.
         # Reset AGENT_PROFILES to defaults
         reload_profiles()
 
+        # Dummy assets required by create_custom_agent path validation: the RPC refuses a base_model or
+        # adapter that does not exist under data/models or data/adapters (path-traversal safety).
         # Dummy assets required by create_custom_agent path validation
         self._dummy_model = os.path.join("data", "models", "coder-v1.gguf")
         self._dummy_adapter = os.path.join("data", "adapters", "lora-coder")
         os.makedirs(os.path.dirname(self._dummy_model), exist_ok=True)
         os.makedirs(self._dummy_adapter, exist_ok=True)
+        # Only delete the model afterwards if this test created it; never remove a user's real file.
         self._dummy_model_existed = os.path.exists(self._dummy_model)
         if not self._dummy_model_existed:
             open(self._dummy_model, "wb").close()
 
+        # unittest has no per-test fixtures, so the method name decides whether the websocket server is
+        # needed. Starting it only for the two RPC tests keeps the pure tests fast.
         test_method_name = self.id().split('.')[-1]
         needs_server = test_method_name in (
             "test_json_rpc_validation_and_listing",
             "test_websocket_chat_custom_agent_routing"
         )
 
+        # Port 8082 avoids colliding with the app's default bridge port (8080/8081).
         if needs_server and not _running_under_bwrap():
             self.app = QCoreApplication.instance() or QCoreApplication(sys.argv)
             self.port = 8082
             self.manager = WebSocketServerManager.get_instance(port=self.port)
+            # Wait until the server thread signals it is listening, else the first connect races.
             self.manager.started_event.wait(timeout=5.0)
 
     def tearDown(self):
         """Remove dummy assets and restore (or delete) custom_agents.json so the user's real data is never lost."""
+        # Remove dummy test assets if we created them.
         # Remove dummy test assets if we created them
         if not self._dummy_model_existed and os.path.exists(self._dummy_model):
             os.remove(self._dummy_model)
         if os.path.isdir(self._dummy_adapter) and not os.listdir(self._dummy_adapter):
             os.rmdir(self._dummy_adapter)
 
+        # Restore backup or remove custom_agents.json.
         # Restore backup or remove custom_agents.json
         if os.path.exists(self.custom_agents_path):
             try:
@@ -97,6 +125,7 @@ class TestCustomAgents(unittest.TestCase):
             with open(self.custom_agents_path, "w", encoding="utf-8") as f:
                 f.write(self.backup_content)
 
+        # Reload so AGENT_PROFILES reflects the restored file for the next test.
         reload_profiles()
 
         test_method_name = self.id().split('.')[-1]
@@ -104,17 +133,22 @@ class TestCustomAgents(unittest.TestCase):
             "test_json_rpc_validation_and_listing",
             "test_websocket_chat_custom_agent_routing"
         )
+        # reset_instance tears the singleton down so the next test binds a fresh server and token.
         if needs_server and not _running_under_bwrap():
             WebSocketServerManager.reset_instance()
 
+    # Helpers shared by the two RPC tests.
     def _get_uri(self):
         """Build the bridge URL with the current token (wss when a cert exists, else ws)."""
         token = self.manager.bridge_token
         proto = "ws"
+        # wss when the bridge generated a certificate (production behaviour), otherwise plain ws.
         if os.path.exists(self.manager._SSL_CERT_PATH):
             proto = "wss"
         return f"{proto}://localhost:{self.port}/?token={token}"
 
+    # The bridge uses a self-signed certificate, so the test client disables verification. This is
+    # acceptable only because it talks to localhost in a test.
     def _get_ssl_context(self):
         """Client SSL context accepting the self-signed test cert, or None for plain ws."""
         import ssl
@@ -125,11 +159,14 @@ class TestCustomAgents(unittest.TestCase):
             return ssl_context
         return None
 
+    # Pure file-based test: no server. Proves reload_profiles() merges custom entries over the
+    # defaults, and removing the file brings back the defaults.
     def test_profile_reloading(self):
         """Verifies custom profile loading and reloading logic."""
         # Ensure only default profiles exist initially
         self.assertEqual(list(AGENT_PROFILES.keys()), list(DEFAULT_PROFILES.keys()))
 
+        # Write a mock custom agent config with every supported field populated.
         # Write a mock custom agent config
         mock_custom = {
             "testagent": {
@@ -146,9 +183,11 @@ class TestCustomAgents(unittest.TestCase):
         with open(self.custom_agents_path, "w", encoding="utf-8") as f:
             json.dump(mock_custom, f)
 
+        # Trigger reload.
         # Trigger reload
         reload_profiles()
 
+        # Check merge: every field must survive the JSON round trip into the registry.
         # Check merge
         self.assertIn("testagent", AGENT_PROFILES)
         self.assertEqual(AGENT_PROFILES["testagent"]["label"], "Test Agent")
@@ -159,12 +198,14 @@ class TestCustomAgents(unittest.TestCase):
         self.assertTrue(AGENT_PROFILES["testagent"]["rag_enabled"])
         self.assertEqual(AGENT_PROFILES["testagent"]["rag_top_k"], 5)
 
+        # Test cleanup reload back to defaults.
         # Test cleanup reload back to defaults
         if os.path.exists(self.custom_agents_path):
             os.remove(self.custom_agents_path)
         reload_profiles()
         self.assertNotIn("testagent", AGENT_PROFILES)
 
+    # Markers let CI deselect socket-based tests; they also need the server started in setUp.
     @pytest.mark.integration
     @pytest.mark.websocket
     def test_json_rpc_validation_and_listing(self):
@@ -172,11 +213,15 @@ class TestCustomAgents(unittest.TestCase):
         if _running_under_bwrap():
             self.skipTest("Bwrap blocks localhost websocket testing")
 
+        # Hand-rolled JSON-RPC 2.0 client: id is the request number, so responses can be matched.
         async def run_client():
             """Run the five checks in order over one connection: invalid name, conflict with a default profile, successful creation (with the broadcast notification), conflict with an existing custom profile, and listing."""
             async with websockets.connect(self._get_uri(), ssl=self._get_ssl_context(), close_timeout=2) as ws:
+                # Each numbered step uses the same connection; the order matters because step 3 creates the
+                # profile that step 4 conflicts with.
                 # Each numbered step uses the same connection; the order matters because step 3
                 # creates the profile that step 4 conflicts with.
+                # 1. Test invalid name (non-alphanumeric): -32602 is JSON-RPC "invalid params".
                 # 1. Test invalid name (non-alphanumeric)
                 payload_invalid = {
                     "jsonrpc": "2.0",
@@ -194,6 +239,7 @@ class TestCustomAgents(unittest.TestCase):
                 self.assertEqual(resp_invalid["error"]["code"], -32602)
                 self.assertIn("name", resp_invalid["error"]["message"])
 
+                # 2. Test conflict with default profile: the built-in "karl" name must not be shadowed.
                 # 2. Test conflict with default profile
                 payload_conflict_default = {
                     "jsonrpc": "2.0",
@@ -211,6 +257,7 @@ class TestCustomAgents(unittest.TestCase):
                 self.assertEqual(resp_conflict_default["error"]["code"], -32602)
                 self.assertIn("default", resp_conflict_default["error"]["message"])
 
+                # 3. Test successful creation.
                 # 3. Test successful creation
                 payload_success = {
                     "jsonrpc": "2.0",
@@ -232,12 +279,15 @@ class TestCustomAgents(unittest.TestCase):
                 self.assertIn("result", resp_success)
                 self.assertEqual(resp_success["result"]["status"], "success")
 
+                # Verify broadcast notification was received: other connected clients (UI, editor) learn of the
+                # new agent without polling.
                 # Verify broadcast notification was received
                 notify_msg = json.loads(await asyncio.wait_for(ws.recv(), timeout=5.0))
                 self.assertEqual(notify_msg.get("method"), "agent_profiles_updated")
                 self.assertEqual(notify_msg["params"]["name"], "supercoder")
                 self.assertEqual(notify_msg["params"]["profile"]["label"], "Super Coder")
 
+                # 4. Test conflict with existing custom profile: sending the same payload again.
                 # 4. Test conflict with existing custom profile
                 await ws.send(json.dumps(payload_success))
                 resp_conflict_custom = json.loads(await asyncio.wait_for(ws.recv(), timeout=5.0))
@@ -245,6 +295,7 @@ class TestCustomAgents(unittest.TestCase):
                 self.assertEqual(resp_conflict_custom["error"]["code"], -32602)
                 self.assertIn("already exists", resp_conflict_custom["error"]["message"])
 
+                # 5. Test list_custom_agents.
                 # 5. Test list_custom_agents
                 await ws.send(json.dumps({
                     "jsonrpc": "2.0",
@@ -256,18 +307,22 @@ class TestCustomAgents(unittest.TestCase):
                 self.assertIn("supercoder", resp_list["result"])
                 self.assertEqual(resp_list["result"]["supercoder"]["base_model"], "coder-v1.gguf")
 
+            # Let the server close cleanly before the event loop shuts down.
             await asyncio.sleep(0.05)
 
         asyncio.run(run_client())
 
+    # patch ModelLoader.get_instance so no real GGUF is loaded; only the arguments are inspected.
     @patch("app.engine.model_loader.ModelLoader.get_instance")
     def test_llm_thread_custom_model_and_adapter(self, mock_get_llm):
         """Verifies LLMThread loads the custom model and adapter specified in custom agent."""
+        # A llama-cpp-like fake: tokenize for budgeting and a call that returns one non-streamed chunk.
         mock_llm_instance = MagicMock()
         mock_llm_instance.tokenize.return_value = [1, 2, 3]
         mock_llm_instance.side_effect = lambda *args, **kwargs: [{"choices": [{"text": "Hello", "finish_reason": "stop"}]}]
         mock_get_llm.return_value = mock_llm_instance
 
+        # Instantiate LLMThread with a custom model and adapter.
         # Instantiate LLMThread with a custom model and adapter
         thread = LLMThread(
             system_prompt="Test System Prompt",
@@ -277,16 +332,23 @@ class TestCustomAgents(unittest.TestCase):
             adapter_name="custom-adapter"
         )
         
+        # We call the generation loop synchronously (or run its target block) to ensure it resolves
+        # model_path and calls ModelLoader.get_instance.
         # We call the generation loop synchronously (or run its target block)
         # to ensure it resolves model_path and calls ModelLoader.get_instance.
         with patch.object(thread, "generation_finished"):
+            # Running the main execution path of LLMThread.
             # Running the main execution path of LLMThread
             thread.run()
             
+            # Verify ModelLoader.get_instance was called with the correct args: the bare filename is resolved
+            # under data/models.
             # Verify ModelLoader.get_instance was called with the correct args
             expected_model_path = os.path.join("data", "models", "custom-model.gguf")
             mock_get_llm.assert_called_with(model_path=expected_model_path, adapter_name="custom-adapter")
 
+    # End-to-end: a chat submitted over the bridge for a custom agent must load that agent's model and
+    # adapter, not the global active model.
     @pytest.mark.integration
     @pytest.mark.websocket
     @patch("app.engine.model_loader.ModelLoader.get_instance")
@@ -302,6 +364,7 @@ class TestCustomAgents(unittest.TestCase):
         ]
         mock_get_llm.return_value = mock_llm_instance
 
+        # Write custom profile.
         # Write custom profile
         mock_custom = {
             "routingagent": {
@@ -318,6 +381,8 @@ class TestCustomAgents(unittest.TestCase):
             json.dump(mock_custom, f)
         reload_profiles()
 
+        # The QThread worker emits signals that need the main thread's event loop; asyncio owns this
+        # thread, so a background task pumps Qt events every 10 ms.
         async def qt_event_loop_spinner():
             """Periodically process Qt events so cross-thread signals are delivered."""
             while True:
@@ -326,6 +391,7 @@ class TestCustomAgents(unittest.TestCase):
 
         async def run_client():
             """Submit a chat for the custom agent over the bridge and wait for the stream to end."""
+            # Started before connecting so no early signal is lost.
             spinner = asyncio.create_task(qt_event_loop_spinner())
             try:
                 async with websockets.connect(self._get_uri(), ssl=self._get_ssl_context(), close_timeout=2) as ws:
@@ -346,16 +412,20 @@ class TestCustomAgents(unittest.TestCase):
                     resp = json.loads(await asyncio.wait_for(ws.recv(), timeout=5.0))
                     self.assertEqual(resp["result"]["status"], "started")
 
+                    # Wait for finished response or stream end: chat_finished is the terminal notification; the cap
+                    # of 50 messages prevents an infinite loop if it never arrives.
                     # Wait for finished response or stream end
                     for _ in range(50):
                         msg = json.loads(await asyncio.wait_for(ws.recv(), timeout=5.0))
                         if msg.get("method") == "chat_finished":
                             break
 
+                    # Verify ModelLoader was called with routing-model.gguf.
                     # Verify ModelLoader was called with routing-model.gguf
                     expected_model_path = os.path.join("data", "models", "routing-model.gguf")
                     mock_get_llm.assert_called_with(model_path=expected_model_path, adapter_name="routing-adapter")
                 await asyncio.sleep(0.05)
+            # Always stop the spinner task, even if an assertion failed.
             finally:
                 spinner.cancel()
                 try:
@@ -366,5 +436,6 @@ class TestCustomAgents(unittest.TestCase):
         asyncio.run(run_client())
 
 
+# Allows direct execution: `python tests/test_custom_agents.py`.
 if __name__ == "__main__":
     unittest.main()
