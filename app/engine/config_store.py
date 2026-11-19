@@ -26,6 +26,8 @@ Guarantees:
   the file path and the underlying error — never a silent empty result.
 """
 
+# `from __future__ import annotations` lets the PEP 604 hints (X | None) below
+# stay unevaluated strings on older Python versions.
 from __future__ import annotations
 
 import json
@@ -35,14 +37,19 @@ import tempfile
 import threading
 from typing import Any
 
+# Module logger.
 logger = logging.getLogger("karl.config_store")
 
+# Relative paths: they resolve against the process working directory, so Karl must be
+# launched from the project root for these files to be found.
 ACTIVE_MODEL_PATH = os.path.join("data", "active_model.json")
 MODEL_REGISTRY_PATH = os.path.join("data", "model_registry.json")
 UI_CONFIG_PATH = os.path.join("data", "ui_config.json")
 LEGACY_THEME_CONFIG_PATH = os.path.join("data", "theme_config.json")
+# Remote-engine (offload to another Karl bridge) settings; see ENGINE_CONFIG_DEFAULTS.
 ENGINE_CONFIG_PATH = os.path.join("data", "engine_config.json")
 
+# Fallback model when no selection has been saved, and fallback context window size.
 DEFAULT_MODEL_FILENAME = "deepseek-r1-1.5b.gguf"
 DEFAULT_N_CTX = 4096
 
@@ -50,10 +57,15 @@ DEFAULT_N_CTX = 4096
 # fields that require migration (e.g. renamed keys, changed defaults).
 CONFIG_VERSION: int = 1
 
+# Registry cache: parsed list plus the file mtime it was parsed at; guarded by the lock
+# because several threads query the registry (loader, bridge, UI).
 _registry_lock = threading.Lock()
 _registry_cache: list[dict] | None = None
 _registry_cache_mtime: float | None = None
 
+# Defaults for engine_config.json. The remote_engine_* and remote_server_* /
+# remote_auth_* pairs are aliases kept in sync for backward compatibility with
+# older settings files. NOTE: the token is stored in plaintext in this JSON file.
 ENGINE_CONFIG_DEFAULTS: dict[str, Any] = {
     "remote_engine_enabled": False,
     "remote_engine_url": "",
@@ -96,6 +108,8 @@ def write_json_atomic(path: str, data: Any, indent: int | None = None) -> bool:
     try:
         # Execute guarded operations and establish recovery boundaries
         os.makedirs(directory, exist_ok=True)
+        # mkstemp in the *same directory* guarantees os.replace is an atomic same-filesystem
+        # rename: readers see either the old or the new file, never a partial write.
         fd, tmp_path = tempfile.mkstemp(
             prefix=os.path.basename(path) + ".", suffix=".tmp", dir=directory
         )
@@ -104,6 +118,7 @@ def write_json_atomic(path: str, data: Any, indent: int | None = None) -> bool:
             with os.fdopen(fd, "w", encoding="utf-8") as f:
                 json.dump(data, f, indent=indent, ensure_ascii=False)
             os.replace(tmp_path, path)
+        # Any failure (including KeyboardInterrupt): remove the temp file, then re-raise.
         except BaseException:
             try:
                 # Execute guarded operations and establish recovery boundaries
@@ -126,6 +141,7 @@ def get_active_model() -> dict:
     if not isinstance(data, dict):
         logger.warning("unexpected payload in %s: %r", ACTIVE_MODEL_PATH, type(data))
         data = {}
+    # Accept the legacy "model" key written by older versions.
     filename = data.get("filename") or data.get("model") or DEFAULT_MODEL_FILENAME
     return {"filename": filename, "adapter": data.get("adapter")}
 
@@ -139,6 +155,7 @@ def set_active_model(filename: str, adapter: str | None = None) -> bool:
     return write_json_atomic(ACTIVE_MODEL_PATH, active)
 
 
+# Speculative-decoding draft model settings (read by ModelLoader.get_instance).
 DRAFT_MODEL_PATH = os.path.join("data", "draft_model.json")
 
 
@@ -148,6 +165,9 @@ def get_active_draft_model() -> dict:
     data = read_json(DRAFT_MODEL_PATH, default={})
     if not isinstance(data, dict):
         data = {}
+    # Resolution: explicit path wins; otherwise the filename; otherwise the draft
+    # companion declared in the registry for the active model. "enabled" defaults to
+    # True only when an explicit draft path was configured.
     draft_model_path = data.get("draft_model_path") or None
     filename = data.get("filename") or None
     if filename is None and draft_model_path:
@@ -210,11 +230,13 @@ def get_model_registry() -> list[dict]:
     global _registry_cache, _registry_cache_mtime
     try:
         # Execute guarded operations and establish recovery boundaries
+        # A missing registry file yields mtime None, which still caches the empty result.
         mtime = os.path.getmtime(MODEL_REGISTRY_PATH)
     except OSError:
         mtime = None
 
     with _registry_lock:
+        # Cache hit: the file has not changed since it was last parsed.
         if _registry_cache is not None and mtime == _registry_cache_mtime:
             return _registry_cache
 
@@ -274,6 +296,8 @@ def is_adapter_compatible(model_filename: str, adapter_name: str) -> bool:
     config_path = os.path.join("data", "adapters", adapter_name, "adapter_config.json")
     config = read_json(config_path, default=None)
     if isinstance(config, dict):
+        # Heuristic only: compares the "1.5b"/"8b" parameter-size tokens of the adapter's
+        # declared base model (or its name) with the model filename. Other sizes never match.
         base_model = str(config.get("base_model_name_or_path", "")).lower()
         model_fn = model_filename.lower()
         if "1.5b" in model_fn and "1.5b" in base_model:
@@ -290,6 +314,9 @@ def is_adapter_compatible(model_filename: str, adapter_name: str) -> bool:
 
 # ── appearance config ────────────────────────────────────────────────────────
 
+# Defaults for every persisted UI/engine setting. save_ui_config writes exactly
+# these keys; get_ui_config ignores unknown ones. Grouped roughly as: appearance,
+# RAG retrieval, log retention, security, dynamic scheduling, thermal protection.
 UI_CONFIG_DEFAULTS: dict[str, Any] = {
     "theme_preset": "Karl Obsidian Core",
     "custom_accent": None,
@@ -412,6 +439,7 @@ def get_ui_config() -> dict:
       does not exist (old installs).
     """
     # Step 1: Validate input parameters, operational preconditions, and state
+    # Start from defaults so every key is always present in the returned dict.
     merged = dict(UI_CONFIG_DEFAULTS)
 
     raw = None
@@ -464,11 +492,13 @@ def save_ui_config(config: dict) -> bool:
     migration logic can detect schema age.
     """
     # Step 1: Validate input parameters, operational preconditions, and state
+    # Only known keys are persisted; anything else in `config` is dropped.
     payload: dict[str, Any] = {key: config.get(key, default) for key, default in UI_CONFIG_DEFAULTS.items()}
     payload["version"] = CONFIG_VERSION
     return write_json_atomic(UI_CONFIG_PATH, payload, indent=2)
 
 
+# MCP (Model Context Protocol) server definitions: {"mcpServers": {name: {command, args, env?}}}.
 MCP_CONFIG_PATH = os.path.join("data", "mcp_config.json")
 MCP_CONFIG_DEFAULT: dict = {"mcpServers": {}}
 
@@ -476,6 +506,8 @@ MCP_CONFIG_DEFAULT: dict = {"mcpServers": {}}
 def get_mcp_config() -> dict:
     """Return MCP server configuration, falling back to an empty server map."""
     # Step 1: Validate input parameters, operational preconditions, and state
+    # NOTE: when the file is missing, read_json returns MCP_CONFIG_DEFAULT itself (not a
+    # copy), so callers that mutate the result (add_mcp_server) also mutate the module default.
     data = read_json(MCP_CONFIG_PATH, default=MCP_CONFIG_DEFAULT)
     if not isinstance(data, dict) or "mcpServers" not in data:
         return dict(MCP_CONFIG_DEFAULT)
