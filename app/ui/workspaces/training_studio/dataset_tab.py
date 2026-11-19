@@ -70,11 +70,11 @@ def _section(text: str) -> QLabel:
 # The merge touches a possibly large file, so it runs off the GUI thread.
 # ── Background merge thread ────────────────────────────────────────────────────
 
-# NOTE: `finished` below shadows QThread's built-in no-argument finished signal with a
-# dict-carrying signal; it is emitted manually in run() on success only.
+# The success signal is named merge_finished so it does not shadow QThread's built-in
+# no-argument `finished` signal (which Qt still emits when run() returns).
 class _MergeThread(QThread):
     """Runs DatasetMerger.merge_files() off the UI thread."""
-    finished = pyqtSignal(dict)   # stats dict on success
+    merge_finished = pyqtSignal(dict)   # stats dict on success
     error = pyqtSignal(str)       # error message on failure
 
     def __init__(self, primary: str, incoming: str, parent=None):
@@ -92,7 +92,7 @@ class _MergeThread(QThread):
             # Imported here so the merger module loads only when a merge is actually requested.
             from app.utils.dataset_merger import DatasetMerger
             stats = DatasetMerger.merge_files(self._primary, self._incoming)
-            self.finished.emit(stats)
+            self.merge_finished.emit(stats)
         except Exception as exc:
             self.error.emit(str(exc))
 
@@ -323,7 +323,7 @@ class DatasetTab(QWidget):
 
         # Launch background thread.
         self._merge_thread = _MergeThread(primary_path, incoming_path, parent=self)
-        self._merge_thread.finished.connect(self._on_merge_finished)
+        self._merge_thread.merge_finished.connect(self._on_merge_finished)
         self._merge_thread.error.connect(self._on_merge_error)
         self._merge_thread.start()
 
