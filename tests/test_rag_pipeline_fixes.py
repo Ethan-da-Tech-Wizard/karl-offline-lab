@@ -64,3 +64,19 @@ def test_sparse_and_hybrid_modes_honour_threshold():
         assert [r["text"] for r in got] == ["near"]
         # threshold 0 means "no cut-off", matching the dense path
         assert len(pipe.retrieve_with_metadata("q", top_k=5, threshold=0.0, mode=mode)) == 2
+
+
+def test_dense_retrieval_has_no_department_shortcut():
+    """A query mentioning 'IT' plus 'how'/'who' used to return every chunk containing 'IT' at rank 0."""
+    pipe = object.__new__(RAGPipeline)
+    pipe.documents = [
+        {"text": "IT staff list", "chunk_id": 0, "vector_id": 0, "source_file": "a.txt"},
+        {"text": "unrelated policy text", "chunk_id": 1, "vector_id": 1, "source_file": "a.txt"},
+    ]
+    pipe.index = mock.MagicMock(ntotal=2)
+    pipe.index.search.return_value = ([[0.1, 0.4]], [[1, 0]])
+    pipe._encoder = mock.MagicMock()
+    got = pipe.retrieve_with_metadata("how does IT work", top_k=2)
+    # Order follows the vector search (chunk 1 first), not a keyword shortcut.
+    assert [d["chunk_id"] for d in got] == [1, 0]
+    assert all(d["distance"] > 0.0 for d in got)
