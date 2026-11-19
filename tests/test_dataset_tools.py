@@ -73,12 +73,14 @@ class TestGenerateCodeSftDataset(unittest.TestCase):
         # Every generated assistant code block must be independently valid,
         # standalone Python — regression check for the method-dedent fix.
         for row in rows:
+            # Row layout is [system, user, assistant]; index 2 is the generated code answer, which is what must parse standalone.
             code = row["messages"][2]["content"].split("```python\n", 1)[1].rsplit("```", 1)[0]
             ast.parse(code)
 
         method_row = next(r for r in rows if r["kind"] == "method")
         self.assertEqual(method_row["qualname"], "Greeter.greet")
         method_code = method_row["messages"][2]["content"].split("```python\n", 1)[1]
+        # Methods are extracted from inside a class body, so their source is indented; the generator must dedent it, otherwise the snippet starts with spaces and is not valid top-level Python.
         self.assertTrue(method_code.startswith("def greet"), method_code)
 
         function_row = next(r for r in rows if r["kind"] == "function")
@@ -89,6 +91,7 @@ class TestGenerateCodeSftDataset(unittest.TestCase):
     def test_ignores_venv_and_test_directories(self):
         """venv and test directories are not crawled, so third-party or test code never becomes training data."""
         self._write("pkg/real.py", "def keep():\n    return 1\n")
+        # Virtualenv and tests folders would flood the dataset with vendored library code and assertions; the crawler prunes them by directory name.
         self._write("pkg/venv/skip.py", "def skip():\n    return 2\n")
         self._write("pkg/tests/skip_too.py", "def skip_too():\n    return 3\n")
 
@@ -99,6 +102,7 @@ class TestGenerateCodeSftDataset(unittest.TestCase):
 
     def test_skips_files_with_syntax_errors(self):
         """A file that fails to parse is counted as skipped and produces no rows; the crawl continues."""
+        # The file still counts as crawled (it was opened) but also as skipped; a single unparsable file must never abort the whole crawl.
         self._write("pkg/broken.py", "def broken(:\n    pass\n")
 
         rows, files_crawled, files_skipped = gen.crawl([self.root])
@@ -124,6 +128,7 @@ class TestCurateAndMergeDatasets(unittest.TestCase):
 
     def test_estimate_tokens_uses_char_length_heuristic(self):
         """Token estimate is len/4 (400 chars -> 100) so no tokenizer is needed."""
+        # Pins the len/4 heuristic: a cheap approximation that avoids loading a tokenizer inside a data tool.
         self.assertEqual(curate.estimate_tokens("a" * 400), 100)
 
     def test_passes_quality_checks_rejects_oversized_prompt(self):
@@ -131,6 +136,7 @@ class TestCurateAndMergeDatasets(unittest.TestCase):
         row = {
             "messages": [
                 {"role": "system", "content": "sys"},
+                # 20000 chars is about 5000 estimated tokens, far above the max_tokens=100 budget, so rejection can only come from the size gate (the code itself is valid).
                 {"role": "user", "content": "u" * 20000},
                 {"role": "assistant", "content": "```python\ndef ok():\n    return 1\n```"},
             ]
@@ -167,6 +173,7 @@ class TestCurateAndMergeDatasets(unittest.TestCase):
                     ]
                 }
 
+            # Each source gets one good and one bad row so the test can distinguish per-source counting from filtering: totals are counted before the gates, valid_total after.
             curated_rows = [make_row("a"), make_row("bad", valid=False)]
             synthetic_rows = [make_row("b"), make_row("huge", oversized=True)]
 
@@ -193,6 +200,7 @@ class TestCurateAndMergeDatasets(unittest.TestCase):
             self.assertTrue(any("def a()" in b for b in bodies))
             self.assertTrue(any("def b()" in b for b in bodies))
             # only the "messages" key should survive into the merged output
+            # Training loaders expect exactly the chat format; extra metadata such as kind or qualname must be stripped on merge.
             self.assertEqual(set(out_rows[0].keys()), {"messages"})
 
     def test_merge_datasets_includes_scraped_library_sft_when_present(self):
@@ -201,6 +209,7 @@ class TestCurateAndMergeDatasets(unittest.TestCase):
             tmp_path = Path(tmp)
             curated_path = tmp_path / "sft.jsonl"
             synthetic_path = tmp_path / "synthetic.jsonl"
+            # The scraped-library file is optional and found by name beside the curated file, so no extra CLI argument is needed when it exists.
             scraped_library_path = tmp_path / "scraped_library_sft.jsonl"
             out_path = tmp_path / "merged.jsonl"
 

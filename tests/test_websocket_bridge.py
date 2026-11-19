@@ -102,8 +102,10 @@ class TestWebSocketBridge(unittest.TestCase):
         self.app = QCoreApplication.instance() or QCoreApplication(sys.argv)
 
         # Start server on unique port (8081) to avoid local workspace collisions
+        # Port 8081 is test-only: the real app uses a different default, so a developer's running Karl instance cannot collide with the suite.
         self.port = 8081
         self.manager = WebSocketServerManager.get_instance(port=self.port)
+        # The server runs in its own thread; without waiting for this event the first client connect would race the listener and fail with connection refused.
         self.manager.started_event.wait(timeout=5.0)
 
         # Set up a sandbox directory
@@ -178,8 +180,10 @@ class TestWebSocketBridge(unittest.TestCase):
         previous_active = None
         if os.path.exists(active_path):
             with open(active_path, "r", encoding="utf-8") as f:
+                # Snapshot the user's real active-model pointer so the finally block can restore it; this test writes into the real data/ directory.
                 previous_active = f.read()
 
+        # _list_models also reports stray .gguf files in data/models that have no registry entry, so a 4-byte dummy file is enough to show up without a real model.
         os.makedirs(model_dir, exist_ok=True)
         with open(model_path, "wb") as f:
             f.write(b"test")
@@ -254,6 +258,7 @@ class TestWebSocketBridge(unittest.TestCase):
                     }
                 }))
                 save_resp = json.loads(await asyncio.wait_for(ws.recv(), timeout=5.0))
+                # JSON-RPC ids are echoed back verbatim; matching them proves each reply is correlated to its request rather than to an earlier notification.
                 self.assertEqual(save_resp.get("id"), 42)
                 self.assertTrue(save_resp["result"]["saved"])
 
@@ -297,6 +302,7 @@ class TestWebSocketBridge(unittest.TestCase):
 
     def test_knowledge_base_rpc(self):
         """Knowledge-base RPCs: initial stats are empty, an ingest starts asynchronously and emits progress and finished notifications, and a search returns the ingested chunk with a close distance."""
+        # Swap in the in-memory RAG before any RPC runs so ingest/search never touch FAISS or the embedding model.
         self.manager.rag = FakeBridgeRAG()
         doc_path = os.path.join(self.workspace_path, "notes.md")
         with open(doc_path, "w", encoding="utf-8") as f:
@@ -326,11 +332,13 @@ class TestWebSocketBridge(unittest.TestCase):
                 }))
                 ingest_resp = json.loads(await asyncio.wait_for(ws.recv(), timeout=5.0))
                 self.assertEqual(ingest_resp.get("id"), 51)
+                # Ingest is asynchronous by design: the RPC must return immediately and report completion via notifications, otherwise large files would block the socket.
                 self.assertEqual(ingest_resp["result"]["status"], "started")
                 self.assertEqual(ingest_resp["result"]["file_count"], 1)
 
                 notifications = []
                 finished = None
+                # Bounded read loop: progress notifications may arrive in any number before the finish message, but an endless wait would hang the suite if the server never emitted it.
                 for _ in range(10):
                     msg = json.loads(await asyncio.wait_for(ws.recv(), timeout=5.0))
                     method = msg.get("method")
@@ -353,6 +361,7 @@ class TestWebSocketBridge(unittest.TestCase):
                     "params": {
                         "query": "project knowledge",
                         "top_k": 5,
+                        # FakeBridgeRAG gives a substring match distance 0.05 and a miss 1.5, so 0.2 keeps the hit and would drop anything unrelated.
                         "threshold": 0.2,
                     }
                 }))
@@ -372,6 +381,7 @@ class TestWebSocketBridge(unittest.TestCase):
     @patch("app.engine.model_loader.ModelLoader.get_instance")
     def test_websocket_bridge_flow(self, mock_get_llm):
         """Full swarm run over the bridge with a mocked LLM: the submit RPC answers 'started', then task_plan_created, file_edited and finished_swarm notifications are broadcast to the client."""
+        # The fake distinguishes the architect (planning) call from the file-writing call by whether the prompt mentions 'tasks'; planning gets the JSON plan, everything else gets file content.
         # Mock LLM to return simple JSON plan and script contents
         def mock_llm(prompt, **kwargs):
             """Return a JSON architect plan and Python file content depending on the prompt."""
@@ -427,6 +437,7 @@ class TestWebSocketBridge(unittest.TestCase):
 
                     # 2. Consume progress notifications until finished_swarm is received
                     notifications = []
+                    # x
                     for _ in range(50):  # Safety iteration ceiling
                         raw_msg = await asyncio.wait_for(ws.recv(), timeout=15.0)
 
