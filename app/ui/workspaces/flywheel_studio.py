@@ -200,7 +200,6 @@ class CustomLineChart(QWidget):
         painter.setPen(QPen(QColor(240, 245, 255), 1))
         title_font = QFont("Outfit, Inter, sans-serif", 9, QFont.Weight.Bold)
         painter.setFont(title_font)
-        # (Elision rationale kept from the original note below.)
         # drawText(x, y, text) has no width limit of its own -- at narrow
         # widget widths (e.g. the app's 760px minimum) a long title (like
         # "Loss Curve: <adapter_name>") just got clipped mid-character by
