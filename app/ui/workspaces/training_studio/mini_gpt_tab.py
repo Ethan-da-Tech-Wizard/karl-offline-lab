@@ -724,7 +724,8 @@ class MiniGptTab(QWidget):
             tokenizer = CharTokenizer()
             tokenizer.chars = vocab_meta["chars"]
             tokenizer.stoi = vocab_meta["stoi"]
-            tokenizer.itos = vocab_meta["itos"]
+            # JSON object keys are always strings; decode() looks ids up as ints, so convert back.
+            tokenizer.itos = {int(k): v for k, v in vocab_meta["itos"].items()}
             tokenizer.vocab_size = len(tokenizer.chars)
             
             # Load config
