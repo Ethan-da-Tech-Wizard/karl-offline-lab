@@ -7,21 +7,29 @@
 #          and contract compliance under tests.
 # ==============================================================================
 
+# Scope: the JSON-RPC 2.0 contract of WebSocketServerManager._handler: standard error codes (-32700 parse, -32600 invalid
+# request, -32601 unknown method, -32602 invalid params, -32603 internal) and the custom -32005 rate limit code. The handler is
+# driven directly with a fake websocket, so no network, TLS or running Qt event loop is needed. Companion tests:
+# test_websocket_bridge.py (behaviour), test_rbac_scopes.py (scopes). Run: python -m pytest tests/test_websocket_contract.py -q
 import asyncio
 import json
 import threading
 
+# Imported for its side effect only: it prepares the Qt platform (offscreen) before the engine modules import PyQt.
 import tests.qt_test_helper  # noqa: F401
 
 from app.engine.websocket_server import WebSocketServerManager
 
 
+# Implements only what _handler touches: async iteration over incoming frames, send(), close(), remote_address and metadata.
 class MockWebSocket:
     """Minimal async websocket double: yields the given incoming messages, records everything sent, and records close()."""
     def __init__(self, messages):
         """Store incoming messages and start with empty sent list."""
         self._messages = list(messages)
         self.sent = []
+
+        # The handler logs and stores the peer address, so a plausible tuple is supplied.
         self.remote_address = ("127.0.0.1", 50000)
         self.closed = False
 
@@ -31,6 +39,7 @@ class MockWebSocket:
 
     async def __anext__(self):
         """Yield the next queued message or end iteration."""
+        # Ending iteration is how the fake simulates the client disconnecting, which lets the handler's `async for` loop finish.
         if not self._messages:
             raise StopAsyncIteration
         return self._messages.pop(0)
@@ -48,6 +57,8 @@ class MockWebSocket:
 
 def make_manager():
     """Build a WebSocketServerManager with heavy collaborators mocked so JSON-RPC handling can be tested without a network or Qt."""
+    # __new__ skips __init__ on purpose: the real constructor would start an event loop thread, write certificates and open a port.
+    # Only the attributes that _handler reads are filled in below.
     manager = WebSocketServerManager.__new__(WebSocketServerManager)
     manager.port = 19999
     manager.clients = set()
@@ -61,6 +72,8 @@ def make_manager():
     manager.kb_ingest_thread = None
     manager._threads_lock = threading.Lock()
     manager._clients_lock = threading.Lock()
+
+    # Authentication is not the subject of these tests, so any token is accepted. (Scope checks use the metadata built in the handler.)
     manager._validate_token = lambda token: True
     return manager
 
@@ -68,7 +81,11 @@ def make_manager():
 async def run_handler_once(manager, message):
     """Feed one raw message to the connection handler and return the parsed JSON response; fails if nothing was sent."""
     websocket = MockWebSocket([message])
+
+    # The token in the URL is how real clients authenticate (see the handshake code in websocket_server.py).
     await manager._handler(websocket, path="/?token=test-token")
+
+    # Fails clearly if the handler produced no reply at all, instead of raising an IndexError on the next line.
     assert websocket.sent
     return json.loads(websocket.sent[-1])
 
@@ -78,15 +95,19 @@ def assert_rpc_error(response, code, req_id):
     assert response["jsonrpc"] == "2.0"
     assert response["id"] == req_id
     assert response["error"]["code"] == code
+
+    # Every error must carry a human-readable message string, not just a code.
     assert isinstance(response["error"]["message"], str)
 
 
+# Per the JSON-RPC spec the id is null when the request could not be parsed, so there is nothing to echo back.
 def test_parse_error_returns_json_rpc_error():
     """Invalid JSON yields error -32700 with a null id."""
     response = asyncio.run(run_handler_once(make_manager(), "{bad json"))
     assert_rpc_error(response, -32700, None)
 
 
+# The id (10) is echoed so the client can match the failure to its request even though the request was invalid.
 def test_missing_jsonrpc_returns_invalid_request():
     """A request lacking jsonrpc '2.0' yields -32600 (Invalid Request) carrying the request id."""
     response = asyncio.run(run_handler_once(
@@ -105,6 +126,7 @@ def test_unknown_method_returns_method_not_found():
     assert_rpc_error(response, -32601, 11)
 
 
+# set_active_model requires "filename"; the shape check runs before any handler code, so no model code is involved.
 def test_missing_required_params_returns_invalid_params():
     """A known method missing required params yields -32602."""
     response = asyncio.run(run_handler_once(
@@ -118,16 +140,20 @@ def test_handler_exception_returns_internal_error():
     """If the method handler raises, the client gets -32603 with the exception text in 'data', and the server stays up."""
     manager = make_manager()
 
+    # The stub raises ValueError (the name is historical); any exception type must be converted to -32603.
     def raise_runtime_error():
-        """Handler stub that raises RuntimeError('boom')."""
+        """Handler stub that raises ValueError('boom')."""
         raise ValueError("boom")
 
+    # Replacing the bound method on the instance injects the failure without touching the real model registry.
     manager._list_models = raise_runtime_error
     response = asyncio.run(run_handler_once(
         manager,
         json.dumps({"jsonrpc": "2.0", "id": 13, "method": "list_models"}),
     ))
     assert_rpc_error(response, -32603, 13)
+
+    # The exception text is passed in error.data to help debugging; the traceback itself stays in the server log.
     assert response["error"]["data"] == "boom"
 
 
@@ -137,6 +163,7 @@ def test_global_rate_limiter_exceeded():
     manager._list_models = lambda: {"models": []}
 
     # Global rate limit is capacity=20.0
+    # 22 identical requests are queued at once: more than the bucket capacity of 20, and with no time to refill between them.
     requests = [
         json.dumps({"jsonrpc": "2.0", "id": i, "method": "list_models"})
         for i in range(22)
@@ -145,12 +172,16 @@ def test_global_rate_limiter_exceeded():
     
     asyncio.run(manager._handler(websocket, path="/?token=test-token"))
     
+    # Every request gets exactly one reply: throttled requests are answered with an error, not dropped silently.
     assert len(websocket.sent) == 22
+
+    # The first 20 may succeed or fail for other reasons; the assertion only requires that none of them was rate limited.
     for i in range(20):
         resp = json.loads(websocket.sent[i])
         if "error" in resp:
             assert resp["error"]["code"] != -32005
     
+    # The 21st and 22nd frames find the bucket empty (refill is only 10 tokens/s, far too slow to matter inside one test).
     for i in range(20, 22):
         resp = json.loads(websocket.sent[i])
         assert_rpc_error(resp, -32005, i)
@@ -161,6 +192,7 @@ def test_heavy_rate_limiter_exceeded():
     """Heavy methods (such as set_active_model) have a tighter bucket (capacity 3); extra calls get -32005 'rate limit exceeded for heavy method'."""
     manager = make_manager()
     # Mock set_active_model which is a heavy method
+    # set_active_model is in the handler's "heavy methods" set, so it draws from the stricter bucket (capacity 3, refill 0.5/s).
     manager._set_active_model = lambda filename, adapter=None: {"active": {}}
 
     # Heavy limit capacity=3.0
@@ -171,6 +203,8 @@ def test_heavy_rate_limiter_exceeded():
             "method": "set_active_model",
             "params": {"filename": "model.gguf"}
         })
+
+        # Five requests: three allowed by the heavy bucket, two rejected.
         for i in range(5)
     ]
     websocket = MockWebSocket(requests)
@@ -186,4 +220,6 @@ def test_heavy_rate_limiter_exceeded():
     for i in range(3, 5):
         resp = json.loads(websocket.sent[i])
         assert_rpc_error(resp, -32005, i)
+
+        # The message differs from the global limit's wording so clients can tell which limiter fired.
         assert "rate limit exceeded for heavy method" in resp["error"]["message"]
