@@ -431,7 +431,6 @@ def run_code_review_benchmark(top_k: int = 3, output_path: str = "data/rag_bench
             # Retrieval metrics
             retr_metrics = calculate_metrics(retrieved_ids, expected_ids, top_k)
             
-            # Generation
             # Generation is scored for every mode on the same prompt template, so differences in
             # BLEU/ROUGE come from which chunks each retrieval mode surfaced.
             context_text = "\n\n".join([r["text"] for r in retrieved])

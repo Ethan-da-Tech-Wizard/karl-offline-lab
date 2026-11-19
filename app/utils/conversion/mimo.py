@@ -324,7 +324,6 @@ class MiMoV2VisionModel(MmprojModel):
         self.rms_norm_eps = float(hp.get("rms_norm_eps", 1e-6))
 
         # fullatt_block_indexes are also reflected in vit_window_attn_types as -1
-        # fullatt_block_indexes are also reflected in vit_window_attn_types as -1.
         self.fullatt_block_indexes = list(hp.get("fullatt_block_indexes") or [])
         self.vit_window_attn_types = list(hp.get("vit_window_attn_types") or [])
         self.visual_token_window_size = int(hp.get("visual_token_window_size", -1))

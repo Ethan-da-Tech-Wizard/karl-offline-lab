@@ -11,7 +11,6 @@
 # Each workflow is a named mode with a default template, RAG config, output
 # schema, and eval grader. Workflows are the product surface; templates are
 # the implementation detail.
-#
 # This file is intentionally data-only — no heavy logic lives here.
 # The UI reads WORKFLOWS to populate the mode selector.
 # The eval harness reads WORKFLOWS to know which grader to apply.

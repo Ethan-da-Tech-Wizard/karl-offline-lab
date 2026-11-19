@@ -53,7 +53,6 @@ os.makedirs(EXECUTION_DIR, exist_ok=True)
 os.makedirs(os.path.dirname(CURATED_PATH), exist_ok=True)
 
 
-# ---------------------------------------------------------------------------
 # Stats helpers
 # ---------------------------------------------------------------------------
 
@@ -89,7 +88,6 @@ def _save_stats(stats: dict):
         logger.warning("Failed to write stats: %s", e)
 
 
-# ---------------------------------------------------------------------------
 # Verification
 # ---------------------------------------------------------------------------
 
@@ -172,7 +170,6 @@ def _verify_sympy(ground_truth: str, model_response: str) -> tuple[bool, str]:
         return False, f"sympy error: {e}"
 
 
-# ---------------------------------------------------------------------------
 # Correction generation
 # ---------------------------------------------------------------------------
 
@@ -258,7 +255,6 @@ def generate_correction(exec_record: dict) -> tuple[str, str]:
     return thought, corrected
 
 
-# ---------------------------------------------------------------------------
 # Curation writers
 # ---------------------------------------------------------------------------
 
@@ -313,7 +309,6 @@ def save_dpo_pair(
         f.write(json.dumps(record, ensure_ascii=False) + "\n")
 
 
-# ---------------------------------------------------------------------------
 # Per-file processor
 # ---------------------------------------------------------------------------
 

@@ -9,7 +9,6 @@
 # ==============================================================================
 
 # THE HACKABLE LAYER — modify to change how thoughts are parsed from raw LLM output.
-#
 # This module is used for BATCH POST-PROCESSING only (e.g. engine_test.py).
 # The live streaming threads (LLMThread, AgenticThread) contain their own
 # inline state machines that route tokens in real time without calling this function.

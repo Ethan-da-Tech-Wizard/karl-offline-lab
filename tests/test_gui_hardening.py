@@ -160,7 +160,6 @@ def test_workspace_public_action_wrappers_exist():
 
 
 # ── MainWindow.closeEvent thread-shutdown coverage ────────────────────────────
-#
 # MainWindow.closeEvent() explicitly .wait()s for two specific threads (the
 # model-init thread it owns, and System Config's own model-load thread) --
 # see the comment there: "The llama load cannot be interrupted; wait for it

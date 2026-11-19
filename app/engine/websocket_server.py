@@ -539,7 +539,6 @@ class WebSocketServerManager:
             self._rotate_token()
 
         # Sensitive directories that should never be targeted by agents or RAG.
-        #
         # This is a blocklist, not an allowlist: paths outside it (e.g. a
         # mounted USB drive under /media, or /tmp scratch space) are
         # permitted by design, so this list needs to name every sensitive
@@ -2113,7 +2112,6 @@ class WebSocketServerManager:
         """
         # Per-connection coroutine: authenticates the handshake, registers the client,
         # then loops over incoming JSON-RPC frames until the socket closes.
-        #
         # Custom JSON-RPC error codes used below (server-defined range):
         #   -32000 generic application error / bad token for authenticate or refresh
         #   -32001 permission or security-policy denial (missing scope, blocked path)
@@ -2201,7 +2199,6 @@ class WebSocketServerManager:
             # One frame = one JSON-RPC request. The loop ends when the client disconnects (ConnectionClosed).
             async for message in websocket:
                 # Rate Limiting DoS Protection (checked first before parsing to prevent parser exhaustion)
-                # Rate Limiting DoS Protection (checked first before parsing to prevent parser exhaustion)
                 with self._clients_lock:
                     client_meta = self.client_metadata.get(websocket)
                 
@@ -2244,7 +2241,6 @@ class WebSocketServerManager:
                 # Only used by authenticate/refresh_token; the connection-level scopes were fixed at handshake time.
                 token = params.get("token")
 
-                # Heavy Method Rate Limiting
                 # Heavy Method Rate Limiting
                 # Heavy-method check follows parsing because the method name is needed to pick the bucket.
                 if client_meta:
@@ -2902,7 +2898,6 @@ class WebSocketServerManager:
                                     self.chat_thread.request_stop()
                                 self.chat_thread.wait()
 
-                        # Get client history
                         # Get client history
                         # History is per connection, so two editors chatting at once do not see each other's context.
                         history = self.client_histories.setdefault(websocket, [])
@@ -3573,7 +3568,6 @@ class WebSocketServerManager:
         for ws, meta in metadata_items:
             latency = -1.0
             try:
-                # websockets.connection.latency is in seconds
                 # websockets.connection.latency is in seconds
                 # Round-trip time from websockets' keepalive pings, converted to milliseconds; -1 when unavailable.
                 latency = ws.latency * 1000.0 # ms

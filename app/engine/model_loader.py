@@ -673,7 +673,6 @@ class ModelLoader:
         file_gb = os.path.getsize(resolved_path) / (1024 ** 3)
 
         # KV cache grows roughly with context. This is a practical guardrail, not a
-        # KV cache grows roughly with context. This is a practical guardrail, not a
         # llama.cpp memory profiler.
         kv_cache_gb = max(0.25, (n_ctx / 4096.0) * 0.35)
         adapter_path = cls._adapter_path(adapter_name)
@@ -858,7 +857,6 @@ class ModelLoader:
         """
         with cls._lock:
             # Mark this as an active inference call for the idle watcher.
-            # Mark this as an active inference call for the idle watcher.
             cls._last_activity_time = time.time()
 
             # ── Remote Engine Mode ──────────────────────────────────────────
@@ -967,7 +965,6 @@ class ModelLoader:
             current_model_path = getattr(cls, "_model_path", None)
             current_adapter = getattr(cls, "_active_adapter", None)
 
-            # change speculative draft model only when requested draft path differs
             # change speculative draft model only when requested draft path differs
             needs_draft_reload = (
                 draft_model_path != getattr(cls, '_draft_model_path', None) or

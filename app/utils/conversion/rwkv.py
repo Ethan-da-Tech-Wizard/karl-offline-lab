@@ -209,7 +209,6 @@ class Rwkv7Model(TextModel):
         intermediate_size = self.hparams["intermediate_size"] if self.hparams["intermediate_size"] is not None else (hidden_size * 4)
 
         # ICLR: In-Context-Learning-Rate. Missing (None) ranks fall back to calc_lora_rank.
-        # ICLR: In-Context-Learning-Rate
         try:
             lora_rank_decay = self.hparams["lora_rank_decay"] if self.hparams["lora_rank_decay"] is not None else self.calc_lora_rank(hidden_size, 0.5, 1.8)
             lora_rank_iclr = self.hparams["lora_rank_iclr"] if self.hparams["lora_rank_iclr"] is not None else self.calc_lora_rank(hidden_size, 0.5, 1.8)

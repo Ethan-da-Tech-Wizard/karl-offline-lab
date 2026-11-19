@@ -59,7 +59,6 @@ class TrainTab(QWidget):
         layout.setSpacing(12)
 
         # Left column: configuration form.
-        # Left Column: Configuration
         left_col = GlowPanel(self.state)
         left_layout = QVBoxLayout(left_col)
         left_layout.setContentsMargins(12, 12, 12, 12)

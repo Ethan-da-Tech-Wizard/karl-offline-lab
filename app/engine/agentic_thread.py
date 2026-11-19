@@ -596,7 +596,6 @@ class AgenticThread(QThread):
                     raw_output += text
 
                     # M7: write raw token before parsing (raw archive survives parser bugs/crashes).
-                    # M7: write raw token before parsing
                     micro_ts = f"{time.time():.6f}"
                     raw_file.write(f"{micro_ts}\t{text}\n")
                     raw_file.flush()

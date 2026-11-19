@@ -64,7 +64,6 @@ class AutoTrainTab(QWidget):
         layout.setSpacing(12)
 
         # Left column: configuration form in a GlowPanel.
-        # Left Column: Configuration
         # GlowPanel (not a plain "panel") makes the configuration card pick up the
         # glow/motion settings from the Theme tab; stretch 1:1 with the right column
         # gives the log as much width as the form.
