@@ -59,7 +59,8 @@ class BaichuanModel(TextModel):
                     self._reverse_hf_part(data_torch, 2)),
             ]
         else:
-            yield from self.modify_tensors(data_torch, self.map_tensor_name(name), bid)
+            # Delegate to the base class; calling self.modify_tensors here would recurse forever.
+            yield from super().modify_tensors(data_torch, name, bid)
 
     def _reverse_hf_permute(self, weights: Tensor, n_head: int, n_kv_head: int | None = None) -> Tensor:
         """Undo the HF rotary-embedding head permutation (inverse of the permute done by HF).
