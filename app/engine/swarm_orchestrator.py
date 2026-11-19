@@ -14,6 +14,14 @@ Coordinates the multi-agent planning, coding, and testing execution loop.
 Runs in a background QThread to emit signals to PyQt6 and prevent GUI blocking.
 """
 
+# Pipeline overview (see SwarmOrchestratorThread.run):
+#   1. ArchitectAgent turns the objective into a JSON plan of per-file tasks.
+#   2. Tasks are grouped into dependency layers (imports between planned files).
+#   3. Within a layer, CoderAgents write files in parallel (optionally several
+#      candidates each, ranked by swarm_judge), reviewed by specialist agents.
+#   4. Proposed edits are dry-run verified in a temp copy of the workspace, then
+#      the user cherry-picks which to commit; failures feed a self-correction loop.
+# Every step publishes Qt signals so Swarm Studio and the WS bridge can render progress.
 import os
 import shlex
 import time
@@ -44,12 +52,14 @@ from app.engine.agent_memory import CodebaseMemory
 from app.utils.tracing import Span
 
 
+# Module logger for orchestration diagnostics.
 logger = logging.getLogger("karl.swarm_orchestrator")
 
 
 def get_python_imports(content: str) -> List[str]:
     """Parse python imports from string content and return a list of module names."""
     # Step 1: Validate input parameters, operational preconditions, and state
+    # Source that does not parse yet (e.g. a half-written file) simply has no imports.
     try:
         # Execute guarded operations and establish recovery boundaries
         tree = ast.parse(content)
@@ -57,6 +67,7 @@ def get_python_imports(content: str) -> List[str]:
         return []
     
     imports = []
+    # ast.walk covers imports nested in functions/conditionals too, not just top level.
     for node in ast.walk(tree):
         # Iterate over items, evaluate loop invariant, and update progress
         if isinstance(node, ast.Import):
@@ -69,6 +80,7 @@ def get_python_imports(content: str) -> List[str]:
     return imports
 
 
+# One instance per run; all fields are plain data so the UI can snapshot them.
 class SwarmSessionState:
     """The shared Blackboard container holding task queues and results."""
     def __init__(self, workspace_path: str, objective: str, test_command: str):
@@ -82,11 +94,16 @@ class SwarmSessionState:
         self.test_runs: List[Dict[str, Any]] = []
 
 
+# Safety rules for rollback: both the backup run directory and every restore
+# target must resolve *inside* their expected roots, so a tampered manifest or
+# run_id cannot read or write outside the workspace (path traversal guard).
+# Entries are replayed in reverse so a file edited twice ends at its original state.
 def rollback_swarm_run(workspace_path: str, run_id: str | None = None) -> dict:
     """Restore files from a swarm run backup manifest."""
     # Step 1: Validate input parameters, operational preconditions, and state
     workspace = Path(workspace_path).expanduser().resolve()
     backup_root = (workspace / ".karl_swarm_backups").resolve()
+    # Explicit run_id selects a run; otherwise the most recently modified manifest wins.
     if run_id:
         run_dir = (backup_root / run_id).resolve()
     else:
@@ -122,6 +139,8 @@ def rollback_swarm_run(workspace_path: str, run_id: str | None = None) -> dict:
         except ValueError:
             continue
 
+        # existed=True: copy the pre-run backup over the file; existed=False: the run
+        # created the file, so rollback deletes it.
         if entry.get("existed"):
             backup_path = Path(str(entry.get("backup_path", ""))).resolve()
             try:
@@ -147,7 +166,15 @@ def rollback_swarm_run(workspace_path: str, run_id: str | None = None) -> dict:
     }
 
 
+# --- Signals (all emitted from the worker thread; Qt queues them to the GUI thread) ---
+# Core progress signals. Payload shapes are noted per signal.
 class SwarmOrchestratorThread(QThread):
+    """Background thread that executes one swarm run (plan, code, verify, commit).
+
+    Created per submit_task / UI "Run"; communicates exclusively through the Qt
+    signals below plus a few thread-safe control methods (request_stop,
+    commit_selected_edits, inject_guidance, pause/resume/step).
+    """
     status_update = pyqtSignal(str)              # General log message
     task_plan_created = pyqtSignal(dict)          # The Architect's JSON plan
     dependency_layers_built = pyqtSignal(list)    # list[list[task]]
@@ -188,9 +215,13 @@ class SwarmOrchestratorThread(QThread):
         self.tester = TesterAgent(workspace_path)
         self._stop_requested = False
 
+        # Cherry-pick handshake: run() blocks on this event until the user (or the WS
+        # bridge) calls commit_selected_edits() with the files to apply.
         self._cherry_pick_event = threading.Event()
         self._cherry_pick_selected: list[str] = []
 
+        # ── Swarm 2.0 state ──────────────────────────────────────────────────
+        # Feature toggles, all overridable via the `hyperparams` argument below.
         # ── Swarm 2.0 state ──────────────────────────────────────────────────
         self.memory = SwarmMemory(workspace_path)
         self.candidates_per_task = 1
@@ -198,24 +229,29 @@ class SwarmOrchestratorThread(QThread):
         self.enable_specialists = True
         self.enable_critic = True
         self.adaptive_concurrency = True
+        # Human steering messages and per-file failure fingerprints (for cross-run memory).
         self._guidance_lock = threading.Lock()
         self._guidance: dict[str, list[str]] = {}
         self._task_failure_fps: dict[str, list[str]] = {}
         self._cognition_nodes: list[dict] = []
+        # Short id naming this run's backup directory under <workspace>/.karl_swarm_backups.
         self._run_id = str(uuid.uuid4())[:8]
         self._known_names_cache: set[str] = set()
         self._backup_root = Path(workspace_path) / ".karl_swarm_backups" / self._run_id
         self._backup_manifest: list[dict] = []
 
+        # Loop limits: wall-clock deadline for the whole run and max self-correction rounds.
         # ── Loop control & drift detection ──────────────────────────────────
         self.timeout_seconds = 600
         self.max_loops = 5
         self.auto_steering_enabled = True
         self.tester_execute_sandbox = True
         self._run_deadline: float | None = None
+        # Drift detection compares what the coder produced against the plan's filepaths.
         self._drift_history: dict[str, dict[str, str | None]] = {}
         self._plan_filepaths: set[str] = set()
 
+        # Debugger: pause_event is "set" = running; cleared at task boundaries when pausing.
         # ── Interactive debugger: pause/step/resume + live telemetry ────────
         self.pause_on_step = False
         self.pause_event = threading.Event()
@@ -225,6 +261,7 @@ class SwarmOrchestratorThread(QThread):
         self._telemetry_start_time: float | None = None
         self._cumulative_tokens = 0
 
+        # Apply caller-supplied overrides with lower bounds (timeout >= 30 s, loops >= 1).
         if hyperparams:
             self._apply_agent_profiles(hyperparams.get("agent_profiles") or {})
             temp = hyperparams.get("temperature")
@@ -245,6 +282,8 @@ class SwarmOrchestratorThread(QThread):
             self.auto_steering_enabled = bool(hyperparams.get("auto_steering_enabled", True))
             self.pause_on_step = bool(hyperparams.get("pause_on_step", False))
 
+    # Resolve the selected agent profiles (system prompt, temperature, context limit,
+    # tool permissions) onto the three agents.
     def _apply_agent_profiles(self, selected_profiles: dict[str, str]) -> None:
         # Step 1: Validate input parameters, operational preconditions, and state
         profiles = active_profile_map(selected_profiles)
@@ -264,11 +303,13 @@ class SwarmOrchestratorThread(QThread):
         self.coder.allowed_tools = self._tool_permissions_to_names(coder.get("tools", {}))
 
         # Tester is programmatic today; keep profile metadata ready for future
+        # Tester is programmatic today; keep profile metadata ready for future
         # LLM-backed testers while honoring execute_sandbox at verification time.
         self.tester_profile = tester
         self.tester_execute_sandbox = bool(tester.get("tools", {}).get("execute_sandbox", True))
 
     @staticmethod
+    # Map the profile's coarse tool permissions onto concrete tool names the coder may call.
     def _tool_permissions_to_names(tools: dict) -> set[str]:
         # Step 1: Validate input parameters, operational preconditions, and state
         allowed: set[str] = set()
@@ -282,6 +323,7 @@ class SwarmOrchestratorThread(QThread):
 
     # ── Live steering ────────────────────────────────────────────────────────
 
+    # Thread-safe: guidance is held in a dict guarded by _guidance_lock.
     def inject_guidance(self, filepath: str, message: str) -> None:
         """Queue a human correction to be woven into *filepath*'s next tool-loop
         turn. Safe to call from any thread (e.g. the UI thread or the WS bridge)
@@ -295,6 +337,7 @@ class SwarmOrchestratorThread(QThread):
         self.guidance_injected.emit(filepath, message.strip())
         self._emit_cognition("guidance_injected", filepath=filepath, message=message.strip())
 
+    # Pop-and-return so each guidance message is delivered exactly once.
     def _drain_guidance(self, filepath: str) -> list[str]:
         # Step 1: Validate input parameters, operational preconditions, and state
         with self._guidance_lock:
@@ -330,6 +373,7 @@ class SwarmOrchestratorThread(QThread):
         with self._guidance_lock:
             self._task_overrides[filepath] = instructions.strip()
 
+    # One-shot: the override is consumed the first time the task is picked up.
     def _apply_task_override(self, task: dict) -> dict:
         # Step 1: Validate input parameters, operational preconditions, and state
         with self._guidance_lock:
@@ -342,6 +386,7 @@ class SwarmOrchestratorThread(QThread):
 
     # ── Interactive debugger: live token telemetry ──────────────────────────
 
+    # Tokens/s is cumulative over the whole run (not a sliding window).
     def _record_token_telemetry(self) -> None:
         # Step 1: Validate input parameters, operational preconditions, and state
         now = time.monotonic()
@@ -375,6 +420,9 @@ class SwarmOrchestratorThread(QThread):
         except Exception as exc:
             logger.debug("SwarmMemory.record_success failed (non-fatal): %s", exc)
 
+    # Dry-run strategy: copy the workspace (minus VCS/venv/build junk) to a temp dir,
+    # write the proposals there, and run the test command in that copy so the real
+    # workspace is untouched until the user approves.
     def _verify_proposals_in_temp_workspace(
         self,
         proposals: list[dict],
@@ -410,6 +458,7 @@ class SwarmOrchestratorThread(QThread):
             }
             return {name for name in names if name in blocked}
 
+        # TemporaryDirectory guarantees the sandbox copy is deleted even on error.
         with tempfile.TemporaryDirectory(prefix="karl-swarm-dryrun-") as tmp:
             sandbox = Path(tmp) / source.name
             shutil.copytree(source, sandbox, ignore=ignore, symlinks=True)
@@ -418,6 +467,7 @@ class SwarmOrchestratorThread(QThread):
                 # Iterate over items, evaluate loop invariant, and update progress
                 rel = proposal.get("filepath", "")
                 content = proposal.get("content", "")
+                # Proposal paths are untrusted model output: they must stay inside the sandbox.
                 target = (sandbox / rel).resolve()
                 try:
                     # Execute guarded operations and establish recovery boundaries
@@ -427,6 +477,7 @@ class SwarmOrchestratorThread(QThread):
                 target.parent.mkdir(parents=True, exist_ok=True)
                 target.write_text(content, encoding="utf-8")
 
+            # With no configured test command, fall back to a generated compile/exists check.
             if not cmd:
                 cmd = self._write_generated_smoke_suite(sandbox, proposals)
                 self.status_update.emit(
@@ -455,6 +506,8 @@ class SwarmOrchestratorThread(QThread):
             for proposal in proposals
             if proposal.get("filepath")
         })
+        # The generated test file only checks that each proposed file exists, stays in
+        # the workspace and (for .py) compiles; it is a last-resort sanity check.
         test_file.write_text(
             "\n".join([
                 "import pathlib",
@@ -502,6 +555,8 @@ class SwarmOrchestratorThread(QThread):
     def _backup_workspace_file(self, relpath: str, full_path: Path) -> str:
         """Back up an existing workspace file before writing an approved edit."""
         # Step 1: Validate input parameters, operational preconditions, and state
+        # Backups mirror the workspace-relative path under the run's backup directory;
+        # the resolved path must stay inside that root (guards crafted relpaths).
         backup_root = self._backup_root.resolve()
         backup_path = (backup_root / relpath).resolve()
         try:
@@ -510,6 +565,8 @@ class SwarmOrchestratorThread(QThread):
         except ValueError:
             raise ValueError(f"backup path escaped backup root: {relpath}")
         backup_path.parent.mkdir(parents=True, exist_ok=True)
+        # Existing file: keep a byte-exact copy (copy2 preserves mtime). New file: write a
+        # ".missing" marker so rollback knows the file did not exist before this run.
         if full_path.exists():
             shutil.copy2(full_path, backup_path)
             return str(backup_path)
@@ -519,6 +576,8 @@ class SwarmOrchestratorThread(QThread):
         return str(marker)
 
     def _record_backup_manifest(self, relpath: str, backup_path: str, existed: bool) -> None:
+        # The manifest is rewritten in full after every backup so a crash mid-run still
+        # leaves a usable record for rollback_swarm_run().
         # Step 1: Validate input parameters, operational preconditions, and state
         self._backup_manifest.append({
             "filepath": relpath,
@@ -541,6 +600,7 @@ class SwarmOrchestratorThread(QThread):
     def _finish_coder_attempt(self, filepath: str, task: dict, ok: bool, detail: str) -> tuple[str, bool, str]:
         """Wrap a _run_one return value, recording it for drift comparison."""
         # Step 1: Validate input parameters, operational preconditions, and state
+        # Hash the outcome text: only equality between consecutive attempts matters, not content.
         digest = hashlib.sha256((detail or "").encode("utf-8", "ignore")).hexdigest()
         self._record_drift_outcome(filepath, task, ok, digest, detail)
         return filepath, ok, detail
@@ -552,6 +612,7 @@ class SwarmOrchestratorThread(QThread):
         guidance rather than letting it repeat the same attempt indefinitely.
         """
         # Step 1: Validate input parameters, operational preconditions, and state
+        # Success and failure outcomes are tracked separately so a pass after failures is not "drift".
         bucket = "success" if ok else "failure"
         history = self._drift_history.setdefault(filepath, {"success": None, "failure": None})
         if history[bucket] is not None and history[bucket] == digest:
@@ -561,6 +622,8 @@ class SwarmOrchestratorThread(QThread):
 
     def _trigger_drift_alert(self, filepath: str, task: dict, reason: str, trace_text: str) -> None:
         # Step 1: Validate input parameters, operational preconditions, and state
+        # Quote only the last trace line (usually the exception) and cap the task focus at
+        # 200 chars so the injected guidance stays short in the coder's prompt.
         trace_lines = (trace_text or "").strip().splitlines()
         trace_snippet = trace_lines[-1].strip() if trace_lines else "unknown error"
         focus = (task.get("instructions", "") or "").strip()[:200] or f"the requirements for {filepath}"
@@ -586,6 +649,8 @@ class SwarmOrchestratorThread(QThread):
 
     def _emit_cognition(self, node_type: str, **data) -> None:
         # Step 1: Validate input parameters, operational preconditions, and state
+        # Each node is a flat dict that becomes part of the run's trace graph (persisted to
+        # data/logs/swarm_cognition/run_<id>.json) and is also pushed live to the UI.
         node = {"type": node_type, "timestamp": time.time(), **data}
         self._cognition_nodes.append(node)
         self.cognitive_node.emit(node)
@@ -615,6 +680,8 @@ class SwarmOrchestratorThread(QThread):
             # Execute guarded operations and establish recovery boundaries
             from core.hardware_scout import get_hardware_profile
             profile = get_hardware_profile()
+            # Budget starts at the logical core count and is halved for thermal or low-VRAM
+            # pressure; the final pool is capped at 8 workers and at the layer's task count.
             budget = max(1, os.cpu_count() or 4)
             reasons = [f"{budget} logical cores"]
 
@@ -671,6 +738,8 @@ class SwarmOrchestratorThread(QThread):
         # Step 1: Validate input parameters, operational preconditions, and state
         if total <= 1:
             return None
+        # Higher-than-base factors would otherwise exceed sane sampling temperatures, so
+        # the result is clamped to [0.05, 1.2].
         base = self.coder.temperature
         # Spread candidates from conservative (below base) to exploratory
         # (above base), evenly across the requested count.
@@ -679,6 +748,8 @@ class SwarmOrchestratorThread(QThread):
         return max(0.05, min(1.2, round(base * factor, 3)))
 
     def _process_events_if_main_thread(self):
+        # Only pumps the Qt event loop when run on the main thread (e.g. in tests that call
+        # run() directly); on a worker thread signals are delivered by Qt itself.
         # Step 1: Validate input parameters, operational preconditions, and state
         import threading
         from PyQt6.QtWidgets import QApplication
@@ -688,6 +759,7 @@ class SwarmOrchestratorThread(QThread):
                 app.processEvents()
 
     def _timed_out(self) -> bool:
+        # Monotonic clock so system time changes can't trigger or hide the deadline.
         # Step 1: Validate input parameters, operational preconditions, and state
         return self._run_deadline is not None and time.monotonic() >= self._run_deadline
 
@@ -707,6 +779,8 @@ class SwarmOrchestratorThread(QThread):
         # Step 1: Validate input parameters, operational preconditions, and state
         return Path(self.state.workspace_path).expanduser().resolve()
 
+    # Path hygiene for model-supplied plan entries: relative only, no "..", and the
+    # resolved path must remain inside the workspace root (symlink-safe via resolve()).
     def _resolve_task_path(self, filepath: str) -> tuple[str, Path]:
         # Step 1: Validate input parameters, operational preconditions, and state
         if not isinstance(filepath, str) or not filepath.strip():
@@ -742,6 +816,8 @@ class SwarmOrchestratorThread(QThread):
             "instructions": task["instructions"].strip(),
         }
 
+    # Rejects the whole plan on the first bad task or duplicate path so a malformed
+    # Architect response never partially executes.
     def _validate_tasks(self, raw_tasks: Any) -> list[dict[str, str]]:
         # Step 1: Validate input parameters, operational preconditions, and state
         if not isinstance(raw_tasks, list):
@@ -766,6 +842,7 @@ class SwarmOrchestratorThread(QThread):
         """Scans the directory for code files, excluding build and git files."""
         # Step 1: Validate input parameters, operational preconditions, and state
         context = {}
+        # Directories never scanned for context (VCS, venvs, caches, runtime data).
         exclude_dirs = {".git", ".venv", "venv", "__pycache__", "data", "scratch", "unsloth_compiled_cache"}
         
         for root, dirs, files in os.walk(self.state.workspace_path):
@@ -773,6 +850,7 @@ class SwarmOrchestratorThread(QThread):
             dirs[:] = [d for d in dirs if d not in exclude_dirs]
             for f in files:
                 # Target Python and core text files
+                # Only small text-like files are fed to the coder as context (< 50 KB each) to bound the prompt.
                 if f.endswith((".py", ".json", ".txt", ".md")) and f not in ("active_model.json", "model_registry.json", "run_tests.py"):
                     path = os.path.join(root, f)
                     rel_path = os.path.relpath(path, self.state.workspace_path)
@@ -791,6 +869,8 @@ class SwarmOrchestratorThread(QThread):
         Tasks within the same layer do not import each other and can run in parallel.
         """
         # Step 1: Validate input parameters, operational preconditions, and state
+        # Dependency heuristic: a task depends on another when its source imports a module
+        # whose name matches the other task's file stem. Kahn's algorithm then assigns layers.
         stems = {Path(t["filepath"]).stem: t["filepath"] for t in tasks}
         dependencies = {t["filepath"]: set() for t in tasks}
 
@@ -813,6 +893,7 @@ class SwarmOrchestratorThread(QThread):
                 except Exception as e:
                     self.status_update.emit(f"[Graph] Error parsing imports for {fp}: {e}")
 
+        # in_degree[f] = number of planned files f imports; adj maps dependency -> dependents.
         in_degree = {fp: len(deps) for fp, deps in dependencies.items()}
         adj = {t["filepath"]: [] for t in tasks}
         for fp, deps in dependencies.items():
@@ -828,6 +909,7 @@ class SwarmOrchestratorThread(QThread):
             # Iterate over items, evaluate loop invariant, and update progress
             zero_in = [fp for fp in remaining if in_degree[fp] == 0]
             if not zero_in:
+                # Cycle detected. Break cycle by taking the first remaining node
                 # Cycle detected. Break cycle by taking the first remaining node
                 self.status_update.emit("[Graph] Cycle detected in task dependencies. Falling back to sequential grouping.")
                 cycle_node = list(remaining)[0]
@@ -860,6 +942,7 @@ class SwarmOrchestratorThread(QThread):
         max_workers, worker_reason = self._compute_max_workers(len(layer_tasks))
         if self.pause_on_step:
             # Serialize execution so pause/step semantics are unambiguous —
+            # Serialize execution so pause/step semantics are unambiguous —
             # exactly one task waits on pause_event at a time.
             max_workers, worker_reason = 1, "serialized: pause_on_step debugging mode active"
         self.concurrency_adjusted.emit(max_workers, worker_reason)
@@ -882,6 +965,8 @@ class SwarmOrchestratorThread(QThread):
             except Exception as exc:
                 logger.debug("SwarmMemory.record_failure failed (non-fatal): %s", exc)
 
+        # Per-task worker (runs in the thread pool): honours pause/stop, recalls memory,
+        # generates N candidates, judges and validates them, and returns (path, ok, detail).
         def _run_one(task: dict) -> tuple[str, bool, str]:
             """Generate (possibly N candidates), score, validate — does NOT write to disk."""
             # Step 1: Validate input parameters, operational preconditions, and state
@@ -898,6 +983,7 @@ class SwarmOrchestratorThread(QThread):
                 self.pause_event.clear()
                 self.swarm_paused.emit(task_info)
                 self._emit_cognition("swarm_paused", filepath=filepath, layer_index=layer_index)
+                # Block until resume()/step() sets the event; poll so a stop request can interrupt the wait.
                 while not self.pause_event.wait(timeout=0.5):
                     # Iterate over items, evaluate loop invariant, and update progress
                     if self._stop_requested:
@@ -913,6 +999,8 @@ class SwarmOrchestratorThread(QThread):
 
             tags = classify_task(task)
 
+            # Previous verification failures for this file are appended to the instructions so
+            # the coder can self-correct on the retry round.
             task_copy = dict(task)
             prior_trace = layer_failure_traces.get(filepath)
             if prior_trace:
@@ -936,6 +1024,8 @@ class SwarmOrchestratorThread(QThread):
                 # Step 1: Validate input parameters, operational preconditions, and state
                 return self._drain_guidance(fp)
 
+            # ModelLoader.clear_cache() resets the KV prompt cache so earlier tasks' prefixes
+            # do not influence this task's generation.
             n = self.candidates_per_task
             candidates: list[str] = []
             try:
@@ -968,6 +1058,8 @@ class SwarmOrchestratorThread(QThread):
                 self.candidates_generated.emit(filepath, n)
                 self._emit_cognition("candidates_generated", filepath=filepath, count=n)
 
+            # Judge ranks the candidates (syntax, hallucinated-API check, diff size, ...) and
+            # the best-scoring one becomes this task's proposed content.
             winner_idx, winner_score, all_scores = select_winner(
                 filepath, candidates,
                 original_content=workspace_ctx.get(filepath, ""),
@@ -983,6 +1075,9 @@ class SwarmOrchestratorThread(QThread):
                 self.winner_selected.emit(filepath, winner_idx, f"total_score={winner_score['total_score']}")
                 self._emit_cognition("winner_selected", filepath=filepath, index=winner_idx, score=winner_score)
 
+            # Early-out validations: any failure records the trace (so the next retry round
+            # sees it and memory learns from it) and returns a failed attempt without writing.
+            # The coder prefixes "# SYNTAX ERROR" when its own generation loop gave up.
             if content.startswith("# SYNTAX ERROR"):
                 self.task_status_changed.emit(filepath, "failed", content[:120])
                 self.traceback_captured.emit(filepath, content)
@@ -992,6 +1087,7 @@ class SwarmOrchestratorThread(QThread):
                 _record_failure(filepath, task, content)
                 return self._finish_coder_attempt(filepath, task, False, content)
 
+            # Cheap structural validation before anything is shown to the user.
             syntax_error = None
             if filepath.endswith(".py"):
                 try:
@@ -1015,6 +1111,9 @@ class SwarmOrchestratorThread(QThread):
                 _record_failure(filepath, task, syntax_error)
                 return self._finish_coder_attempt(filepath, task, False, syntax_error)
 
+            # ── Adaptive specialist review (LLM-free, gated by task classification) ──
+            # Only a security "revise" verdict blocks the file; performance and critic
+            # reviews are advisory and are just reported to the UI.
             # ── Adaptive specialist review (LLM-free, gated by task classification) ──
             if self.enable_specialists and "security" in tags:
                 sec = SecurityAuditorAgent().review(filepath, content)
@@ -1042,6 +1141,8 @@ class SwarmOrchestratorThread(QThread):
 
             return self._finish_coder_attempt(filepath, task, True, content)
 
+        # Execution strategy: serial inline when debugging (pause/step), otherwise a
+        # thread pool sized by _compute_max_workers.
         if self.pause_on_step:
             # Run inline on this thread rather than via the pool: swarm_paused
             # is a request/response signal (the emit blocks on pause_event),
@@ -1061,6 +1162,7 @@ class SwarmOrchestratorThread(QThread):
 
         self._process_events_if_main_thread()
 
+        # Fail fast if any coder produced an invalid result
         # Fail fast if any coder produced an invalid result
         all_ok = all(ok for ok, _ in results.values())
         if not all_ok:
@@ -1085,6 +1187,8 @@ class SwarmOrchestratorThread(QThread):
         if not proposals:
             return _finish_layer(True, f"Layer {layer_index} had no file edits")
 
+        # Gate 1: dry-run verification in a temp copy of the workspace, before the user
+        # is even asked to approve anything.
         dry_run_passed, dry_run_trace = self._verify_proposals_in_temp_workspace(proposals, layer_index)
         if not dry_run_passed:
             self.traceback_captured.emit(f"Layer {layer_index} dry-run", dry_run_trace)
@@ -1102,6 +1206,7 @@ class SwarmOrchestratorThread(QThread):
                     logger.debug("SwarmMemory.record_failure failed (non-fatal): %s", exc)
             return _finish_layer(False, f"Layer {layer_index} dry-run verification failed")
 
+        # Gate 2: human cherry-pick. Default is "all selected"; the UI may narrow the set.
         self._cherry_pick_event.clear()
         self._cherry_pick_selected = [p["filepath"] for p in proposals]  # default: all selected
         self._emit_cognition(
@@ -1129,6 +1234,8 @@ class SwarmOrchestratorThread(QThread):
             rejected=sorted(p["filepath"] for p in proposals if p["filepath"] not in selected),
         )
 
+        # ── Write only the files the developer approved ──
+        # Each write is preceded by a backup + manifest entry so the whole run can be undone.
         # ── Write only the files the developer approved ──
         write_failed = False
         for p in proposals:
@@ -1165,6 +1272,7 @@ class SwarmOrchestratorThread(QThread):
         if write_failed:
             return _finish_layer(False, f"Layer {layer_index} had write failures")
 
+        # Gate 3: run the real test command against the actual workspace after the writes.
         cmd = self.state.test_command
         if cmd:
             if not self.tester_execute_sandbox:
@@ -1221,6 +1329,12 @@ class SwarmOrchestratorThread(QThread):
             return _finish_layer(True, f"Layer {layer_index} complete")
 
     def run(self):
+        """QThread entry point: run the full Architect -> layers -> verify pipeline.
+
+        Always ends by emitting finished_swarm(success, summary) (or returning after a
+        stop/timeout notice) and persists the cognition graph in `finally`. Exceptions
+        are reported as a failed run rather than propagating out of the thread.
+        """
         # Step 1: Validate input parameters, operational preconditions, and state
         with Span("Swarm Run", {
             "workspace_path": self.state.workspace_path,
@@ -1229,6 +1343,7 @@ class SwarmOrchestratorThread(QThread):
         }) as swarm_span:
             try:
                 # Execute guarded operations and establish recovery boundaries
+                # The deadline covers the entire run, including all layer retries.
                 self._run_deadline = time.monotonic() + self.timeout_seconds
                 self._emit_cognition(
                     "run_started",
@@ -1253,6 +1368,8 @@ class SwarmOrchestratorThread(QThread):
                     return
 
                 # Phase 1: Architect Plan Generation
+                # (token_count is a rough whitespace-based estimate used only for tracing.)
+                # Phase 1: Architect Plan Generation
                 self.status_update.emit("[Architect] Analyzing files and formulating implementation plan...")
                 prompt_size = len(self.state.objective) + sum(len(v) for v in context.values())
                 token_count = len(self.state.objective.split()) + sum(len(v.split()) for v in context.values())
@@ -1275,6 +1392,8 @@ class SwarmOrchestratorThread(QThread):
                 )
                 self._process_events_if_main_thread()
 
+                # The plan comes from an LLM, so it is validated (relative, in-workspace, unique
+                # paths) before any task is scheduled; unsafe plans abort the run.
                 try:
                     # Execute guarded operations and establish recovery boundaries
                     tasks = self._validate_tasks(plan.get("tasks", []))
@@ -1309,6 +1428,9 @@ class SwarmOrchestratorThread(QThread):
                 changed_files = []
 
                 # 1. Group tasks into layers
+                # Layers run strictly in order because later layers import earlier ones; tasks
+                # inside a layer are independent and can run in parallel.
+                # 1. Group tasks into layers
                 layers = self.build_dependency_layers(tasks)
                 self.dependency_layers_built.emit(layers)
                 self._process_events_if_main_thread()
@@ -1338,6 +1460,8 @@ class SwarmOrchestratorThread(QThread):
                     max_layer_retries = self.max_loops
                     layer_failure_traces = {t["filepath"]: None for t in layer}
 
+                    # Self-correction loop: re-run the layer with the previous failure traces fed back
+                    # to the coder, up to max_loops attempts, subject to stop/timeout checks.
                     while not layer_success and layer_retries < max_layer_retries:
                         # Iterate over items, evaluate loop invariant, and update progress
                         if self._stop_requested:
@@ -1387,6 +1511,7 @@ class SwarmOrchestratorThread(QThread):
                 self._emit_cognition("swarm_finished", success=all_successful, summary=summary)
                 self._process_events_if_main_thread()
 
+            # Any unexpected error ends the run as a failure; the trace is flagged on the span.
             except Exception as e:
                 logger.exception("Swarm runtime exception")
                 swarm_span.status = "ERROR"
