@@ -33,6 +33,7 @@ class TestAdapterSandbox(unittest.TestCase):
     def setUpClass(cls):
         """Create one QApplication for the PyQt-based worker tests."""
         # Create QApplication instance for PyQt tests
+        # QWidget/QThread-based workers need a QApplication to exist; reuse an existing one so tests do not fight over the singleton.
         cls.app = QApplication.instance() or QApplication([])
 
     def test_extract_code_block(self):
@@ -41,6 +42,7 @@ class TestAdapterSandbox(unittest.TestCase):
         self.assertEqual(extract_code_block(text_with_fences), "print('hello')")
         
         text_no_fences = "print('hello')"
+        # Models sometimes answer with bare code; falling back to the whole text keeps evaluation working instead of scoring those answers as empty.
         self.assertEqual(extract_code_block(text_no_fences), "print('hello')")
 
     @patch("app.engine.model_loader.ModelLoader.get_instance")
@@ -49,6 +51,7 @@ class TestAdapterSandbox(unittest.TestCase):
         """evaluate_model_performance reports the adapter name, case count, positive tokens/second and 100% syntax accuracy for a mocked model returning valid code."""
         mock_llm = MagicMock()
         mock_llm.return_value = [{"choices": [{"text": "```python\ndef add(a, b): return a + b\n```"}]}]
+        # Tokens/second is computed from the tokenised length of the output, so a fixed fake tokenizer makes the speed positive without a real model.
         mock_llm.tokenize.return_value = [1, 2, 3, 4, 5]
         mock_get_instance.return_value = mock_llm
         
@@ -57,11 +60,13 @@ class TestAdapterSandbox(unittest.TestCase):
         self.assertEqual(stats["adapter"], "math_adapter")
         self.assertEqual(stats["eval_cases"], 1)
         self.assertTrue(stats["avg_tps"] > 0.0)
+        # The mocked completion is valid Python, so the syntax checker should score every case as passing.
         self.assertEqual(stats["syntax_accuracy"], 100.0)
 
     @patch("subprocess.run")
     def test_benchmark_worker_success(self, mock_run):
         """The benchmark worker runs the evaluation script (subprocess mocked), reads the report it writes, and emits one result with adapter_name and the speed delta (50%)."""
+        # The worker launches the evaluation script as a subprocess; returncode 0 makes it look successful without running anything.
         mock_run.return_value = MagicMock(returncode=0)
         
         # Mock writing of report file
@@ -73,6 +78,7 @@ class TestAdapterSandbox(unittest.TestCase):
             "accuracy_improvement_percent": 10.0
         }
         
+        # The worker communicates through a report file the script would have written, so the test writes one in the real location and deletes it in finally.
         report_path = Path("data/adapters") / "eval_report_math_adapter.json"
         report_path.parent.mkdir(parents=True, exist_ok=True)
         with report_path.open("w", encoding="utf-8") as fh:
@@ -85,10 +91,12 @@ class TestAdapterSandbox(unittest.TestCase):
             results = []
             worker.finished.connect(results.append)
             
+            # run() is called directly (synchronously) instead of start(), so the signal is emitted on this thread and can be asserted immediately.
             worker.run()
             
             self.assertEqual(len(results), 1)
             self.assertEqual(results[0]["adapter_name"], "math_adapter")
+            # 50% is the delta from the report (10 -> 15 tokens/s), passed through unchanged to the UI.
             self.assertEqual(results[0]["tps_improvement_percent"], 50.0)
         finally:
             if report_path.exists():

@@ -26,6 +26,7 @@ def test_telemetry_metrics_calculation():
     state = MockState()
     
     # 1. Create a dummy performance telemetry file
+    # A temp directory (cleaned in the finally block) holds the fake JSONL log so the real data/ telemetry is never read or modified.
     temp_dir = tempfile.mkdtemp()
     log_file = os.path.join(temp_dir, "performance_telemetry.jsonl")
     
@@ -36,6 +37,7 @@ def test_telemetry_metrics_calculation():
             "prefill_tokens_count": 100,
             "prefill_duration_sec": 0.5,  # 500 ms TTFT
             "tokens_per_second": 20.0,
+            # Entry 1: 20 hits on 100 prefill tokens; entry 2: 100 hits on 200. The two entries are chosen so a mean of per-entry ratios (35%) differs from the pooled ratio (40%).
             "kv_cache_hits": 20,
             "vram_usage_mb_delta": 10.0
         },
@@ -55,6 +57,7 @@ def test_telemetry_metrics_calculation():
             f.write(json.dumps(entry) + "\n")
             
     import app.ui.workspaces.system_config.observability_tab as ot
+    # The tab reads a module-level path constant, so the test swaps it and restores it in finally rather than passing the path in.
     original_path = ot.TELEMETRY_LOG_PATH
     ot.TELEMETRY_LOG_PATH = log_file
     
@@ -69,8 +72,10 @@ def test_telemetry_metrics_calculation():
         # TPS: (20.0 + 30.0) / 2 = 25.00 t/s
         assert tab.tps_pill.val_lbl.text() == "25.00 t/s"
         # Cache hits: (20 + 100) / (100 + 200) = 120 / 300 = 40.0%
+        # The hit rate is pooled (total hits / total prefill tokens), which weights larger prompts more; averaging ratios would show 35.0% instead.
         assert tab.cache_pill.val_lbl.text() == "40.0%"
         # VRAM Delta: (10.0 + 20.0) / 2 = +15.0 MB
+        # VRAM delta is shown signed (+/-) because a negative value means memory was released.
         assert tab.vram_pill.val_lbl.text() == "+15.0 MB"
     finally:
         ot.TELEMETRY_LOG_PATH = original_path

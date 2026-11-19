@@ -15,6 +15,7 @@ from app.engine.agent_memory import CodebaseMemory
 
 def test_codebase_memory_indexes_functions_classes_and_methods(tmp_path):
     """build_index() scans a workspace and records functions (name, args, docstring) and classes with their methods; the JSON persisted at db_path must equal the returned index so memory survives restarts."""
+    # The workspace is a throwaway source tree: build_index walks it for .py files and parses them, so the test controls exactly what symbols exist.
     workspace = tmp_path / "workspace"
     workspace.mkdir()
     (workspace / "math_utils.py").write_text(
@@ -36,10 +37,12 @@ class Calculator:
     db_path = tmp_path / "agent_memory.json"
 
     memory = CodebaseMemory(str(workspace), db_path=db_path)
+    # The index is built explicitly before querying so the query runs against known contents.
     index = memory.build_index()
 
     assert db_path.exists()
     persisted = json.loads(db_path.read_text(encoding="utf-8"))
+    # Reading the JSON back and comparing it with the returned dict checks that nothing is lost in serialisation (tuples/sets would not round-trip).
     assert persisted == index
     assert index["math_utils.py"]["functions"][0] == {
         "name": "add",
@@ -68,6 +71,7 @@ def test_query_memory_returns_matching_signature_text(tmp_path):
 
     result = memory.query_memory(["add"])
 
+    # The one-line signature+docstring form is deliberately compact: it is pasted into the coder prompt, where every token counts.
     assert "- math_utils.py: def add(a, b) -> Add two numbers." in result
 
 
@@ -90,6 +94,7 @@ def test_coder_agent_injects_codebase_signature_reference(tmp_path):
         return {"choices": [{"text": "def use_add(a, b):\n    return add(a, b)\n"}]}
 
     # No real model: the agent receives the recording fake.
+    # Patching get_instance as seen from swarm_agents means CoderAgent runs its normal prompt-building path without any real model.
     with patch("app.engine.swarm_agents.ModelLoader.get_instance", return_value=fake_llm):
         agent = CoderAgent()
         result = agent.generate(
@@ -100,5 +105,6 @@ def test_coder_agent_injects_codebase_signature_reference(tmp_path):
 
     assert "use_add" in result
     assert prompts
+    # Only the FIRST prompt is checked: the interface reference must be present in the initial request, not added after a failed attempt.
     assert "Codebase Interfaces & Signatures Reference" in prompts[0]
     assert "def add(a, b) -> Add two numbers." in prompts[0]
