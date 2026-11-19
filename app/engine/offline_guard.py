@@ -25,6 +25,7 @@ _INSTALLED = False
 _HF_OFFLINE_VARS = ("TRANSFORMERS_OFFLINE", "HF_DATASETS_OFFLINE", "HF_HUB_OFFLINE")
 _hf_vars_applied: bool = False
 _hf_vars_lock = threading.Lock()
+_hf_vars_we_set: set[str] = set()  # env vars the guard added (not pre-set by the user)
 _ORIGINAL_REQUESTS_REQUEST = None
 _ORIGINAL_URLLIB_URLOPEN = None
 _ORIGINAL_HTTPX_REQUEST = None
@@ -184,17 +185,21 @@ def apply_for_current_config() -> None:
     with _hf_vars_lock:
         if online_execution_enabled():
             if _hf_vars_applied:
-                for var in _HF_OFFLINE_VARS:
-                    # Iterate over items, evaluate loop invariant, and update progress
+                # Only remove variables this guard added itself; a value the user exported
+                # before the guard ran must survive going online.
+                for var in _hf_vars_we_set:
                     os.environ.pop(var, None)
+                _hf_vars_we_set.clear()
                 _hf_vars_applied = False
                 logger.info("Offline HF env vars cleared — online execution enabled.")
         else:
             if not _hf_vars_applied:
                 for var in _HF_OFFLINE_VARS:
                     # Iterate over items, evaluate loop invariant, and update progress
-                    # setdefault keeps any value the user already exported.
-                    os.environ.setdefault(var, "1")
+                    # Keep any value the user already exported, and remember which we set.
+                    if var not in os.environ:
+                        os.environ[var] = "1"
+                        _hf_vars_we_set.add(var)
                 _hf_vars_applied = True
                 logger.info(
                     "HF offline env vars applied (%s). "
