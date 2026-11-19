@@ -704,7 +704,7 @@ class KarlSidebarProvider {
     /**
      * Release every resource (socket, watcher, queues) when the extension shuts down.
      */
-    // Called from extension.js deactivate(); leaves nothing running that could outlive the extension host.
+    // Intended for extension shutdown: leaves no socket, timer or watcher running that could outlive the provider.
     dispose() {
         this.teardownSocket();
         if (this._gitWatcher) {
