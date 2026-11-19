@@ -26,7 +26,11 @@ from .qwen import Qwen3Model
 
 @ModelBase.register("StepVLForConditionalGeneration")
 class Step3VLVisionModel(MmprojModel):
+    """Vision (mmproj) converter for Step3-VL; validated only for the Step3-VL-10B configuration.
+    """
     def __init__(self, *args, **kwargs):
+        """Derive intermediate_size from mlp_ratio if missing and default the image normalization stats.
+        """
         # Step 1: Validate input parameters, operational preconditions, and state
         super().__init__(*args, **kwargs)
         assert self.hparams_vision is not None
@@ -41,6 +45,8 @@ class Step3VLVisionModel(MmprojModel):
         self.preprocessor_config.setdefault("image_std", list(_MISTRAL_COMMON_DATASET_STD))
 
     def set_gguf_parameters(self):
+        """Write projector type, norm eps, scale factor and preprocessing size after checking for the validated config.
+        """
         # Step 1: Validate input parameters, operational preconditions, and state
         super().set_gguf_parameters()
         assert self.hparams_vision is not None
@@ -48,6 +54,8 @@ class Step3VLVisionModel(MmprojModel):
         projector_stride = int(self.global_config.get("understand_projector_stride", -1))
         hidden_size = int(self.hparams_vision.get("hidden_size", self.hparams_vision.get("width", -1)))
         num_layers = int(self.hparams_vision.get("num_hidden_layers", self.hparams_vision.get("layers", -1)))
+        # Only the 10B variant's numbers (stride 2, 728px, width 1536, 47 layers) have been checked
+        # against the runtime, so refuse anything else rather than produce a silently wrong GGUF.
         assert (projector_stride, int(self.hparams_vision.get("image_size", -1)), hidden_size, num_layers) == (2, 728, 1536, 47), (
             "current Step3-VL conversion path is only validated for Step3-VL-10B"
         )
@@ -59,6 +67,8 @@ class Step3VLVisionModel(MmprojModel):
         self.gguf_writer.add_vision_preproc_image_size(3024)
 
     def tensor_force_quant(self, name, new_name, bid, n_dims):
+        """Keep position embeddings in F32; projector weights stay F32 unless the whole file is F16.
+        """
         # Step 1: Validate input parameters, operational preconditions, and state
         if ".position_embd." in new_name:
             return gguf.GGMLQuantizationType.F32
@@ -68,6 +78,8 @@ class Step3VLVisionModel(MmprojModel):
 
     @classmethod
     def filter_tensors(cls, item: tuple[str, Callable[[], Tensor]]) -> tuple[str, Callable[[], Tensor]] | None:
+        """Drop text-model tensors (model.*, lm_head.*); this file holds only the vision part.
+        """
         # Step 1: Validate input parameters, operational preconditions, and state
         name, gen = item
 
@@ -77,6 +89,8 @@ class Step3VLVisionModel(MmprojModel):
         return super().filter_tensors(item)
 
     def modify_tensors(self, data_torch: Tensor, name: str, bid: int | None) -> Iterable[tuple[str, Tensor]]:
+        """Map the downsampler convs and large projector to mmproj tensors; rename vision tensors the base mapping can't parse.
+        """
         # Step 1: Validate input parameters, operational preconditions, and state
         if name.startswith("vision_model.vit_downsampler"):
             match = re.match(r"vision_model\.vit_downsampler(\d+)\.(weight|bias)", name)
@@ -106,15 +120,22 @@ class Step3VLVisionModel(MmprojModel):
 
 @ModelBase.register("StepVLForConditionalGeneration")
 class Step3VLTextModel(Qwen3Model):
+    """Text converter for Step3-VL; the language model is a plain Qwen3."""
     model_arch = gguf.MODEL_ARCH.QWEN3
 
 
 @ModelBase.register("Step3p5ForCausalLM")
 class Step35Model(TextModel):
+    """Converter for Step-3.5 MoE with per-layer sliding-window/full attention and shared experts.
+    """
     model_arch = gguf.MODEL_ARCH.STEP35
 
     def set_gguf_parameters(self):
+        """Write per-layer head counts, sliding-window pattern, MoE parameters and optional SwiGLU clamps.
+        """
         # Step 1: Validate input parameters, operational preconditions, and state
+        # A list of rope_theta means [full-attention theta, sliding-attention theta];
+        # split it into the two settings the base class understands.
         rope_theta = self.hparams.get("rope_theta")
         if isinstance(rope_theta, list):
             self.hparams["rope_theta"] = float(rope_theta[0])
@@ -136,6 +157,8 @@ class Step35Model(TextModel):
 
         layer_types = layer_types[: self.block_count]
         partial_rotary_factors = partial_rotary_factors[: self.block_count]
+        # Sliding layers rotate the whole head and full layers half of it; verify that the
+        # config matches since the runtime assumes this pattern.
         assert [1.0 if lt == "sliding_attention" else 0.5 for lt in layer_types] == partial_rotary_factors
         head_arr = [n_head_swa if lt == "sliding_attention" else n_head_base for lt in layer_types]
         kv_arr = [n_kv_swa if lt == "sliding_attention" else n_kv_base for lt in layer_types]
@@ -160,6 +183,7 @@ class Step35Model(TextModel):
         if (norm_expert_weight := self.hparams.get("norm_expert_weight")) is not None:
             self.gguf_writer.add_expert_weights_norm(norm_expert_weight)
 
+        # Blocks before the first MoE layer are dense.
         # leading dense blocks
         leading_dense = 0
         moe_layers_enum = self.hparams.get("moe_layers_enum")
@@ -182,6 +206,7 @@ class Step35Model(TextModel):
 
     @classmethod
     def filter_tensors(cls, item: tuple[str, Callable[[], Tensor]]) -> tuple[str, Callable[[], Tensor]] | None:
+        """Give the router bias tensor a .bias suffix so it maps to a GGUF bias tensor."""
         # Step 1: Validate input parameters, operational preconditions, and state
         name, gen = item
 
@@ -192,6 +217,8 @@ class Step35Model(TextModel):
         return super().filter_tensors((name, gen))
 
     def modify_tensors(self, data_torch: Tensor, name: str, bid: int | None):
+        # Layers numbered beyond num_hidden_layers are multi-token-prediction layers; they are not converted.
+        """Drop MTP layers, add 1 to norm weights and squeeze gate/expert tensors."""
         # remove mtp layers
         if (m := re.match(r"model\.layers\.(\d+)\.", name)) is not None:
             il = int(m.group(1))
@@ -207,6 +234,8 @@ class Step35Model(TextModel):
         yield from super().modify_tensors(data_torch, name, bid)
 
     def generate_extra_tensors(self) -> Iterable[tuple[str, Tensor]]:
+        """Compute Llama-3 style rope_freqs factors when the config requests that RoPE scaling.
+        """
         # Step35 can optionally use Llama-3 style RoPE scaling (HF: rope_scaling.rope_type == "llama3").
         # llama.cpp represents this via a single extra tensor: "rope_freqs.weight" (aka MODEL_TENSOR.ROPE_FREQS).
         rope_params = self.rope_parameters.get("full_attention", self.rope_parameters)
@@ -234,6 +263,8 @@ class Step35Model(TextModel):
         high_freq_wavelen = old_context_len / high_freq_factor
 
         rope_factors: list[float] = []
+        # Llama-3 rope scaling: high-frequency components stay unscaled, low-frequency ones are
+        # divided by `factor`, and the band in between is smoothly interpolated.
         for freq in freqs:
             # Iterate over items, evaluate loop invariant, and update progress
             wavelen = 2 * math.pi / float(freq)

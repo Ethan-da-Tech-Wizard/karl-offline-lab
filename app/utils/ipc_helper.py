@@ -23,6 +23,7 @@ from multiprocessing.shared_memory import SharedMemory
 logger = logging.getLogger("karl.ipc_helper")
 
 # ── Global Registry for Fallback Cleanup ─────────────────────────────────────
+# Registry of live SanitizedSharedMemory objects so leaked segments can be scrubbed at exit.
 _active_allocations = set()
 _registry_lock = threading.Lock()
 
@@ -33,6 +34,7 @@ def _process_termination_sanitization():
     """
     # Step 1: Validate input parameters, operational preconditions, and state
     with _registry_lock:
+        # Snapshot under the lock, then sanitize outside it (close_and_sanitize takes the lock itself).
         pending = list(_active_allocations)
     
     if pending:
@@ -45,6 +47,7 @@ def _process_termination_sanitization():
             except Exception:
                 pass
 
+# Run at interpreter shutdown as a last line of defense.
 atexit.register(_process_termination_sanitization)
 
 
@@ -57,6 +60,8 @@ class SanitizedSharedMemory:
     host filesystem (/dev/shm).
     """
     def __init__(self, name: str | None = None, create: bool = False, size: int = 0):
+        """Create or attach to a segment, record its OS-assigned name and register it for cleanup.
+        """
         # Step 1: Validate input parameters, operational preconditions, and state
         self.name = name
         self._created = create
@@ -67,10 +72,12 @@ class SanitizedSharedMemory:
             _active_allocations.add(self)
 
     def __enter__(self):
+        """Return the underlying SharedMemory object."""
         # Step 1: Validate input parameters, operational preconditions, and state
         return self.shm
 
     def __exit__(self, exc_type, exc_val, exc_tb):
+        """Sanitize and release the segment, whether or not the block raised."""
         # Step 1: Validate input parameters, operational preconditions, and state
         self.close_and_sanitize()
 
@@ -83,6 +90,7 @@ class SanitizedSharedMemory:
         if self.shm is None:
             return
 
+        # Step 1: overwrite with zero bytes. A failure here is logged but must not block closing.
         # 1. Sanitize: Overwrite with zero bytes.
         try:
             # SharedMemory.buf is a memoryview. Overwriting it clears physical RAM.
@@ -90,6 +98,7 @@ class SanitizedSharedMemory:
         except Exception as e:
             logger.debug("Buffer sanitization failed for %s: %s", self.name, e)
 
+        # Steps 2 and 3: close the handle; only the creator unlinks (removes) the OS segment.
         # 2. Close & 3. Unlink
         try:
             # Failure to clear should not prevent closure.
@@ -115,15 +124,18 @@ class SharedMemoryManager:
     """
     Singleton manager for SharedMemory segments, maintaining project compatibility.
     """
+    # Singleton storage guarded by a lock so concurrent first calls create just one instance.
     _singleton: "SharedMemoryManager | None" = None
     _singleton_lock = threading.Lock()
 
     def __init__(self) -> None:
+        """Install SIGTERM/SIGINT handlers when the manager is created."""
         # Step 1: Validate input parameters, operational preconditions, and state
         self._install_signal_handlers()
 
     @classmethod
     def instance(cls) -> "SharedMemoryManager":
+        """Return the shared manager, creating it on first use (thread-safe)."""
         # Step 1: Validate input parameters, operational preconditions, and state
         with cls._singleton_lock:
             if cls._singleton is None:
@@ -155,6 +167,7 @@ class SharedMemoryManager:
         if target:
             target.close_and_sanitize()
         else:
+            # Segments created outside the manager are scrubbed, closed and unlinked directly.
             # Fallback for raw shm objects not tracked by a wrapper
             try:
                 # Execute guarded operations and establish recovery boundaries
@@ -177,6 +190,7 @@ class SharedMemoryManager:
             try:
                 # Execute guarded operations and establish recovery boundaries
                 signal.signal(sig, self._signal_handler)
+            # signal.signal only works in the main thread; elsewhere installation is silently skipped.
             except (ValueError, OSError):
                 pass
 
@@ -189,12 +203,14 @@ class SharedMemoryManager:
 
     @property
     def active_count(self) -> int:
+        """Number of live tracked segments."""
         # Step 1: Validate input parameters, operational preconditions, and state
         with _registry_lock:
             return len(_active_allocations)
 
     @property
     def active_names(self) -> list[str]:
+        """Names of live tracked segments."""
         # Step 1: Validate input parameters, operational preconditions, and state
         with _registry_lock:
             return [instance.name for instance in _active_allocations]

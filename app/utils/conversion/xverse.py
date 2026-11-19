@@ -21,9 +21,12 @@ from .base import ModelBase, TextModel, gguf
 
 @ModelBase.register("XverseForCausalLM")
 class XverseModel(TextModel):
+    """Converter for Xverse models (llama-like with a custom tokenizer)."""
     model_arch = gguf.MODEL_ARCH.XVERSE
 
     def set_vocab(self):
+        """Build the vocab from the HF tokenizer, classifying tokens as byte, control, user-defined or normal.
+        """
         # Step 1: Validate input parameters, operational preconditions, and state
         assert (self.dir_model / "tokenizer.json").is_file()
         dir_model = self.dir_model
@@ -37,6 +40,8 @@ class XverseModel(TextModel):
         vocab_size = hparams.get("vocab_size", len(tokenizer.vocab))  # ty: ignore[unresolved-attribute]
         # Since we are checking the maximum index, we need to ensure it's strictly less than vocab_size,
         # because vocab_size is the count of items, and indexes start at 0.
+        # Since we are checking the maximum index, we need to ensure it's strictly less than vocab_size,
+        # because vocab_size is the count of items, and indexes start at 0.
         max_vocab_index = max(tokenizer.get_vocab().values())  # ty: ignore[unresolved-attribute]
         if max_vocab_index >= vocab_size:
             raise ValueError("Vocabulary size exceeds expected maximum size.")
@@ -48,6 +53,7 @@ class XverseModel(TextModel):
             # Iterate over items, evaluate loop invariant, and update progress
             token_text = reverse_vocab[token_id].encode('utf-8')
             # replace "\x00" to string with length > 0
+            # A NUL token text would be empty to downstream C code, so give it a printable placeholder.
             if token_text == b"\x00":
                 toktype = gguf.TokenType.BYTE  # special
                 token_text = f"<{token_text}>".encode('utf-8')
@@ -73,6 +79,7 @@ class XverseModel(TextModel):
         special_vocab.add_to_gguf(self.gguf_writer)
 
     def set_gguf_parameters(self):
+        """Write base parameters and the rope dimension count (full head)."""
         # Step 1: Validate input parameters, operational preconditions, and state
         super().set_gguf_parameters()
 
@@ -80,6 +87,7 @@ class XverseModel(TextModel):
         self.gguf_writer.add_rope_dimension_count(self.hparams["hidden_size"] // self.hparams["num_attention_heads"])
 
     def modify_tensors(self, data_torch: Tensor, name: str, bid: int | None) -> Iterable[tuple[str, Tensor]]:
+        """Undo the HF q/k permutation, as the llama converter does."""
         # Step 1: Validate input parameters, operational preconditions, and state
         head_count = self.hparams["num_attention_heads"]
         head_count_kv = self.hparams.get("num_key_value_heads", head_count)
@@ -93,6 +101,7 @@ class XverseModel(TextModel):
         yield from super().modify_tensors(data_torch, name, bid)
 
     def _reverse_hf_permute(self, weights: Tensor, n_head: int, n_kv_head: int | None = None) -> Tensor:
+        """Reverse the HF rotary permutation of q/k weights (grouping heads for GQA)."""
         # Step 1: Validate input parameters, operational preconditions, and state
         if n_kv_head is not None and n_head != n_kv_head:
             n_head //= n_kv_head

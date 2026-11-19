@@ -19,9 +19,13 @@ from .base import MmprojModel, ModelBase, TextModel, gguf
 
 @ModelBase.register("UltravoxModel")
 class UltravoxModel(TextModel):
+    """Placeholder text-model class for Ultravox: it always raises, directing users to --mmproj.
+    """
     model_arch = gguf.MODEL_ARCH.LLAMA # dummy
 
     def __init__(self, *args, **kwargs):
+        """Refuse conversion: Ultravox reuses another LLM for text, so only the audio encoder can be converted.
+        """
         # Step 1: Validate input parameters, operational preconditions, and state
         super().__init__(*args, **kwargs)
         raise NotImplementedError("Ultravox does not have text decoder. Instead, it uses Llama or other models for text. If you want to get the audio encoder, please use --mmproj argument")
@@ -29,10 +33,13 @@ class UltravoxModel(TextModel):
 
 @ModelBase.register("GlmasrModel")
 class GlmASRWhisperEncoderModel(MmprojModel):
+    """Audio (mmproj) converter for GLM-ASR: Whisper-style encoder plus an adapter MLP."""
     has_vision_encoder = False
     has_audio_encoder = True
 
     def __init__(self, *args, **kwargs):
+        """Map Whisper config names (d_model, encoder_ffn_dim, ...) to the generic hidden/intermediate/head keys.
+        """
         # Step 1: Validate input parameters, operational preconditions, and state
         super().__init__(*args, **kwargs)
         if "hidden_size" not in self.hparams and "intermediate_size" not in self.hparams:
@@ -41,6 +48,8 @@ class GlmASRWhisperEncoderModel(MmprojModel):
             self.hparams["num_attention_heads"] = self.hparams["encoder_attention_heads"]
 
     def set_gguf_parameters(self):
+        """Write projector type, mel bin count, norm eps and the audio frame stacking factor.
+        """
         # Step 1: Validate input parameters, operational preconditions, and state
         super().set_gguf_parameters()
         self.gguf_writer.add_clip_projector_type(gguf.VisionProjectorType.GLMA)
@@ -49,6 +58,7 @@ class GlmASRWhisperEncoderModel(MmprojModel):
         self.gguf_writer.add_audio_stack_factor(self.global_config["merge_factor"])
 
     def tensor_force_quant(self, name, new_name, bid, n_dims):
+        """Store conv weights in F16."""
         # Step 1: Validate input parameters, operational preconditions, and state
         if ".conv" in name and ".weight" in name:
             return gguf.GGMLQuantizationType.F16
@@ -56,6 +66,8 @@ class GlmASRWhisperEncoderModel(MmprojModel):
 
     @classmethod
     def filter_tensors(cls, item: tuple[str, Callable[[], Tensor]]) -> tuple[str, Callable[[], Tensor]] | None:
+        """Drop LLM tensors and rename the audio encoder and adapter tensors to the names the base class maps.
+        """
         # Step 1: Validate input parameters, operational preconditions, and state
         name, gen = item
 
@@ -79,6 +91,8 @@ class GlmASRWhisperEncoderModel(MmprojModel):
         return super().filter_tensors((name, gen))
 
     def modify_tensors(self, data_torch: Tensor, name: str, bid: int | None) -> Iterable[tuple[str, Tensor]]:
+        """Split the begin/end-of-audio token tensor, drop the adapter proj and add a trailing dim to conv biases.
+        """
         # Step 1: Validate input parameters, operational preconditions, and state
         if name.startswith("audio_encoder.audio_bos_eos_token."):
             yield from super().modify_tensors(data_torch[0], "model.vision.boi", bid)
@@ -98,10 +112,14 @@ class GlmASRWhisperEncoderModel(MmprojModel):
 
 @ModelBase.register("Qwen2AudioForConditionalGeneration")
 class WhisperEncoderModel(MmprojModel):
+    """Base audio (mmproj) converter for Whisper-style encoders used by audio LLMs (Qwen2-Audio and friends).
+    """
     has_vision_encoder = False # no vision encoder
     has_audio_encoder = True
 
     def __init__(self, *args, **kwargs):
+        """Map Whisper config names (d_model, encoder_ffn_dim, ...) to the generic hidden/intermediate/head keys.
+        """
         # Step 1: Validate input parameters, operational preconditions, and state
         super().__init__(*args, **kwargs)
         if "hidden_size" not in self.hparams and "intermediate_size" not in self.hparams:
@@ -110,6 +128,7 @@ class WhisperEncoderModel(MmprojModel):
             self.hparams["num_attention_heads"] = self.hparams["encoder_attention_heads"]
 
     def set_gguf_parameters(self):
+        """Write projector type (Qwen2A), mel bin count and norm eps."""
         # Step 1: Validate input parameters, operational preconditions, and state
         super().set_gguf_parameters()
         self.gguf_writer.add_clip_projector_type(gguf.VisionProjectorType.QWEN2A)
@@ -117,6 +136,7 @@ class WhisperEncoderModel(MmprojModel):
         self.gguf_writer.add_audio_attention_layernorm_eps(self.hparams.get("layer_norm_eps", 1e-5))
 
     def tensor_force_quant(self, name, new_name, bid, n_dims):
+        """Store conv weights in F16."""
         # Step 1: Validate input parameters, operational preconditions, and state
         if ".conv" in name and ".weight" in name:
             return gguf.GGMLQuantizationType.F16
@@ -124,6 +144,8 @@ class WhisperEncoderModel(MmprojModel):
 
     @classmethod
     def filter_tensors(cls, item: tuple[str, Callable[[], Tensor]]) -> tuple[str, Callable[[], Tensor]] | None:
+        """Prefix multi_modal_projector with 'audio.' so it does not clash with vision projector names.
+        """
         # Step 1: Validate input parameters, operational preconditions, and state
         name, gen = item
 
@@ -134,6 +156,7 @@ class WhisperEncoderModel(MmprojModel):
         return super().filter_tensors((name, gen))
 
     def modify_tensors(self, data_torch: Tensor, name: str, bid: int | None) -> Iterable[tuple[str, Tensor]]:
+        """Add a trailing dim to conv1/conv2 biases so they broadcast."""
         # Step 1: Validate input parameters, operational preconditions, and state
         if "conv1.bias" in name or "conv2.bias" in name:
             # transpose conv1 and conv2 bias
@@ -144,6 +167,7 @@ class WhisperEncoderModel(MmprojModel):
 
 @ModelBase.register("UltravoxModel")
 class UltravoxWhisperEncoderModel(WhisperEncoderModel):
+    """Ultravox audio encoder: adds the Ultravox projector type and stack factor."""
     has_vision_encoder = False # no vision encoder
     has_audio_encoder = True
 
@@ -156,14 +180,17 @@ class UltravoxWhisperEncoderModel(WhisperEncoderModel):
 
 @ModelBase.register("MERaLiON2ForConditionalGeneration")
 class MERaLiONWhisperEncoderModel(WhisperEncoderModel):
+    """MERaLiON audio encoder with its own speech_config and gated adapter MLP."""
     has_vision_encoder = False
     has_audio_encoder = True
 
     def get_audio_config(self) -> dict[str, Any] | None:
+        """Audio hyperparameters live under speech_config."""
         # Step 1: Validate input parameters, operational preconditions, and state
         return self.global_config.get("speech_config")
 
     def set_gguf_parameters(self):
+        """Write the MERaLiON projector type and stack factor (default 15)."""
         # Step 1: Validate input parameters, operational preconditions, and state
         super().set_gguf_parameters()
         self.gguf_writer.add_clip_projector_type(gguf.VisionProjectorType.MERALION)
@@ -171,6 +198,7 @@ class MERaLiONWhisperEncoderModel(WhisperEncoderModel):
 
     @classmethod
     def filter_tensors(cls, item: tuple[str, Callable[[], Tensor]]) -> tuple[str, Callable[[], Tensor]] | None:
+        """Drop the text decoder and rename speech_encoder.* to audio_tower.*."""
         # Step 1: Validate input parameters, operational preconditions, and state
         name, gen = item
 
@@ -183,6 +211,8 @@ class MERaLiONWhisperEncoderModel(WhisperEncoderModel):
         return super().filter_tensors((name, gen))
 
     def modify_tensors(self, data_torch: Tensor, name: str, bid: int | None) -> Iterable[tuple[str, Tensor]]:
+        """Map the speech norm and the four adapter linears (mlp_adapter, gate, pool, out) to mmproj tensors.
+        """
         # Step 1: Validate input parameters, operational preconditions, and state
         suffix = "." + name.rsplit(".", 1)[-1]
 
@@ -206,10 +236,13 @@ class MERaLiONWhisperEncoderModel(WhisperEncoderModel):
 
 @ModelBase.register("VoxtralForConditionalGeneration")
 class VoxtralWhisperEncoderModel(WhisperEncoderModel):
+    """Voxtral audio encoder."""
     has_vision_encoder = False # no vision encoder
     has_audio_encoder = True
 
     def set_gguf_parameters(self):
+        """Write the Voxtral projector type; stack factor 4 equals intermediate_size // hidden_size.
+        """
         # Step 1: Validate input parameters, operational preconditions, and state
         super().set_gguf_parameters()
         self.gguf_writer.add_clip_projector_type(gguf.VisionProjectorType.VOXTRAL)
@@ -218,12 +251,15 @@ class VoxtralWhisperEncoderModel(WhisperEncoderModel):
 
 @ModelBase.register("AudioFlamingo3ForConditionalGeneration")
 class AudioFlamingo3WhisperEncoderModel(WhisperEncoderModel):
+    """Audio encoder for AudioFlamingo3 / Music Flamingo."""
     def set_gguf_parameters(self):
+        """Write the MUSIC_FLAMINGO projector type."""
         # Step 1: Validate input parameters, operational preconditions, and state
         super().set_gguf_parameters()
         self.gguf_writer.add_clip_projector_type(gguf.VisionProjectorType.MUSIC_FLAMINGO)
 
     def tensor_force_quant(self, name, new_name, bid, n_dims):
+        """Keep conv weights in F32: the model was trained in BF16 so F16 could lose range."""
         # Step 1: Validate input parameters, operational preconditions, and state
         if ".conv" in name and ".weight" in name:
             # Was trained in BF16, being safe, avoiding quantizing to FP16

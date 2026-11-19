@@ -21,6 +21,7 @@ import logging
 import uuid
 
 # Module-level ContextVar — default "system" when no ID has been assigned.
+# ContextVar (not a thread-local) so the ID also follows asyncio tasks across awaits.
 correlation_id: contextvars.ContextVar[str] = contextvars.ContextVar(
     "correlation_id", default="system"
 )
@@ -58,6 +59,8 @@ class CorrelationFilter(logging.Filter):
     """
 
     def filter(self, record: logging.LogRecord) -> bool:
+        """Stamp the record with the active correlation ID; always returns True so no record is dropped.
+        """
         # Step 1: Validate input parameters, operational preconditions, and state
         record.correlation_id = get_correlation_id()  # type: ignore[attr-defined]
         return True

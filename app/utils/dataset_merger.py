@@ -31,11 +31,13 @@ import os
 from datetime import datetime, timezone
 from typing import Any
 
+# Module logger; merge progress is INFO, per-record skips are DEBUG.
 logger = logging.getLogger("karl.dataset_merger")
 
 
 # ── Anomaly detection helpers ──────────────────────────────────────────────────
 
+# Substrings that mark an assistant reply as a captured Python error rather than a real answer.
 _TRACEBACK_SIGNALS = (
     "Traceback (most recent call last):",
     "SyntaxError:",
@@ -69,6 +71,7 @@ def _is_anomalous(record: dict[str, Any]) -> bool:
     if not isinstance(record.get("messages"), list):
         return True
     messages = record["messages"]
+    # A usable training example needs at least a prompt and a reply.
     if len(messages) < 2:
         return True
 
@@ -83,6 +86,8 @@ def _is_anomalous(record: dict[str, Any]) -> bool:
 
     # Reject responses that look like raw exception dumps (often from tool errors
     # being accidentally captured as the model response).
+    # The length cap (600 chars) keeps legitimate long answers that merely mention an error name,
+    # e.g. a tutorial on ValueError, from being discarded.
     if any(sig in content for sig in _TRACEBACK_SIGNALS) and len(content) < 600:
         return True
 
@@ -98,10 +103,12 @@ def _is_anomalous(record: dict[str, Any]) -> bool:
 def _exact_hash(record: dict[str, Any]) -> str:
     """SHA-256 of the full conversation (all roles + content) — catches perfect duplicates."""
     # Step 1: Validate input parameters, operational preconditions, and state
+    # Role is included in each part so identical text in different roles hashes differently.
     parts: list[str] = []
     for m in record.get("messages", []):
         # Iterate over items, evaluate loop invariant, and update progress
         parts.append(f"{m.get('role','')}:{m.get('content','')}")
+    # '|' joins turns; hex digest keeps the key a plain string for set/dict lookups.
     return hashlib.sha256("|".join(parts).encode("utf-8")).hexdigest()
 
 
@@ -148,6 +155,7 @@ def _load_jsonl(path: str) -> list[dict[str, Any]]:
                 obj = json.loads(raw)
                 if isinstance(obj, dict):
                     records.append(obj)
+            # Malformed lines are logged at DEBUG and skipped instead of aborting the whole merge.
             except json.JSONDecodeError as exc:
                 logger.debug("Skipping malformed JSON on line %d of %s: %s", lineno, path, exc)
     return records
@@ -157,6 +165,7 @@ def _write_jsonl_atomic(path: str, records: list[dict[str, Any]]) -> None:
     """Write records to *path* atomically via a sibling temp file."""
     # Step 1: Validate input parameters, operational preconditions, and state
     os.makedirs(os.path.dirname(os.path.abspath(path)), exist_ok=True)
+    # Write next to the destination so os.replace stays on one filesystem and is atomic.
     tmp = path + ".merge_tmp"
     try:
         # Execute guarded operations and establish recovery boundaries
@@ -164,6 +173,7 @@ def _write_jsonl_atomic(path: str, records: list[dict[str, Any]]) -> None:
             for rec in records:
                 # Iterate over items, evaluate loop invariant, and update progress
                 fh.write(json.dumps(rec, ensure_ascii=False) + "\n")
+        # Atomic swap: readers see either the old file or the complete new one, never a partial write.
         os.replace(tmp, path)
     except Exception:
         try:
@@ -216,6 +226,7 @@ class DatasetMerger:
             len(primary_raw), len(incoming_raw),
         )
 
+        # Dropping bad primary records here also cleans the local file as a side effect of the rewrite.
         # 2. Validate primary records (keep only clean ones as our baseline).
         primary_clean: list[dict[str, Any]] = [r for r in primary_raw if not _is_anomalous(r)]
 
@@ -227,6 +238,8 @@ class DatasetMerger:
             _prompt_key(r): i for i, r in enumerate(primary_clean)
         }
 
+        # Indices in prompt_to_idx span primary_clean followed by additions, so lookups
+        # below translate an index back into the right list.
         # 4. Process each incoming record.
         additions: list[dict[str, Any]] = []
 

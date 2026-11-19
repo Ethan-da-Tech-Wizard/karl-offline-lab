@@ -19,13 +19,17 @@ from .base import MmprojModel, ModelBase, gguf, logger
 
 @ModelBase.register("YoutuVLForConditionalGeneration")
 class YoutuVLVisionModel(MmprojModel):
+    """Vision (mmproj) converter for Youtu-VL with window attention on irregular layers."""
     def __init__(self, *args, **kwargs):
+        """Default the image size when the config omits it."""
         # Step 1: Validate input parameters, operational preconditions, and state
         super().__init__(*args, **kwargs)
         assert self.hparams_vision is not None
         self.hparams_vision["image_size"] = self.hparams_vision.get("image_size", 560)
 
     def set_gguf_parameters(self):
+        """Write projector type, activation, merge size, window size and full-attention layer indices.
+        """
         # Step 1: Validate input parameters, operational preconditions, and state
         super().set_gguf_parameters()
 
@@ -46,6 +50,8 @@ class YoutuVLVisionModel(MmprojModel):
         window_size = self.hparams.get("window_size")
         if window_size is not None:
             self.gguf_writer.add_vision_window_size(window_size)
+        # fullatt_block_indexes lists layers that use full attention (e.g. [2, 5, 8, 11]); all
+        # other layers use window attention. The pattern is irregular so explicit indices are stored.
         # fullatt_block_indexes contains explicit layer indices that use full attention
         # e.g., [2, 5, 8, 11] means layers 2, 5, 8, 11 use full attention
         # All other layers use window attention
@@ -56,6 +62,8 @@ class YoutuVLVisionModel(MmprojModel):
 
     @classmethod
     def filter_tensors(cls, item: tuple[str, Callable[[], Tensor]]) -> tuple[str, Callable[[], Tensor]] | None:
+        """Drop language-model tensors; only the vision encoder and projector are converted here.
+        """
         # Step 1: Validate input parameters, operational preconditions, and state
         name, gen = item
 
@@ -67,6 +75,8 @@ class YoutuVLVisionModel(MmprojModel):
         return super().filter_tensors(item)
 
     def modify_tensors(self, data_torch: Tensor, name: str, bid: int | None) -> Iterable[tuple[str, Tensor]]:
+        """Map via the standard tensor map but skip (with a warning) tensors that have no mapping.
+        """
         # Try to map the tensor using TensorNameMap (handles vision encoder and projector)
         try:
             # Execute guarded operations and establish recovery boundaries

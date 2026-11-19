@@ -30,10 +30,12 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Optional
 
+# Module logger for replay scanning and diffing.
 logger = logging.getLogger("karl.swarm_replay")
 
 # Cognition node types that map onto a distinct replay step, and the replay
 # step "type" bucket each one falls into.
+# Node types not listed here (e.g. run_started, swarm_finished) are bookkeeping and get no replay step.
 _STEP_TYPE_BY_NODE_TYPE = {
     "architect_plan": "architect",
     "candidates_generated": "coder",
@@ -51,6 +53,7 @@ class SwarmReplayManager:
     """Reconstructs historical swarm execution logs and file-level edits."""
 
     def __init__(self, trace_dir: str = "data/logs/swarm_cognition"):
+        """Remember the directory holding run_<id>.json cognition files."""
         # Kept the "trace_dir" name for interface compatibility with the
         # original scaffold, but this reads cognition-graph files, not raw
         # generation traces — those don't carry per-run structure.
@@ -78,6 +81,7 @@ class SwarmReplayManager:
                 continue
             runs.append(self._summarize(run_id, nodes, path))
 
+        # ISO-8601 UTC timestamps sort correctly as strings, so a plain string sort gives newest-first.
         runs.sort(key=lambda r: r.get("timestamp") or "", reverse=True)
         return runs
 
@@ -115,6 +119,7 @@ class SwarmReplayManager:
 
         objective = ""
         workspace_path: Optional[str] = None
+        # Remember files that drifted so later steps touching them are also flagged.
         drifted_filepaths: set[str] = set()
         steps: list[dict[str, Any]] = []
 
@@ -138,6 +143,7 @@ class SwarmReplayManager:
 
             filepath = str(node.get("filepath", ""))
             diff = ""
+            # Diffs are computed lazily against the swarm's pre-edit backup, so they show what the run actually changed.
             if node_type == "file_written" and workspace_path:
                 diff = self._compute_diff(workspace_path, filepath, node.get("backup_path", ""))
 
@@ -169,6 +175,8 @@ class SwarmReplayManager:
 
     @staticmethod
     def _read_nodes(path: Path) -> Optional[list[dict]]:
+        """Load the JSON list of cognition nodes, or None if the file is missing, corrupt or not a list.
+        """
         # Step 1: Validate input parameters, operational preconditions, and state
         if not path.exists():
             return None
@@ -182,6 +190,8 @@ class SwarmReplayManager:
 
     @staticmethod
     def _summarize(run_id: str, nodes: list[dict], path: Path) -> dict[str, Any]:
+        """Build a one-line summary (objective, earliest timestamp, step count, success) from a run's nodes.
+        """
         # Step 1: Validate input parameters, operational preconditions, and state
         objective = ""
         success = False
@@ -202,6 +212,7 @@ class SwarmReplayManager:
                 finished = True
                 success = bool(node.get("success"))
 
+        # Prefer the earliest node timestamp; fall back to the file modification time.
         if earliest_ts is not None:
             timestamp = datetime.fromtimestamp(earliest_ts, tz=timezone.utc).isoformat()
         else:
@@ -212,11 +223,14 @@ class SwarmReplayManager:
             "timestamp": timestamp,
             "objective": objective,
             "steps_count": len(nodes),
+            # A run that never recorded swarm_finished (crashed or still running) counts as unsuccessful.
             "success": success if finished else False,
         }
 
     @staticmethod
     def _workspace_root_from_backup_path(backup_path: Path) -> Optional[Path]:
+        """Walk up from a backup file to the workspace that contains the .karl_swarm_backups folder.
+        """
         # Step 1: Validate input parameters, operational preconditions, and state
         for parent in backup_path.parents:
             # Iterate over items, evaluate loop invariant, and update progress
@@ -237,6 +251,7 @@ class SwarmReplayManager:
             new_text = current_path.read_text(encoding="utf-8", errors="ignore") if current_path.exists() else ""
 
             backup = Path(backup_path) if backup_path else None
+            # A '.missing' marker or absent backup means the file did not exist before the swarm created it.
             is_new_file = backup is None or backup.suffix == ".missing" or not backup.exists()
             old_text = "" if is_new_file else backup.read_text(encoding="utf-8", errors="ignore")
 

@@ -25,7 +25,10 @@ import re
 import numpy as np
 
 class TfidfEmbedder:
+    """Minimal TF-IDF vectorizer: fit() learns vocabulary and IDF, transform() yields L2-normalized vectors.
+    """
     def __init__(self):
+        """Start with an empty vocabulary, empty IDF and a small built-in stop-word list."""
         # Step 1: Validate input parameters, operational preconditions, and state
         self.vocabulary: dict[str, int] = {}  # maps word -> vocab index
         self.idf: np.ndarray = np.array([])    # IDF values indexed by vocab index
@@ -37,6 +40,7 @@ class TfidfEmbedder:
 
     def tokenize(self, text: str) -> list[str]:
         """Normalize, lowercase, and tokenize text, filtering short words and stop words."""
+        # \b\w{2,}\b keeps alphanumeric runs of 2+ characters, which removes punctuation and single letters.
         # Convert to lowercase and strip non-alphanumeric chars
         words = re.findall(r"\b\w{2,}\b", text.lower())
         return [w for w in words if w not in self.stop_words]
@@ -65,6 +69,7 @@ class TfidfEmbedder:
             self.idf = np.array([])
             return
 
+        # Count each word once per document (a set) so DF is a document count, not a term count.
         # 3. Calculate Document Frequency (DF) for each word
         df = np.zeros(vocab_size)
         for tokens in doc_tokens:
@@ -106,6 +111,7 @@ class TfidfEmbedder:
         # 2. Compute TF-IDF
         vector = tf * self.idf
 
+        # After L2 normalization the dot product of two vectors equals their cosine similarity.
         # 3. L2 Normalization (so dot product maps directly to cosine similarity)
         norm = np.linalg.norm(vector)
         if norm > 0.0:
