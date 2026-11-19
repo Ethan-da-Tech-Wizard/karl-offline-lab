@@ -99,7 +99,7 @@ def test_eval_harness_model_and_adapter_selection():
         report = harness.run(
             dataset_path=dataset_path,
             workflow_name="grounded_answer",
-            # Isolation off: the fake model cannot be pickled into a worker process, so generation must run in-process.
+            # Isolation off: a separate worker process would not see the ModelLoader patched in this process, so generation runs in-process.
             hyperparams={"eval_process_isolation": False, "machine_speak_enabled": False},
             # These overrides are the feature under test: they must reach ModelLoader unchanged.
             model_name="deepseek-r1-llama-8b.gguf",
@@ -247,7 +247,7 @@ def test_eval_harness_process_timeout_terminates_worker():
             )
             raise AssertionError("Expected timeout")
         except TimeoutError as exc:
-            # The message names the termination, which the UI shows as the reason for the failed case.
+            # The error message must say the worker was terminated, so the failure reason is clear.
             assert "terminated" in str(exc)
     finally:
         elapsed = time.perf_counter() - start
