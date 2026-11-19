@@ -122,9 +122,15 @@ def _parse_ts(record: dict[str, Any]) -> datetime:
     if not ts:
         return datetime.fromtimestamp(0, tz=timezone.utc)
     try:
-        return datetime.fromisoformat(ts)
-    except ValueError:
+        # "Z" is not understood by fromisoformat before Python 3.11.
+        parsed = datetime.fromisoformat(ts[:-1] + "+00:00" if ts.endswith("Z") else ts)
+    except (ValueError, TypeError, AttributeError):
         return datetime.fromtimestamp(0, tz=timezone.utc)
+    # Comparing naive and aware datetimes raises TypeError, so every result is made UTC-aware
+    # (naive timestamps are assumed to already be UTC).
+    if parsed.tzinfo is None:
+        parsed = parsed.replace(tzinfo=timezone.utc)
+    return parsed.astimezone(timezone.utc)
 
 
 # ── Loader helpers ─────────────────────────────────────────────────────────────
