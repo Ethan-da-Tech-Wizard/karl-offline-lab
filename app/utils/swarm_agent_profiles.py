@@ -20,11 +20,17 @@ from typing import Any
 from core.default_prompts import SWARM_ARCHITECT_SYSTEM_PROMPT, SWARM_CODER_SYSTEM_PROMPT
 
 
+# Where user-defined profiles are persisted (relative to the working directory).
 PROFILE_PATH = os.path.join("data", "agent_profiles.json")
+# Whitelist of tool switches a profile may enable; anything else in a stored profile is dropped on normalization.
 ALLOWED_TOOLS = ("read_files", "write_files", "execute_sandbox", "query_rag")
+# Profile ids: a letter first, then up to 63 letters, digits, '_' or '-' (safe as keys and file/UI identifiers).
 PROFILE_ID_RE = re.compile(r"^[A-Za-z][A-Za-z0-9_\-]{0,63}$")
 
 
+# Built-in profiles for the three swarm roles. They are always present, and on-disk edits
+# overlay them. Temperature rises from tester (0.0, deterministic) to coder (0.2), and
+# only the coder can write files while only the tester can run the sandbox.
 DEFAULT_SWARM_AGENT_PROFILES: dict[str, dict[str, Any]] = {
     "architect": {
         "name": "Architect",
@@ -72,12 +78,19 @@ DEFAULT_SWARM_AGENT_PROFILES: dict[str, dict[str, Any]] = {
 
 
 def _default_profiles() -> dict[str, dict[str, Any]]:
+    """Return a deep copy of the built-in profiles so callers can mutate them safely."""
     # Step 1: Validate input parameters, operational preconditions, and state
     return copy.deepcopy(DEFAULT_SWARM_AGENT_PROFILES)
 
 
 def _normalize_profile(profile_id: str, raw: dict[str, Any], builtin: bool = False) -> dict[str, Any]:
+    """Coerce a raw profile dict into the canonical shape with clamped values.
+
+    Accepts legacy key aliases (label, prompt, max_tokens), limits temperature to
+    0..2 and context_limit to 256..32768, and keeps only whitelisted tool flags.
+    """
     # Step 1: Validate input parameters, operational preconditions, and state
+    # Fall back through aliases and defaults so a partially filled profile is still usable.
     profile = {
         "name": str(raw.get("name") or raw.get("label") or profile_id).strip() or profile_id,
         "icon": str(raw.get("icon") or profile_id[:1].upper()).strip()[:4] or profile_id[:1].upper(),
@@ -89,6 +102,7 @@ def _normalize_profile(profile_id: str, raw: dict[str, Any], builtin: bool = Fal
     }
     profile["temperature"] = min(2.0, max(0.0, profile["temperature"]))
     profile["context_limit"] = min(32768, max(256, profile["context_limit"]))
+    # Every allowed tool gets an explicit True/False; missing tools default to disabled (least privilege).
     raw_tools = raw.get("tools") if isinstance(raw.get("tools"), dict) else {}
     for tool in ALLOWED_TOOLS:
         # Iterate over items, evaluate loop invariant, and update progress
@@ -97,6 +111,8 @@ def _normalize_profile(profile_id: str, raw: dict[str, Any], builtin: bool = Fal
 
 
 def load_agent_profiles() -> dict[str, dict[str, Any]]:
+    """Load built-in profiles overlaid with the saved ones from disk (corrupt files are ignored).
+    """
     # Step 1: Validate input parameters, operational preconditions, and state
     profiles = _default_profiles()
     if os.path.exists(PROFILE_PATH):
@@ -113,8 +129,10 @@ def load_agent_profiles() -> dict[str, dict[str, Any]]:
                             raw,
                             builtin=profile_id in DEFAULT_SWARM_AGENT_PROFILES,
                         )
+        # An unreadable or malformed file falls back to the built-in profiles instead of breaking the swarm.
         except (json.JSONDecodeError, OSError, ValueError):
             pass
+    # Re-normalize everything (including defaults) so callers always see canonical profiles.
     for profile_id, raw in list(profiles.items()):
         # Iterate over items, evaluate loop invariant, and update progress
         profiles[profile_id] = _normalize_profile(
@@ -126,6 +144,8 @@ def load_agent_profiles() -> dict[str, dict[str, Any]]:
 
 
 def save_agent_profiles(profiles: dict[str, dict[str, Any]]) -> bool:
+    """Validate, normalize and atomically write all profiles; raises ValueError for bad ids or shapes.
+    """
     # Step 1: Validate input parameters, operational preconditions, and state
     os.makedirs(os.path.dirname(PROFILE_PATH), exist_ok=True)
     normalized: dict[str, dict[str, Any]] = {}
@@ -140,6 +160,7 @@ def save_agent_profiles(profiles: dict[str, dict[str, Any]]) -> bool:
             raw,
             builtin=profile_id in DEFAULT_SWARM_AGENT_PROFILES,
         )
+    # Write to a temp file and os.replace so a crash never leaves a half-written profile file.
     tmp = PROFILE_PATH + ".tmp"
     with open(tmp, "w", encoding="utf-8") as fh:
         json.dump(normalized, fh, indent=2, ensure_ascii=False)
@@ -148,6 +169,8 @@ def save_agent_profiles(profiles: dict[str, dict[str, Any]]) -> bool:
 
 
 def save_agent_profile(profile_id: str, profile: dict[str, Any]) -> dict[str, Any]:
+    """Validate the id, merge one profile into the stored set, save and return the normalized profile.
+    """
     # Step 1: Validate input parameters, operational preconditions, and state
     if not PROFILE_ID_RE.match(profile_id):
         raise ValueError("Profile id must start with a letter and contain only letters, numbers, '_' or '-'.")

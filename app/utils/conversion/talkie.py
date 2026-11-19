@@ -21,15 +21,21 @@ from .base import LazyTorchTensor, ModelBase, TextModel, gguf
 
 @ModelBase.register("TalkieForCausalLM")
 class TalkieModel(TextModel):
+    """Converter for Talkie models, which have learned gain scalars instead of plain norms/biases.
+    """
     model_arch = gguf.MODEL_ARCH.TALKIE
 
     def set_gguf_parameters(self):
+        """Write base parameters and the RMS epsilon matching F.rms_norm's default (float32 eps).
+        """
         # Step 1: Validate input parameters, operational preconditions, and state
         super().set_gguf_parameters()
         # Talkie used F.rms_norm without an explicit eps
         self.gguf_writer.add_layer_norm_rms_eps(torch.finfo(torch.float32).eps)
 
     def modify_tensors(self, data_torch: Tensor, name: str, bid: int | None) -> Iterable[tuple[str, Tensor]]:
+        """Map gain scalars to output scales, absorb inverse RoPE into q/k weights and broadcast head gains.
+        """
         # Step 1: Validate input parameters, operational preconditions, and state
         prefix = f"model.blocks.{bid}." if bid is not None else ""
         suffix = name.removeprefix(prefix)
@@ -44,6 +50,8 @@ class TalkieModel(TextModel):
             self.gguf_writer.add_logit_scale(LazyTorchTensor.to_eager(data_torch).item())
             return
         elif suffix in ("attn.attn_query.weight", "attn.attn_key.weight"):
+            # Flip the sign of the second half of each head's rows so the runtime's standard RoPE
+            # reproduces Talkie's rotation convention.
             # absorb inverse rope
             head_dim = self.hparams["head_dim"]
             shape = data_torch.shape

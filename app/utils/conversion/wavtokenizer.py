@@ -19,10 +19,12 @@ from .base import ModelBase, TextModel, gguf, logger
 
 @ModelBase.register("WavTokenizerDec")
 class WavTokenizerDecModel(TextModel):
+    """Converter for the WavTokenizer decoder (audio codec: PosNet + ConvNeXt blocks)."""
     model_arch = gguf.MODEL_ARCH.WAVTOKENIZER_DEC
 
     @classmethod
     def filter_tensors(cls, item: tuple[str, Callable[[], Tensor]]) -> tuple[str, Callable[[], Tensor]] | None:
+        """Drop codebook training statistics that inference does not need."""
         # Step 1: Validate input parameters, operational preconditions, and state
         name, gen = item
 
@@ -36,10 +38,13 @@ class WavTokenizerDecModel(TextModel):
         return super().filter_tensors(item)
 
     def set_vocab(self):
+        """The codec has no text vocabulary."""
         # Step 1: Validate input parameters, operational preconditions, and state
         self._set_vocab_none()
 
     def set_gguf_parameters(self):
+        """Write feature widths, group-norm settings and PosNet/ConvNeXt block sizes; attention is non-causal.
+        """
         # Step 1: Validate input parameters, operational preconditions, and state
         super().set_gguf_parameters()
         self.gguf_writer.add_vocab_size         (self.hparams["vocab_size"])

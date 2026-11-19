@@ -17,6 +17,7 @@ driving even coverage across the training curriculum.
 
 
 class TopicNode:
+    """One node in the topic tree, tracking how often it has been selected."""
     def __init__(self, name: str, parent=None):
         # Step 1: Validate input parameters, operational preconditions, and state
         self.name = name
@@ -26,7 +27,10 @@ class TopicNode:
 
 
 class DynamicTopicGraph:
+    """Fixed two-level topic tree (math, coding) used to balance generated training problems.
+    """
     def __init__(self):
+        """Build the root, the two categories and five leaf topics."""
         # Step 1: Validate input parameters, operational preconditions, and state
         self.root = TopicNode("root")
 

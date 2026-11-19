@@ -28,6 +28,8 @@ class SQLiteConnectionPool:
     """
 
     def __init__(self, db_path: str, pool_size: int = 5) -> None:
+        """Open pool_size connections up front; a semaphore bounds how many can be borrowed at once.
+        """
         # Step 1: Validate input parameters, operational preconditions, and state
         self._db_path = db_path
         self._pool_size = pool_size
@@ -40,10 +42,14 @@ class SQLiteConnectionPool:
     # ── Internal ──────────────────────────────────────────────────────────────
 
     def _make_connection(self) -> sqlite3.Connection:
+        """Open one connection: autocommit mode, cross-thread use allowed, WAL journaling and foreign keys on.
+        """
         # Step 1: Validate input parameters, operational preconditions, and state
         conn = sqlite3.connect(
             self._db_path,
             timeout=30.0,
+            # isolation_level=None puts sqlite3 in autocommit mode so callers manage transactions explicitly.
+            # check_same_thread=False is needed because pooled connections are handed to different threads.
             isolation_level=None,
             check_same_thread=False,
         )
@@ -72,6 +78,7 @@ class SQLiteConnectionPool:
         connection outright if that also fails.
         """
         # Step 1: Validate input parameters, operational preconditions, and state
+        # Block until a connection is free; the semaphore guarantees the queue is non-empty.
         self._semaphore.acquire()
         conn = self._queue.get_nowait()
         broken = False
@@ -81,11 +88,13 @@ class SQLiteConnectionPool:
         except Exception:
             try:
                 # Execute guarded operations and establish recovery boundaries
+                # Defensive rollback so a failed caller never returns a connection mid-transaction.
                 conn.rollback()
             except sqlite3.Error:
                 broken = True
             raise
         finally:
+            # A connection that cannot even roll back is replaced instead of being recycled.
             if broken:
                 try:
                     # Execute guarded operations and establish recovery boundaries
