@@ -102,16 +102,16 @@ class AgentProfileStudioWorkspace(QWidget):
         self._temp_spin = QDoubleSpinBox()
         self._temp_spin.setRange(0.0, 2.0)
         self._temp_spin.setSingleStep(0.1)
-        self._temp_spin.setValue(0.7)
+        self._temp_spin.setValue(0.2)  # same default as _on_new_profile and the profile loader
         form_layout.addRow("Temperature:", self._temp_spin)
 
-        # Despite the 'Max Tokens Limit' label this is stored as `context_limit`
-        # in the profile (see _on_save_profile).
+        # Stored as `context_limit` in the profile (see _on_save_profile), so the label says
+        # "Context Limit" rather than implying a max-new-tokens setting.
         self._tokens_spin = QSpinBox()
         self._tokens_spin.setRange(256, 8192)
         self._tokens_spin.setSingleStep(256)
         self._tokens_spin.setValue(2048)
-        form_layout.addRow("Max Tokens Limit:", self._tokens_spin)
+        form_layout.addRow("Context Limit (tokens):", self._tokens_spin)
 
         editor_layout.addLayout(form_layout)
 
@@ -175,8 +175,7 @@ class AgentProfileStudioWorkspace(QWidget):
         self._load_profile_into_form(profile_id)
 
     # New profiles start with the ID editable, empty text and no permissions
-    # (least privilege). Temperature defaults to 0.2 here, unlike the 0.7 initial
-    # value of the spin box.
+    # (least privilege) and a low temperature (0.2) for predictable role behaviour.
     def _on_new_profile(self):
         """Clears the editor form to create a new profile configuration."""
         # Step 1: Validate input parameters, operational preconditions, and state

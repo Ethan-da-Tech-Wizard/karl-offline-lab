@@ -34,11 +34,6 @@ class CommandPalette(QDialog):
         layout.setContentsMargins(1, 1, 1, 1)
         layout.setSpacing(0)
 
-        # NOTE: this QListWidget is created but never added to the layout or used;
-        # it is a leftover placeholder (the real list is self.list_widget below).
-        # Main container styled like a glow panel
-        self.container = QListWidget() # We'll subclass/use custom layout
-        
         self.input_edit = QLineEdit(self)
         self.input_edit.setObjectName("command-input")
         self.input_edit.setPlaceholderText("Search commands or switch workspaces... (Esc to close)")
