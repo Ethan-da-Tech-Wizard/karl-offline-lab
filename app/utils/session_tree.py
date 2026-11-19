@@ -66,6 +66,8 @@ class SessionNode:
         self.content = content
         self.id = node_id or str(uuid.uuid4())
         self.children = children or []
+        # Weak back-pointer used to walk up to the root; it is deliberately not serialized (to_dict) because
+        # the tree structure already implies it, and from_dict/_rebuild_maps restore it on load.
         self.parent = parent
         self.thought = thought
         self.attachments = attachments or []
@@ -126,6 +128,7 @@ class SessionTree:
             self.root = root
             self.current_id = current_node_id or self.root.id
         
+        # id -> node index makes cursor moves O(1) instead of searching the whole tree on every click.
         self.nodes_map = {}
         self._rebuild_maps()
 
@@ -178,6 +181,7 @@ class SessionTree:
     def get_active_path(self) -> list[SessionNode]:
         """Return nodes from the first message down to the current node (the dummy root is excluded).
         """
+        # Walk child -> root via parent pointers (cheap) and reverse, rather than searching down from the root.
         path = []
         curr = self.current_node
         while curr is not None:
@@ -200,7 +204,8 @@ class SessionTree:
 
     def set_current_node(self, node_id: str) -> bool:
         """Move the cursor to node_id; returns False if the node does not exist."""
-        # Make sure node_id exists, rebuilding maps if needed
+        # A node attached behind our back (e.g. tests or from_dict surgery) is missing from the index; one
+        # rebuild is cheaper than failing the cursor move.
         if node_id not in self.nodes_map:
             self._rebuild_maps()
         if node_id in self.nodes_map:
@@ -233,6 +238,7 @@ class SessionTree:
         """Return all message nodes with no message children (the tips of every branch)."""
         leaves: list[SessionNode] = []
 
+        # Recursion depth equals conversation depth, which is small for chat sessions, so no explicit stack is needed.
         def _walk(node: SessionNode):
             message_children = [child for child in node.children if child.id != self.root.id]
             if node.id != self.root.id and not message_children:
@@ -297,6 +303,8 @@ class SessionTree:
 
     def copy(self) -> 'SessionTree':
         """Deep copy via a serialize/deserialize round trip."""
+        # Round-tripping through dicts avoids copy.deepcopy following the parent pointers (parent <-> children
+        # cycles) and gives the copy fresh parent links and index.
         return SessionTree.from_dict(self.to_dict())
 
     # The methods below make the tree usable wherever code expects a list of message dicts (the active branch).
@@ -385,7 +393,8 @@ class SessionTree:
                     "preview": data.get("preview", "(empty)"),
                     "mtime": os.path.getmtime(path),
                 })
-            # Unreadable or non-session JSON files are skipped silently.
+            # One corrupt file (partial write from a crash, hand-edited JSON) must not hide every other session
+            # from the list, so unreadable or non-session JSON files are skipped silently.
             except Exception:
                 pass
         sessions.sort(key=lambda x: x["mtime"], reverse=True)
