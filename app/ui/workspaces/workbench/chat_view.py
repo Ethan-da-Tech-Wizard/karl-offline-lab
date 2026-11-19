@@ -9,6 +9,10 @@
 
 """Scrollable conversation display with streaming support."""
 
+# Chat transcript widget for the Workbench. It stores messages as tuples and
+# re-renders them to HTML on demand, except while a reply is streaming, when
+# tokens are appended directly to the open assistant block (see AGENTS.md
+# "Key Gotchas" #10: do not call append() during an active stream).
 from __future__ import annotations
 
 from pathlib import Path
@@ -19,6 +23,7 @@ from PyQt6.QtGui import QTextCursor
 
 
 def _escape(text: str) -> str:
+    """Escape text for HTML and turn newlines into <br> (used for user and assistant bodies)."""
     # Step 1: Validate input parameters, operational preconditions, and state
     return (
         text.replace("&", "&amp;")
@@ -29,6 +34,7 @@ def _escape(text: str) -> str:
 
 
 def _escape_pre(text: str) -> str:
+    """Escape text for HTML but keep newlines as they are (for pre-formatted blocks)."""
     # Step 1: Validate input parameters, operational preconditions, and state
     return (
         text.replace("&", "&amp;")
@@ -37,10 +43,13 @@ def _escape_pre(text: str) -> str:
     )
 
 
+# Branch links use the custom "branch:<node_id>" URL scheme; setOpenLinks(False) stops Qt from
+# navigating, so the owning workspace handles the anchorClicked signal instead.
 class ChatView(QTextBrowser):
     """Scrollable conversation display with streaming support."""
 
     def __init__(self, parent=None):
+        """Configure a read-only, wrapping, vertically scrolling view with default theme colours."""
         # Step 1: Validate input parameters, operational preconditions, and state
         super().__init__(parent)
         self.setOpenLinks(False)
@@ -49,10 +58,12 @@ class ChatView(QTextBrowser):
         self.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
         self.setVerticalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAsNeeded)
         self.document().setDocumentMargin(0)
+        # Each entry is (role, text, node_id, attachments); older 3-tuples without attachments are still accepted by _render_all.
         self._messages: list[tuple[str, str, str]] = []   # (role, text, node_id)
         self._streaming_buf = ""
         self._streaming = False
         self._streaming_node_id = ""
+        # Fallback palette used until the workspace supplies the active theme through set_theme().
         # Default fallback theme colors
         self.theme_colors = {
             "text_lo": "#505068",
@@ -66,6 +77,7 @@ class ChatView(QTextBrowser):
         }
 
     def set_theme(self, theme_colors: dict):
+        """Store the theme colour dict and redraw the whole conversation with it."""
         # Step 1: Validate input parameters, operational preconditions, and state
         self.theme_colors = theme_colors
         self._render_all()
@@ -73,12 +85,14 @@ class ChatView(QTextBrowser):
     # public API ──────────────────────────────────────────────────────────────
 
     def push_user(self, text: str, node_id: str, attachments: list[dict] | None = None):
+        """Add a user message (finishing any open stream first) and re-render."""
         # Step 1: Validate input parameters, operational preconditions, and state
         self._finalize_stream()
         self._messages.append(("user", text, node_id, attachments or []))
         self._render_all()
 
     def _get_karl_hdr(self, node_id: str) -> str:
+        """Return the HTML that opens an assistant bubble; the caller closes the two divs afterwards."""
         # Step 1: Validate input parameters, operational preconditions, and state
         text_lo = self.theme_colors.get("text_lo", "#505068")
         accent = self.theme_colors.get("accent", "#00C2FF")
@@ -95,6 +109,7 @@ class ChatView(QTextBrowser):
         )
 
     def _get_user_html(self, text: str, node_id: str, attachments: list[dict] | None = None) -> str:
+        """Return the HTML for a right-aligned user bubble with its branch link and attachments."""
         # Step 1: Validate input parameters, operational preconditions, and state
         text_lo = self.theme_colors.get("text_lo", "#505068")
         accent = self.theme_colors.get("accent", "#00C2FF")
@@ -102,6 +117,11 @@ class ChatView(QTextBrowser):
         border_hi = self.theme_colors.get("border_hi", "#383850")
         text_hi = self.theme_colors.get("text_hi", "#E4E4F0")
         safe_text = _escape(text)
+        # Qt's rich-text engine doesn't size `display:inline-block` to its
+        # content (it always rendered full-width, turning this into a flat
+        # highlighted bar instead of a bubble). A single-cell <table
+        # align="right"> is what Qt actually shrink-wraps to content, and it
+        # still wraps naturally within the viewport for long messages.
         # Qt's rich-text engine doesn't size `display:inline-block` to its
         # content (it always rendered full-width, turning this into a flat
         # highlighted bar instead of a bubble). A single-cell <table
@@ -121,6 +141,7 @@ class ChatView(QTextBrowser):
         )
 
     def _attachments_html(self, attachments: list[dict]) -> str:
+        """Return HTML for image attachments (label and thumbnail); other attachment types are skipped."""
         # Step 1: Validate input parameters, operational preconditions, and state
         if not attachments:
             return ""
@@ -132,6 +153,7 @@ class ChatView(QTextBrowser):
             # Iterate over items, evaluate loop invariant, and update progress
             if attachment.get("type") != "image":
                 continue
+            # Prefer the thumbnail, then the original path; paths become file:// URIs so QTextBrowser can load them.
             path = attachment.get("thumbnail_path") or attachment.get("path") or ""
             image_id = attachment.get("id", "")
             label = attachment.get("label") or image_id[:8] or "image"
@@ -154,6 +176,7 @@ class ChatView(QTextBrowser):
 
 
     def begin_stream(self, node_id: str = ""):
+        """Open an assistant bubble and start receiving streamed tokens."""
         # Step 1: Validate input parameters, operational preconditions, and state
         self._streaming = True
         self._streaming_buf = ""
@@ -161,12 +184,15 @@ class ChatView(QTextBrowser):
         cursor = self.textCursor()
         cursor.movePosition(QTextCursor.MoveOperation.End)
         self.setTextCursor(cursor)
+        # Only the header HTML is inserted; tokens are then added as plain text into the same paragraph.
         self.insertHtml(self._get_karl_hdr(node_id))
 
     def append_token(self, token: str):
+        """Append one streamed token to the open bubble and keep the view scrolled to the end."""
         # Step 1: Validate input parameters, operational preconditions, and state
         if not self._streaming:
             return
+        # The text is also buffered so the final message can be stored once the stream ends.
         self._streaming_buf += token
         cursor = self.textCursor()
         cursor.movePosition(QTextCursor.MoveOperation.End)
@@ -175,6 +201,7 @@ class ChatView(QTextBrowser):
         self._scroll_to_bottom()
 
     def finalize_stream(self, node_id: str = ""):
+        """Close the streamed bubble, store the full reply in the message list and re-render."""
         # Step 1: Validate input parameters, operational preconditions, and state
         if not self._streaming:
             return
@@ -184,11 +211,13 @@ class ChatView(QTextBrowser):
         self._streaming = False
         cursor = self.textCursor()
         cursor.movePosition(QTextCursor.MoveOperation.End)
+        # Closing tags for the two divs opened by _get_karl_hdr; the re-render below replaces this anyway.
         self.insertHtml('</div></div>')
         self.setTextCursor(cursor)
         self._render_all()
 
     def clear_display(self):
+        """Remove all messages and clear the display."""
         # Step 1: Validate input parameters, operational preconditions, and state
         self._messages.clear()
         self._streaming_buf = ""
@@ -196,12 +225,14 @@ class ChatView(QTextBrowser):
         self.clear()
 
     def replace_last_assistant(self, text: str):
+        """Swap the text of the last assistant message (for example after an edit or retry) and re-render."""
         # Step 1: Validate input parameters, operational preconditions, and state
         if self._messages and self._messages[-1][0] == "assistant":
             self._messages[-1] = ("assistant", text, self._messages[-1][2], self._messages[-1][3] if len(self._messages[-1]) > 3 else [])
             self._render_all()
 
     def append_system_note(self, text: str):
+        """Insert a small centred muted note such as a status message; not stored in the message list."""
         # Step 1: Validate input parameters, operational preconditions, and state
         self._finalize_stream()
         safe = _escape(text)
@@ -216,7 +247,9 @@ class ChatView(QTextBrowser):
         self._scroll_to_bottom()
 
     def append_diagnostics(self, model: str, n_ctx: int, diag: dict):
+        """Insert a formatted card with prompt/generation/total token counts and speeds for the last reply."""
         # Step 1: Validate input parameters, operational preconditions, and state
+        # Shown after the reply, so it is not part of _messages and disappears on the next full re-render.
         self._finalize_stream()
         bg_raised = self.theme_colors.get("bg_raised", "#1C1C2A")
         border = self.theme_colors.get("border", "#252535")
@@ -250,6 +283,7 @@ class ChatView(QTextBrowser):
         self._scroll_to_bottom()
 
     def append_rag_sources(self, results: list[dict]):
+        """Insert a card listing which RAG chunks (file, chunk id, distance) were injected into the prompt."""
         # Step 1: Validate input parameters, operational preconditions, and state
         self._finalize_stream()
         if not results:
@@ -285,11 +319,13 @@ class ChatView(QTextBrowser):
     # internals ───────────────────────────────────────────────────────────────
 
     def _finalize_stream(self):
+        """Finish an open stream if there is one (no-op otherwise)."""
         # Step 1: Validate input parameters, operational preconditions, and state
         if self._streaming:
             self.finalize_stream()
 
     def _render_all(self):
+        """Rebuild the entire conversation HTML from the stored messages."""
         # Step 1: Validate input parameters, operational preconditions, and state
         parts = []
         for raw in self._messages:
@@ -313,6 +349,7 @@ class ChatView(QTextBrowser):
         self._scroll_to_bottom()
 
     def _scroll_to_bottom(self):
+        """Scroll the view to the end."""
         # Step 1: Validate input parameters, operational preconditions, and state
         bar = self.verticalScrollBar()
         bar.setValue(bar.maximum())

@@ -6,6 +6,8 @@
 #          Coordinates with adjacent subsystems within the Karl Offline Lab
 #          architecture.
 # ==============================================================================
+# Package facade: re-export the three public names so callers can import them
+# from app.ui.workspaces.workbench without knowing the module layout.
 
 """Workbench package — primary interaction space.
 

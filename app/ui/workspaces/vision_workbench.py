@@ -6,6 +6,10 @@
 #          Provides responsive layout controls, parameter adjustment surfaces,
 #          and visual feedback components within Karl's PyQt6 shell.
 # ==============================================================================
+# Vision Workbench workspace: a library of saved images (screenshots pasted into
+# the Workbench or imported from disk) with a preview, editable OCR text and
+# caption, tags/kind metadata, and analysis via OCR and an optional local
+# multimodal model. Image records live in state.image_store.
 
 from __future__ import annotations
 
@@ -36,24 +40,31 @@ from app.vision.vision_model_loader import VisionModelLoader, installed_vision_m
 
 
 class VisionWorkbench(QWidget):
+    """Workspace for browsing, analysing and annotating saved images."""
     def __init__(self, state, parent=None):
+        """Store state, build the UI and load the saved image list."""
         # Step 1: Validate input parameters, operational preconditions, and state
         super().__init__(parent)
         self.state = state
         self.setObjectName("workspace-root")
+        # _records caches the last list; _selected_id survives refreshes so the selection does not jump.
         self._records = []
         self._selected_id = ""
+        # Strong references to running analysis threads until they finish.
         self._active_threads = set()
+        # True when pixel analysis cannot run (no multimodal backend or no model); set by _update_vision_status.
         self._vision_analysis_blocked = False
         self._build_ui()
         self.refresh()
 
     def _build_ui(self):
+        """Build the toolbar and a three-pane splitter: image library, preview/actions, and details/analysis editors."""
         # Step 1: Validate input parameters, operational preconditions, and state
         root = QVBoxLayout(self)
         root.setContentsMargins(12, 12, 12, 12)
         root.setSpacing(10)
 
+        # Toolbar: refresh, import a file, or re-run analysis on the selected image.
         title_row = QWidget()
         tl = QHBoxLayout(title_row)
         tl.setContentsMargins(0, 0, 0, 0)
@@ -79,6 +90,7 @@ class VisionWorkbench(QWidget):
         tl.addWidget(self._rerun_analysis_btn)
         root.addWidget(title_row)
 
+        # Left pane: list of saved images.
         splitter = QSplitter(Qt.Orientation.Horizontal)
         splitter.setHandleWidth(1)
 
@@ -91,6 +103,7 @@ class VisionWorkbench(QWidget):
         ll.addWidget(self._library, 1)
         splitter.addWidget(left)
 
+        # Centre pane: scaled preview with "open file" and "send to workbench" actions.
         center = QWidget()
         cl = QVBoxLayout(center)
         cl.setContentsMargins(0, 0, 0, 0)
@@ -114,6 +127,7 @@ class VisionWorkbench(QWidget):
         cl.addWidget(action_row)
         splitter.addWidget(center)
 
+        # Right pane: metadata, analysis controls, kind/tags editors and the OCR and caption correction editors.
         right = QWidget()
         rl = QVBoxLayout(right)
         rl.setContentsMargins(0, 0, 0, 0)
@@ -129,6 +143,7 @@ class VisionWorkbench(QWidget):
         apl.setContentsMargins(10, 10, 10, 10)
         apl.setSpacing(8)
 
+        # Red warning box shown when vision analysis cannot run (see _update_vision_status).
         self._vision_warning = QLabel("")
         self._vision_warning.setObjectName("lbl-danger")
         self._vision_warning.setWordWrap(True)
@@ -149,6 +164,7 @@ class VisionWorkbench(QWidget):
         self._vision_status.setWordWrap(True)
         apl.addWidget(self._vision_status)
 
+        # Modes: OCR plus vision model, OCR only (works with just Tesseract), or vision model only.
         self._mode_combo = QComboBox()
         self._mode_combo.addItem("OCR + Vision", "ocr_vision")
         self._mode_combo.addItem("OCR Only", "ocr_only")
@@ -228,12 +244,20 @@ class VisionWorkbench(QWidget):
         # vertical room for all of it, so several got squeezed down far
         # enough to visibly clip their own (word-wrapped) text. Scrolling
         # beats every widget silently losing height it needs.
+        # The right panel stacks a lot of controls (metadata, warning/status
+        # labels, mode combo, prompt box, kind combo, tags, OCR editor,
+        # caption editor, and their action buttons) with no stretch to
+        # spare -- at the app's 760x560 minimum size there isn't enough
+        # vertical room for all of it, so several got squeezed down far
+        # enough to visibly clip their own (word-wrapped) text. Scrolling
+        # beats every widget silently losing height it needs.
         right_scroll = QScrollArea()
         right_scroll.setWidgetResizable(True)
         right_scroll.setFrameShape(QFrame.Shape.NoFrame)
         right_scroll.setWidget(right)
         splitter.addWidget(right_scroll)
 
+        # Stretch factors give the preview the most room, then the details pane, then the library.
         splitter.setStretchFactor(0, 1)
         splitter.setStretchFactor(1, 3)
         splitter.setStretchFactor(2, 2)
@@ -241,9 +265,11 @@ class VisionWorkbench(QWidget):
         self._update_vision_status()
 
     def refresh(self):
+        """Reload up to 500 recent images, preserve the current selection if it still exists, otherwise select the first row."""
         # Step 1: Validate input parameters, operational preconditions, and state
         self._records = self.state.image_store.list_recent(limit=500)
         current = self._selected_id
+        # Block signals while repopulating so selection handlers do not fire for every row.
         self._library.blockSignals(True)
         self._library.clear()
         selected_item = None
@@ -265,6 +291,7 @@ class VisionWorkbench(QWidget):
             self._clear_details()
 
     def _on_selected(self, current, _previous):
+        """Show the clicked image, or clear the panels when nothing is selected."""
         # Step 1: Validate input parameters, operational preconditions, and state
         if not current:
             self._clear_details()
@@ -274,7 +301,9 @@ class VisionWorkbench(QWidget):
         self._render_record(self.state.image_store.get(image_id))
 
     def _render_record(self, record):
+        """Fill the preview, metadata text, kind, tags, OCR and caption editors from an image record."""
         # Step 1: Validate input parameters, operational preconditions, and state
+        # The pixmap is scaled to the current preview size, keeping the aspect ratio.
         pix = QPixmap(record.original_path)
         if not pix.isNull():
             scaled = pix.scaled(
@@ -307,6 +336,7 @@ class VisionWorkbench(QWidget):
         self._update_vision_status()
 
     def _clear_details(self):
+        """Reset every detail widget to its empty state."""
         # Step 1: Validate input parameters, operational preconditions, and state
         self._selected_id = ""
         self._preview.setText("No image selected.")
@@ -319,12 +349,14 @@ class VisionWorkbench(QWidget):
         self._update_vision_status()
 
     def _selected_record(self):
+        """Return the selected image record from the store, or None."""
         # Step 1: Validate input parameters, operational preconditions, and state
         if not self._selected_id:
             return None
         return self.state.image_store.get(self._selected_id)
 
     def _import_image(self):
+        """Import an image file into the store, select it, and start analysis right away."""
         # Step 1: Validate input parameters, operational preconditions, and state
         path, _ = QFileDialog.getOpenFileName(
             self,
@@ -345,12 +377,14 @@ class VisionWorkbench(QWidget):
         self._run_analysis()
 
     def _open_file(self):
+        """Open the original image file with the system default application."""
         # Step 1: Validate input parameters, operational preconditions, and state
         record = self._selected_record()
         if record:
             QDesktopServices.openUrl(QUrl.fromLocalFile(str(Path(record.original_path).resolve())))
 
     def _send_to_workbench(self):
+        """Switch to the Workbench (index 0) and attach the selected image to its composer."""
         # Step 1: Validate input parameters, operational preconditions, and state
         record = self._selected_record()
         if not record:
@@ -360,12 +394,15 @@ class VisionWorkbench(QWidget):
         QMessageBox.information(self, "Image Sent", "Image attached to the Workbench composer.")
 
     def _run_analysis(self):
+        """Start a background analysis of the selected image in the chosen mode."""
         # Step 1: Validate input parameters, operational preconditions, and state
         record = self._selected_record()
         if not record:
             return
+        # Refresh status first so the blocked flag is current before deciding whether to run.
         self._update_vision_status()
         mode = self._mode_combo.currentData() or "ocr_vision"
+        # OCR-only needs no vision model, so only the other modes are blocked.
         if mode != "ocr_only" and self._vision_analysis_blocked:
             QMessageBox.warning(
                 self,
@@ -373,8 +410,10 @@ class VisionWorkbench(QWidget):
                 self._vision_warning.text(),
             )
             return
+        # An empty prompt becomes None so the thread uses its default screenshot/debugging prompt.
         prompt = self._analysis_prompt.toPlainText().strip() or None
         self._meta.setText(self._meta.text() + f"\nAnalysis: running ({mode})")
+        # ImageAnalysisThread reports through signals; widgets are only touched from these slots.
         thread = ImageAnalysisThread(self.state.image_store, record.id, mode=mode, prompt=prompt)
         thread.progress.connect(self._on_analysis_progress)
         thread.ocr_done.connect(self._on_ocr_done)
@@ -387,33 +426,39 @@ class VisionWorkbench(QWidget):
         thread.start()
 
     def _on_analysis_progress(self, msg: str):
+        """Append a progress line to the metadata text."""
         # Step 1: Validate input parameters, operational preconditions, and state
         if self._selected_id:
             self._meta.setText(self._meta.text() + f"\nAnalysis: {msg}")
 
     def _on_ocr_done(self, image_id: str, ocr):
+        """Show OCR text as soon as it arrives, if the image is still selected."""
         # Step 1: Validate input parameters, operational preconditions, and state
         if image_id == self._selected_id:
             self._ocr.setPlainText(ocr.text or "(OCR unavailable or no text detected.)")
 
     def _on_vision_done(self, image_id: str, vision):
+        """Show the vision caption when ready, if the image is still selected."""
         # Step 1: Validate input parameters, operational preconditions, and state
         if image_id == self._selected_id:
             self._caption.setPlainText(vision.caption or "")
             self._update_vision_status()
 
     def _on_analysis_done(self, image_id: str, _record):
+        """Re-render the finished record (when still selected) and refresh the list."""
         # Step 1: Validate input parameters, operational preconditions, and state
         if image_id == self._selected_id:
             self._render_record(self.state.image_store.get(image_id))
         self.refresh()
 
     def _on_analysis_error(self, msg: str):
+        """Warn the user that analysis failed and refresh the vision status."""
         # Step 1: Validate input parameters, operational preconditions, and state
         QMessageBox.warning(self, "Image Analysis Failed", msg)
         self._update_vision_status()
 
     def _save_metadata(self):
+        """Save the kind and comma-separated tags of the selected image."""
         # Step 1: Validate input parameters, operational preconditions, and state
         record = self._selected_record()
         if not record:
@@ -428,6 +473,7 @@ class VisionWorkbench(QWidget):
         self.refresh()
 
     def _save_ocr_correction(self):
+        """Save the user's edited OCR text as the correction for the selected image."""
         # Step 1: Validate input parameters, operational preconditions, and state
         record = self._selected_record()
         if not record:
@@ -437,6 +483,7 @@ class VisionWorkbench(QWidget):
         self.refresh()
 
     def _save_caption_correction(self):
+        """Save the user's edited caption as the correction for the selected image."""
         # Step 1: Validate input parameters, operational preconditions, and state
         record = self._selected_record()
         if not record:
@@ -446,6 +493,7 @@ class VisionWorkbench(QWidget):
         self.refresh()
 
     def _update_vision_status(self):
+        """Refresh runtime/registry labels and decide whether to show a warning and block pixel analysis."""
         # Step 1: Validate input parameters, operational preconditions, and state
         status = VisionModelLoader.status()
         backend = "ready" if status["backend_available"] else "blocked"
@@ -458,6 +506,7 @@ class VisionWorkbench(QWidget):
             lines.append(status["last_error"])
         self._vision_status.setText("\n".join(lines))
 
+        # An installed model needs both its model file and its projector file.
         rows = installed_vision_models()
         installed = [
             row["name"]
@@ -473,6 +522,7 @@ class VisionWorkbench(QWidget):
             registry += f"\nRegistry entries waiting for local files: {missing_count}"
         self._registry_label.setText(registry)
 
+        # Backend missing or nothing installed: block analysis. Installed but unloaded: warn only, since analysis loads it on demand.
         needs_warning = False
         blocks_analysis = False
         warning_lines = []
