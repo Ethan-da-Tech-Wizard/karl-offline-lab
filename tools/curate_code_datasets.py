@@ -38,10 +38,12 @@ CODE_HINT_RE = re.compile(
     r"\b(code|python|pytest|function|class|module|diff|patch|bug|test|compile|traceback|exception)\b",
     re.IGNORECASE,
 )
-# Matches only untagged or ```python fences. A fence tagged with another language (e.g. ```json)
-# is not matched as an opener, so its closing fence can pair up with the next opener; keep that
-# in mind if rows with mixed-language fences are being discarded unexpectedly.
-CODE_BLOCK_RE = re.compile(r"```(?:python)?\s*\n(.*?)```", re.DOTALL)
+# Matches a fenced block with ANY language tag (group 1, possibly empty) and its body (group 2).
+# Matching every opener keeps fences paired correctly when a reply mixes languages, e.g. a
+# ```json block followed by a ```python block; _code_snippets() then keeps only the Python bodies.
+CODE_BLOCK_RE = re.compile(r"```([A-Za-z0-9_+.-]*)[ \t]*\n(.*?)```", re.DOTALL)
+# Language tags whose bodies are validated as Python; an empty tag counts as Python.
+_PYTHON_FENCE_TAGS = {"", "python", "py", "python3"}
 # Upper bound on estimated prompt+response tokens; longer rows would be truncated or waste training
 # context.
 DEFAULT_MAX_TOKENS = 3500
@@ -269,8 +271,12 @@ def load_jsonl(path: Path) -> list[dict]:
 def _code_snippets(text: str) -> list[str]:
     """Return the fenced code blocks of text, or the text itself when it has no fences."""
     # Step 1: Validate input parameters, operational preconditions, and state
-    blocks = CODE_BLOCK_RE.findall(text)
-    return blocks if blocks else [text]
+    matches = CODE_BLOCK_RE.findall(text)
+    if not matches:
+        return [text]
+    # Non-Python fences (json, bash, ...) are skipped: they are not parsed as Python and, because
+    # every opener is matched, they no longer swallow the next block's opener.
+    return [body for tag, body in matches if tag.lower() in _PYTHON_FENCE_TAGS]
 
 
 def is_syntactically_valid(assistant_content: str) -> bool:
