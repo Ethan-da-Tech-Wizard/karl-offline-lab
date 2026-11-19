@@ -127,3 +127,29 @@ if __name__ == "__main__":
     test_curation_saving_and_sft_export()
     test_curator_dpo_pairing()
     print("All training curator unit tests PASSED!")
+
+
+def test_export_reports_balanced_count_after_balancing():
+    """export_unsloth used to print the pre-balancing count; it must report what was actually written."""
+    import contextlib
+    import io
+    temp_dir = tempfile.mkdtemp()
+    old_path = tc.CURATED_PATH
+    tc.CURATED_PATH = os.path.join(temp_dir, "curated.jsonl")
+    try:
+        curator = TrainingCurator()
+        # Three arithmetic examples and one coding one: balancing cuts every category to the smallest (1 each).
+        for i in range(3):
+            curator.save_example(prompt=f"What is {i}+{i}?", response=f"The answer is {2 * i}.", source="thumbs_up", system_prompt="S")
+        curator.save_example(prompt="Write python code to add two numbers", response="def solve(a, b): return a + b", source="thumbs_up", system_prompt="S")
+        out = os.path.join(temp_dir, "sft.jsonl")
+        buf = io.StringIO()
+        with contextlib.redirect_stdout(buf):
+            curator.export_unsloth(out)
+        with open(out, encoding="utf-8") as f:
+            written = len(f.readlines())
+        assert written == 2
+        assert "Exported 2 examples" in buf.getvalue()
+    finally:
+        tc.CURATED_PATH = old_path
+        shutil.rmtree(temp_dir)
