@@ -35,7 +35,6 @@ class WavTokenizerDecModel(TextModel):
     @classmethod
     def filter_tensors(cls, item: tuple[str, Callable[[], Tensor]]) -> tuple[str, Callable[[], Tensor]] | None:
         """Drop codebook training statistics that inference does not need."""
-        # Step 1: Validate input parameters, operational preconditions, and state
         name, gen = item
 
         if \
@@ -49,13 +48,11 @@ class WavTokenizerDecModel(TextModel):
 
     def set_vocab(self):
         """The codec has no text vocabulary."""
-        # Step 1: Validate input parameters, operational preconditions, and state
         self._set_vocab_none()
 
     def set_gguf_parameters(self):
         """Write feature widths, group-norm settings and PosNet/ConvNeXt block sizes; attention is non-causal.
         """
-        # Step 1: Validate input parameters, operational preconditions, and state
         super().set_gguf_parameters()
         self.gguf_writer.add_vocab_size         (self.hparams["vocab_size"])
         self.gguf_writer.add_features_length    (self.hparams["n_embd_features"])

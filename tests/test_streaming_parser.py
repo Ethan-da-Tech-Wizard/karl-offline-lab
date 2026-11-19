@@ -12,7 +12,6 @@ from app.engine.streaming_parser import StreamingThoughtParser
 
 def test_streaming_parser_handles_split_close_tag():
     """A </think> split across stream chunks is held back until complete; nothing is emitted early, then the thought and answer are separated correctly."""
-    # Step 1: Validate input parameters, operational preconditions, and state
     thought_tokens = []
     chat_tokens = []
     parser = StreamingThoughtParser(
@@ -34,7 +33,6 @@ def test_streaming_parser_handles_split_close_tag():
 
 def test_streaming_parser_can_defer_answer_after_think_close():
     """With defer_after_think_close the parser reports the think block closed but keeps the post-think text pending until flushed."""
-    # Step 1: Validate input parameters, operational preconditions, and state
     thought_tokens = []
     chat_tokens = []
     parser = StreamingThoughtParser(
@@ -58,7 +56,6 @@ def test_streaming_parser_can_defer_answer_after_think_close():
 
 def test_streaming_parser_detects_adapter_think_block_after_chat_prefix():
     """An adapter that emits some chat text before opening <think> is still parsed: the prefix and the answer form the response and the block becomes the thought."""
-    # Step 1: Validate input parameters, operational preconditions, and state
     thought_tokens = []
     chat_tokens = []
     parser = StreamingThoughtParser(
@@ -78,7 +75,6 @@ def test_streaming_parser_strips_leaked_stop_token_full():
     """llm(..., stop=["<|im_end|>", ...]) is supposed to fully suppress the
     stop string from streamed output, but it can leak through as a real
     text chunk (observed live: "hi" -> "hi<|im_end>" shown to the user)."""
-    # Step 1: Validate input parameters, operational preconditions, and state
     chat_tokens = []
     parser = StreamingThoughtParser(
         in_thought=False,
@@ -100,9 +96,7 @@ def test_streaming_parser_strips_leaked_stop_token_truncated_variants():
     right there (as it does live), which is what forces a still-ambiguous
     trailing fragment like "<|im_end|" (itself a valid prefix of the full
     token) to resolve rather than sit pending forever."""
-    # Step 1: Validate input parameters, operational preconditions, and state
     for leaked in ("<|im_end>", "<|im_end|", "<|im_start|>", "<|endoftext|>", "<|end_of_text>"):
-        # Iterate over items, evaluate loop invariant, and update progress
         chat_tokens = []
         parser = StreamingThoughtParser(
             in_thought=False,
@@ -120,7 +114,6 @@ def test_streaming_parser_strips_leaked_stop_token_on_flush():
     self.buffer until flush() is called explicitly (see llm_thread.py's
     dynamic-scheduling state transition) -- the leak-stripping needs to
     apply there too, not just to text emitted immediately within feed()."""
-    # Step 1: Validate input parameters, operational preconditions, and state
     parser = StreamingThoughtParser(
         in_thought=True,
         thought_cb=lambda t: None,
@@ -146,7 +139,6 @@ def test_streaming_parser_strips_leaked_stop_token_fragmented_across_chunks():
     back a partial ChatML-token prefix the same way it already holds back a
     partial "<think>"/"</think>", or each fragment gets emitted immediately
     as soon as it stops looking like it's building toward <think>."""
-    # Step 1: Validate input parameters, operational preconditions, and state
     chat_tokens = []
     parser = StreamingThoughtParser(
         in_thought=False,
@@ -156,7 +148,6 @@ def test_streaming_parser_strips_leaked_stop_token_fragmented_across_chunks():
     )
 
     for chunk in ("hi", "<", "|", "im", "_end", ">\n"):
-        # Iterate over items, evaluate loop invariant, and update progress
         parser.feed(chunk)
     parser.flush()
 

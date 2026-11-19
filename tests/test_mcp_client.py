@@ -30,9 +30,7 @@ pytestmark = [pytest.mark.integration]
 
 def _running_under_bwrap() -> bool:
     """True when PID 1 is bubblewrap (sandboxed run where subprocess/IPC may be restricted)."""
-    # Step 1: Validate input parameters, operational preconditions, and state
     try:
-        # Execute guarded operations and establish recovery boundaries
         with open("/proc/1/comm", "r", encoding="utf-8") as f:
             return f.read().strip() == "bwrap"
     except OSError:
@@ -74,7 +72,6 @@ class TestMCPClient(unittest.TestCase):
 
     def test_mcp_client_lifecycle_and_tools(self):
         """Full lifecycle: start servers, list the two tools (hello, get_version), call each and check the returned text ('Hello, TestUser!' and '1.0.0'), then shut down leaving no servers."""
-        # Step 1: Validate input parameters, operational preconditions, and state
         if _running_under_bwrap():
             pytest.skip("Codex sandbox blocks the mock MCP stdio handshake")
 

@@ -53,7 +53,6 @@ class MambaModel(TextModel):
 
     def set_vocab(self):
         """Round the vocab size up to the padding multiple and pick a tokenizer source."""
-        # Step 1: Validate input parameters, operational preconditions, and state
         vocab_size = self.hparams["vocab_size"]
         # Mamba checkpoints store an embedding table padded to a multiple of
         # pad_vocab_size_multiple, so the declared vocab must match that padded size.
@@ -75,7 +74,6 @@ class MambaModel(TextModel):
 
     def set_gguf_parameters(self):
         """Write Mamba-1 SSM hyperparameters (conv kernel, inner size, state size, dt rank...)."""
-        # Step 1: Validate input parameters, operational preconditions, and state
         # Each hparam is looked up under both the HF name and the original mamba_ssm
         # name; optional ones fall back to the defaults used by the reference code.
         d_model = self.find_hparam(["hidden_size",       "d_model"])
@@ -120,7 +118,6 @@ class MambaModel(TextModel):
         Converts A_log to A, squeezes the conv1d weight, and drops output.weight when it
         is identical to the token embedding (tied weights). Yields (name, tensor) pairs.
         """
-        # Step 1: Validate input parameters, operational preconditions, and state
         output_name = self.format_tensor_name(gguf.MODEL_TENSOR.OUTPUT)
         tok_embd_name = self.format_tensor_name(gguf.MODEL_TENSOR.TOKEN_EMBD)
 
@@ -177,7 +174,6 @@ class Mamba2Model(TextModel):
 
     def set_vocab(self):
         """Round the vocab size up to the padding multiple and pick a tokenizer source."""
-        # Step 1: Validate input parameters, operational preconditions, and state
         vocab_size = self.hparams["vocab_size"]
         # Mamba-2 pads to a multiple of 16 by default (Mamba-1 uses 8).
         # Round vocab size to next multiple of 16
@@ -203,7 +199,6 @@ class Mamba2Model(TextModel):
 
     def set_gguf_parameters(self):
         """Write Mamba-2 SSM hyperparameters, including head count and group count."""
-        # Step 1: Validate input parameters, operational preconditions, and state
         d_conv  = self.find_hparam(["conv_kernel", "d_conv"],     optional=True) or 4
         d_state = self.find_hparam(["state_size",  "d_state"],    optional=True) or 128
         head_dim = self.find_hparam(["mamba_d_head", "head_dim"], optional=True) or 64
@@ -236,7 +231,6 @@ class Mamba2Model(TextModel):
     # Class-level hook: runs on every (name, loader) pair before tensors are indexed.
     @classmethod
     def filter_tensors(cls, item: tuple[str, Callable[[], Tensor]]) -> tuple[str, Callable[[], Tensor]] | None:
-        # Step 1: Validate input parameters, operational preconditions, and state
         """Normalise Mamba-Codestral tensor names, then defer to the base filter."""
         name, gen = item
 
@@ -257,7 +251,6 @@ class Mamba2Model(TextModel):
         Squeezes conv1d, adds a trailing dim to A and D, reshapes the SSM norm into
         groups, and converts A_log to A. Yields exactly one (name, tensor) pair.
         """
-        # Step 1: Validate input parameters, operational preconditions, and state
         # Translate the HF tensor name to the GGUF name.
         new_name = self.map_tensor_name(name)
 

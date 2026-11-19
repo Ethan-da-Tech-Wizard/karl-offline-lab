@@ -38,7 +38,6 @@ from app.engine.swarm_agents import (
 @pytest.mark.skipif(platform.system() not in ("Linux", "Darwin"), reason="getuid not available on Windows")
 def test_root_block_exits_on_getuid_zero():
     """_assert_not_privileged() must call sys.exit(1) when getuid() == 0."""
-    # Step 1: Validate input parameters, operational preconditions, and state
     with patch("platform.system", return_value="Linux"), \
          patch("os.getuid", return_value=0):
         with pytest.raises(SystemExit) as exc_info:
@@ -50,7 +49,6 @@ def test_root_block_exits_on_getuid_zero():
 @pytest.mark.skipif(platform.system() not in ("Linux", "Darwin"), reason="getuid not available on Windows")
 def test_root_block_allows_normal_user():
     """_assert_not_privileged() must not exit when getuid() > 0."""
-    # Step 1: Validate input parameters, operational preconditions, and state
     with patch("platform.system", return_value="Linux"), \
          patch("os.getuid", return_value=1000):
         from main import _assert_not_privileged
@@ -62,27 +60,23 @@ def test_root_block_allows_normal_user():
 
 def test_safe_workspace_path_empty_rel_blocked(tmp_path):
     """An empty relative path is rejected (None)."""
-    # Step 1: Validate input parameters, operational preconditions, and state
     assert _safe_workspace_path(str(tmp_path), "") is None
 
 
 def test_safe_workspace_path_parent_traversal_blocked(tmp_path):
     """A '../' path that leaves the workspace is rejected."""
-    # Step 1: Validate input parameters, operational preconditions, and state
     result = _safe_workspace_path(str(tmp_path), "../../etc/passwd")
     assert result is None
 
 
 def test_safe_workspace_path_absolute_injection_blocked(tmp_path):
     """An absolute path is rejected, so a tool argument cannot jump outside the workspace."""
-    # Step 1: Validate input parameters, operational preconditions, and state
     result = _safe_workspace_path(str(tmp_path), "/etc/passwd")
     assert result is None
 
 
 def test_safe_workspace_path_normal_file_allowed(tmp_path):
     """A normal relative file resolves inside the workspace."""
-    # Step 1: Validate input parameters, operational preconditions, and state
     result = _safe_workspace_path(str(tmp_path), "src/app.py")
     assert result is not None
     assert result.startswith(str(tmp_path))
@@ -91,7 +85,6 @@ def test_safe_workspace_path_normal_file_allowed(tmp_path):
 
 def test_safe_workspace_path_nested_allowed(tmp_path):
     """Nested relative paths resolve under the real workspace path."""
-    # Step 1: Validate input parameters, operational preconditions, and state
     result = _safe_workspace_path(str(tmp_path), "a/b/c/deep.txt")
     assert result is not None
     assert os.path.realpath(str(tmp_path)) in result
@@ -99,7 +92,6 @@ def test_safe_workspace_path_nested_allowed(tmp_path):
 
 def test_safe_workspace_path_symlink_escape_blocked(tmp_path):
     """Symlink inside workspace pointing outside must be blocked."""
-    # Step 1: Validate input parameters, operational preconditions, and state
     workspace = tmp_path / "workspace"
     workspace.mkdir()
     evil = workspace / "evil.txt"
@@ -113,7 +105,6 @@ def test_safe_workspace_path_symlink_escape_blocked(tmp_path):
 
 def test_tool_write_file_symlink_escape_blocked(tmp_path):
     """write_file with a symlink that resolves outside the workspace must be blocked."""
-    # Step 1: Validate input parameters, operational preconditions, and state
     workspace = tmp_path / "workspace"
     workspace.mkdir()
     outside_file = tmp_path / "outside.txt"
@@ -130,7 +121,6 @@ def test_tool_write_file_symlink_escape_blocked(tmp_path):
 
 def test_tool_write_file_parent_traversal_blocked(tmp_path):
     """write_file refuses '../' paths and the outside file stays unchanged."""
-    # Step 1: Validate input parameters, operational preconditions, and state
     outside_file = tmp_path / "sensitive.txt"
     outside_file.write_text("safe", encoding="utf-8")
     workspace = tmp_path / "workspace"
@@ -144,7 +134,6 @@ def test_tool_write_file_parent_traversal_blocked(tmp_path):
 
 def test_tool_write_file_normal_path_works(tmp_path):
     """write_file writes a normal file in the workspace and reports 'OK:'."""
-    # Step 1: Validate input parameters, operational preconditions, and state
     workspace = tmp_path / "workspace"
     workspace.mkdir()
 
@@ -159,7 +148,6 @@ def test_tool_write_file_normal_path_works(tmp_path):
 
 def test_tool_read_file_symlink_escape_blocked(tmp_path):
     """read_file with a symlink to /etc/passwd must be blocked before any read."""
-    # Step 1: Validate input parameters, operational preconditions, and state
     workspace = tmp_path / "workspace"
     workspace.mkdir()
     evil = workspace / "evil.txt"
@@ -172,14 +160,12 @@ def test_tool_read_file_symlink_escape_blocked(tmp_path):
 
 def test_tool_read_file_absolute_path_blocked(tmp_path):
     """read_file rejects absolute paths with the standard security-block message."""
-    # Step 1: Validate input parameters, operational preconditions, and state
     result = _tool_read_file(str(tmp_path), {"path": "/etc/passwd"})
     assert result == _SECURITY_BLOCK_MSG
 
 
 def test_tool_read_file_parent_traversal_blocked(tmp_path):
     """read_file rejects '../' paths."""
-    # Step 1: Validate input parameters, operational preconditions, and state
     workspace = tmp_path / "workspace"
     workspace.mkdir()
     victim = tmp_path / "victim.txt"
@@ -191,7 +177,6 @@ def test_tool_read_file_parent_traversal_blocked(tmp_path):
 
 def test_tool_read_file_normal_path_works(tmp_path):
     """read_file returns the content of a normal workspace file."""
-    # Step 1: Validate input parameters, operational preconditions, and state
     workspace = tmp_path / "workspace"
     workspace.mkdir()
     (workspace / "code.py").write_text("x = 1\n", encoding="utf-8")
@@ -204,7 +189,6 @@ def test_tool_read_file_normal_path_works(tmp_path):
 
 def test_tool_lint_python_symlink_escape_blocked(tmp_path):
     """lint_python with a symlink escaping the workspace must be blocked."""
-    # Step 1: Validate input parameters, operational preconditions, and state
     workspace = tmp_path / "workspace"
     workspace.mkdir()
     evil = workspace / "evil.py"
@@ -216,14 +200,12 @@ def test_tool_lint_python_symlink_escape_blocked(tmp_path):
 
 def test_tool_lint_python_empty_path_blocked(tmp_path):
     """lint_python rejects an empty path."""
-    # Step 1: Validate input parameters, operational preconditions, and state
     result = _tool_lint_python(str(tmp_path), {"path": ""})
     assert result == _SECURITY_BLOCK_MSG
 
 
 def test_tool_lint_python_normal_path_works(tmp_path):
     """lint_python on a clean file runs without a security block."""
-    # Step 1: Validate input parameters, operational preconditions, and state
     workspace = tmp_path / "workspace"
     workspace.mkdir()
     (workspace / "ok.py").write_text("x = 1\n", encoding="utf-8")
@@ -243,7 +225,6 @@ class _StubManager:
 
     def __init__(self):
         """Set the blocked-path list the real manager would hold, without starting a server."""
-        # Step 1: Validate input parameters, operational preconditions, and state
         self.blocked_paths = {"/", "/etc", "/bin", "/sbin", "/root", "/proc", "/sys"}
         user_home = os.path.expanduser("~")
         self.blocked_paths.add(user_home)
@@ -253,21 +234,18 @@ class _StubManager:
 
 def test_is_safe_path_blocks_etc(tmp_path):
     """/etc paths are blocked."""
-    # Step 1: Validate input parameters, operational preconditions, and state
     mgr = _StubManager()
     assert mgr._is_safe_path("/etc/passwd") is False
 
 
 def test_is_safe_path_blocks_empty():
     """An empty path is blocked."""
-    # Step 1: Validate input parameters, operational preconditions, and state
     mgr = _StubManager()
     assert mgr._is_safe_path("") is False
 
 
 def test_is_safe_path_blocks_symlink_pointing_to_etc(tmp_path):
     """A symlink that resolves to /etc must be blocked."""
-    # Step 1: Validate input parameters, operational preconditions, and state
     link = tmp_path / "evil_link"
     link.symlink_to("/etc")
 
@@ -278,7 +256,6 @@ def test_is_safe_path_blocks_symlink_pointing_to_etc(tmp_path):
 
 def test_is_safe_path_allows_tmp_path(tmp_path):
     """A path in /tmp (not in blocked_paths) should be allowed."""
-    # Step 1: Validate input parameters, operational preconditions, and state
     mgr = _StubManager()
     result = mgr._is_safe_path(str(tmp_path / "some_project"))
     assert result is True
@@ -286,7 +263,6 @@ def test_is_safe_path_allows_tmp_path(tmp_path):
 
 def test_is_safe_path_allows_project_root():
     """The project's own working directory should always be allowed."""
-    # Step 1: Validate input parameters, operational preconditions, and state
     mgr = _StubManager()
     project_root = os.getcwd()
     assert mgr._is_safe_path(project_root) is True

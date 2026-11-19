@@ -45,7 +45,6 @@ class Mistral3Model(TextModel):
 
         def set_gguf_parameters(self):
             """Add YaRN log multiplier and attention temperature for ministral3 configs."""
-            # Step 1: Validate input parameters, operational preconditions, and state
             super().set_gguf_parameters()
             rope_params = self.rope_parameters
             if self.hparams.get("model_type") == "ministral3":
@@ -63,7 +62,6 @@ class Mistral3Model(TextModel):
         def modify_tensors(self, data_torch, name, bid):
             """Append '.weight' to stacked expert tensors that lack it, then use the parent mapping.
             """
-            # Step 1: Validate input parameters, operational preconditions, and state
             if name.endswith(".down_proj") or name.endswith(".gate_up_proj"):
                 name = name + ".weight"
             yield from super().modify_tensors(data_torch, name, bid)
@@ -74,7 +72,6 @@ class Mistral3Model(TextModel):
 
     def __init__(self, *args, **kwargs):
         """Select Mistral4 or Ministral3 as delegate based on hparams['model_type']."""
-        # Step 1: Validate input parameters, operational preconditions, and state
         super().__init__(*args, **kwargs)
         if self.hparams.get("model_type") == "mistral4":
             self.impl = Mistral3Model.Mistral4Model(*args, **kwargs)
@@ -83,30 +80,24 @@ class Mistral3Model(TextModel):
 
     def set_vocab(self):
         """Delegate vocab handling."""
-        # Step 1: Validate input parameters, operational preconditions, and state
         self.impl.set_vocab()
 
     def set_gguf_parameters(self):
         """Delegate parameter writing."""
-        # Step 1: Validate input parameters, operational preconditions, and state
         self.impl.set_gguf_parameters()
 
     def modify_tensors(self, data_torch: Tensor, name: str, bid: int | None):
         """Delegate tensor transformation."""
-        # Step 1: Validate input parameters, operational preconditions, and state
         yield from self.impl.modify_tensors(data_torch, name, bid)
 
     def prepare_tensors(self):
         """Delegate tensor preparation."""
-        # Step 1: Validate input parameters, operational preconditions, and state
         self.impl.prepare_tensors()
 
     def write_vocab(self):
         """Delegate vocab writing."""
-        # Step 1: Validate input parameters, operational preconditions, and state
         self.impl.write_vocab()
 
     def write(self):
         """Delegate final file writing."""
-        # Step 1: Validate input parameters, operational preconditions, and state
         self.impl.write()

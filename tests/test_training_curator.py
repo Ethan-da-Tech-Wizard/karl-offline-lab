@@ -20,7 +20,6 @@ from app.utils.training_curator import TrainingCurator
 
 def test_curation_saving_and_sft_export():
     """The curator counts saved examples by source (thumbs_up and corrected), exports them as SFT JSONL containing only the system/user/assistant messages, and delete_example updates the totals."""
-    # Step 1: Validate input parameters, operational preconditions, and state
     print("Testing curator save & SFT export...")
     temp_dir = tempfile.mkdtemp()
     
@@ -28,7 +27,6 @@ def test_curation_saving_and_sft_export():
     tc.CURATED_PATH = os.path.join(temp_dir, "curated.jsonl")
     
     try:
-        # Execute guarded operations and establish recovery boundaries
         curator = TrainingCurator()
         
         # Save a couple of examples
@@ -73,7 +71,6 @@ def test_curation_saving_and_sft_export():
 
 def test_curator_dpo_pairing():
     """DPO export pairs chosen and rejected answers that share the same system and user prompt (two pairs) and ignores unmatched entries."""
-    # Step 1: Validate input parameters, operational preconditions, and state
     print("Testing curator DPO pairing...")
     temp_dir = tempfile.mkdtemp()
     
@@ -81,7 +78,6 @@ def test_curator_dpo_pairing():
     tc.CURATED_PATH = os.path.join(temp_dir, "curated.jsonl")
     
     try:
-        # Execute guarded operations and establish recovery boundaries
         curator = TrainingCurator()
         
         # Add a matching pair (chosen + rejected)
@@ -105,7 +101,6 @@ def test_curator_dpo_pairing():
         pairs = []
         with open(export_file, "r") as f:
             for line in f:
-                # Iterate over items, evaluate loop invariant, and update progress
                 pairs.append(json.loads(line.strip()))
                 
         # Expect 2 pairs

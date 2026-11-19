@@ -37,7 +37,6 @@ class PanguEmbeddedModel(TextModel):
     def set_vocab(self):
         """Use SentencePiece and copy add_prefix_space from tokenizer_config.json if present.
         """
-        # Step 1: Validate input parameters, operational preconditions, and state
         self._set_vocab_sentencepiece()
 
         tokenizer_config_file = self.dir_model / 'tokenizer_config.json'
@@ -49,7 +48,6 @@ class PanguEmbeddedModel(TextModel):
 
     def set_gguf_parameters(self):
         """Write vocab size and RoPE dimension (derived when head_dim is missing)."""
-        # Step 1: Validate input parameters, operational preconditions, and state
         super().set_gguf_parameters()
         hparams = self.hparams
         self.gguf_writer.add_vocab_size(hparams["vocab_size"])
@@ -65,7 +63,6 @@ class PanguEmbeddedModel(TextModel):
 
     def modify_tensors(self, data_torch: Tensor, name: str, bid: int | None) -> Iterable[tuple[str, Tensor]]:
         """Skip lm_head when embeddings are tied; map everything else normally."""
-        # Step 1: Validate input parameters, operational preconditions, and state
         if name == "lm_head.weight":
             if self.hparams.get("tie_word_embeddings", False):
                 logger.info("Skipping tied output layer 'lm_head.weight'")

@@ -34,7 +34,7 @@ class InternLM2Model(TextModel):
         Also applies added tokens from added_tokens.json, tokenizer_config.json and
         tokenizer.json, and swaps EOS for <|im_end|> in chat models.
         """
-        # (see note) a copy of the generic SentencePiece loader with one tweak.
+        # a copy of the generic SentencePiece loader with one tweak.
         # (TODO): Is there a better way?
         # Copy from _set_vocab_sentencepiece, The only difference is that we will treat the character
         # \x00 specially and convert it into an emoji character to prevent it from being mistakenly
@@ -66,7 +66,6 @@ class InternLM2Model(TextModel):
 
         # Convert every id; type flags are checked in priority order unknown > control > unused > byte.
         for token_id in range(vocab_size):
-            # Iterate over items, evaluate loop invariant, and update progress
             piece = tokenizer.IdToPiece(token_id)
             text = piece.encode("utf-8")
             score = tokenizer.GetScore(token_id)
@@ -104,7 +103,6 @@ class InternLM2Model(TextModel):
 
                 # Append added tokens after the base vocab, as user-defined with a very low score.
                 for key in added_tokens_json:
-                    # Iterate over items, evaluate loop invariant, and update progress
                     tokens.append(key.encode("utf-8"))
                     scores.append(-1000.0)
                     toktypes.append(SentencePieceTokenTypes.USER_DEFINED)
@@ -122,7 +120,6 @@ class InternLM2Model(TextModel):
                 # win; special ones become CONTROL tokens.
                 added_tokens_decoder = tokenizer_config_json.get("added_tokens_decoder", {})
                 for token_id, foken_data in added_tokens_decoder.items():
-                    # Iterate over items, evaluate loop invariant, and update progress
                     token_id = int(token_id)
                     token = foken_data["content"]
                     if token == chat_eos_token:
@@ -145,7 +142,6 @@ class InternLM2Model(TextModel):
                 tokenizer_json = json.load(f)
                 added_tokens = tokenizer_json.get("added_tokens", [])
                 for foken_data in added_tokens:
-                    # Iterate over items, evaluate loop invariant, and update progress
                     token_id = int(foken_data["id"])
                     token = foken_data["content"]
                     if token == chat_eos_token:
@@ -183,7 +179,6 @@ class InternLM2Model(TextModel):
 
     def modify_tensors(self, data_torch: Tensor, name: str, bid: int | None) -> Iterable[tuple[str, Tensor]]:
         """Split the fused wqkv tensor into Q, K and V (un-permuting Q and K)."""
-        # Step 1: Validate input parameters, operational preconditions, and state
         num_heads = self.hparams["num_attention_heads"]
         num_kv_heads = self.hparams["num_key_value_heads"]
         n_embd = self.hparams["hidden_size"]
@@ -220,7 +215,6 @@ class InternLM3Model(TextModel):
 
     def set_vocab(self):
         """SentencePiece vocab plus special-token ids from tokenizer_config.json."""
-        # Step 1: Validate input parameters, operational preconditions, and state
         # Reuse the shared SentencePiece loader (no NUL-token hack needed for InternLM3).
         tokens, scores, toktypes = self._create_vocab_sentencepiece()
 
@@ -242,7 +236,6 @@ class InternLM3Model(TextModel):
                 # Only special added tokens are registered with the SpecialVocab.
                 if "added_tokens_decoder" in tokenizer_config_json:
                     for token_id, token_data in tokenizer_config_json["added_tokens_decoder"].items():
-                        # Iterate over items, evaluate loop invariant, and update progress
                         if token_data.get("special"):
                             token_id = int(token_id)
                             token = token_data["content"]
@@ -256,7 +249,6 @@ class InternLM3Model(TextModel):
 
     def set_gguf_parameters(self):
         """Write base parameters, vocab size and RoPE dimension."""
-        # Step 1: Validate input parameters, operational preconditions, and state
         super().set_gguf_parameters()
         hparams = self.hparams
         self.gguf_writer.add_vocab_size(hparams["vocab_size"])
@@ -268,7 +260,6 @@ class InternLM3Model(TextModel):
     @classmethod
     def filter_tensors(cls, item: tuple[str, Callable[[], Tensor]]) -> tuple[str, Callable[[], Tensor]] | None:
         """Drop the vision tower and projector tensors."""
-        # Step 1: Validate input parameters, operational preconditions, and state
         name, gen = item
 
         if name.startswith(("mlp", "vision_model")):
@@ -279,7 +270,6 @@ class InternLM3Model(TextModel):
 
     def modify_tensors(self, data_torch: Tensor, name: str, bid: int | None) -> Iterable[tuple[str, Tensor]]:
         """Un-permute Q/K projections from the HF rotary layout."""
-        # Step 1: Validate input parameters, operational preconditions, and state
         n_head = self.hparams["num_attention_heads"]
         n_kv_head = self.hparams.get("num_key_value_heads")
         if name.endswith(("q_proj.weight", "q_proj.bias")):

@@ -32,7 +32,6 @@ class SmolVLMModel(MmprojModel):
     """Vision (mmproj) converter for SmolVLM / Idefics3."""
     def __init__(self, *args, **kwargs):
         """Fill SmolVLM2's missing vision config keys with the transformers defaults."""
-        # Step 1: Validate input parameters, operational preconditions, and state
         super().__init__(*args, **kwargs)
         if self.hparams["model_type"] == "smolvlm_vision":
             # fix for SmolVLM2, missing some keys in config.json
@@ -44,7 +43,6 @@ class SmolVLMModel(MmprojModel):
     def set_gguf_parameters(self):
         """Write projector type, norm eps, pixel-shuffle scale factor and the preprocessor image size.
         """
-        # Step 1: Validate input parameters, operational preconditions, and state
         super().set_gguf_parameters()
         self.gguf_writer.add_clip_projector_type(gguf.VisionProjectorType.IDEFICS3)
         self.gguf_writer.add_vision_attention_layernorm_eps(self.hparams.get("layer_norm_eps", 1e-5))
@@ -57,7 +55,6 @@ class SmolVLMModel(MmprojModel):
 
     def tensor_force_quant(self, name, new_name, bid, n_dims):
         """Keep embedding tensors in F32."""
-        # Step 1: Validate input parameters, operational preconditions, and state
         if ".embeddings." in name:
             return gguf.GGMLQuantizationType.F32
         return super().tensor_force_quant(name, new_name, bid, n_dims)
@@ -65,7 +62,6 @@ class SmolVLMModel(MmprojModel):
     @classmethod
     def filter_tensors(cls, item: tuple[str, Callable[[], Tensor]]) -> tuple[str, Callable[[], Tensor]] | None:
         """Keep only vision tower and connector tensors."""
-        # Step 1: Validate input parameters, operational preconditions, and state
         name, gen = item
 
         is_vision_tensor = "vision_tower" in name or "vision_model" in name or "model.connector" in name

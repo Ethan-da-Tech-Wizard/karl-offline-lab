@@ -38,7 +38,6 @@ class HunYuanMoEModel(TextModel):
         Hunyuan ships mergeable ranks rather than a merges file, so merges are
         reverse-engineered by re-running BPE per token.
         """
-        # Step 1: Validate input parameters, operational preconditions, and state
         from transformers import AutoTokenizer
         tokenizer = AutoTokenizer.from_pretrained(self.dir_model, trust_remote_code=True)
 
@@ -51,7 +50,6 @@ class HunYuanMoEModel(TextModel):
         vocab = {}
         mergeable_ranks = tokenizer.mergeable_ranks  # ty: ignore[unresolved-attribute]
         for token, rank in mergeable_ranks.items():
-            # Iterate over items, evaluate loop invariant, and update progress
             vocab[QwenModel.token_bytes_to_string(token)] = rank
             if len(token) == 1:
                 continue
@@ -69,7 +67,6 @@ class HunYuanMoEModel(TextModel):
         tokens: list[str] = []
         toktypes: list[int] = []
         for i in range(vocab_size):
-            # Iterate over items, evaluate loop invariant, and update progress
             if i not in reverse_vocab:
                 tokens.append(f"[PAD{i}]")
                 toktypes.append(gguf.TokenType.UNUSED)
@@ -91,13 +88,12 @@ class HunYuanMoEModel(TextModel):
         # 5. Add special tokens and chat templates
         special_vocab = gguf.SpecialVocab(self.dir_model, load_merges=False)
         special_vocab.add_to_gguf(self.gguf_writer)
-        # (see note) config.json carries a wrong BOS id for this model.
+        # config.json carries a wrong BOS id for this model.
         # FIX for BOS token: Overwrite incorrect id read from config.json
         self.gguf_writer.add_bos_token_id(127959) # <|bos|>
 
     def set_gguf_parameters(self):
         """Write MoE sizing (requiring identical values for every layer) and RoPE scaling."""
-        # Step 1: Validate input parameters, operational preconditions, and state
         super().set_gguf_parameters()
         hparams = self.hparams
 
@@ -147,7 +143,6 @@ class HunYuanMoEModel(TextModel):
 
         Generator: yields nothing while a layer's experts are still being collected.
         """
-        # Step 1: Validate input parameters, operational preconditions, and state
         # With tied embeddings the output matrix duplicates token_embd, so skip it.
         if name == "lm_head.weight":
             if self.hparams.get("tie_word_embeddings", False):
@@ -171,11 +166,9 @@ class HunYuanMoEModel(TextModel):
             if len(self._experts[bid]) >= n_experts * 3:
                 # merge the experts into a single 3d tensor
                 for w_name in ["down_proj", "gate_proj", "up_proj"]:
-                    # Iterate over items, evaluate loop invariant, and update progress
                     datas: list[Tensor] = []
 
                     for xid in range(n_experts):
-                        # Iterate over items, evaluate loop invariant, and update progress
                         ename = f"model.layers.{bid}.mlp.experts.{xid}.{w_name}.weight"
                         datas.append(self._experts[bid][ename])
                         del self._experts[bid][ename]
@@ -193,7 +186,6 @@ class HunYuanMoEModel(TextModel):
 
     def prepare_tensors(self):
         """Run the normal conversion, then verify every expert tensor was merged."""
-        # Step 1: Validate input parameters, operational preconditions, and state
         super().prepare_tensors()
         # Anything still buffered here means the checkpoint was missing expert
         # tensors, so fail loudly instead of writing a broken GGUF.
@@ -211,13 +203,11 @@ class HunYuanModel(TextModel):
 
     def _get_eod_token_id(self) -> int | None:
         """Get the actual end-of-generation token from config (eod_token_id)."""
-        # Step 1: Validate input parameters, operational preconditions, and state
         return self.hparams.get("eod_token_id")
 
     def _get_eot_token_id(self) -> int | None:
         """Get the end-of-turn token from generation_config.json.
         This is the first entry in eos_token_id when it's a list."""
-        # Step 1: Validate input parameters, operational preconditions, and state
         gen_cfg_path = self.dir_model / "generation_config.json"
         if gen_cfg_path.is_file():
             with open(gen_cfg_path, encoding="utf-8") as f:
@@ -231,7 +221,6 @@ class HunYuanModel(TextModel):
     # generation_config.json.
     def _fix_special_tokens(self):
         """Fix EOS/EOT tokens that are incorrect in upstream configs."""
-        # Step 1: Validate input parameters, operational preconditions, and state
         eod_id = self._get_eod_token_id()
         if eod_id is not None:
             self.gguf_writer.add_eos_token_id(eod_id)
@@ -241,7 +230,6 @@ class HunYuanModel(TextModel):
 
     def set_vocab(self):
         """Use tokenizer.json when present, else rebuild the vocab from tiktoken ranks."""
-        # Step 1: Validate input parameters, operational preconditions, and state
         if (self.dir_model / "tokenizer.json").is_file():
             tokens, toktypes, tokpre = self.get_vocab_base()
             self.gguf_writer.add_tokenizer_model("gpt2")
@@ -249,7 +237,7 @@ class HunYuanModel(TextModel):
             self.gguf_writer.add_token_list(tokens)
             self.gguf_writer.add_token_types(toktypes)
 
-            # (see note) a negative pad id would be emitted as an invalid special token.
+            # a negative pad id would be emitted as an invalid special token.
             # Some HunYuanVL variants (e.g. OCR-style configs) have pad_token_id=-1;
             # guard SpecialVocab so it doesn't try to emit an invalid pad id.
             # None means "use SpecialVocab's defaults"; otherwise restrict to the listed types.
@@ -272,7 +260,6 @@ class HunYuanModel(TextModel):
             vocab = {}
             mergeable_ranks = tokenizer.mergeable_ranks  # ty: ignore[unresolved-attribute]
             for token, rank in mergeable_ranks.items():
-                # Iterate over items, evaluate loop invariant, and update progress
                 vocab[QwenModel.token_bytes_to_string(token)] = rank
                 if len(token) == 1:
                     continue
@@ -288,7 +275,6 @@ class HunYuanModel(TextModel):
             tokens: list[str] = []
             toktypes: list[int] = []
             for i in range(vocab_size):
-                # Iterate over items, evaluate loop invariant, and update progress
                 if i not in reverse_vocab:
                     tokens.append(f"[PAD{i}]")
                     toktypes.append(gguf.TokenType.UNUSED)
@@ -352,7 +338,6 @@ class HunYuanModel(TextModel):
 
     def modify_tensors(self, data_torch: Tensor, name: str, bid: int | None) -> Iterable[tuple[str, Tensor]]:
         """Drop a tied lm_head; pass other tensors through."""
-        # Step 1: Validate input parameters, operational preconditions, and state
         if name == "lm_head.weight":
             if self.hparams.get("tie_word_embeddings", False):
                 logger.info("Skipping tied output layer 'lm_head.weight'")
@@ -366,7 +351,6 @@ class HunyuanVLVisionModel(MmprojModel):
     """Converter for the Hunyuan-VL vision tower as an mmproj."""
     def __init__(self, *args, **kwargs):
         """Provide image_size (the config uses max_image_size instead)."""
-        # Step 1: Validate input parameters, operational preconditions, and state
         super().__init__(*args, **kwargs)
         assert self.hparams_vision is not None
         # HunyuanVL uses max_image_size instead of image_size
@@ -375,7 +359,6 @@ class HunyuanVLVisionModel(MmprojModel):
 
     def set_gguf_parameters(self):
         """Write projector type, GELU flag, norm epsilon, merge size and pixel limits."""
-        # Step 1: Validate input parameters, operational preconditions, and state
         super().set_gguf_parameters()
         assert self.hparams_vision is not None
         vcfg = self.hparams_vision
@@ -389,7 +372,6 @@ class HunyuanVLVisionModel(MmprojModel):
     @classmethod
     def filter_tensors(cls, item: tuple[str, Callable[[], Tensor]]) -> tuple[str, Callable[[], Tensor]] | None:
         """Keep only the ViT tensors (prefix "vit.")."""
-        # Step 1: Validate input parameters, operational preconditions, and state
         name, gen = item
 
         if not name.startswith("vit."):
@@ -421,12 +403,10 @@ class HunyuanVLTextModel(HunYuanModel):
 
     def __init__(self, dir_model: Path, *args, **kwargs):
         """No extra initialisation; accepts the model directory explicitly."""
-        # Step 1: Validate input parameters, operational preconditions, and state
         super().__init__(dir_model, *args, **kwargs)
 
     def set_gguf_parameters(self):
         """Write XD-RoPE metadata when the config uses it."""
-        # Step 1: Validate input parameters, operational preconditions, and state
         super().set_gguf_parameters()
 
         # XD-RoPE metadata for the HunyuanVL;

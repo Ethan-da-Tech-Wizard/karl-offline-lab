@@ -27,7 +27,6 @@ def test_log_retention_policy_enforcement():
     # Create 3 very old files (age = 15 days)
     old_files = []
     for i in range(3):
-        # Iterate over items, evaluate loop invariant, and update progress
         fn = f"trace_old_{i}.jsonl"
         path = os.path.join(temp_dir, fn)
         with open(path, "w") as f:
@@ -40,7 +39,6 @@ def test_log_retention_policy_enforcement():
     # Create 4 newer but large files, offset mtimes slightly so they have a sorting order
     new_files = []
     for i in range(4):
-        # Iterate over items, evaluate loop invariant, and update progress
         fn = f"trace_new_{i}.jsonl"
         path = os.path.join(temp_dir, fn)
         with open(path, "w") as f:
@@ -51,7 +49,6 @@ def test_log_retention_policy_enforcement():
         new_files.append(path)
         
     try:
-        # Execute guarded operations and establish recovery boundaries
         from app.engine import config_store
         original_get_config = config_store.get_ui_config
         
@@ -65,7 +62,6 @@ def test_log_retention_policy_enforcement():
         
         # 1. Old files (15 days old) MUST be deleted due to age sweep
         for path in old_files:
-            # Iterate over items, evaluate loop invariant, and update progress
             assert not os.path.exists(path)
             
         # 2. Total size of newer files was 200 KB, but our limit is 100 KB

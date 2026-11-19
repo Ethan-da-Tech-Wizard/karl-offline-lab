@@ -29,11 +29,10 @@ class GptOssModel(TextModel):
     # GGUF architecture id written into the output file.
     model_arch = gguf.MODEL_ARCH.GPT_OSS
 
-    # (see note) skip the generic dequantisation pass for MXFP4 checkpoints.
+    # skip the generic dequantisation pass for MXFP4 checkpoints.
     # TODO: remove once MXFP4 is supported more generally
     def dequant_model(self):
         """Leave MXFP4 weights packed; only dequantise other quantisation formats."""
-        # Step 1: Validate input parameters, operational preconditions, and state
         if self._is_mxfp4:
             return
         return super().dequant_model()
@@ -46,7 +45,6 @@ class GptOssModel(TextModel):
         values interleaved ("abababab..."). The nibble swaps compensate for the
         byte-wise recombination below.
         """
-        # Step 1: Validate input parameters, operational preconditions, and state
         assert tensor.dtype == torch.uint8
         assert tensor.shape[-1] == 16
         # First swap low/high nibbles within each byte.
@@ -80,7 +78,6 @@ class GptOssModel(TextModel):
         Each row is [scale byte | 16 data bytes] per 32-value block; `blocks` is
         uint8 [experts, rows, n_blocks, 16] and `scales` [experts, rows, n_blocks].
         """
-        # Step 1: Validate input parameters, operational preconditions, and state
         assert blocks.dtype == torch.uint8
         assert scales.dtype == torch.uint8
         # Add a trailing axis so each block's scale byte can be concatenated in front
@@ -105,13 +102,11 @@ class GptOssModel(TextModel):
         The returned list is empty: tensors are written directly via repack_mxfp4,
         not yielded to the normal writer path.
         """
-        # Step 1: Validate input parameters, operational preconditions, and state
         blocks0: Tensor = torch.zeros(1)
         blocks1: Tensor = torch.zeros(1)
-        # (see note) down_proj blocks must be seen before their scales, likewise gate_up.
+        # down_proj blocks must be seen before their scales, likewise gate_up.
         # we assume that tensors are loaded in the correct order
         for name, data_torch in self.get_tensors():
-            # Iterate over items, evaluate loop invariant, and update progress
             if "mlp.experts.down_proj_blocks" in name:
                 blocks0 = data_torch
             elif "mlp.experts.down_proj_scales" in name:
@@ -132,7 +127,6 @@ class GptOssModel(TextModel):
     @classmethod
     def filter_tensors(cls, item: tuple[str, Callable[[], Tensor]]) -> tuple[str, Callable[[], Tensor]] | None:
         """Give the attention "sinks" parameters a ".weight" suffix for name mapping."""
-        # Step 1: Validate input parameters, operational preconditions, and state
         name, gen = item
 
         if "sinks" in name:
@@ -160,7 +154,7 @@ class GptOssModel(TextModel):
                 # otherwise, it should already be repacked to ggml MXFP4 format
                 return
 
-        # (see note) HF interleaves gate and up along one axis; split with stride 2.
+        # HF interleaves gate and up along one axis; split with stride 2.
         # split the gate_up into gate and up
         if "gate_up_proj" in name:
             if name.endswith("_bias"):
@@ -182,12 +176,10 @@ class GptOssModel(TextModel):
 
     def set_vocab(self):
         """gpt-oss uses a GPT-2 style BPE tokenizer."""
-        # Step 1: Validate input parameters, operational preconditions, and state
         self._set_vocab_gpt2()
 
     def set_gguf_parameters(self):
         """Write sliding-window size and the expert FFN width."""
-        # Step 1: Validate input parameters, operational preconditions, and state
         super().set_gguf_parameters()
         self.gguf_writer.add_sliding_window(self.hparams["sliding_window"])
         self.gguf_writer.add_expert_feed_forward_length(self.hparams["intermediate_size"])

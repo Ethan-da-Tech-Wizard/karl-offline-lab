@@ -20,7 +20,6 @@ from app.vision.image_store import ImageStore
 
 def _sample_image(width=80, height=48):
     """Create a small solid-colour QImage for tests."""
-    # Step 1: Validate input parameters, operational preconditions, and state
     image = QImage(width, height, QImage.Format.Format_RGB32)
     image.fill(QColor("#00C2FF"))
     return image
@@ -28,7 +27,6 @@ def _sample_image(width=80, height=48):
 
 def test_save_qimage_creates_record_and_files(tmp_path):
     """Saving a QImage returns a record with id, source, size, PNG mime and SHA-256, writes original, thumbnail and processed files and can be loaded back."""
-    # Step 1: Validate input parameters, operational preconditions, and state
     store = ImageStore(base_dir=str(tmp_path / "images"))
     record = store.save_qimage(_sample_image(), source="test")
 
@@ -49,7 +47,6 @@ def test_save_qimage_creates_record_and_files(tmp_path):
 
 def test_import_file_copies_image(tmp_path):
     """Importing an image file copies it into the store (the stored original path differs from the source) and records its size."""
-    # Step 1: Validate input parameters, operational preconditions, and state
     source = tmp_path / "source.png"
     assert _sample_image(32, 24).save(str(source), "PNG")
 
@@ -64,7 +61,6 @@ def test_import_file_copies_image(tmp_path):
 
 def test_update_analysis_round_trip(tmp_path):
     """update_analysis stores kind and tags that are returned by later get() calls."""
-    # Step 1: Validate input parameters, operational preconditions, and state
     store = ImageStore(base_dir=str(tmp_path / "images"))
     record = store.save_qimage(_sample_image(), source="test")
 
@@ -77,7 +73,6 @@ def test_update_analysis_round_trip(tmp_path):
 
 def test_update_analysis_accepts_ocr_dict(tmp_path):
     """An OCR result given as a plain dict is converted and persisted (text, confidence, engine)."""
-    # Step 1: Validate input parameters, operational preconditions, and state
     store = ImageStore(base_dir=str(tmp_path / "images"))
     record = store.save_qimage(_sample_image(), source="test")
     ocr = OcrResult(engine="tesseract", text="NameError at line 3", confidence=0.9)
@@ -91,7 +86,6 @@ def test_update_analysis_accepts_ocr_dict(tmp_path):
 
 def test_image_metadata_and_corrections_round_trip(tmp_path):
     """Kind, tags, OCR, vision caption and user corrections all survive saving and loading."""
-    # Step 1: Validate input parameters, operational preconditions, and state
     store = ImageStore(base_dir=str(tmp_path / "images"))
     record = store.save_qimage(_sample_image(), source="test")
 

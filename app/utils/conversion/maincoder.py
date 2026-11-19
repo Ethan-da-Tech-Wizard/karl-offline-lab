@@ -20,7 +20,6 @@ class MaincoderModel(TextModel):
 
     def set_gguf_parameters(self):
         """Write base parameters and the RoPE dimension when head_dim is configured."""
-        # Step 1: Validate input parameters, operational preconditions, and state
         super().set_gguf_parameters()
 
         # Optional key: without it the base class derives the RoPE size from the hidden size.

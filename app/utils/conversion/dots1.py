@@ -28,14 +28,12 @@ class Dots1Model(Qwen2MoeModel):
 
     def __init__(self, *args, **kwargs):
         """Alias the expert count under the name the Qwen2-MoE parent expects."""
-        # Step 1: Validate input parameters, operational preconditions, and state
         super().__init__(*args, **kwargs)
         # Qwen2MoeModel reads `num_experts`; dots1 calls it `n_routed_experts`.
         self.hparams["num_experts"] = self.hparams["n_routed_experts"]
 
     def set_gguf_parameters(self):
         """Add dots1 MoE routing metadata to the Qwen2-MoE parameters."""
-        # Step 1: Validate input parameters, operational preconditions, and state
         super().set_gguf_parameters()
         self.gguf_writer.add_leading_dense_block_count(self.hparams["first_k_dense_replace"])
         self.gguf_writer.add_expert_shared_count(self.hparams["n_shared_experts"])
@@ -44,7 +42,6 @@ class Dots1Model(Qwen2MoeModel):
 
     def modify_tensors(self, data_torch: Tensor, name: str, bid: int | None):
         """Bypass the Qwen2-MoE merge logic for shared-expert tensors."""
-        # Step 1: Validate input parameters, operational preconditions, and state
         # Shared experts are ordinary dense tensors (one set per layer), not part of the
         # routed-expert stack, so skip the parent's expert-merging and map them directly.
         if "shared_experts" in name:

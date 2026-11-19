@@ -21,14 +21,12 @@ mcp = FastMCP("MockServer")
 @mcp.tool()
 def hello(name: str) -> str:
     """Say hello to someone."""
-    # Step 1: Validate input parameters, operational preconditions, and state
     return f"Hello, {name}!"
 
 
 @mcp.tool()
 def get_version() -> str:
     """Get mock server version."""
-    # Step 1: Validate input parameters, operational preconditions, and state
     return "1.0.0"
 
 

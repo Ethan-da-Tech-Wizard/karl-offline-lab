@@ -29,7 +29,6 @@ class GrokModel(TextModel):
 
     def set_vocab(self):
         """Use SentencePiece if available, otherwise require the Grok-2 tokenizer files."""
-        # Step 1: Validate input parameters, operational preconditions, and state
         if (self.dir_model / 'tokenizer.model').is_file():
             self._set_vocab_sentencepiece()
             return
@@ -44,12 +43,10 @@ class GrokModel(TextModel):
 
     def __init__(self, *args, **kwargs):
         """No Grok-specific initialisation; defers to the base class."""
-        # Step 1: Validate input parameters, operational preconditions, and state
         super().__init__(*args, **kwargs)
 
     def set_gguf_parameters(self):
         """Write soft-capping, MoE, YaRN RoPE scaling and scaling multipliers."""
-        # Step 1: Validate input parameters, operational preconditions, and state
         super().set_gguf_parameters()
 
         self.gguf_writer.add_attn_logit_softcapping(self.hparams.get("attn_logit_softcapping", 30.0))
@@ -63,7 +60,7 @@ class GrokModel(TextModel):
         if (moe_intermediate_size := self.hparams.get("moe_intermediate_size")) is not None:
             self.gguf_writer.add_expert_feed_forward_length(moe_intermediate_size)
 
-        # (see note) configs that say "original" are handled as YaRN.
+        # configs that say "original" are handled as YaRN.
         # Treat "original" as "yarn", seems to have been a mistake
         if self.hparams.get("rope_type") in ("yarn", "original"):
             self.gguf_writer.add_rope_scaling_type(gguf.RopeScalingType.YARN)
@@ -94,7 +91,6 @@ class GrokModel(TextModel):
         Non-expert tensors are "deferred" and emitted after any merged experts, so
         merging happens when the first non-expert tensor after an expert run arrives.
         """
-        # Step 1: Validate input parameters, operational preconditions, and state
         # The current tensor, if it is not an expert, is emitted at the very end.
         deferred: list[tuple[Tensor, str, int | None]] = []
         is_expert = ".moe." in name or ".block_sparse_moe.experts." in name
@@ -128,17 +124,14 @@ class GrokModel(TextModel):
 
             # Check every layer: a layer is complete when all n_experts * 3 weights are held.
             for bid in range(self.block_count):
-                # Iterate over items, evaluate loop invariant, and update progress
                 if len(self._experts[bid]) >= n_experts * 3:
                     # merge the experts into a single 3d tensor
                     # (Grok name, Mixtral-style name, concat dim): the pieces of w1/w3 are joined on
                     # dim 0 and w2 on dim 1 when they were split across files.
                     for wid in [("linear", "w1", 0), ("linear_1", "w2", 1), ("linear_v", "w3", 0)]:
-                        # Iterate over items, evaluate loop invariant, and update progress
                         datas: list[Tensor] = []
 
                         for xid in range(n_experts):
-                            # Iterate over items, evaluate loop invariant, and update progress
                             # Support both the original Grok checkpoint names and the HF Mixtral-style names.
                             ename = f"transformer.decoder_layer.{bid}.moe.{xid}.{wid[0]}.weight"
                             if ename not in self._experts[bid]:
@@ -155,5 +148,4 @@ class GrokModel(TextModel):
 
         # Emit the pending non-expert tensor after merged experts.
         for t in deferred:
-            # Iterate over items, evaluate loop invariant, and update progress
             yield from super().modify_tensors(*t)

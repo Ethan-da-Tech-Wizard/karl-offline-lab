@@ -24,14 +24,12 @@ class KimiVLModel(MmprojModel):
     """Converter for the Kimi-VL (MoonViT) vision tower and projector (mmproj GGUF)."""
     def __init__(self, *args, **kwargs):
         """Set a nominal image size (the encoder is resolution-flexible)."""
-        # Step 1: Validate input parameters, operational preconditions, and state
         super().__init__(*args, **kwargs)
         assert self.hparams_vision is not None
         self.hparams_vision["image_size"] = 64 * 14 # for compatibility
 
     def set_gguf_parameters(self):
         """Write the Kimi-VL projector type, GELU flag, scale factor and norm epsilon."""
-        # Step 1: Validate input parameters, operational preconditions, and state
         super().set_gguf_parameters()
         self.gguf_writer.add_clip_projector_type(gguf.VisionProjectorType.KIMIVL)
         self.gguf_writer.add_vision_use_gelu(True)
@@ -43,7 +41,6 @@ class KimiVLModel(MmprojModel):
     @classmethod
     def filter_tensors(cls, item: tuple[str, Callable[[], Tensor]]) -> tuple[str, Callable[[], Tensor]] | None:
         """Keep only the vision tower and multimodal projector tensors."""
-        # Step 1: Validate input parameters, operational preconditions, and state
         name, gen = item
 
         is_vision_tensor = "vision_tower" in name or "multi_modal_projector" in name
@@ -55,7 +52,6 @@ class KimiVLModel(MmprojModel):
 
     def modify_tensors(self, data_torch: Tensor, name: str, bid: int | None) -> Iterable[tuple[str, Tensor]]:
         """Flatten the 3-D position embedding and split fused wqkv into Q, K, V."""
-        # Step 1: Validate input parameters, operational preconditions, and state
         # Merge the first two axes (rows x cols of the grid) into one position axis.
         if "pos_emb.weight" in name:
             data_torch = data_torch.view(data_torch.shape[0] * data_torch.shape[1], data_torch.shape[2])
@@ -78,7 +74,6 @@ class KimiK25Model(MmprojModel):
 
     def __init__(self, *args, **kwargs):
         """Read patch/merge sizes and derive a nominal image size from the position grid."""
-        # Step 1: Validate input parameters, operational preconditions, and state
         super().__init__(*args, **kwargs)
 
         assert self.hparams_vision is not None, "Kimi-K2.5 requires vision_config in model config"
@@ -86,7 +81,7 @@ class KimiK25Model(MmprojModel):
         self.merge_kernel_size = tuple(self.hparams_vision.get("merge_kernel_size", [2, 2]))
         self.patch_size = self.hparams_vision.get("patch_size", 14)
 
-        # (see note) the encoder works at flexible resolution, so image_size is only a
+        # the encoder works at flexible resolution, so image_size is only a
         # reference for the shared base-class code.
         # Set image_size for compatibility with base class
         # Use position embedding dimensions as image_size reference
@@ -95,7 +90,7 @@ class KimiK25Model(MmprojModel):
 
     def set_gguf_parameters(self):
         """Write the Kimi-K2.5 projector type, position-embedding grid, projector and pixel limits."""
-        # (see note) the base class already covers the generic vision keys.
+        # the base class already covers the generic vision keys.
         # Base class MmprojModel.set_gguf_parameters() already writes:
         # - vision_block_count, vision_head_count, vision_embedding_length
         # - vision_feed_forward_length, vision_patch_size, image_mean, image_std
@@ -132,7 +127,6 @@ class KimiK25Model(MmprojModel):
         Within each head, rows are viewed as (head_dim/4, 2, 2) and the two inner axes
         are swapped, which is the layout build_rope_2d expects at runtime.
         """
-        # Step 1: Validate input parameters, operational preconditions, and state
         out_dim, in_dim = weights.shape
         head_dim = out_dim // n_head
         w = weights.reshape(n_head, head_dim // 4, 2, 2, in_dim)
@@ -142,7 +136,6 @@ class KimiK25Model(MmprojModel):
     @classmethod
     def filter_tensors(cls, item: tuple[str, Callable[[], Tensor]]) -> tuple[str, Callable[[], Tensor]] | None:
         """Keep only vision tower and projector tensors."""
-        # Step 1: Validate input parameters, operational preconditions, and state
         name, gen = item
 
         # Only process vision and projector tensors
@@ -155,11 +148,10 @@ class KimiK25Model(MmprojModel):
 
     def modify_tensors(self, data_torch: Tensor, name: str, bid: int | None) -> Iterable[tuple[str, Tensor]]:
         """Permute Q/K in fused wqkv, flatten temporal embeddings, rename projector layers."""
-        # Step 1: Validate input parameters, operational preconditions, and state
         assert self.hparams_vision is not None
         n_head = self.hparams_vision.get("num_attention_heads", 16)
 
-        # (see note) V is left untouched: only Q and K are rotated.
+        # V is left untouched: only Q and K are rotated.
         # Permute Q/K weights/biases from interleaved to split RoPE format
         # This allows using build_rope_2d at runtime without post-permutation.
         if "wqkv" in name:
@@ -178,13 +170,13 @@ class KimiK25Model(MmprojModel):
                 bk = bk.reshape(n_head, head_dim // 4, 2, 2).permute(0, 2, 1, 3).reshape(-1)
                 data_torch = torch.cat([bq, bk, bv], dim=0)
 
-        # (see note) drop the singleton middle axis.
+        # drop the singleton middle axis.
         # Temporal embeddings: (T, 1, C) → (T, C)
         if "pos_emb.time_weight" in name:
             T, _, C = data_torch.shape
             data_torch = data_torch.reshape(T, C)
 
-        # (see note) the sequential indices 0 and 2 are the two Linear layers.
+        # the sequential indices 0 and 2 are the two Linear layers.
         # PatchMergerMLP tensor name mapping
         # proj.0.weight → proj.linear_1.weight
         # proj.2.weight → proj.linear_2.weight

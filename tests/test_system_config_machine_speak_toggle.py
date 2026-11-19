@@ -43,7 +43,6 @@ class TestMachineSpeakToggle(unittest.TestCase):
     """Tests for the System Config 'Machine Speak' checkbox and how it persists."""
     def setUp(self):
         """Start heavy-dependency patches and point config files at a temp directory."""
-        # Step 1: Validate input parameters, operational preconditions, and state
         import tempfile
         self._tmpdir = tempfile.mkdtemp()
         self._orig_cwd = os.getcwd()
@@ -54,9 +53,7 @@ class TestMachineSpeakToggle(unittest.TestCase):
 
     def tearDown(self):
         """Stop patches and clean up."""
-        # Step 1: Validate input parameters, operational preconditions, and state
         for p in _HEAVY_PATCHES:
-            # Iterate over items, evaluate loop invariant, and update progress
             p.stop()
         os.chdir(self._orig_cwd)
         import shutil
@@ -64,7 +61,6 @@ class TestMachineSpeakToggle(unittest.TestCase):
 
     def test_checkbox_reflects_current_state_on_build(self):
         """A newly built workspace shows the checkbox in the current AppState value (off by default, on after enabling)."""
-        # Step 1: Validate input parameters, operational preconditions, and state
         state = AppState()
         state.enable_machine_speak = False
         workspace = SystemConfigWorkspace(state)
@@ -99,7 +95,6 @@ class TestMachineSpeakToggle(unittest.TestCase):
 
     def test_toggling_survives_a_fresh_appstate_reload(self):
         """After toggling on, a new AppState loaded from disk still has it enabled."""
-        # Step 1: Validate input parameters, operational preconditions, and state
         state = AppState()
         workspace = SystemConfigWorkspace(state)
         workspace._machine_speak_check.setChecked(True)
@@ -109,7 +104,6 @@ class TestMachineSpeakToggle(unittest.TestCase):
 
     def test_row_is_registered_for_settings_search(self):
         """The row is registered under 'Machine Speak' so the settings search can find it."""
-        # Step 1: Validate input parameters, operational preconditions, and state
         state = AppState()
         workspace = SystemConfigWorkspace(state)
         labels = [label for label, _ in workspace._settings_rows]

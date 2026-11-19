@@ -27,7 +27,6 @@ class JambaModel(TextModel):
 
     def set_vocab(self):
         """Use tokenizer.model if present, otherwise the HF Llama-style tokenizer."""
-        # Step 1: Validate input parameters, operational preconditions, and state
         if (self.dir_model / "tokenizer.model").is_file():
             self._set_vocab_sentencepiece()
         else:
@@ -36,7 +35,6 @@ class JambaModel(TextModel):
 
     def set_gguf_parameters(self):
         """Write hybrid SSM/attention parameters, including per-layer KV head counts."""
-        # Step 1: Validate input parameters, operational preconditions, and state
         d_model = self.find_hparam(["hidden_size", "mamba_d_model"])
         # Mamba defaults used when the config omits them: conv kernel 4, state size 16.
         d_conv  = self.find_hparam(["mamba_d_conv"],  optional=True) or 4
@@ -113,11 +111,9 @@ class JambaModel(TextModel):
 
                 # merge the experts into a single 3d tensor
                 for wid in ["down_proj", "gate_proj", "up_proj"]:
-                    # Iterate over items, evaluate loop invariant, and update progress
                     datas: list[Tensor] = []
 
                     for xid in range(n_experts):
-                        # Iterate over items, evaluate loop invariant, and update progress
                         ename = f"model.layers.{bid}.feed_forward.experts.{xid}.{wid}.weight"
                         datas.append(self._experts[bid][ename])
                         del self._experts[bid][ename]
@@ -125,7 +121,7 @@ class JambaModel(TextModel):
                     # Stack the per-expert 2D matrices into [n_experts, ...].
                     data_torch = torch.stack(datas, dim=0)
 
-                    # (see note) reuse Qwen2-MoE's merged name so the standard tensor map applies.
+                    # reuse Qwen2-MoE's merged name so the standard tensor map applies.
                     # using the same merged name as qwen2moe
                     merged_name = f"model.layers.{bid}.mlp.experts.{wid}.weight"
 
@@ -149,7 +145,6 @@ class JambaModel(TextModel):
 
     def prepare_tensors(self):
         """Run the normal conversion, then verify every expert tensor was merged."""
-        # Step 1: Validate input parameters, operational preconditions, and state
         super().prepare_tensors()
 
         # Anything still buffered here means the checkpoint was missing expert

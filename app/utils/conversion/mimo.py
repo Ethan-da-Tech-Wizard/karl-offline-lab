@@ -49,7 +49,6 @@ class MimoV2Model(TextModel):
 
     def __init__(self, *args, **kwargs):
         """Extend block_count with the MTP layers so tensor-name mapping covers them."""
-        # Step 1: Validate input parameters, operational preconditions, and state
         # The HF config only counts the regular layers; the MTP layers live in
         # extra slots after them, so the tensor map must be rebuilt for the larger count.
         super().__init__(*args, **kwargs)
@@ -93,7 +92,6 @@ class MimoV2Model(TextModel):
         # for the true degree, so test the larger candidate first.
         tp = None
         for cand in (8, 4):
-            # Iterate over items, evaluate loop invariant, and update progress
             if total_rows % cand != 0:
                 continue
             rpr = total_rows // cand
@@ -137,7 +135,6 @@ class MimoV2Model(TextModel):
         # Gather each rank's Q, K and V slices, then concatenate by type to undo sharding.
         qs, ks, vs = [], [], []
         for r in range(tp):
-            # Iterate over items, evaluate loop invariant, and update progress
             base = r * rows_per_rank
             qs.append(dequant[base : base + q_per])
             ks.append(dequant[base + q_per : base + q_per + k_per])
@@ -156,7 +153,6 @@ class MimoV2Model(TextModel):
         if isinstance(qc, dict) and qc.get("quant_method") == "fp8":
             pat = re.compile(r"^model\.layers\.(\d+)\.self_attn\.qkv_proj\.weight_scale_inv$")
             for name in list(self.model_tensors.keys()):
-                # Iterate over items, evaluate loop invariant, and update progress
                 m = pat.match(name)
                 if not m:
                     continue
@@ -196,7 +192,6 @@ class MimoV2Model(TextModel):
     def set_gguf_parameters(self):
         """Write MiMo-V2 hyperparameters: per-layer KV heads, SWA pattern, MoE sizes, RoPE and MTP count.
         """
-        # Step 1: Validate input parameters, operational preconditions, and state
         super().set_gguf_parameters()
 
         # The runtime shares one head layout between SWA and full layers except KV heads;
@@ -239,7 +234,6 @@ class MimoV2Model(TextModel):
     def filter_tensors(cls, item: tuple[str, Callable[[], Tensor]]) -> tuple[str, Callable[[], Tensor]] | None:
         """Normalize attention-sink tensor names (add the missing .weight) then defer to the base filter.
         """
-        # Step 1: Validate input parameters, operational preconditions, and state
         name, gen = item
 
         if "attention_sink" in name and not name.endswith(".weight"):
@@ -280,11 +274,9 @@ class MimoV2Model(TextModel):
             if len(self._experts[bid]) >= n_experts * 3:
                 # merge the experts into a single 3d tensor
                 for w_name in ["gate_proj", "up_proj", "down_proj"]:
-                    # Iterate over items, evaluate loop invariant, and update progress
                     datas: list[Tensor] = []
 
                     for xid in range(n_experts):
-                        # Iterate over items, evaluate loop invariant, and update progress
                         ename_to_retrieve = f"model.layers.{bid}.mlp.experts.{xid}.{w_name}.weight"
                         datas.append(self._experts[bid][ename_to_retrieve])
                         del self._experts[bid][ename_to_retrieve]
@@ -300,7 +292,6 @@ class MimoV2Model(TextModel):
 
     def prepare_tensors(self):
         """Run base preparation and make sure no expert tensors were left unmerged."""
-        # Step 1: Validate input parameters, operational preconditions, and state
         super().prepare_tensors()
 
         if self._experts is not None:
@@ -315,7 +306,6 @@ class MiMoV2VisionModel(MmprojModel):
     """Converter for the MiMo-V2 vision tower (mmproj) to GGUF."""
     def __init__(self, *args, **kwargs):
         """Fill vision hyperparameter defaults and cache window-attention settings."""
-        # Step 1: Validate input parameters, operational preconditions, and state
         super().__init__(*args, **kwargs)
         assert self.hparams_vision is not None
         hp = self.hparams_vision
@@ -343,7 +333,6 @@ class MiMoV2VisionModel(MmprojModel):
     def set_gguf_parameters(self):
         """Write vision projector metadata (projector type, KV heads, window attention, pixel limits).
         """
-        # Step 1: Validate input parameters, operational preconditions, and state
         super().set_gguf_parameters()
 
         self.gguf_writer.add_clip_projector_type(gguf.VisionProjectorType.MIMOVL)
@@ -368,7 +357,6 @@ class MiMoV2VisionModel(MmprojModel):
     @classmethod
     def filter_tensors(cls, item: tuple[str, Callable[[], Tensor]]) -> tuple[str, Callable[[], Tensor]] | None:
         """Keep only vision tensors (prefix 'visual.')."""
-        # Step 1: Validate input parameters, operational preconditions, and state
         name, _ = item
         if not name.startswith("visual."):
             return None

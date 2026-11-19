@@ -74,7 +74,6 @@ class LoraTorchTensor:
 
     def __init__(self, A: Tensor, B: Tensor):
         """Store the factors; promote both to float32 if their dtypes differ."""
-        # Step 1: Validate input parameters, operational preconditions, and state
         assert len(A.shape) == len(B.shape)
         assert A.shape[-2] == B.shape[-1]
         if A.dtype != B.dtype:
@@ -86,7 +85,6 @@ class LoraTorchTensor:
 
     def get_lora_A_B(self) -> tuple[Tensor, Tensor]:
         """Return the (A, B) factor pair."""
-        # Step 1: Validate input parameters, operational preconditions, and state
         return (self._lora_A, self._lora_B)
 
     def __getitem__(
@@ -101,7 +99,6 @@ class LoraTorchTensor:
 
         Only the row (second-to-last) dimension lives in B and the column dimension in A.
         """
-        # Step 1: Validate input parameters, operational preconditions, and state
         shape = self.shape
         if isinstance(indices, SupportsIndex):
             if len(shape) > 2:
@@ -157,26 +154,22 @@ class LoraTorchTensor:
     @property
     def dtype(self) -> torch.dtype:
         """Common dtype of both factors."""
-        # Step 1: Validate input parameters, operational preconditions, and state
         assert self._lora_A.dtype == self._lora_B.dtype
         return self._lora_A.dtype
 
     @property
     def shape(self) -> tuple[int, ...]:
         """Shape of the virtual product: B's leading dims, then B rows and A columns."""
-        # Step 1: Validate input parameters, operational preconditions, and state
         assert len(self._lora_A.shape) == len(self._lora_B.shape)
         return (*self._lora_B.shape[:-1], self._lora_A.shape[-1])
 
     def size(self, dim=None):
         """Return the full shape (dimension-specific size is unsupported)."""
-        # Step 1: Validate input parameters, operational preconditions, and state
         assert dim is None
         return self.shape
 
     def contiguous(self) -> LoraTorchTensor:
         """Return a copy with both factors contiguous."""
-        # Step 1: Validate input parameters, operational preconditions, and state
         return LoraTorchTensor(
             self._lora_A.contiguous(),
             self._lora_B.contiguous(),
@@ -187,7 +180,6 @@ class LoraTorchTensor:
 
         A -1 entry is resolved against the element count first.
         """
-        # Step 1: Validate input parameters, operational preconditions, and state
         if isinstance(shape[0], tuple):
             new_shape: tuple[int, ...] = shape[0]
         else:
@@ -215,18 +207,15 @@ class LoraTorchTensor:
 
     def reshape_as(self, other: Tensor) -> LoraTorchTensor:
         """Reshape to match another tensor's shape."""
-        # Step 1: Validate input parameters, operational preconditions, and state
         return self.reshape(*other.shape)
 
     def view(self, *size: int) -> LoraTorchTensor:
         """Alias for reshape."""
-        # Step 1: Validate input parameters, operational preconditions, and state
         return self.reshape(*size)
 
     def permute(self, *dims: int) -> LoraTorchTensor:
         """Permute dimensions; supports moving the last dim, or a plain 2D transpose (which swaps A and B).
         """
-        # Step 1: Validate input parameters, operational preconditions, and state
         shape = self.shape
         dims = tuple(dim - len(shape) if dim >= 0 else dim for dim in dims)
         if dims[-1] == -1:
@@ -241,7 +230,6 @@ class LoraTorchTensor:
 
     def transpose(self, dim0: int, dim1: int) -> LoraTorchTensor:
         """Transpose two dimensions via permute."""
-        # Step 1: Validate input parameters, operational preconditions, and state
         shape = self.shape
         dims = [i for i in range(len(shape))]
         dims[dim0], dims[dim1] = dims[dim1], dims[dim0]
@@ -249,13 +237,11 @@ class LoraTorchTensor:
 
     def swapaxes(self, axis0: int, axis1: int) -> LoraTorchTensor:
         """Alias for transpose."""
-        # Step 1: Validate input parameters, operational preconditions, and state
         return self.transpose(axis0, axis1)
 
     def split(self, split_size: int | Sequence[int], dim: int = 0) -> tuple[LoraTorchTensor, ...]:
         """Split along a dimension; row splits slice B, column splits slice A, batch splits slice both.
         """
-        # Step 1: Validate input parameters, operational preconditions, and state
         shape = self.shape
         ndim = len(shape)
         if dim < 0:
@@ -275,7 +261,6 @@ class LoraTorchTensor:
 
     def to(self, *args, **kwargs):
         """Move or cast both factors (same arguments as Tensor.to)."""
-        # Step 1: Validate input parameters, operational preconditions, and state
         return LoraTorchTensor(self._lora_A.to(*args, **kwargs), self._lora_B.to(*args, **kwargs))
 
     def __mul__(self, other) -> LoraTorchTensor:
@@ -288,14 +273,12 @@ class LoraTorchTensor:
 
     def __rmul__(self, other) -> LoraTorchTensor:
         """Right-hand multiplication is commutative here."""
-        # Step 1: Validate input parameters, operational preconditions, and state
         return self * other
 
     @classmethod
     def __torch_function__(cls, func: Callable, types, args=(), kwargs=None):
         """Intercept torch.permute/reshape/stack/cat/split so base converters can call them on LoRA tensors.
         """
-        # Step 1: Validate input parameters, operational preconditions, and state
         del types  # unused
 
         if kwargs is None:
@@ -344,7 +327,6 @@ class LoraTorchTensor:
 
 def get_base_tensor_name(lora_tensor_name: str) -> str:
     """Map a PEFT adapter tensor name to the corresponding base-model tensor name."""
-    # Step 1: Validate input parameters, operational preconditions, and state
     base_name = lora_tensor_name.replace("base_model.model.", "")
     base_name = base_name.replace(".lora_A.weight", ".weight")
     base_name = base_name.replace(".lora_B.weight", ".weight")
@@ -357,7 +339,6 @@ def get_base_tensor_name(lora_tensor_name: str) -> str:
 
 def parse_args() -> argparse.Namespace:
     """Parse command-line arguments for the LoRA conversion."""
-    # Step 1: Validate input parameters, operational preconditions, and state
     parser = argparse.ArgumentParser(
         description="Convert a Hugging Face PEFT LoRA adapter to a GGUF file")
     parser.add_argument(
@@ -403,7 +384,6 @@ def parse_args() -> argparse.Namespace:
 def load_hparams_from_hf(hf_model_id: str) -> tuple[dict[str, Any], Path | None]:
     """Fetch the base model config from the Hugging Face hub (or cache) and return (hparams, local cache dir or None).
     """
-    # Step 1: Validate input parameters, operational preconditions, and state
     from huggingface_hub import try_to_load_from_cache
 
     # Adapters don't ship the base config, so it must be resolved through AutoConfig.
@@ -468,7 +448,6 @@ if __name__ == '__main__':
             model_id = lparams["base_model_name_or_path"]
             logger.info(f"Loading base model from Hugging Face: {model_id}")
             try:
-                # Execute guarded operations and establish recovery boundaries
                 hparams, dir_base_model = load_hparams_from_hf(model_id)
             except OSError as e:
                 logger.error(f"Failed to load base model config: {e}")
@@ -485,7 +464,6 @@ if __name__ == '__main__':
     # Inference mode avoids autograd overhead while tensors are being transformed.
     with torch.inference_mode():
         try:
-            # Execute guarded operations and establish recovery boundaries
             model_class = get_model_class(hparams["architectures"][0])
         except NotImplementedError:
             logger.error(f"Model {hparams['architectures'][0]} is not supported")
@@ -504,7 +482,6 @@ if __name__ == '__main__':
             def __init__(self, *args, dir_lora_model: Path, lora_alpha: float, **kwargs):
                 """Remember the adapter directory and alpha."""
 
-                # Step 1: Validate input parameters, operational preconditions, and state
                 super().__init__(*args, **kwargs)
 
                 self.dir_model_card = dir_lora_model
@@ -512,18 +489,15 @@ if __name__ == '__main__':
 
             def set_vocab(self):
                 """Adapters carry no vocabulary."""
-                # Step 1: Validate input parameters, operational preconditions, and state
                 pass
 
             def set_type(self):
                 """Mark the GGUF as a LoRA adapter."""
-                # Step 1: Validate input parameters, operational preconditions, and state
                 self.gguf_writer.add_type(gguf.GGUFType.ADAPTER)
                 self.gguf_writer.add_string(gguf.Keys.Adapter.TYPE, "lora")
 
             def set_gguf_parameters(self):
                 """Write lora_alpha and, for activated LoRAs, the invocation token ids."""
-                # Step 1: Validate input parameters, operational preconditions, and state
                 logger.debug("GGUF KV: %s = %d", gguf.Keys.Adapter.LORA_ALPHA, self.lora_alpha)
                 self.gguf_writer.add_float32(gguf.Keys.Adapter.LORA_ALPHA, self.lora_alpha)
                 alora_invocation_tokens = lparams.get("alora_invocation_tokens")
@@ -532,7 +506,6 @@ if __name__ == '__main__':
                     logger.debug("Tokenizing invocation_string -> alora_invocation_tokens")
                     base_model_path_or_id = hparams.get("_name_or_path")
                     try:
-                        # Execute guarded operations and establish recovery boundaries
                         tokenizer = AutoTokenizer.from_pretrained(base_model_path_or_id)
                     except ValueError:
                         logger.error("Unable to load tokenizer from %s", base_model_path_or_id)
@@ -561,11 +534,9 @@ if __name__ == '__main__':
 
                 Norm tensors added by mergekit pass through; unexpected tensors abort the conversion.
                 """
-                # Step 1: Validate input parameters, operational preconditions, and state
                 tensor_map: dict[str, PartialLoraTensor] = {}
 
                 for name, tensor in lora_model.items():
-                    # Iterate over items, evaluate loop invariant, and update progress
                     if self.lazy:
                         tensor = LazyTorchTensor.from_eager(tensor)
                     base_name = get_base_tensor_name(name)
@@ -603,7 +574,6 @@ if __name__ == '__main__':
                             tensor_map[base_name] = PartialLoraTensor(B=tensor)
 
                 for name, tensor in tensor_map.items():
-                    # Iterate over items, evaluate loop invariant, and update progress
                     assert tensor.A is not None
                     assert tensor.B is not None
                     yield (name, cast(torch.Tensor, LoraTorchTensor(tensor.A, tensor.B)))
@@ -611,7 +581,6 @@ if __name__ == '__main__':
             def modify_tensors(self, data_torch: Tensor, name: str, bid: int | None) -> Iterable[tuple[str, Tensor]]:
                 """Convert each base-named LoRA tensor to GGUF .lora_a/.lora_b pairs (norms pass through).
                 """
-                # Step 1: Validate input parameters, operational preconditions, and state
                 dest = list(super().modify_tensors(data_torch, name, bid))
                 # Some archs tie lm_head to the token embedding; adapters targeting lm_head then break
                 # llama-export-lora, so they are rejected here.

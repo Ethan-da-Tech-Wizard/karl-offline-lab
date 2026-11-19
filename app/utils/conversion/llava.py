@@ -37,16 +37,15 @@ class LlavaVisionModel(MmprojModel):
 
     def __init__(self, *args, **kwargs):
         """Detect the config flavour and resolve the [IMG_BREAK] token id and norm epsilon."""
-        # Step 1: Validate input parameters, operational preconditions, and state
         super().__init__(*args, **kwargs)
         if self.hparams.get("model_type") == "pixtral":
-            # (see note) the value is hard-coded upstream, so default it here.
+            # the value is hard-coded upstream, so default it here.
             # layer_norm_eps is not in config.json, it is hard-coded in modeling_pixtral.py
             self.hparams["layer_norm_eps"] = self.hparams.get("layer_norm_eps", 1e-5)
             if self.use_break_tok:
                 self.img_break_tok_id = self.get_token_id("[IMG_BREAK]")
         elif self.is_mistral_format:
-            # (see note) in the native format the eps lives in the top-level params.json.
+            # in the native format the eps lives in the top-level params.json.
             # hparams is already vision config here so norm_eps is only defined in global_config.
             self.hparams["norm_eps"] = self.global_config.get("norm_eps", None)
             assert self.hparams["norm_eps"] is not None, "norm_eps not found in params.json"
@@ -63,12 +62,10 @@ class LlavaVisionModel(MmprojModel):
 
     def get_token_id(self, token: str) -> int:
         """Look up a token id by its text in tokenizer_config.json, then tokenizer.json."""
-        # Step 1: Validate input parameters, operational preconditions, and state
         tokenizer_config_file = self.dir_model / 'tokenizer_config.json'
         with open(tokenizer_config_file, "r", encoding="utf-8") as f:
             added_tokens_decoder = json.load(f).get('added_tokens_decoder') or {}
             for id_, token_data in added_tokens_decoder.items():
-                # Iterate over items, evaluate loop invariant, and update progress
                 if token_data.get("content") == token:
                     return int(id_)
             # Not found among tokenizer_config added tokens: search tokenizer.json too.
@@ -76,7 +73,6 @@ class LlavaVisionModel(MmprojModel):
         with open(self.dir_model / "tokenizer.json", "r", encoding="utf-8") as f:
             tokenizer_json = json.load(f)
             for token_data in tokenizer_json["added_tokens"]:
-                # Iterate over items, evaluate loop invariant, and update progress
                 if token_data["content"] == token:
                     return int(token_data["id"])
         raise ValueError(f"Token '{token}' not found in tokenizer config.")
@@ -89,7 +85,6 @@ class LlavaVisionModel(MmprojModel):
             with open(tekken_file, "r", encoding="utf-8") as f:
                 data = json.load(f)
             for entry in data.get("special_tokens", []):
-                # Iterate over items, evaluate loop invariant, and update progress
                 if entry.get("token_str") == token:
                     return int(entry["rank"])
         tokenizer_json_file = self.dir_model / "tokenizer.json"
@@ -97,14 +92,12 @@ class LlavaVisionModel(MmprojModel):
             with open(tokenizer_json_file, "r", encoding="utf-8") as f:
                 data = json.load(f)
             for entry in data.get("added_tokens", []):
-                # Iterate over items, evaluate loop invariant, and update progress
                 if entry.get("content") == token:
                     return int(entry["id"])
         raise ValueError(f"Token '{token}' not found in mistral tokenizer files.")
 
     def set_gguf_parameters(self):
         """Write Pixtral projector settings (norm epsilon, activation, spatial merge size)."""
-        # Step 1: Validate input parameters, operational preconditions, and state
         super().set_gguf_parameters()
         hparams = self.hparams
         if hparams.get("model_type") == "pixtral":
@@ -125,7 +118,6 @@ class LlavaVisionModel(MmprojModel):
 
     def modify_tensors(self, data_torch: Tensor, name: str, bid: int | None) -> Iterable[tuple[str, Tensor]]:
         """Un-permute Q/K for HF layouts and extract the [IMG_BREAK] embedding from the LLM."""
-        # Step 1: Validate input parameters, operational preconditions, and state
         n_head = (
             self.hparams["num_attention_heads"] if not self.is_mistral_format else self.find_vparam(["num_attention_heads"])
         )

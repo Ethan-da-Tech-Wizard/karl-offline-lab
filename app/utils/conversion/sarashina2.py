@@ -39,7 +39,6 @@ class Sarashina2VLTextModel(LlamaModel):
     @classmethod
     def filter_tensors(cls, item: tuple[str, Callable[[], Tensor]]) -> tuple[str, Callable[[], Tensor]] | None:
         """Strip the 'llm.' prefix and drop the stray top-level 'norm.' tensors."""
-        # Step 1: Validate input parameters, operational preconditions, and state
         name, gen = item
         if name.startswith("llm."):
             name = name.replace("llm.", "", 1)
@@ -53,6 +52,5 @@ class Sarashina2VLVisionModel(Qwen2VLVisionModel):
     """Vision converter for Sarashina2-Vision, which reuses the Qwen2-VL tower."""
     def __init__(self, *args, **kwargs):
         """Force model_type to qwen2_vl so the Qwen2-VL projector logic applies."""
-        # Step 1: Validate input parameters, operational preconditions, and state
         super().__init__(*args, **kwargs)
         self.global_config['model_type'] = "qwen2_vl"

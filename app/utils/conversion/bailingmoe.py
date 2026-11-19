@@ -31,12 +31,10 @@ class BailingMoeModel(TextModel):
 
     def set_vocab(self):
         """Bailing uses a GPT-2 style BPE tokenizer."""
-        # Step 1: Validate input parameters, operational preconditions, and state
         self._set_vocab_gpt2()
 
     def set_gguf_parameters(self):
         """Write base parameters plus MoE routing / expert sizing metadata."""
-        # Step 1: Validate input parameters, operational preconditions, and state
         super().set_gguf_parameters()
         hparams = self.hparams
         if (rope_dim := hparams.get("head_dim")) is None:
@@ -60,7 +58,6 @@ class BailingMoeModel(TextModel):
 
         (Same transform as LlamaModel.permute; K uses the KV head count under GQA.)
         """
-        # Step 1: Validate input parameters, operational preconditions, and state
         if n_head_kv is not None and n_head != n_head_kv:
             n_head = n_head_kv
         return (weights.reshape(n_head, 2, weights.shape[0] // n_head // 2, *weights.shape[1:])
@@ -72,7 +69,6 @@ class BailingMoeModel(TextModel):
 
         Generator: yields nothing while a layer's experts are still being collected.
         """
-        # Step 1: Validate input parameters, operational preconditions, and state
         n_head = self.hparams["num_attention_heads"]
         n_kv_head = self.hparams.get("num_key_value_heads")
         n_embd = self.hparams["hidden_size"]
@@ -113,11 +109,9 @@ class BailingMoeModel(TextModel):
             if len(self._experts[bid]) >= n_experts * 3:
                 # merge the experts into a single 3d tensor
                 for w_name in ["down_proj", "gate_proj", "up_proj"]:
-                    # Iterate over items, evaluate loop invariant, and update progress
                     datas: list[Tensor] = []
 
                     for xid in range(n_experts):
-                        # Iterate over items, evaluate loop invariant, and update progress
                         ename = f"model.layers.{bid}.mlp.experts.{xid}.{w_name}.weight"
                         datas.append(self._experts[bid][ename])
                         del self._experts[bid][ename]
@@ -146,7 +140,6 @@ class BailingMoeModel(TextModel):
 
     def prepare_tensors(self):
         """Run the normal conversion, then verify every expert tensor was merged."""
-        # Step 1: Validate input parameters, operational preconditions, and state
         super().prepare_tensors()
 
         # Anything still buffered here means the checkpoint was missing expert
@@ -168,7 +161,6 @@ class BailingMoeV2Model(TextModel):
 
     def __init__(self, *args, **kwargs):
         """Extend the block count with any NextN (multi-token prediction) layers."""
-        # Step 1: Validate input parameters, operational preconditions, and state
         super().__init__(*args, **kwargs)
         # NextN layers are stored after the regular layers, so the tensor name map must
         # cover block_count + nextn_layers blocks.
@@ -178,12 +170,10 @@ class BailingMoeV2Model(TextModel):
 
     def set_vocab(self):
         """Bailing uses a GPT-2 style BPE tokenizer."""
-        # Step 1: Validate input parameters, operational preconditions, and state
         self._set_vocab_gpt2()
 
     def set_gguf_parameters(self):
         """Write base parameters, partial-rotary RoPE size, MoE metadata and NextN count."""
-        # Step 1: Validate input parameters, operational preconditions, and state
         super().set_gguf_parameters()
         hparams = self.hparams
         if (rope_dim := hparams.get("head_dim")) is None:
@@ -209,7 +199,6 @@ class BailingMoeV2Model(TextModel):
     @classmethod
     def filter_tensors(cls, item: tuple[str, Callable[[], Tensor]]) -> tuple[str, Callable[[], Tensor]] | None:
         """Rename the router bias so it matches the GGUF tensor name table."""
-        # Step 1: Validate input parameters, operational preconditions, and state
         name, gen = item
 
         if name.endswith(".expert_bias"):
@@ -222,7 +211,6 @@ class BailingMoeV2Model(TextModel):
 
         Generator: yields nothing while a layer's experts are still being collected.
         """
-        # Step 1: Validate input parameters, operational preconditions, and state
         # Routed experts: buffer per layer and merge into stacked tensors when complete.
         if "mlp.experts" in name:
             n_experts = self.find_hparam(["num_local_experts", "num_experts"])
@@ -240,11 +228,9 @@ class BailingMoeV2Model(TextModel):
             if len(self._experts[bid]) >= n_experts * 3:
                 # merge the experts into a single 3d tensor
                 for w_name in ["down_proj", "gate_proj", "up_proj"]:
-                    # Iterate over items, evaluate loop invariant, and update progress
                     datas: list[Tensor] = []
 
                     for xid in range(n_experts):
-                        # Iterate over items, evaluate loop invariant, and update progress
                         ename = f"model.layers.{bid}.mlp.experts.{xid}.{w_name}.weight"
                         datas.append(self._experts[bid][ename])
                         del self._experts[bid][ename]
@@ -261,7 +247,6 @@ class BailingMoeV2Model(TextModel):
 
     def prepare_tensors(self):
         """Run the normal conversion, then verify every expert tensor was merged."""
-        # Step 1: Validate input parameters, operational preconditions, and state
         super().prepare_tensors()
 
         # Anything still buffered here means the checkpoint was missing expert
@@ -283,7 +268,6 @@ class SarvamMoEModel(BailingMoeV2Model):
 
     def set_gguf_parameters(self):
         """Override the partial rotary dimension with the full rotary dimension."""
-        # Step 1: Validate input parameters, operational preconditions, and state
         super().set_gguf_parameters()
         hparams = self.hparams
         if (rope_dim := hparams.get("head_dim")) is None:
@@ -294,7 +278,6 @@ class SarvamMoEModel(BailingMoeV2Model):
     @classmethod
     def filter_tensors(cls, item: tuple[str, Callable[[], Tensor]]) -> tuple[str, Callable[[], Tensor]] | None:
         """Zero-centre the expert bias, then defer to the parent filter."""
-        # Step 1: Validate input parameters, operational preconditions, and state
         name, gen = item
         if name.endswith(".expert_bias"):
             # Sarvam normalizes expert bias to zero mean
@@ -303,7 +286,6 @@ class SarvamMoEModel(BailingMoeV2Model):
 
             def gen():
                 """Load the bias tensor and subtract its mean (zero-mean normalisation)."""
-                # Step 1: Validate input parameters, operational preconditions, and state
                 t = inner()
                 return t - t.mean()
         return super().filter_tensors((name, gen))

@@ -30,14 +30,12 @@ class LightOnOCRVisionModel(LlavaVisionModel):
 
     def set_gguf_parameters(self):
         """Write the Llava vision parameters and tag the projector as LightOnOCR."""
-        # Step 1: Validate input parameters, operational preconditions, and state
         super().set_gguf_parameters()
         self.gguf_writer.add_clip_projector_type(gguf.VisionProjectorType.LIGHTONOCR)
 
     @classmethod
     def filter_tensors(cls, item: tuple[str, Callable[[], Tensor]]) -> tuple[str, Callable[[], Tensor]] | None:
         """Rename LightOnOCR tensors to the names the Llava parent expects."""
-        # Step 1: Validate input parameters, operational preconditions, and state
         name, gen = item
 
         name = name.replace("model.vision_encoder.", "vision_tower.")

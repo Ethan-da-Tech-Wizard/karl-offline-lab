@@ -45,7 +45,7 @@ class FalconH1Model(Mamba2Model):
         # Use Llama conversion for attention
         self._transformer_model_class = LlamaModel
 
-        # (see note) needed to reshape the Mamba2 norm weights in modify_tensors.
+        # needed to reshape the Mamba2 norm weights in modify_tensors.
         # n_group and d_inner are used during reshape_tensors for mamba2
         self.n_group = self.find_hparam(["n_groups"])
         self.d_inner = self.find_hparam(["mamba_d_ssm"])
@@ -67,10 +67,8 @@ class FalconH1Model(Mamba2Model):
 
     def find_hparam(self, keys: Iterable[str], *args, **kwargs) -> Any:
         """Look up an hparam under both its plain key and its "mamba_"-prefixed variant."""
-        # Step 1: Validate input parameters, operational preconditions, and state
         prefixed = []
         for pfx in self.hparam_prefixes:
-            # Iterate over items, evaluate loop invariant, and update progress
             prefixed.extend(
                 "_".join([pfx, k])
                 for k in keys
@@ -81,7 +79,6 @@ class FalconH1Model(Mamba2Model):
 
     def set_vocab(self):
         """Falcon-H1 uses a GPT-2 style BPE tokenizer."""
-        # Step 1: Validate input parameters, operational preconditions, and state
         self._set_vocab_gpt2()
 
     def modify_tensors(self, data_torch: Tensor, name: str, bid: int | None) -> Iterable[tuple[str, Tensor]]:
@@ -90,7 +87,6 @@ class FalconH1Model(Mamba2Model):
         Only the first tensor yielded by the parent is kept; the multiplier is chosen
         from the tensor's HF name.
         """
-        # Step 1: Validate input parameters, operational preconditions, and state
         # Run the parent conversion first, then scale its (single) output tensor.
         tensors = list(super().modify_tensors(data_torch, name, bid))
         tensor = tensors[0][1]
@@ -135,7 +131,6 @@ class FalconH1Model(Mamba2Model):
 
     def set_gguf_parameters(self):
         """Override Mamba2 defaults with attention/FFN parameters and validate the config."""
-        # Step 1: Validate input parameters, operational preconditions, and state
         super().set_gguf_parameters()
 
         # Mamba2 leaves these unset or zero, so write the transformer-side values.

@@ -18,7 +18,6 @@ from app.engine.websocket_server import WebSocketServerManager
 
 def make_manager():
     """Build a WebSocketServerManager without running __init__, with a fixed set of last-generation metrics and no clients."""
-    # Step 1: Validate input parameters, operational preconditions, and state
     manager = WebSocketServerManager.__new__(WebSocketServerManager)
     manager.clients = set()
     manager.last_generation_metrics = {
@@ -32,19 +31,16 @@ def make_manager():
 
 def make_request(path, headers=None):
     """Create a minimal HTTP request object (path and headers) for the manager's HTTP interceptor."""
-    # Step 1: Validate input parameters, operational preconditions, and state
     return SimpleNamespace(path=path, headers=Headers(headers or []))
 
 
 def response_text(response):
     """Decode a response body to text."""
-    # Step 1: Validate input parameters, operational preconditions, and state
     return bytes(response.body).decode("utf-8")
 
 
 def test_prometheus_metrics_exposition_contains_expected_headers():
     """The /metrics text contains HELP/TYPE lines for connections, memory, prefill time, tokens per second, KV cache hit rate and VRAM delta, and reports one active connection."""
-    # Step 1: Validate input parameters, operational preconditions, and state
     manager = make_manager()
     manager.clients = {object()}
 
@@ -63,7 +59,6 @@ def test_prometheus_metrics_exposition_contains_expected_headers():
 
 def test_metrics_http_request_returns_200_prometheus_text():
     """A plain HTTP GET /metrics returns 200 with the Prometheus text content type (version 0.0.4) and the metric headers."""
-    # Step 1: Validate input parameters, operational preconditions, and state
     manager = make_manager()
 
     response = manager._process_http_request(None, make_request("/metrics"))
@@ -77,7 +72,6 @@ def test_metrics_http_request_returns_200_prometheus_text():
 
 def test_non_websocket_http_request_returns_404():
     """Other plain HTTP paths return 404 'Not Found'."""
-    # Step 1: Validate input parameters, operational preconditions, and state
     manager = make_manager()
 
     response = manager._process_http_request(None, make_request("/not-metrics"))
@@ -88,7 +82,6 @@ def test_non_websocket_http_request_returns_404():
 
 def test_websocket_upgrade_bypasses_http_interceptor():
     """A real WebSocket upgrade request is not handled by the HTTP interceptor (it returns None so the handshake proceeds)."""
-    # Step 1: Validate input parameters, operational preconditions, and state
     manager = make_manager()
     request = make_request(
         "/?token=test-token",
@@ -100,7 +93,6 @@ def test_websocket_upgrade_bypasses_http_interceptor():
 
 def test_generation_diagnostics_update_last_metrics():
     """Generation diagnostics update last_generation_metrics (prefill seconds, tokens/s, KV cache hit rate, VRAM delta) that /metrics then reports."""
-    # Step 1: Validate input parameters, operational preconditions, and state
     manager = make_manager()
 
     manager._record_generation_metrics({

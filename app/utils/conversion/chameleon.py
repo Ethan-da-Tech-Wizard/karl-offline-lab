@@ -31,19 +31,16 @@ class ChameleonModel(TextModel):
 
     def set_gguf_parameters(self):
         """Write base parameters plus the swin_norm flag (norm placement variant)."""
-        # Step 1: Validate input parameters, operational preconditions, and state
         super().set_gguf_parameters()
         self.gguf_writer.add_swin_norm(self.hparams.get("swin_norm", False))
 
     def set_vocab(self):
         """Chameleon uses a GPT-2 style BPE tokenizer."""
-        # Step 1: Validate input parameters, operational preconditions, and state
         self._set_vocab_gpt2()
 
     @classmethod
     def filter_tensors(cls, item: tuple[str, Callable[[], Tensor]]) -> tuple[str, Callable[[], Tensor]] | None:
         """Drop the VQ-VAE image tokenizer weights; keep the language model."""
-        # Step 1: Validate input parameters, operational preconditions, and state
         name, gen = item
 
         # The image tokenizer (vqmodel) is not used for text inference.
@@ -56,7 +53,6 @@ class ChameleonModel(TextModel):
 
     def modify_tensors(self, data_torch: Tensor, name: str, bid: int | None) -> Iterable[tuple[str, Tensor]]:
         """Un-permute Q/K projections and reshape the per-head Q/K norm parameters."""
-        # Step 1: Validate input parameters, operational preconditions, and state
         n_head = self.hparams["num_attention_heads"]
         n_kv_head = self.hparams.get("num_key_value_heads")
         hidden_dim = self.hparams.get("hidden_size")
@@ -84,7 +80,6 @@ class ChameleonModel(TextModel):
         Takes the first head's vector, de-interleaves its two halves and repeats it
         across all heads (the norm is stored once, not per head).
         """
-        # Step 1: Validate input parameters, operational preconditions, and state
         head_dim = hidden_dim // n_heads
         data_torch = data_torch[0].view(2, head_dim // 2).t().reshape(1, -1)
         data_torch = data_torch.repeat_interleave(n_heads, 0)

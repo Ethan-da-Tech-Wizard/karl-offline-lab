@@ -37,7 +37,6 @@ class XverseModel(TextModel):
     def set_vocab(self):
         """Build the vocab from the HF tokenizer, classifying tokens as byte, control, user-defined or normal.
         """
-        # Step 1: Validate input parameters, operational preconditions, and state
         assert (self.dir_model / "tokenizer.json").is_file()
         dir_model = self.dir_model
         hparams = self.hparams
@@ -58,7 +57,6 @@ class XverseModel(TextModel):
         added_vocab = tokenizer.get_added_vocab()  # ty: ignore[unresolved-attribute]
 
         for token_id in range(vocab_size):
-            # Iterate over items, evaluate loop invariant, and update progress
             token_text = reverse_vocab[token_id].encode('utf-8')
             # replace "\x00" to string with length > 0
             # A NUL token text would be empty to downstream C code, so give it a printable placeholder.
@@ -88,7 +86,6 @@ class XverseModel(TextModel):
 
     def set_gguf_parameters(self):
         """Write base parameters and the rope dimension count (full head)."""
-        # Step 1: Validate input parameters, operational preconditions, and state
         super().set_gguf_parameters()
 
         self.gguf_writer.add_tensor_data_layout("Meta AI original pth")
@@ -96,7 +93,6 @@ class XverseModel(TextModel):
 
     def modify_tensors(self, data_torch: Tensor, name: str, bid: int | None) -> Iterable[tuple[str, Tensor]]:
         """Undo the HF q/k permutation, as the llama converter does."""
-        # Step 1: Validate input parameters, operational preconditions, and state
         head_count = self.hparams["num_attention_heads"]
         head_count_kv = self.hparams.get("num_key_value_heads", head_count)
 
@@ -110,7 +106,6 @@ class XverseModel(TextModel):
 
     def _reverse_hf_permute(self, weights: Tensor, n_head: int, n_kv_head: int | None = None) -> Tensor:
         """Reverse the HF rotary permutation of q/k weights (grouping heads for GQA)."""
-        # Step 1: Validate input parameters, operational preconditions, and state
         if n_kv_head is not None and n_head != n_kv_head:
             n_head //= n_kv_head
 

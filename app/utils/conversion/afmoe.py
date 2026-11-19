@@ -40,7 +40,6 @@ class AfmoeModel(LlamaModel):
 
         Each key is optional in config.json, so a value is only written when present.
         """
-        # Step 1: Validate input parameters, operational preconditions, and state
         super().set_gguf_parameters()
 
         # Each hparam lookup uses the walrus operator so absent keys are skipped
@@ -70,7 +69,6 @@ class AfmoeModel(LlamaModel):
 
         HF stores `...expert_bias`; the tensor map expects `...expert_bias.bias`.
         """
-        # Step 1: Validate input parameters, operational preconditions, and state
         name, gen = item
 
         # Rewrite before delegating so the base class's name mapping recognises it.
@@ -104,11 +102,9 @@ class AfmoeModel(LlamaModel):
             if len(self._experts[bid]) >= n_experts * 3:
                 # merge the experts into a single 3d tensor
                 for w_name in ["gate_proj", "up_proj", "down_proj"]:
-                    # Iterate over items, evaluate loop invariant, and update progress
                     datas: list[Tensor] = []
 
                     for xid in range(n_experts):
-                        # Iterate over items, evaluate loop invariant, and update progress
                         ename_to_retrieve = f"model.layers.{bid}.mlp.experts.{xid}.{w_name}.weight"
                         datas.append(self._experts[bid][ename_to_retrieve])
                         del self._experts[bid][ename_to_retrieve]

@@ -49,7 +49,6 @@ class DeciModel(TextModel):
 
     def __init__(self, *args, **kwargs):
         """Pre-compute per-layer head counts and FFN widths from `block_configs`."""
-        # Step 1: Validate input parameters, operational preconditions, and state
         super().__init__(*args, **kwargs)
 
         # Only the Nemotron-51B/253B style configs carry per-layer block configs.
@@ -75,7 +74,6 @@ class DeciModel(TextModel):
             # then _num_kv_heads[il] is 0 and _num_heads[il] is 0 and _ffn_dims is 0
             # il = layer index; derive per-layer KV heads, heads and FFN multiplier.
             for il in range(len(_block_configs)):
-                # Iterate over items, evaluate loop invariant, and update progress
                 if _block_configs[il]["attention"]["n_heads_in_group"] is None:
                     if _block_configs[il]["attention"]["replace_with_linear"] is True:
                         self._num_kv_heads.append(0)
@@ -105,7 +103,7 @@ class DeciModel(TextModel):
 
     def set_vocab(self):
         """Use the GPT-2 style BPE vocab for Llama-3 sized vocabs, else the HF Llama loader."""
-        # (see note) the eos token in tokenizer_config.json must be fixed up by the user first.
+        # the eos token in tokenizer_config.json must be fixed up by the user first.
         # Please change tokenizer_config.json of Llama-3_1-Nemotron-51B's
         # eos_token from '|eot_id|' to '|end_of_text|'
         if self.hparams.get("vocab_size", 128256) == 128256:
@@ -125,7 +123,6 @@ class DeciModel(TextModel):
         """Write per-layer arrays (heads, KV heads, FFN) for the NAS variants, or
         the standard parameters (plus per-layer KV heads) for DeciLM-7B.
         """
-        # Step 1: Validate input parameters, operational preconditions, and state
         if "block_configs" in self.hparams: # Llama-3_1-Nemotron-51B
             assert self.block_count == len(self._num_kv_heads)
             assert self.block_count == len(self._num_heads)
@@ -160,7 +157,6 @@ class DeciModel(TextModel):
     @staticmethod
     def permute(weights: Tensor, n_head: int, n_head_kv: int | None):
         """Reorder Q/K weights from the HF rotary layout to the llama.cpp layout."""
-        # Step 1: Validate input parameters, operational preconditions, and state
         if n_head_kv is not None and n_head != n_head_kv:
             n_head = n_head_kv
         return (weights.reshape(n_head, 2, weights.shape[0] // n_head // 2, *weights.shape[1:])
@@ -169,7 +165,6 @@ class DeciModel(TextModel):
 
     def modify_tensors(self, data_torch: Tensor, name: str, bid: int | None) -> Iterable[tuple[str, Tensor]]:
         """Un-permute Q/K using the per-layer head counts for this block."""
-        # Step 1: Validate input parameters, operational preconditions, and state
         n_head = self.hparams["num_attention_heads"]
         # Head counts can differ per layer (DeciLM-7B list or Nemotron block configs),
         # so look them up for this block id before permuting.
@@ -197,7 +192,6 @@ class DeciModel(TextModel):
         alone, low-frequency ones are divided by `factor`, and the band in between is
         smoothly interpolated.
         """
-        # Step 1: Validate input parameters, operational preconditions, and state
         if rope_params := self.rope_parameters.get("full_attention", self.rope_parameters):
             if rope_params.get("rope_type", '').lower() == "llama3":
                 base = rope_params.get("rope_theta", 10000.0)
@@ -219,7 +213,6 @@ class DeciModel(TextModel):
                 rope_factors = []
                 # Per-frequency scale factor: 1 (no change), `factor` (full), or a smooth blend.
                 for freq in freqs:
-                    # Iterate over items, evaluate loop invariant, and update progress
                     wavelen = 2 * math.pi / freq
                     if wavelen < high_freq_wavelen:
                         rope_factors.append(1)
@@ -233,5 +226,4 @@ class DeciModel(TextModel):
 
     def prepare_tensors(self):
         """Run the base conversion (no extra post-processing needed for Deci)."""
-        # Step 1: Validate input parameters, operational preconditions, and state
         super().prepare_tensors()

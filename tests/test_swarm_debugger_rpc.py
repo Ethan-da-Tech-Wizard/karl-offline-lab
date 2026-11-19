@@ -32,7 +32,6 @@ class MockWebSocket:
     """Minimal async websocket double recording what the server sends."""
     def __init__(self, messages):
         """Store the incoming messages and an empty sent list."""
-        # Step 1: Validate input parameters, operational preconditions, and state
         self._messages = list(messages)
         self.sent = []
         self.remote_address = ("127.0.0.1", 50000)
@@ -40,24 +39,20 @@ class MockWebSocket:
 
     def __aiter__(self):
         """Return self so 'async for' works."""
-        # Step 1: Validate input parameters, operational preconditions, and state
         return self
 
     async def __anext__(self):
         """Yield the next queued message or stop."""
-        # Step 1: Validate input parameters, operational preconditions, and state
         if not self._messages:
             raise StopAsyncIteration
         return self._messages.pop(0)
 
     async def send(self, payload):
         """Record an outgoing payload."""
-        # Step 1: Validate input parameters, operational preconditions, and state
         self.sent.append(payload)
 
     async def close(self, code=None, reason=None):
         """Record the close code and reason."""
-        # Step 1: Validate input parameters, operational preconditions, and state
         self.closed = True
         self.close_code = code
         self.close_reason = reason
@@ -65,7 +60,6 @@ class MockWebSocket:
 
 def make_manager():
     """Build a WebSocketServerManager with its heavy collaborators mocked."""
-    # Step 1: Validate input parameters, operational preconditions, and state
     manager = WebSocketServerManager.__new__(WebSocketServerManager)
     manager.port = 19998
     manager.clients = set()
@@ -85,7 +79,6 @@ def make_manager():
 
 async def _rpc(manager, message: dict) -> dict:
     """Send one JSON-RPC message through the handler and return the decoded response; fails if no response was produced."""
-    # Step 1: Validate input parameters, operational preconditions, and state
     websocket = MockWebSocket([json.dumps(message)])
     await manager._handler(websocket, path="/?token=test-token")
     assert websocket.sent, "handler produced no response"
@@ -96,7 +89,6 @@ class TestSwarmDebuggerRpc(unittest.TestCase):
     """JSON-RPC contract tests for the swarm debugger controls (pause, resume, step, override_task, get_history) when no swarm run is active or arguments are invalid."""
     def test_swarm_pause_without_active_run_returns_error(self):
         """Pausing a run that does not exist returns an error mentioning 'No swarm task'."""
-        # Step 1: Validate input parameters, operational preconditions, and state
         resp = asyncio.run(_rpc(make_manager(), {
             "jsonrpc": "2.0", "id": 1, "method": "swarm_pause", "params": {"run_id": "no-such-run"},
         }))
@@ -105,7 +97,6 @@ class TestSwarmDebuggerRpc(unittest.TestCase):
 
     def test_swarm_resume_without_active_run_returns_error(self):
         """Resuming a non-existent run returns an error."""
-        # Step 1: Validate input parameters, operational preconditions, and state
         resp = asyncio.run(_rpc(make_manager(), {
             "jsonrpc": "2.0", "id": 2, "method": "swarm_resume", "params": {"run_id": "no-such-run"},
         }))
@@ -113,7 +104,6 @@ class TestSwarmDebuggerRpc(unittest.TestCase):
 
     def test_swarm_step_without_active_run_returns_error(self):
         """Stepping a non-existent run returns an error."""
-        # Step 1: Validate input parameters, operational preconditions, and state
         resp = asyncio.run(_rpc(make_manager(), {
             "jsonrpc": "2.0", "id": 3, "method": "swarm_step", "params": {"run_id": "no-such-run"},
         }))
@@ -121,7 +111,6 @@ class TestSwarmDebuggerRpc(unittest.TestCase):
 
     def test_swarm_override_task_without_active_run_returns_error(self):
         """Overriding a task of a non-existent run returns an error."""
-        # Step 1: Validate input parameters, operational preconditions, and state
         resp = asyncio.run(_rpc(make_manager(), {
             "jsonrpc": "2.0", "id": 4, "method": "swarm_override_task",
             "params": {"run_id": "no-such-run", "filepath": "a.py", "instructions": "do X"},
@@ -130,7 +119,6 @@ class TestSwarmDebuggerRpc(unittest.TestCase):
 
     def test_swarm_pause_rejects_missing_run_id(self):
         """swarm_pause without run_id is -32602 Invalid params."""
-        # Step 1: Validate input parameters, operational preconditions, and state
         resp = asyncio.run(_rpc(make_manager(), {
             "jsonrpc": "2.0", "id": 5, "method": "swarm_pause", "params": {},
         }))
@@ -139,7 +127,6 @@ class TestSwarmDebuggerRpc(unittest.TestCase):
 
     def test_swarm_override_task_rejects_missing_instructions(self):
         """swarm_override_task without instructions is -32602."""
-        # Step 1: Validate input parameters, operational preconditions, and state
         resp = asyncio.run(_rpc(make_manager(), {
             "jsonrpc": "2.0", "id": 6, "method": "swarm_override_task",
             "params": {"run_id": "x", "filepath": "a.py"},
@@ -149,7 +136,6 @@ class TestSwarmDebuggerRpc(unittest.TestCase):
 
     def test_swarm_get_history_without_run_id_lists_runs(self):
         """swarm_get_history with no run_id lists known runs."""
-        # Step 1: Validate input parameters, operational preconditions, and state
         resp = asyncio.run(_rpc(make_manager(), {
             "jsonrpc": "2.0", "id": 7, "method": "swarm_get_history", "params": {},
         }))
@@ -159,7 +145,6 @@ class TestSwarmDebuggerRpc(unittest.TestCase):
 
     def test_swarm_get_history_with_unknown_run_id_returns_empty_steps(self):
         """An unknown run_id gives an empty steps list, not an error."""
-        # Step 1: Validate input parameters, operational preconditions, and state
         resp = asyncio.run(_rpc(make_manager(), {
             "jsonrpc": "2.0", "id": 8, "method": "swarm_get_history",
             "params": {"run_id": "definitely-not-a-real-run"},
@@ -169,7 +154,6 @@ class TestSwarmDebuggerRpc(unittest.TestCase):
 
     def test_swarm_get_history_rejects_non_string_run_id(self):
         """A non-string run_id is -32602."""
-        # Step 1: Validate input parameters, operational preconditions, and state
         resp = asyncio.run(_rpc(make_manager(), {
             "jsonrpc": "2.0", "id": 9, "method": "swarm_get_history", "params": {"run_id": 123},
         }))

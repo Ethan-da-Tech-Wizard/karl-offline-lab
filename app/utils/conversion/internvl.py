@@ -27,7 +27,6 @@ class InternVisionModel(MmprojModel):
 
     def __init__(self, *args, **kwargs):
         """Read the dynamic image tiling limits from the global config."""
-        # Step 1: Validate input parameters, operational preconditions, and state
         super().__init__(*args, **kwargs)
         assert self.hparams_vision is not None
         self.min_dynamic_tiles = self.global_config.get("min_dynamic_patch", 0)
@@ -35,7 +34,6 @@ class InternVisionModel(MmprojModel):
 
     def set_gguf_parameters(self):
         """Write vision parameters, activation, projector scale factor and tiling limits."""
-        # Step 1: Validate input parameters, operational preconditions, and state
         assert self.hparams_vision is not None
         # Some configs give sizes as [h, w] lists; the shared code expects a scalar.
         if isinstance(self.hparams_vision['image_size'], list):
@@ -67,7 +65,6 @@ class InternVisionModel(MmprojModel):
 
     def tensor_force_quant(self, name, new_name, bid, n_dims):
         """Keep position embeddings in F32."""
-        # Step 1: Validate input parameters, operational preconditions, and state
         if ".position_embd." in new_name:
             return gguf.GGMLQuantizationType.F32
         return super().tensor_force_quant(name, new_name, bid, n_dims)
@@ -75,7 +72,6 @@ class InternVisionModel(MmprojModel):
     @classmethod
     def filter_tensors(cls, item: tuple[str, Callable[[], Tensor]]) -> tuple[str, Callable[[], Tensor]] | None:
         """Keep only vision/projector tensors and normalise names (incl. Intern-S1 layouts)."""
-        # Step 1: Validate input parameters, operational preconditions, and state
         name, gen = item
 
         vision_prefix = ['vision_model', 'mlp', 'model.vision_tower', 'model.multi_modal_projector']

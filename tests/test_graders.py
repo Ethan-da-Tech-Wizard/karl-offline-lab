@@ -107,7 +107,6 @@ def test_keyword_hit_grader():
 
 def test_groundedness_grader():
     """groundedness: a NOT IN CONTEXT refusal passes, answers overlapping the context pass (>=60% of sentences grounded), and answers with no context, no overlap or empty output fail."""
-    # Step 1: Validate input parameters, operational preconditions, and state
     context = [
         "The standard return policy for electronic items is 15 days.",
         "Meridian Technologies CEO is Sandra Holt."

@@ -31,7 +31,6 @@ def test_model_loader_missing_file(monkeypatch):
     orig_exists = os.path.exists
     def mock_exists(path):
         """Report every .gguf path as missing while leaving other paths alone."""
-        # Step 1: Validate input parameters, operational preconditions, and state
         if str(path).endswith(".gguf"):
             return False
         return orig_exists(path)
@@ -45,7 +44,6 @@ def test_model_loader_missing_file(monkeypatch):
 @pytest.mark.filterwarnings("ignore::ResourceWarning")
 def test_model_loader_corrupted_file(tmp_path, monkeypatch):
     """Verify ModelLoader raises an exception when loading a corrupted GGUF file."""
-    # Step 1: Validate input parameters, operational preconditions, and state
     corrupted_file = tmp_path / "corrupted_model.gguf"
     corrupted_file.write_bytes(b"invalid GGUF format signature")
     
@@ -53,7 +51,6 @@ def test_model_loader_corrupted_file(tmp_path, monkeypatch):
     import llama_cpp
     def mock_llama(*args, **kwargs):
         """Simulate a native load failure when constructing Llama."""
-        # Step 1: Validate input parameters, operational preconditions, and state
         if kwargs.get("model_path") == str(corrupted_file):
             raise ValueError("Failed to load model: invalid GGUF signature")
         return None
@@ -68,7 +65,6 @@ def test_model_loader_corrupted_file(tmp_path, monkeypatch):
 
 def test_llm_thread_crash_recovery():
     """Verify LLMThread crash transitions TaskSupervisor task to ERROR and unlocks ModelLoader."""
-    # Step 1: Validate input parameters, operational preconditions, and state
     from app.engine.llm_thread import LLMThread
     
     # Mock acquire/unlock and force an exception mid-run
@@ -133,7 +129,6 @@ def test_introspective_parser_empty_and_malformed():
 
 def test_task_supervisor_cancel_timeout():
     """Verify cancel timeout logic in TaskSupervisor teardown simulation."""
-    # Step 1: Validate input parameters, operational preconditions, and state
     supervisor = TaskSupervisor.instance()
     
     class SlowCancellable:
@@ -155,7 +150,6 @@ def test_task_supervisor_cancel_timeout():
     timeout_occurred = False
     
     while supervisor.active_tasks():
-        # Iterate over items, evaluate loop invariant, and update progress
         if time.perf_counter() - start_wait >= 0.1: # Short timeout for test
             timeout_occurred = True
             break
@@ -169,7 +163,6 @@ def test_task_supervisor_cancel_timeout():
 
 def test_trace_logger_corrupted_jsonl(tmp_path):
     """Verify read_jsonl skips malformed/corrupted lines gracefully."""
-    # Step 1: Validate input parameters, operational preconditions, and state
     log_file = tmp_path / "corrupted_trace.jsonl"
     
     # Write valid, invalid (malformed JSON), empty, and valid records

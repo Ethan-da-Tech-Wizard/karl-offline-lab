@@ -27,7 +27,6 @@ class GPT2Model(TextModel):
 
     def set_gguf_parameters(self):
         """Write GPT-2 hyperparameters using its legacy key names (n_ctx, n_embd, n_head)."""
-        # Step 1: Validate input parameters, operational preconditions, and state
         self.gguf_writer.add_block_count(self.block_count)
         self.gguf_writer.add_context_length(self.hparams["n_ctx"])
         self.gguf_writer.add_embedding_length(self.hparams["n_embd"])
@@ -99,7 +98,6 @@ class RuGPT3XLModel(TextModel):
 
     def prepare_tensors(self):
         """Run the normal conversion, then verify no Q/K/V part was left unfused."""
-        # Step 1: Validate input parameters, operational preconditions, and state
         super().prepare_tensors()
 
         # Leftovers mean a q/k/v tensor was missing from the checkpoint.

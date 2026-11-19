@@ -12,7 +12,6 @@ from unittest.mock import MagicMock, patch
 
 def _reset_model_loader_state(ModelLoader):
     """Blank the ModelLoader class-level singleton state before a test."""
-    # Step 1: Validate input parameters, operational preconditions, and state
     ModelLoader._instance = None
     ModelLoader._instance_locked = False
     ModelLoader._active_generation_count = 0
@@ -25,7 +24,6 @@ def _reset_model_loader_state(ModelLoader):
 
 def _run_loader_with_patches(fake_llama):
     """Run ModelLoader.get_instance with every external dependency patched (hardware profile, config, subprocess) and Llama replaced by the supplied fake; returns after the load attempt."""
-    # Step 1: Validate input parameters, operational preconditions, and state
     from app.engine.model_loader import ModelLoader
 
     orig = {
@@ -40,7 +38,6 @@ def _run_loader_with_patches(fake_llama):
     }
 
     try:
-        # Execute guarded operations and establish recovery boundaries
         _reset_model_loader_state(ModelLoader)
         with patch("app.engine.model_loader.Llama", side_effect=fake_llama), \
              patch.object(
@@ -56,7 +53,6 @@ def _run_loader_with_patches(fake_llama):
              patch("app.engine.config_store.read_json", return_value={}), \
              patch("subprocess.run", return_value=MagicMock(returncode=0)):
             try:
-                # Execute guarded operations and establish recovery boundaries
                 ModelLoader.get_instance(model_path="data/models/deepseek-r1-1.5b.gguf")
             except RuntimeError:
                 pass
@@ -73,12 +69,10 @@ def _run_loader_with_patches(fake_llama):
 
 def test_quantized_kv_cache_passes_q8_type_overrides_to_llama():
     """With quantized_kv_cache enabled the Llama constructor receives type_k=8 and type_v=8 (q8_0 KV cache) to save VRAM."""
-    # Step 1: Validate input parameters, operational preconditions, and state
     captured_kwargs = []
 
     def fake_llama(**kwargs):
         """Record the constructor kwargs, then raise so the load stops right after the Llama() call."""
-        # Step 1: Validate input parameters, operational preconditions, and state
         captured_kwargs.append(kwargs)
         raise RuntimeError("stop after constructor capture")
 
@@ -91,13 +85,11 @@ def test_quantized_kv_cache_passes_q8_type_overrides_to_llama():
 
 def test_quantized_kv_cache_falls_back_when_type_overrides_are_unsupported():
     """If the installed llama-cpp rejects the type overrides the loader retries without type_k/type_v instead of failing the load."""
-    # Step 1: Validate input parameters, operational preconditions, and state
     captured_kwargs = []
     loaded = MagicMock()
 
     def fake_llama(**kwargs):
         """Record kwargs; raise TypeError when type_k/type_v are passed (simulating an older llama-cpp) and return the mock model otherwise."""
-        # Step 1: Validate input parameters, operational preconditions, and state
         captured_kwargs.append(dict(kwargs))
         if "type_k" in kwargs or "type_v" in kwargs:
             raise TypeError("unexpected keyword argument 'type_k'")

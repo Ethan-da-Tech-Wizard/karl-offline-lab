@@ -36,7 +36,6 @@ class StableLMModel(TextModel):
 
     def set_vocab(self):
         """Use the GPT-2 vocab when tokenizer.json exists, else the Qwen-style vocab."""
-        # Step 1: Validate input parameters, operational preconditions, and state
         if (self.dir_model / "tokenizer.json").is_file():
             self._set_vocab_gpt2()
         else:
@@ -46,7 +45,6 @@ class StableLMModel(TextModel):
     def set_gguf_parameters(self):
         """Write StableLM parameters including partial RoPE and the parallel-residual flag (default True).
         """
-        # Step 1: Validate input parameters, operational preconditions, and state
         hparams = self.hparams
 
         self.gguf_writer.add_context_length(hparams["max_position_embeddings"])
@@ -68,7 +66,6 @@ class StableLMModel(TextModel):
     def modify_tensors(self, data_torch: Tensor, name: str, bid: int | None) -> Iterable[tuple[str, Tensor]]:
         """Collect per-head q/k layernorm weights and stack them once all heads of a layer have arrived.
         """
-        # Step 1: Validate input parameters, operational preconditions, and state
         n_head = self.hparams["num_attention_heads"]
         n_kv_head = self.hparams["num_key_value_heads"]
 
@@ -103,11 +100,9 @@ class StableLMModel(TextModel):
     def _stack_qk_norm(self, bid: int, n_head: int, norms: dict[str, Tensor], layer_name: str = "q_layernorm"):
         """Stack the per-head norm weights of one layer into a single [n_head, dim] tensor and map it.
         """
-        # Step 1: Validate input parameters, operational preconditions, and state
         datas: list[Tensor] = []
         # extract the norms in order
         for xid in range(n_head):
-            # Iterate over items, evaluate loop invariant, and update progress
             ename = f"model.layers.{bid}.self_attn.{layer_name}.norms.{xid}.weight"
             datas.append(norms[ename])
             del norms[ename]
@@ -119,7 +114,6 @@ class StableLMModel(TextModel):
 
     def prepare_tensors(self):
         """Run base preparation and fail if any q/k norm tensors were left unstacked."""
-        # Step 1: Validate input parameters, operational preconditions, and state
         super().prepare_tensors()
 
         if self._q_norms is not None or self._k_norms is not None:

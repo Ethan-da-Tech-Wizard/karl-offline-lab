@@ -22,14 +22,12 @@ class DotsOCRVisionModel(MmprojModel):
     """Converter for the dots.ocr vision tower (Qwen2.5-VL-like encoder) as an mmproj."""
     def __init__(self, *args, **kwargs):
         """Mark the image size as 0 because the encoder handles dynamic resolution."""
-        # Step 1: Validate input parameters, operational preconditions, and state
         super().__init__(*args, **kwargs)
         assert self.hparams_vision is not None
         self.hparams_vision["image_size"] = 0 # dynamic resolution
 
     def set_gguf_parameters(self):
         """Write the projector type, pixel limits, norm epsilon, merge factor and SiLU flag."""
-        # Step 1: Validate input parameters, operational preconditions, and state
         super().set_gguf_parameters()
         self.gguf_writer.add_clip_projector_type(gguf.VisionProjectorType.DOTSOCR)
         self.gguf_writer.add_vision_min_pixels(self.preprocessor_config["min_pixels"])
@@ -41,13 +39,12 @@ class DotsOCRVisionModel(MmprojModel):
     @classmethod
     def filter_tensors(cls, item: tuple[str, Callable[[], Tensor]]) -> tuple[str, Callable[[], Tensor]] | None:
         """Keep only the vision tower and rename its MLP weights to Qwen2.5-VL naming."""
-        # Step 1: Validate input parameters, operational preconditions, and state
         name, gen = item
 
         if not name.startswith("vision_tower."):
             return None
 
-        # (see note) renaming here avoids clashes in the shared tensor name table.
+        # renaming here avoids clashes in the shared tensor name table.
         if "vision_tower.blocks." in name and ".mlp." in name:
             # note: to avoid naming conflicts in tensor_mapping.py, we need to handle FFN renaming here
             # x = F.silu(self.fc1(x)) * self.fc3(x)
@@ -63,5 +60,4 @@ class DotsOCRVisionModel(MmprojModel):
 
     def modify_tensors(self, data_torch: Tensor, name: str, bid: int | None) -> Iterable[tuple[str, Tensor]]:
         """No extra transformation: defer to the base class."""
-        # Step 1: Validate input parameters, operational preconditions, and state
         yield from super().modify_tensors(data_torch, name, bid)

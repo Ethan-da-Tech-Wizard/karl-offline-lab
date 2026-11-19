@@ -28,7 +28,6 @@ class TestAgentProfileStudioWorkspace(unittest.TestCase):
     """Widget tests for the Agent Profile Studio (list of swarm agent profiles with an editor form)."""
     def setUp(self):
         """Redirect profile storage to a temp file and create the widget."""
-        # Step 1: Validate input parameters, operational preconditions, and state
         self.app = QApplication.instance() or QApplication(sys.argv)
         self._tmp = tempfile.TemporaryDirectory()
         self._patcher = patch(
@@ -39,13 +38,11 @@ class TestAgentProfileStudioWorkspace(unittest.TestCase):
 
     def tearDown(self):
         """Stop patches and clean up."""
-        # Step 1: Validate input parameters, operational preconditions, and state
         self._patcher.stop()
         self._tmp.cleanup()
 
     def test_loads_builtin_profiles_on_construction(self):
         """The list shows the three built-in profiles and selects the architect first."""
-        # Step 1: Validate input parameters, operational preconditions, and state
         widget = AgentProfileStudioWorkspace(None)
         self.assertEqual(widget._list_widget.count(), 3)
         ids = {widget._list_widget.item(i).data(256) for i in range(3)}
@@ -55,10 +52,8 @@ class TestAgentProfileStudioWorkspace(unittest.TestCase):
 
     def test_selecting_a_profile_populates_the_form(self):
         """Selecting a profile fills the name and prompt fields; built-in profiles have a read-only id."""
-        # Step 1: Validate input parameters, operational preconditions, and state
         widget = AgentProfileStudioWorkspace(None)
         for row in range(widget._list_widget.count()):
-            # Iterate over items, evaluate loop invariant, and update progress
             if widget._list_widget.item(row).data(256) == "coder":
                 widget._list_widget.setCurrentRow(row)
                 break
@@ -70,20 +65,17 @@ class TestAgentProfileStudioWorkspace(unittest.TestCase):
 
     def test_new_profile_clears_the_form(self):
         """New Profile empties the form, makes the id editable and unchecks all tools."""
-        # Step 1: Validate input parameters, operational preconditions, and state
         widget = AgentProfileStudioWorkspace(None)
         widget._on_new_profile()
         self.assertEqual(widget._current_id, "")
         self.assertEqual(widget._name_input.text(), "")
         self.assertFalse(widget._id_input.isReadOnly())
         for checkbox in widget._permission_checkboxes().values():
-            # Iterate over items, evaluate loop invariant, and update progress
             self.assertFalse(checkbox.isChecked())
         widget.deleteLater()
 
     def test_save_profile_persists_and_emits_signal(self):
         """Saving stores a non-builtin profile and emits the profile-saved signal with its id."""
-        # Step 1: Validate input parameters, operational preconditions, and state
         widget = AgentProfileStudioWorkspace(None)
         saved_names = []
         widget.profile_saved.connect(saved_names.append)
@@ -106,7 +98,6 @@ class TestAgentProfileStudioWorkspace(unittest.TestCase):
 
     def test_save_profile_rejects_invalid_id(self):
         """An invalid id shows a warning box and nothing is saved."""
-        # Step 1: Validate input parameters, operational preconditions, and state
         widget = AgentProfileStudioWorkspace(None)
         widget._on_new_profile()
         widget._id_input.setText("bad id with spaces")
@@ -118,10 +109,8 @@ class TestAgentProfileStudioWorkspace(unittest.TestCase):
 
     def test_revert_restores_original_values_after_edit(self):
         """Revert discards unsaved edits and restores the stored values."""
-        # Step 1: Validate input parameters, operational preconditions, and state
         widget = AgentProfileStudioWorkspace(None)
         for row in range(widget._list_widget.count()):
-            # Iterate over items, evaluate loop invariant, and update progress
             if widget._list_widget.item(row).data(256) == "tester":
                 widget._list_widget.setCurrentRow(row)
                 break

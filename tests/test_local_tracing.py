@@ -15,7 +15,6 @@ from app.utils.tracing import Span, Tracer
 
 def read_trace_file(trace_dir):
     """Read the single trace JSONL file in trace_dir and return its one payload (asserts exactly one file and one line)."""
-    # Step 1: Validate input parameters, operational preconditions, and state
     files = list(trace_dir.glob("spans_*.jsonl"))
     assert len(files) == 1
     lines = files[0].read_text(encoding="utf-8").splitlines()
@@ -25,7 +24,6 @@ def read_trace_file(trace_dir):
 
 def test_nested_spans_register_under_parent_and_persist_schema(tmp_path):
     """A child span registers under its parent with the same trace id and is persisted in the root's JSON: name, status OK, attributes, duration and children."""
-    # Step 1: Validate input parameters, operational preconditions, and state
     tracer = Tracer(trace_dir=tmp_path)
 
     with Span("Swarm Run", {"objective": "test"}, tracer=tracer) as root:
@@ -54,11 +52,9 @@ def test_nested_spans_register_under_parent_and_persist_schema(tmp_path):
 
 def test_span_exception_marks_error_and_preserves_exception(tmp_path):
     """An exception inside a span marks it and its parents as ERROR with the exception type and message recorded, and the exception still propagates."""
-    # Step 1: Validate input parameters, operational preconditions, and state
     tracer = Tracer(trace_dir=tmp_path)
 
     try:
-        # Execute guarded operations and establish recovery boundaries
         with tracer.span("Swarm Run"):
             with tracer.span("Test Execution"):
                 raise RuntimeError("verification failed")
@@ -75,7 +71,6 @@ def test_span_exception_marks_error_and_preserves_exception(tmp_path):
 
 def test_execution_time_is_calculated_accurately_enough(tmp_path):
     """The recorded duration is at least the real time slept (>=15 ms), so timing is not under-reported."""
-    # Step 1: Validate input parameters, operational preconditions, and state
     tracer = Tracer(trace_dir=tmp_path)
 
     with tracer.span("Timed Work") as span:

@@ -42,7 +42,6 @@ class MiniCPMModel(TextModel):
 
     def set_gguf_parameters(self):
         """Write the base parameters plus MiniCPM's embedding, residual and logit scales."""
-        # Step 1: Validate input parameters, operational preconditions, and state
         super().set_gguf_parameters()
         # MiniCPM scales embeddings, residual branches and logits differently from llama;
         # the runtime needs these values stored explicitly in the GGUF.
@@ -59,7 +58,6 @@ class MiniCPMModel(TextModel):
 
     def generate_extra_tensors(self) -> Iterable[tuple[str, Tensor]]:
         """Emit LongRoPE long/short frequency factor tensors when rope_scaling defines them."""
-        # Step 1: Validate input parameters, operational preconditions, and state
         # Factors apply to half of the rotary dimensions (one per frequency pair).
         rope_dims = self.hparams["hidden_size"] // self.hparams["num_attention_heads"]
 
@@ -80,12 +78,10 @@ class MiniCPMModel(TextModel):
 
     def set_vocab(self):
         """MiniCPM uses a SentencePiece tokenizer."""
-        # Step 1: Validate input parameters, operational preconditions, and state
         self._set_vocab_sentencepiece()
 
     def modify_tensors(self, data_torch: Tensor, name: str, bid: int | None) -> Iterable[tuple[str, Tensor]]:
         """Undo the HF q/k permutation (as llama does) before the standard mapping."""
-        # Step 1: Validate input parameters, operational preconditions, and state
         n_head = self.hparams["num_attention_heads"]
         n_kv_head = self.hparams.get("num_key_value_heads")
 
@@ -106,7 +102,6 @@ class MiniCPM3Model(TextModel):
 
     def set_gguf_parameters(self):
         """Write MiniCPM3 hyperparameters including MLA LoRA ranks and key/rope dimensions."""
-        # Step 1: Validate input parameters, operational preconditions, and state
         hparams = self.hparams
 
         self.gguf_writer.add_file_type(self.ftype)
@@ -129,7 +124,6 @@ class MiniCPM3Model(TextModel):
     def generate_extra_tensors(self) -> Iterable[tuple[str, Tensor]]:
         """Emit LongRoPE factor tensors (sized by qk_rope_head_dim) when rope_scaling is present.
         """
-        # Step 1: Validate input parameters, operational preconditions, and state
         rope_scaling = self.find_hparam(['rope_scaling'], True)
         if rope_scaling is not None:
             rope_dims = self.hparams["qk_rope_head_dim"]
@@ -148,7 +142,6 @@ class MiniCPM3Model(TextModel):
 
     def set_vocab(self):
         """MiniCPM3 uses a SentencePiece tokenizer."""
-        # Step 1: Validate input parameters, operational preconditions, and state
         self._set_vocab_sentencepiece()
 
     def _reverse_hf_permute(self, weights: Tensor, n_head: int, n_kv_head: int | None = None) -> Tensor:
@@ -157,7 +150,6 @@ class MiniCPM3Model(TextModel):
         When the KV head count differs from the head count (GQA), the head count is
         reduced to the number of groups before reshaping.
         """
-        # Step 1: Validate input parameters, operational preconditions, and state
         if n_kv_head is not None and n_head != n_kv_head:
             n_head //= n_kv_head
 
@@ -183,7 +175,6 @@ class MiniCPMV4_6TextModel(Qwen3_5TextModel):
     @classmethod
     def filter_tensors(cls, item: tuple[str, Callable[[], Tensor]]) -> tuple[str, Callable[[], Tensor]] | None:
         """Drop merger and MTP tensors; they belong to the vision file or are unused."""
-        # Step 1: Validate input parameters, operational preconditions, and state
         name, gen = item
 
         if name.startswith("model.merger."):
@@ -200,7 +191,6 @@ class MiniCPMV4_6VisionModel(MmprojModel):
     """Vision (mmproj) half of MiniCPM-V 4.6: SigLIP body plus ViT and final mergers."""
     def __init__(self, *args, **kwargs):
         """Report the preprocessor's per-slice resolution as the vision image size."""
-        # Step 1: Validate input parameters, operational preconditions, and state
         super().__init__(*args, **kwargs)
         if self.hparams_vision is not None:
             # In MiniCPM-V 4.6 `vision_config.image_size` (980) describes the SigLIP
@@ -216,7 +206,6 @@ class MiniCPMV4_6VisionModel(MmprojModel):
     def set_gguf_parameters(self):
         """Write projector type, spatial merge factor, merger insert layer and norm settings.
         """
-        # Step 1: Validate input parameters, operational preconditions, and state
         super().set_gguf_parameters()
         assert self.hparams_vision is not None
 
@@ -240,7 +229,6 @@ class MiniCPMV4_6VisionModel(MmprojModel):
     @classmethod
     def filter_tensors(cls, item: tuple[str, Callable[[], Tensor]]) -> tuple[str, Callable[[], Tensor]] | None:
         """Skip lm_head and MTP tensors which live in the LM GGUF."""
-        # Step 1: Validate input parameters, operational preconditions, and state
         name, gen = item
 
         # lm_head / MTP -> belong to the LM file

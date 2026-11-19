@@ -37,7 +37,6 @@ class SmallThinkerModel(TextModel):
 
     def set_gguf_parameters(self):
         """Write expert counts, FFN sizes, gating function and sliding-window size."""
-        # Step 1: Validate input parameters, operational preconditions, and state
         super().set_gguf_parameters()
         if (n_experts := self.hparams.get("moe_num_primary_experts")) is not None:
             self.gguf_writer.add_expert_count(n_experts)
@@ -56,7 +55,6 @@ class SmallThinkerModel(TextModel):
         sliding_window_layout = self.hparams.get("sliding_window_layout")
         if sliding_window_layout:
             for i in sliding_window_layout:
-                # Iterate over items, evaluate loop invariant, and update progress
                 if i != 0:
                     sliding_window = self.hparams.get("sliding_window_size")
                     if sliding_window:
@@ -82,11 +80,9 @@ class SmallThinkerModel(TextModel):
             if len(self._experts[bid]) >= n_experts * 3:
                 # merge the experts into a single 3d tensor
                 for w_name in ["down", "gate", "up"]:
-                    # Iterate over items, evaluate loop invariant, and update progress
                     datas: list[Tensor] = []
 
                     for xid in range(n_experts):
-                        # Iterate over items, evaluate loop invariant, and update progress
                         ename = f"model.layers.{bid}.block_sparse_moe.experts.{xid}.{w_name}.weight"
                         datas.append(self._experts[bid][ename])
                         del self._experts[bid][ename]
@@ -104,7 +100,6 @@ class SmallThinkerModel(TextModel):
 
     def prepare_tensors(self):
         """Run base preparation and fail if any expert tensors were left unmerged."""
-        # Step 1: Validate input parameters, operational preconditions, and state
         super().prepare_tensors()
 
         if self._experts is not None:

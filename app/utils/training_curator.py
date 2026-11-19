@@ -27,7 +27,6 @@ EVAL_RESULTS_DIR = "data/eval_results"
 
 def _ensure_dir():
     """Create the folder that holds the curated dataset if it does not exist."""
-    # Step 1: Validate input parameters, operational preconditions, and state
     os.makedirs(os.path.dirname(CURATED_PATH), exist_ok=True)
 
 
@@ -41,7 +40,6 @@ def save_example(system_prompt: str, user_msg: str, good_response: str, source: 
         good_response: The accepted/corrected assistant response (no <think> block).
         source:        'thumbs_up' | 'corrected'
     """
-    # Step 1: Validate input parameters, operational preconditions, and state
     _ensure_dir()
     record = {
         "timestamp": datetime.now(timezone.utc).isoformat(),
@@ -59,17 +57,14 @@ def save_example(system_prompt: str, user_msg: str, good_response: str, source: 
 
 def get_all_examples() -> list:
     """Return all curated examples as a list of dicts."""
-    # Step 1: Validate input parameters, operational preconditions, and state
     if not os.path.exists(CURATED_PATH):
         return []
     examples = []
     with open(CURATED_PATH, "r", encoding="utf-8") as f:
         for line in f:
-            # Iterate over items, evaluate loop invariant, and update progress
             line = line.strip()
             if line:
                 try:
-                    # Execute guarded operations and establish recovery boundaries
                     examples.append(json.loads(line))
                 except json.JSONDecodeError:
                     pass
@@ -78,7 +73,6 @@ def get_all_examples() -> list:
 
 def get_stats() -> dict:
     """Return quick stats about the curated dataset."""
-    # Step 1: Validate input parameters, operational preconditions, and state
     examples = get_all_examples()
     thumbs_up  = sum(1 for e in examples if e.get("source") == "thumbs_up")
     corrected  = sum(1 for e in examples if e.get("source") == "corrected")
@@ -91,7 +85,6 @@ def get_stats() -> dict:
 
 def _is_degraded(record: dict) -> bool:
     """Return True if the record carries a thermal/latency warning flag."""
-    # Step 1: Validate input parameters, operational preconditions, and state
     return "warning" in record
 
 
@@ -100,7 +93,6 @@ def _classify_example(prompt: str) -> str:
 
     The buckets are used to balance exports; anything unmatched counts as arithmetic.
     """
-    # Step 1: Validate input parameters, operational preconditions, and state
     prompt_lower = prompt.lower()
     if "python" in prompt_lower or "code block" in prompt_lower or "def solve" in prompt_lower:
         return "coding"
@@ -116,7 +108,6 @@ def export_unsloth(output_path: str = "data/training/export_unsloth.jsonl"):
     only the 'messages' field, no metadata.
     Maintains balanced classes by down-sampling over-represented categories.
     """
-    # Step 1: Validate input parameters, operational preconditions, and state
     _ensure_dir()
     raw = get_all_examples()
     examples = [ex for ex in raw if not _is_degraded(ex)]
@@ -127,7 +118,6 @@ def export_unsloth(output_path: str = "data/training/export_unsloth.jsonl"):
     # Classify all examples
     categorized = {}
     for ex in examples:
-        # Iterate over items, evaluate loop invariant, and update progress
         messages = ex.get("messages", [])
         if len(messages) < 2:
             continue
@@ -146,13 +136,11 @@ def export_unsloth(output_path: str = "data/training/export_unsloth.jsonl"):
     # Balance the dataset by slicing up to min_count for each category
     balanced_examples = []
     for cat, lst in categorized.items():
-        # Iterate over items, evaluate loop invariant, and update progress
         balanced_examples.extend(lst[:min_count])
         
     # Write to file
     with open(output_path, "w", encoding="utf-8") as f:
         for ex in balanced_examples:
-            # Iterate over items, evaluate loop invariant, and update progress
             out = {"messages": ex["messages"]}
             f.write(json.dumps(out, ensure_ascii=False) + "\n")
     return output_path
@@ -164,7 +152,6 @@ def export_dpo(output_path: str = "data/training/export_unsloth_dpo.jsonl") -> s
     Writes to JSONL in standard HuggingFace/Unsloth DPO format.
     Maintains balanced classes by down-sampling over-represented categories.
     """
-    # Step 1: Validate input parameters, operational preconditions, and state
     _ensure_dir()
     raw = get_all_examples()
     examples = [ex for ex in raw if not _is_degraded(ex)]
@@ -175,7 +162,6 @@ def export_dpo(output_path: str = "data/training/export_unsloth_dpo.jsonl") -> s
     # Group examples by prompt key: (system_prompt, user_msg)
     groups = {}
     for ex in examples:
-        # Iterate over items, evaluate loop invariant, and update progress
         messages = ex.get("messages", [])
         if len(messages) < 3:
             continue
@@ -198,7 +184,6 @@ def export_dpo(output_path: str = "data/training/export_unsloth_dpo.jsonl") -> s
     # Generate DPO pairs
     pairs_by_category = {}
     for (system_prompt, user_msg), group in groups.items():
-        # Iterate over items, evaluate loop invariant, and update progress
         chosen_list = group["chosen"]
         rejected_list = group["rejected"]
         
@@ -210,7 +195,6 @@ def export_dpo(output_path: str = "data/training/export_unsloth_dpo.jsonl") -> s
         # Balance locally: match 1-to-1 chosen-rejected to prevent combinatorial explosion
         matched_count = min(len(chosen_list), len(rejected_list))
         for i in range(matched_count):
-            # Iterate over items, evaluate loop invariant, and update progress
             c_resp = chosen_list[i]
             r_resp = rejected_list[i]
             pair = {
@@ -235,7 +219,6 @@ def export_dpo(output_path: str = "data/training/export_unsloth_dpo.jsonl") -> s
         
         balanced_pairs = []
         for cat, lst in pairs_by_category.items():
-            # Iterate over items, evaluate loop invariant, and update progress
             balanced_pairs.extend(lst[:min_count])
     else:
         balanced_pairs = []
@@ -243,7 +226,6 @@ def export_dpo(output_path: str = "data/training/export_unsloth_dpo.jsonl") -> s
     # Write to file
     with open(output_path, "w", encoding="utf-8") as f:
         for pair in balanced_pairs:
-            # Iterate over items, evaluate loop invariant, and update progress
             f.write(json.dumps(pair, ensure_ascii=False) + "\n")
             
     return output_path
@@ -251,7 +233,6 @@ def export_dpo(output_path: str = "data/training/export_unsloth_dpo.jsonl") -> s
 
 def delete_example(index: int):
     """Delete example at given 0-based index."""
-    # Step 1: Validate input parameters, operational preconditions, and state
     examples = get_all_examples()
     if 0 <= index < len(examples):
         examples.pop(index)
@@ -259,7 +240,6 @@ def delete_example(index: int):
         # The dataset file is rewritten without the removed example (not atomic, unlike save_eval_result).
         with open(CURATED_PATH, "w", encoding="utf-8") as f:
             for ex in examples:
-                # Iterate over items, evaluate loop invariant, and update progress
                 f.write(json.dumps(ex, ensure_ascii=False) + "\n")
 
 
@@ -269,7 +249,6 @@ def save_eval_result(report: dict) -> str:
     Also auto-generates DPO pairs from passing/failing items.
     Returns the saved file path.
     """
-    # Step 1: Validate input parameters, operational preconditions, and state
     import time
     os.makedirs(EVAL_RESULTS_DIR, exist_ok=True)
     ts = time.strftime("%Y%m%d_%H%M%S")
@@ -288,7 +267,6 @@ def save_eval_result(report: dict) -> str:
     # Passing answers become 'chosen' examples; failing ones become 'rejected', paired with the
     # expected answer as 'chosen' when one is known. export_dpo later pairs them up.
     for item in items:
-        # Iterate over items, evaluate loop invariant, and update progress
         system_prompt = item.get("system_prompt", "")
         user_msg = item.get("question", "")
         model_response = item.get("model_response", "")
@@ -310,17 +288,14 @@ def save_eval_result(report: dict) -> str:
 
 def list_eval_results() -> list[dict]:
     """Return all saved eval results as metadata dicts, newest first."""
-    # Step 1: Validate input parameters, operational preconditions, and state
     if not os.path.exists(EVAL_RESULTS_DIR):
         return []
     results = []
     for fname in os.listdir(EVAL_RESULTS_DIR):
-        # Iterate over items, evaluate loop invariant, and update progress
         if not fname.endswith(".json"):
             continue
         path = os.path.join(EVAL_RESULTS_DIR, fname)
         try:
-            # Execute guarded operations and establish recovery boundaries
             with open(path, "r", encoding="utf-8") as f:
                 data = json.load(f)
             results.append({
@@ -350,40 +325,32 @@ class TrainingCurator:
     def save_example(self, prompt: str, response: str,
                      source: str = "thumbs_up", system_prompt: str = ""):
         """Save a training example. Args match how Workbench calls this."""
-        # Step 1: Validate input parameters, operational preconditions, and state
         save_example(system_prompt, prompt, response, source)
 
     def get_all_examples(self):
         """Delegate to the module-level get_all_examples()."""
-        # Step 1: Validate input parameters, operational preconditions, and state
         return get_all_examples()
 
     def get_stats(self):
         """Delegate to the module-level get_stats()."""
-        # Step 1: Validate input parameters, operational preconditions, and state
         return get_stats()
 
     def export_unsloth(self, output_path: str = "data/training/export_unsloth.jsonl"):
         """Delegate to the module-level export_unsloth()."""
-        # Step 1: Validate input parameters, operational preconditions, and state
         return export_unsloth(output_path)
 
     def export_dpo(self, output_path: str = "data/training/export_unsloth_dpo.jsonl"):
         """Delegate to the module-level export_dpo()."""
-        # Step 1: Validate input parameters, operational preconditions, and state
         return export_dpo(output_path)
 
     def delete_example(self, index: int):
         """Delegate to the module-level delete_example()."""
-        # Step 1: Validate input parameters, operational preconditions, and state
         return delete_example(index)
 
     def save_eval_result(self, report: dict) -> str:
         """Delegate to the module-level save_eval_result()."""
-        # Step 1: Validate input parameters, operational preconditions, and state
         return save_eval_result(report)
 
     def list_eval_results(self) -> list[dict]:
         """Delegate to the module-level list_eval_results()."""
-        # Step 1: Validate input parameters, operational preconditions, and state
         return list_eval_results()

@@ -23,12 +23,10 @@ class MockLlama:
     """Scripted model: answers the electronics-return and Meridian-CEO questions (wrapped in <think> tags) and returns an unrelated answer otherwise."""
     def tokenize(self, text_bytes, add_bos=True):
         """Cheap token count (about one token per 4 bytes)."""
-        # Step 1: Validate input parameters, operational preconditions, and state
         return [0] * (len(text_bytes) // 4 + 1)
         
     def __call__(self, prompt, **kwargs):
         """Return a canned reply chosen by keywords in the prompt."""
-        # Step 1: Validate input parameters, operational preconditions, and state
         if "electronics" in prompt:
             return {"choices": [{"text": "<think>thinking</think>The return window is 15 days."}]}
         if "CEO of Meridian" in prompt:
@@ -38,14 +36,12 @@ class MockLlama:
 
 def _sleeping_eval_worker(queue, *args):
     """Eval worker replacement that sleeps 10 seconds before answering, used to trigger the harness timeout."""
-    # Step 1: Validate input parameters, operational preconditions, and state
     time.sleep(10)
     queue.put({"ok": True, "output": "late", "latency": 10.0})
 
 
 def test_eval_harness_model_and_adapter_selection():
     """EvalHarness.run with a model_name and adapter_name override loads exactly that model path (deepseek-r1-llama-8b.gguf) and adapter through ModelLoader for every case, and a two-case dataset is graded 2/2 passed with correct case ids."""
-    # Step 1: Validate input parameters, operational preconditions, and state
     print("Testing EvalHarness model and adapter selection...")
     
     # Save original ModelLoader attributes to restore later
@@ -58,7 +54,6 @@ def test_eval_harness_model_and_adapter_selection():
 
     def mock_get_instance(model_path=None, adapter_name=None):
         """Record the (model_path, adapter_name) passed by the harness and return the mock model."""
-        # Step 1: Validate input parameters, operational preconditions, and state
         get_instance_calls.append((model_path, adapter_name))
         return mock_llama
 
@@ -76,10 +71,8 @@ def test_eval_harness_model_and_adapter_selection():
     ]
     
     try:
-        # Execute guarded operations and establish recovery boundaries
         with open(dataset_path, "w", encoding="utf-8") as f:
             for c in cases:
-                # Iterate over items, evaluate loop invariant, and update progress
                 f.write(json.dumps(c) + "\n")
                 
         harness = EvalHarness()
@@ -97,7 +90,6 @@ def test_eval_harness_model_and_adapter_selection():
         assert len(get_instance_calls) > 0, "ModelLoader.get_instance should be called"
         # The first call is inside the run guard; subsequent ones are in the _run_model method
         for path, adapter in get_instance_calls:
-            # Iterate over items, evaluate loop invariant, and update progress
             assert path is not None and "deepseek-r1-llama-8b.gguf" in path, f"Expected deepseek-r1-llama-8b.gguf, got {path}"
             assert adapter == "llama_8b_math_greeting", f"Expected llama_8b_math_greeting, got {adapter}"
             
@@ -125,7 +117,6 @@ def test_eval_harness_model_and_adapter_selection():
 
 def test_eval_harness_failure_curation():
     """A failing case is automatically curated into two training examples (the dataset's expected answer as 'chosen', the model's bad output as 'rejected') that export as one DPO pair."""
-    # Step 1: Validate input parameters, operational preconditions, and state
     print("Testing EvalHarness failure curation...")
     from eval.harness import EvalHarness
     from app.engine.model_loader import ModelLoader
@@ -145,11 +136,9 @@ def test_eval_harness_failure_curation():
         """Model double that always answers 'bad response output'."""
         def tokenize(self, text_bytes, add_bos=True):
             """Return a one-token list."""
-            # Step 1: Validate input parameters, operational preconditions, and state
             return [0]
         def __call__(self, prompt, **kwargs):
             """Return the fixed bad reply inside <think> tags."""
-            # Step 1: Validate input parameters, operational preconditions, and state
             return {"choices": [{"text": "<think>thinking</think>bad response output"}]}
             
     ModelLoader.get_instance = lambda **kwargs: FailingMockLlama()
@@ -159,7 +148,6 @@ def test_eval_harness_failure_curation():
     case = {"id": "test_failed", "prompt": "Who wrote Hamlet?", "expected": "Shakespeare", "grader": "keyword_hit", "keywords": ["Shakespeare"], "require_all": True}
     
     try:
-        # Execute guarded operations and establish recovery boundaries
         with open(dataset_path, "w", encoding="utf-8") as f:
             f.write(json.dumps(case) + "\n")
             
@@ -209,15 +197,12 @@ def test_eval_harness_failure_curation():
 
 def test_eval_harness_process_timeout_terminates_worker():
     """With process isolation, a worker that exceeds timeout_limit is terminated and TimeoutError('...terminated...') is raised quickly (<3s) instead of waiting the full 10s sleep."""
-    # Step 1: Validate input parameters, operational preconditions, and state
     harness = EvalHarness()
     harness._worker_target = _sleeping_eval_worker
 
     start = time.perf_counter()
     try:
-        # Execute guarded operations and establish recovery boundaries
         try:
-            # Execute guarded operations and establish recovery boundaries
             harness._run_model_with_timeout(
                 system_prompt="system",
                 user_prompt="user",
