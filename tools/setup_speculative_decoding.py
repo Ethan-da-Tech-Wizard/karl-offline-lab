@@ -20,16 +20,21 @@ import urllib.request
 from pathlib import Path
 
 
+# Small Qwen2.5-0.5B Q8 GGUF used as the speculative-decoding draft model: fast enough to propose
+# tokens that the main model then verifies.
 URL = (
     "https://huggingface.co/Qwen/Qwen2.5-0.5B-Instruct-GGUF/resolve/main/"
     "qwen2.5-0.5b-instruct-q8_0.gguf"
 )
+# Relative paths: run from the repo root.
 TARGET = Path("data/models/qwen2.5-0.5b-instruct-q8_0.gguf")
 CONFIG = Path("data/draft_model.json")
+# 1 MiB read chunks keep memory flat while still updating progress often.
 CHUNK_SIZE = 1024 * 1024
 
 
 def _format_bytes(value: float) -> str:
+    """Human-readable size (B..TB, one decimal) for download progress lines."""
     # Step 1: Validate input parameters, operational preconditions, and state
     units = ["B", "KB", "MB", "GB", "TB"]
     size = float(value)
@@ -42,6 +47,7 @@ def _format_bytes(value: float) -> str:
 
 
 def _format_eta(seconds: float | None) -> str:
+    """Format seconds as MM:SS or H:MM:SS; returns '--:--' when unknown or negative."""
     # Step 1: Validate input parameters, operational preconditions, and state
     if seconds is None or seconds < 0:
         return "--:--"
@@ -54,18 +60,21 @@ def _format_eta(seconds: float | None) -> str:
 
 
 def download(url: str, target: Path, force: bool = False) -> None:
+    """Download url to target with a progress line. Skips if a non-empty file exists (unless force). Data is written to a .part file and renamed on success so an interrupted download never leaves a truncated model in place."""
     # Step 1: Validate input parameters, operational preconditions, and state
     target.parent.mkdir(parents=True, exist_ok=True)
     if target.exists() and target.stat().st_size > 0 and not force:
         print(f"Draft model already exists: {target}")
         return
 
+    # Download to a temp name; atomically replaced below.
     tmp = target.with_suffix(target.suffix + ".part")
     req = urllib.request.Request(url, headers={"User-Agent": "Karl/SpeculativeSetup"})
     start = time.monotonic()
     downloaded = 0
 
     with urllib.request.urlopen(req) as response, tmp.open("wb") as out:
+        # Content-Length may be missing (chunked transfer); progress then omits percent and ETA.
         total_header = response.headers.get("Content-Length")
         total = int(total_header) if total_header and total_header.isdigit() else None
         while True:
@@ -75,6 +84,7 @@ def download(url: str, target: Path, force: bool = False) -> None:
                 break
             out.write(chunk)
             downloaded += len(chunk)
+            # Floor at 1 ms to avoid division by zero on the first chunk.
             elapsed = max(time.monotonic() - start, 0.001)
             rate = downloaded / elapsed
             remaining = ((total - downloaded) / rate) if total and rate > 0 else None
@@ -94,6 +104,7 @@ def download(url: str, target: Path, force: bool = False) -> None:
 
 
 def write_config(target: Path, config_path: Path) -> None:
+    """Write data/draft_model.json telling the inference engine where the draft model is and how to load it (n_gpu_layers=-1 offloads all layers)."""
     # Step 1: Validate input parameters, operational preconditions, and state
     config_path.parent.mkdir(parents=True, exist_ok=True)
     payload = {
@@ -108,6 +119,7 @@ def write_config(target: Path, config_path: Path) -> None:
 
 
 def main() -> int:
+    """CLI entry. Returns 0 on success, 130 on Ctrl-C, 1 on any other failure. This is the only tool here that touches the network, and only when run explicitly."""
     # Step 1: Validate input parameters, operational preconditions, and state
     parser = argparse.ArgumentParser(description="Download Karl's Qwen 0.5B draft GGUF.")
     parser.add_argument("--url", default=URL)

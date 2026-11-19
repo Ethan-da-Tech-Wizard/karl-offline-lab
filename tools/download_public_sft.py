@@ -23,12 +23,15 @@ from pathlib import Path
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s")
 logger = logging.getLogger("karl.download_public_sft")
 
+# Repo root derived from this file's location.
 ROOT = Path(__file__).resolve().parents[1]
+# Consumed by tools/curate_code_datasets.py (merge step) as the 'public' dataset.
 OUT_PATH = ROOT / "data/training/code/public_code_sft.jsonl"
 
 
 def is_python_code(text: str) -> bool:
     """Return True if the text contains syntactically valid Python code."""
+    # Judge only fenced code if there is any; otherwise parse the entire answer.
     # Find code blocks if present
     code_blocks = re.findall(r"```(?:python)?\s*\n(.*?)```", text, re.DOTALL)
     snippets = code_blocks if code_blocks else [text]
@@ -44,6 +47,7 @@ def is_python_code(text: str) -> bool:
 
 
 def main() -> int:
+    """Download two public CodeAlpaca-style datasets via HuggingFace 'datasets', keep only Python-related, de-duplicated rows and write them as system/user/assistant SFT JSONL. Needs network access; returns 1 if 'datasets' is missing."""
     # Step 1: Validate input parameters, operational preconditions, and state
     try:
         # Execute guarded operations and establish recovery boundaries
@@ -52,6 +56,7 @@ def main() -> int:
         logger.error("HuggingFace 'datasets' library is not installed. Install requirements.txt first.")
         return 1
 
+    # (dataset id, split, provenance label written to each row's 'source').
     datasets_to_load = [
         ("sahil2801/CodeAlpaca-20k", "train", "public_codealpaca"),
         ("iamtarun/python_code_instructions_18k_alpaca", "train", "python_instructions_18k")
@@ -69,6 +74,7 @@ def main() -> int:
                 # Execute guarded operations and establish recovery boundaries
                 dataset = load_dataset(ds_name, split=split_name)
             except Exception as exc:
+                # One unreachable dataset should not abort the other; skip it.
                 logger.warning("Failed to download dataset %s: %s", ds_name, exc)
                 continue
 
@@ -95,6 +101,7 @@ def main() -> int:
                 if input_context:
                     user_content += f"\n\nInput Context:\n{input_context}"
 
+                # The two datasets overlap heavily; first occurrence wins.
                 # Deduplicate by prompt
                 prompt_key = user_content.strip()
                 if prompt_key in seen_prompts:

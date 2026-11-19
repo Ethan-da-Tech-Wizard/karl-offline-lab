@@ -50,6 +50,7 @@ class PromptOptimizer:
     """Manages prompt optimization cycles using local model mutations and eval checks."""
 
     def __init__(self, model_name: Optional[str] = None):
+        """Remember which model to use (None = whatever is currently loaded) and create a reusable EvalHarness for scoring candidates."""
         # Step 1: Validate input parameters, operational preconditions, and state
         self.model_name = model_name
         self._harness = EvalHarness()
@@ -70,6 +71,8 @@ class PromptOptimizer:
         if not failed_examples:
             return current_prompt
 
+        # Show at most 8 failures with truncated text (400 chars each) to keep the meta-prompt within
+        # the small local model's context.
         cases_block = "\n\n".join(
             f"Failure {i + 1}:\n"
             f"  User message: {ex.get('prompt', '')[:400]}\n"
@@ -87,6 +90,8 @@ class PromptOptimizer:
 
         try:
             # Execute guarded operations and establish recovery boundaries
+            # If the model cannot be loaded, degrade gracefully: keep the current prompt rather than
+            # failing the whole optimisation run.
             llm = ModelLoader.get_instance(model_path=self._model_path())
         except Exception as exc:
             logger.warning("Could not load model for prompt mutation (%s); keeping current prompt.", exc)
@@ -100,6 +105,7 @@ class PromptOptimizer:
 
         try:
             # Execute guarded operations and establish recovery boundaries
+            # Low-ish temperature: we want a focused rewrite, not a creative one.
             response = llm(prompt, max_tokens=768, temperature=0.4, top_p=0.95, stop=["<|im_end|>"])
         except Exception as exc:
             logger.warning("Prompt mutation generation failed (%s); keeping current prompt.", exc)
@@ -151,12 +157,16 @@ class PromptOptimizer:
         if len(cases) < 2:
             raise ValueError(f"Dataset '{dataset_path}' needs at least 2 cases to split into train/val sets.")
 
+        # Fixed seed so the train/val split is reproducible between runs.
         rng = random.Random(13)
         shuffled = list(cases)
         rng.shuffle(shuffled)
+        # Half/half split; if there is only one validation candidate left, reuse a train case so
+        # validation is never empty.
         split = max(1, len(shuffled) // 2)
         mini_train, mini_val = shuffled[:split], shuffled[split:] or shuffled[:1]
 
+        # Temp dir for the split datasets; removed in the finally block below.
         workspace = Path(tempfile.mkdtemp(prefix="karl_prompt_opt_"))
         train_path = workspace / "mini_train.jsonl"
         val_path = workspace / "mini_val.jsonl"
@@ -166,6 +176,8 @@ class PromptOptimizer:
         try:
             # Execute guarded operations and establish recovery boundaries
             best_prompt = current_prompt
+            # Baseline score on the held-out slice: a candidate must beat this to be accepted (hill
+            # climbing).
             best_score, _ = self._evaluate(best_prompt, val_path)
             logger.info("Baseline score for '%s': %.3f", prompt_key, best_score)
             if progress_callback:
@@ -177,6 +189,8 @@ class PromptOptimizer:
                     logger.info("Optimization loop stopped early at iteration %d/%d.", i, iterations)
                     break
 
+                # Mutate against failures from the train slice but judge on the validation slice, so
+                # the prompt is not just fitted to its own failures.
                 _train_score, failures = self._evaluate(best_prompt, train_path)
                 if not failures:
                     logger.info("Iteration %d/%d: no mini-train failures, nothing to mutate.", i, iterations)
@@ -191,6 +205,7 @@ class PromptOptimizer:
                     i, iterations, candidate_score, best_score,
                 )
 
+                # Strictly greater: ties keep the existing prompt to avoid pointless churn.
                 if candidate_score > best_score:
                     best_prompt, best_score = candidate, candidate_score
 
@@ -204,6 +219,7 @@ class PromptOptimizer:
     # ── internals ────────────────────────────────────────────────────────────
 
     def _model_path(self) -> Optional[str]:
+        """Path to the selected model under data/models, or None to let ModelLoader use its current/default model."""
         # Step 1: Validate input parameters, operational preconditions, and state
         return os.path.join("data", "models", self.model_name) if self.model_name else None
 
@@ -231,6 +247,7 @@ class PromptOptimizer:
 
     @staticmethod
     def _load_cases(dataset_path: str) -> list[dict]:
+        """Read a JSONL eval dataset into dicts, skipping blank lines, '#' comment lines and malformed JSON."""
         # Step 1: Validate input parameters, operational preconditions, and state
         cases: list[dict] = []
         with open(dataset_path, "r", encoding="utf-8") as fh:
@@ -248,6 +265,7 @@ class PromptOptimizer:
 
     @staticmethod
     def _write_cases(path: Path, cases: list[dict]) -> None:
+        """Write eval cases back out as JSONL (used for the temporary mini-train / mini-val files)."""
         # Step 1: Validate input parameters, operational preconditions, and state
         with path.open("w", encoding="utf-8") as fh:
             for case in cases:
@@ -256,6 +274,7 @@ class PromptOptimizer:
 
     @staticmethod
     def _clean_mutation_output(text: str) -> str:
+        """Strip wrapping the model tends to add around a rewritten prompt: markdown fences, a leading 'New system prompt:' label and surrounding quotes."""
         # Step 1: Validate input parameters, operational preconditions, and state
         text = text.strip()
         if text.startswith("```"):

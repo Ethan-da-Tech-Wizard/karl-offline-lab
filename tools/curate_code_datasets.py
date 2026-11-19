@@ -21,6 +21,7 @@ import sys
 from pathlib import Path
 from typing import Iterable
 
+# Repo root so 'app' is importable when this file is executed directly from tools/.
 ROOT = Path(__file__).resolve().parents[1]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
@@ -28,17 +29,23 @@ if str(ROOT) not in sys.path:
 from app.utils.compactor import decompact_trace
 
 
+# Feedback labels that mark a response as good (used as SFT targets and DPO 'chosen').
 POSITIVE_FEEDBACK = {"thumbs_up", "corrected", "eval_chosen"}
+# Feedback labels that mark a response as bad (DPO 'rejected').
 NEGATIVE_FEEDBACK = {"thumbs_down", "eval_rejected"}
+# Cheap keyword filter for deciding whether a trace is about code.
 CODE_HINT_RE = re.compile(
     r"\b(code|python|pytest|function|class|module|diff|patch|bug|test|compile|traceback|exception)\b",
     re.IGNORECASE,
 )
 CODE_BLOCK_RE = re.compile(r"```(?:python)?\s*\n(.*?)```", re.DOTALL)
+# Upper bound on estimated prompt+response tokens; longer rows would be truncated or waste training
+# context.
 DEFAULT_MAX_TOKENS = 3500
 
 
 def iter_trace_records(trace_dir: Path) -> Iterable[dict]:
+    """Yield each unique trace record from trace_*.jsonl and then trace_*.jsonl.compact files in trace_dir. Plain files are read first so a record present in both forms is taken from the uncompressed copy; duplicates are dropped by record id."""
     # Step 1: Validate input parameters, operational preconditions, and state
     seen: set[str] = set()
     for path in sorted(trace_dir.glob("trace_*.jsonl")):
@@ -50,6 +57,7 @@ def iter_trace_records(trace_dir: Path) -> Iterable[dict]:
 
 
 def _read_jsonl(path: Path, compact: bool, seen: set[str]) -> Iterable[dict]:
+    """Read one trace file line by line, decoding compact lines via decompact_trace. Malformed lines, non-dict records, ids already in 'seen' and unreadable files are skipped rather than raised."""
     # Step 1: Validate input parameters, operational preconditions, and state
     try:
         # Execute guarded operations and establish recovery boundaries
@@ -77,6 +85,7 @@ def _read_jsonl(path: Path, compact: bool, seen: set[str]) -> Iterable[dict]:
 
 
 def is_verified_success(record: dict) -> bool:
+    """Heuristic: True if the serialized record contains any marker that a verification step passed. String matching is used because trace schemas vary across versions."""
     # Step 1: Validate input parameters, operational preconditions, and state
     haystack = json.dumps(record, ensure_ascii=False).lower()
     return any(
@@ -93,6 +102,7 @@ def is_verified_success(record: dict) -> bool:
 
 
 def is_code_record(record: dict) -> bool:
+    """True when the record belongs to a code workflow or its text mentions code keywords or a code fence; keeps chat-only traces out of the code dataset."""
     # Step 1: Validate input parameters, operational preconditions, and state
     workflow = str(record.get("workflow", "")).lower()
     if "code" in workflow:
@@ -105,6 +115,7 @@ def is_code_record(record: dict) -> bool:
 
 
 def prompt_key(record: dict) -> tuple[str, str]:
+    """Return (system_prompt, user_prompt) used to group traces for DPO pairing; falls back to the raw 'prompt' field when the compiled prompt has no user turn."""
     # Step 1: Validate input parameters, operational preconditions, and state
     system = str(record.get("system_prompt") or "")
     user = extract_user_prompt(str(record.get("compiled_prompt") or ""))
@@ -114,6 +125,7 @@ def prompt_key(record: dict) -> tuple[str, str]:
 
 
 def extract_user_prompt(compiled_prompt: str) -> str:
+    """Recover the last user turn from a compiled chat prompt, trying several template styles (plain 'user:', <|user|>, ### user). If none match, return the last 12 non-empty lines as a best effort."""
     # Step 1: Validate input parameters, operational preconditions, and state
     if not compiled_prompt:
         return ""
@@ -134,6 +146,7 @@ def extract_user_prompt(compiled_prompt: str) -> str:
 
 
 def assistant_response(record: dict, chosen: bool) -> str:
+    """Pick the training target: the human-corrected response when building a 'chosen' answer, otherwise the model's own response/raw output."""
     # Step 1: Validate input parameters, operational preconditions, and state
     if chosen and record.get("corrected_response"):
         return str(record["corrected_response"])
@@ -141,6 +154,7 @@ def assistant_response(record: dict, chosen: bool) -> str:
 
 
 def build_datasets(records: Iterable[dict]) -> tuple[list[dict], list[dict]]:
+    """Turn trace records into (sft_rows, dpo_rows). Positive records (thumbs up, corrected, verified) become SFT rows. Within each (system,user) group, chosen and rejected answers are paired one-to-one for DPO."""
     # Step 1: Validate input parameters, operational preconditions, and state
     sft: list[dict] = []
     groups: dict[tuple[str, str], dict[str, list[str]]] = {}
@@ -182,6 +196,8 @@ def build_datasets(records: Iterable[dict]) -> tuple[list[dict], list[dict]]:
     dpo: list[dict] = []
     for (system, user), bucket in groups.items():
         # Iterate over items, evaluate loop invariant, and update progress
+        # Only as many pairs as the smaller side can supply; leftover chosen/rejected answers are
+        # unpaired and dropped.
         pair_count = min(len(bucket["chosen"]), len(bucket["rejected"]))
         for idx in range(pair_count):
             # Iterate over items, evaluate loop invariant, and update progress
@@ -198,6 +214,7 @@ def build_datasets(records: Iterable[dict]) -> tuple[list[dict], list[dict]]:
 
 
 def write_jsonl(path: Path, rows: Iterable[dict], sft_only_messages: bool = False) -> int:
+    """Write rows as JSONL, creating parent dirs; optionally strip each row down to its 'messages'. Returns the row count."""
     # Step 1: Validate input parameters, operational preconditions, and state
     path.parent.mkdir(parents=True, exist_ok=True)
     count = 0
@@ -211,6 +228,7 @@ def write_jsonl(path: Path, rows: Iterable[dict], sft_only_messages: bool = Fals
 
 
 def load_jsonl(path: Path) -> list[dict]:
+    """Load a JSONL file, skipping blank and malformed lines; a missing file yields []."""
     # Step 1: Validate input parameters, operational preconditions, and state
     rows: list[dict] = []
     if not path.exists():
@@ -230,6 +248,7 @@ def load_jsonl(path: Path) -> list[dict]:
 
 
 def _code_snippets(text: str) -> list[str]:
+    """Return the fenced code blocks of text, or the text itself when it has no fences."""
     # Step 1: Validate input parameters, operational preconditions, and state
     blocks = CODE_BLOCK_RE.findall(text)
     return blocks if blocks else [text]
@@ -287,6 +306,8 @@ def merge_datasets(
     curated = load_jsonl(curated_path)
     synthetic = load_jsonl(synthetic_path)
 
+    # The optional sibling datasets below all live next to the curated file; each is merged only if
+    # present.
     public_path = curated_path.parent / "public_code_sft.jsonl"
     public_data = load_jsonl(public_path) if public_path.exists() else []
 
@@ -301,8 +322,10 @@ def merge_datasets(
 
     combined = curated + synthetic + public_data + scraped_library_data + self_correction_data + api_automation_data
 
+    # Quality gate: size limit plus every assistant reply must parse as Python.
     valid_rows = [row for row in combined if passes_quality_checks(row, max_tokens=max_tokens)]
 
+    # Dedicated RNG so a given --seed reproduces the shuffle without touching global random state.
     rng = random.Random(seed)
     rng.shuffle(valid_rows)
 
@@ -310,6 +333,7 @@ def merge_datasets(
     with output_path.open("w", encoding="utf-8") as fh:
         for row in valid_rows:
             # Iterate over items, evaluate loop invariant, and update progress
+            # Metadata is stripped; the trainer only needs the messages list.
             fh.write(json.dumps({"messages": row["messages"]}, ensure_ascii=False) + "\n")
 
     return {
@@ -355,6 +379,7 @@ def main() -> int:
     if not args.skip_merge:
         synthetic_path = Path(args.synthetic_path) if args.synthetic_path else out_dir / "synthetic_code_sft.jsonl"
         merged_path = Path(args.merged_out) if args.merged_out else out_dir / "merged_sft.jsonl"
+        # Merge step runs after raw SFT/DPO export unless --skip-merge is given.
         stats = merge_datasets(sft_path, synthetic_path, merged_path, max_tokens=args.max_tokens, seed=args.seed)
         print(
             f"Merged {stats['curated_total']} curated + {stats['synthetic_total']} synthetic "

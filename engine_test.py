@@ -25,6 +25,7 @@ import os
 import sys
 import time
 
+# Make 'app' and 'core' importable when run from any cwd.
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 from app.engine.model_loader import ModelLoader
@@ -33,6 +34,7 @@ from core.cognitive_parser import parse_thought_stream
 
 
 def test_introspection_engine():
+    """Headless end-to-end smoke test: load the active GGUF, run one ChatML prompt with a pre-seeded <think>, split thought from answer with parse_thought_stream and write a trace log. Needs a real model on disk; exits 1 with a hint if none is found. Because of its test_ name pytest would collect it from the repo root, so it is meant to be run as a script."""
     # ------------------------------------------------------------------
     # 1. Model loading — honours data/active_model.json, falls back to
     #    the 1.5b GGUF if absent.  Uses the registry-aware n_ctx.
@@ -87,6 +89,8 @@ def test_introspection_engine():
         stop=["<|im_end|>", "<|endoftext|>", "<|end_of_text|>", "<|im_start|>"],
     )
 
+    # Re-attach the pre-seeded <think> opener (it was part of the prompt, so the model's text starts
+    # inside the block).
     raw_output = "<think>\n" + response["choices"][0]["text"]
     execution_time = time.time() - start_time
 

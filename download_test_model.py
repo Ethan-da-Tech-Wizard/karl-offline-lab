@@ -12,6 +12,7 @@ import requests
 from tqdm import tqdm
 
 def download_file(url, filepath):
+    """Stream url to filepath in 1 KiB blocks with a tqdm progress bar; raises on HTTP errors."""
     # Streaming download with progress bar
     response = requests.get(url, stream=True)
     response.raise_for_status()
@@ -30,6 +31,8 @@ def download_file(url, filepath):
             size = file.write(data)
             bar.update(size)
 
+# Fetch the default Tier-1 test model once; skipped when the file already exists. Needs network
+# access.
 if __name__ == "__main__":
     # Downloads DeepSeek-R1-Distill-Qwen-1.5B (Q4_K_M quantized, ~986 MB).
     # This is the default Tier-1 model for Karl — see data/model_registry.json.
