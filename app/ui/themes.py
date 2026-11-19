@@ -12,6 +12,15 @@ Karl design system — customizable theme engine.
 Palettes are compiled dynamically into QSS.
 """
 
+# Who uses this module: main_window.py applies get_theme_stylesheet(state) to the whole QApplication; the System Config
+# appearance panels read THEMES / get_theme_colors() to list and preview palettes; most widgets and workspaces import
+# get_theme_colors() or the PALETTE/MONO constants to paint themselves. The stylesheet itself (_SHEET near the end of this
+# file) is one big QSS template filled in with str.format, so it contains no comments; its section list is described above it.
+# Flow: THEMES (raw palette) -> get_theme_colors() (apply mode, accent and tone overrides, derive extra shades) ->
+# get_theme_stylesheet() (add layout density, format _SHEET, cache the result).
+# Valid values: modes "midnight" | "slate" | "ember"; layout presets "Focused Workbench" | "Compact Laptop" |
+# "Wide Monitor Command" | "Minimal Distraction"; accent is any "#RRGGBB" string.
+# Tests: tests/test_ui_improvements.py covers the theme/stylesheet helpers.
 # Fallback accent colour (neon cyan) used when no custom accent is chosen.
 ACCENT_DEFAULT = "#00E5FF"
 
@@ -484,7 +493,15 @@ SANS = (
 )
 
 def darken_hex_color(hex_str: str, factor: float = 0.7) -> str:
-    """Darken a hex color string by a given factor."""
+    """Darken a hex color string by a given factor.
+
+    Args:
+        hex_str: "#RRGGBB" or "RRGGBB". Other lengths (e.g. "#FFF") are treated as invalid.
+        factor: Multiplier applied to each RGB channel; 0.7 keeps 70% of the brightness (values above 1 brighten).
+
+    Returns:
+        "#RRGGBB" in upper case, or the fallback "#008CB8" (dark teal) when the input cannot be parsed.
+    """
     # Accept '#RRGGBB' or 'RRGGBB'; anything not 6 digits (e.g. a 3-digit '#FFF'
     # shorthand or a CSS name) is not expanded here, it falls back to a dark teal
     # so a bad custom accent can never leave the UI without a visible highlight.
@@ -505,7 +522,15 @@ def darken_hex_color(hex_str: str, factor: float = 0.7) -> str:
         return "#008CB8"
 
 def _tint_hex_color(hex_str: str, r_mod: int, g_mod: int, b_mod: int) -> str:
-    """Tint a hex color by adding offsets to its RGB channels."""
+    """Tint a hex color by adding offsets to its RGB channels.
+
+    Args:
+        hex_str: "#RRGGBB" or "RRGGBB".
+        r_mod: Signed offset added to red (0-255 scale); likewise g_mod and b_mod.
+
+    Returns:
+        The shifted "#RRGGBB" (each channel clamped to 0-255), or the input unchanged when it cannot be parsed.
+    """
     # Malformed input is returned unchanged (re-prefixed with '#') rather than
     # replaced with a default: callers use this for subtle shading, where an
     # untouched colour is a better failure mode than a wrong one.
@@ -525,7 +550,15 @@ def _tint_hex_color(hex_str: str, r_mod: int, g_mod: int, b_mod: int) -> str:
         return "#" + hex_str
 
 def hex_to_rgba(hex_str: str, alpha: float) -> str:
-    """Convert a hex color string to rgba format."""
+    """Convert a hex color string to rgba format.
+
+    Args:
+        hex_str: "#RRGGBB" or "RRGGBB".
+        alpha: Opacity from 0.0 (transparent) to 1.0 (opaque).
+
+    Returns:
+        A QSS color such as "rgba(0, 229, 255, 0.3)", or rgba of the stock cyan when the input is invalid.
+    """
     # QSS has no alpha-hex support in every Qt version, so translucent colours
     # are emitted as rgba(). alpha is 0.0-1.0 (QSS accepts a float here).
     # The fallback is the stock cyan so glass panels stay visible on bad input.
@@ -541,7 +574,18 @@ def hex_to_rgba(hex_str: str, alpha: float) -> str:
         return f"rgba(0, 194, 255, {alpha})"
 
 def get_theme_colors(state_or_name, custom_accent=None, bg_tone="Default", mode: str = None) -> dict:
-    """Get the palette colors dictionary for the given theme, custom accent and background overlays."""
+    """Get the palette colors dictionary for the given theme, custom accent and background overlays.
+
+    Args:
+        state_or_name: AppState-like object (theme_preset, custom_accent, theme_mode attributes) or a theme name string.
+        custom_accent: Accent override for the legacy string call shape (ignored when an AppState is passed).
+        bg_tone: Legacy background tone: "Default", "Pitch Black", "Warm Sepia" or "Cool Slate".
+        mode: Optional mode override ("midnight", "slate", "ember"); defaults to the state's theme_mode.
+
+    Returns:
+        A flat dict of QSS placeholder names (bg_*, border*, accent*, text_*, glass variants...) plus description,
+        glow_strength and motion_style. Unknown theme names fall back to "Karl Obsidian Core".
+    """
     # Two call shapes exist: the modern one passes the AppState (theme, accent and
     # mode all live on it), the legacy one passes a theme name plus loose kwargs.
     # State object: read everything from it (tone is not stored on state).
@@ -663,7 +707,17 @@ _STYLESHEET_CACHE_MAX = 64
 
 
 def get_theme_stylesheet(state_or_name, custom_accent=None, bg_tone="Default", mode: str = None) -> str:
-    """Compile the QSS stylesheet for the given state configurations."""
+    """Compile the QSS stylesheet for the given state configurations.
+
+    Args:
+        state_or_name: Same two call shapes as get_theme_colors(); an AppState also supplies layout_preset.
+        custom_accent: Legacy accent override (string call shape only).
+        bg_tone: Legacy background tone (string call shape only).
+        mode: Optional theme mode override.
+
+    Returns:
+        The complete application stylesheet string, memoised per (theme, accent, tone, layout, mode).
+    """
     # The cache key must include every input that changes the output, including
     # layout_preset and mode, or switching them would serve a stale sheet.
     # Layout preset only affects spacing/font size, not colours.
@@ -698,6 +752,8 @@ def get_theme_stylesheet(state_or_name, custom_accent=None, bg_tone="Default", m
     p["sans"] = SANS
 
     # Default density; presets below tighten or loosen margins, spacing and font.
+    # Density presets: margin is the outer padding of workspaces (px), spacing the gap between controls (px), font_size the base
+    # point size. The default matches the "Focused Workbench" layout described in AGENTS.md.
     margin = 12
     spacing = 10
     font_size = 10
@@ -1383,7 +1439,15 @@ QScrollBar::add-page:horizontal, QScrollBar::sub-page:horizontal {{
 """
 
 def stylesheet(accent: str = ACCENT_DEFAULT, mode: str = "midnight") -> str:
-    """Backward-compatible helper returning QSS for the default theme."""
+    """Backward-compatible helper returning QSS for the default theme.
+
+    Args:
+        accent: Custom accent colour ("#RRGGBB").
+        mode: Theme mode ("midnight", "slate" or "ember").
+
+    Returns:
+        The compiled stylesheet for "Karl Obsidian Core" with the given accent and mode.
+    """
     # Minimal stand-in exposing the attributes get_theme_stylesheet reads, so
     # legacy callers need not construct a full AppState.
     class DummyState:
