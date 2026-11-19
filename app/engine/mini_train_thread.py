@@ -182,8 +182,8 @@ class MiniTrainThread(QThread):
                 # Periodic text sampling
                 if step % sample_interval == 0:
                     model.eval()
-                    # Feed a newline character as the start context
-                    # Start generation from token id 0 (the first sorted character in the vocabulary, often newline).
+                    # Start the sample from token id 0 (the first sorted character in the
+                    # vocabulary, which is often a newline but is not guaranteed to be).
                     context = torch.zeros((1, 1), dtype=torch.long, device=device)
                     # Generate 150 characters
                     gen_ids = model.generate(context, max_new_tokens=150, temperature=0.8, top_k=20)[0].tolist()
