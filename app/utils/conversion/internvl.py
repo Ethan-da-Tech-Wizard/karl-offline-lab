@@ -19,11 +19,14 @@ from .base import MmprojModel, ModelBase, gguf
 
 @ModelBase.register("InternVisionModel")
 class InternVisionModel(MmprojModel):
+    """Converter for the InternViT vision tower and its MLP projector (mmproj GGUF)."""
 
+    # Dynamic-tiling limits from the top-level config (0 = not specified, i.e. older models).
     min_dynamic_tiles: int = 0
     max_dynamic_tiles: int = 0
 
     def __init__(self, *args, **kwargs):
+        """Read the dynamic image tiling limits from the global config."""
         # Step 1: Validate input parameters, operational preconditions, and state
         super().__init__(*args, **kwargs)
         assert self.hparams_vision is not None
@@ -31,8 +34,10 @@ class InternVisionModel(MmprojModel):
         self.max_dynamic_tiles = self.global_config.get("max_dynamic_patch", 0)
 
     def set_gguf_parameters(self):
+        """Write vision parameters, activation, projector scale factor and tiling limits."""
         # Step 1: Validate input parameters, operational preconditions, and state
         assert self.hparams_vision is not None
+        # Some configs give sizes as [h, w] lists; the shared code expects a scalar.
         if isinstance(self.hparams_vision['image_size'], list):
             self.hparams_vision['image_size'] = self.hparams_vision['image_size'][0]
         if isinstance(self.hparams_vision['patch_size'], list):
@@ -49,6 +54,7 @@ class InternVisionModel(MmprojModel):
             self.gguf_writer.add_vision_use_gelu(True)
         else:
             raise ValueError(f"Unsupported hidden_act: {hparams['hidden_act']}")
+        # The pixel-shuffle downsample ratio r (e.g. 0.5) becomes an integer scale factor 1/r.
         # downsample_ratio
         downsample_ratio = self.global_config.get("downsample_ratio")
         assert downsample_ratio is not None
@@ -60,6 +66,7 @@ class InternVisionModel(MmprojModel):
             self.gguf_writer.add_vision_preproc_max_tiles(self.max_dynamic_tiles)
 
     def tensor_force_quant(self, name, new_name, bid, n_dims):
+        """Keep position embeddings in F32."""
         # Step 1: Validate input parameters, operational preconditions, and state
         if ".position_embd." in new_name:
             return gguf.GGMLQuantizationType.F32
@@ -67,12 +74,14 @@ class InternVisionModel(MmprojModel):
 
     @classmethod
     def filter_tensors(cls, item: tuple[str, Callable[[], Tensor]]) -> tuple[str, Callable[[], Tensor]] | None:
+        """Keep only vision/projector tensors and normalise names (incl. Intern-S1 layouts)."""
         # Step 1: Validate input parameters, operational preconditions, and state
         name, gen = item
 
         vision_prefix = ['vision_model', 'mlp', 'model.vision_tower', 'model.multi_modal_projector']
         if not any([name.startswith(prefix) for prefix in vision_prefix]):
             return None
+        # Intern-S1 uses HF-style projector names; map them back to the original mlp1.* names.
         # deal with intern-s1 special case
         names_map = {
             "model.multi_modal_projector.layer_norm.bias": "mlp1.0.bias",
@@ -84,6 +93,8 @@ class InternVisionModel(MmprojModel):
         }
         if name in names_map:
             name = names_map[name]
+        # Add the "vision_tower." prefix and a ".weight" suffix to bare parameters
+        # (layer-scale, lambda and position embeddings) so name mapping finds them.
         # correct name
         if name.startswith("vision_model"):
             name = "vision_tower." + name
@@ -93,6 +104,8 @@ class InternVisionModel(MmprojModel):
         return super().filter_tensors((name, gen))
 
     def modify_tensors(self, data_torch: Tensor, name: str, bid: int | None) -> Iterable[tuple[str, Tensor]]:
+        """Split fused attn.qkv weights/biases into separate Q, K, V tensors."""
+        # The fused tensor stacks Q, K, V in thirds along dim 0 (3 * hidden rows).
         # split QKV tensors if needed
         if ".qkv." in name:
             if data_torch.ndim == 2: # weight

@@ -19,12 +19,14 @@ if TYPE_CHECKING:
 from .base import MmprojModel, ModelBase, gguf, logger
 
 from .llama import LlamaModel
+# GraniteHybridModel combines Mamba2 (SSM layers) with the Granite MoE attention path.
 from .mamba import Mamba2Model
 
 
 @ModelBase.register("GraniteForCausalLM", "GraniteSpeechForConditionalGeneration")
 class GraniteModel(LlamaModel):
     """Conversion for IBM's GraniteForCausalLM"""
+    # GGUF architecture id written into the output file.
     model_arch = gguf.MODEL_ARCH.GRANITE
 
     def set_gguf_parameters(self):
@@ -38,9 +40,12 @@ class GraniteModel(LlamaModel):
         - logits_scaling
         """
         # Step 1: Validate input parameters, operational preconditions, and state
+        # Granite does not use head_dim; remove it so the Llama parent derives the RoPE
+        # size from hidden_size / heads instead.
         if head_dim := self.hparams.pop("head_dim", None):
             logger.warning("Ignoring head_dim (%s) from config for Granite", head_dim)
         super().set_gguf_parameters()
+        # Each scale is only written when present and non-zero (walrus truthiness test).
         # NOTE: Convert _multiplier params to _scale params for naming
         #   consistency
         if attention_scale := self.hparams.get("attention_multiplier"):
@@ -58,6 +63,7 @@ class GraniteModel(LlamaModel):
 
     @classmethod
     def filter_tensors(cls, item: tuple[str, Callable[[], Tensor]]) -> tuple[str, Callable[[], Tensor]] | None:
+        """Drop speech-encoder tensors; they belong to the separate mmproj conversion."""
         # Step 1: Validate input parameters, operational preconditions, and state
         name, gen = item
         if name.startswith("encoder."):
@@ -68,6 +74,7 @@ class GraniteModel(LlamaModel):
 @ModelBase.register("GraniteMoeForCausalLM", "GraniteMoeSharedForCausalLM")
 class GraniteMoeModel(GraniteModel):
     """Conversion for IBM's GraniteMoeForCausalLM"""
+    # GGUF architecture id written into the output file.
     model_arch = gguf.MODEL_ARCH.GRANITE_MOE
 
     def set_gguf_parameters(self):
@@ -76,6 +83,7 @@ class GraniteMoeModel(GraniteModel):
         """
         # Step 1: Validate input parameters, operational preconditions, and state
         super().set_gguf_parameters()
+        # Shared-expert FFN width exists only for the GraniteMoeShared variant.
         if shared_feed_forward_length := self.hparams.get("shared_intermediate_size"):
             self.gguf_writer.add_expert_shared_feed_forward_length(shared_feed_forward_length)
             logger.info("gguf: (granitemoeshared) shared_feed_forward_length = %s", shared_feed_forward_length)
@@ -88,6 +96,8 @@ class GraniteMoeModel(GraniteModel):
         """
 
         # Step 1: Validate input parameters, operational preconditions, and state
+        # Fused gate+up expert tensor: split into gate and up halves along dim -2
+        # (the experts axis stays leading), mapping straight to the expert tensor names.
         if name.endswith("block_sparse_moe.input_linear.weight"):
             ffn_dim = self.hparams["intermediate_size"]
             assert data_torch.shape[-2] == 2 * ffn_dim, "Merged FFN tensor size must be 2 * intermediate_size"
@@ -96,6 +106,8 @@ class GraniteMoeModel(GraniteModel):
             yield from ModelBase.modify_tensors(self, up, self.format_tensor_name(gguf.MODEL_TENSOR.FFN_UP_EXP, bid), bid)
             return
 
+        # GraniteMoeShared checkpoints without routed experts use the shared MLP as the
+        # only (dense) FFN, so its tensors must map to plain FFN names in that case.
         has_experts = bool(self.hparams.get('num_local_experts'))
 
         if name.endswith("shared_mlp.input_linear.weight"):
@@ -110,6 +122,7 @@ class GraniteMoeModel(GraniteModel):
             yield from ModelBase.modify_tensors(self, up, self.format_tensor_name(gguf.MODEL_TENSOR.FFN_UP, bid), bid)
             return
 
+        # With no routed experts the shared MLP output is just the dense FFN down projection.
         if not has_experts and name.endswith("shared_mlp.output_linear.weight"):
             yield from ModelBase.modify_tensors(self, data_torch, self.format_tensor_name(gguf.MODEL_TENSOR.FFN_DOWN, bid), bid)
             return
@@ -121,10 +134,15 @@ class GraniteMoeModel(GraniteModel):
 class GraniteHybridModel(Mamba2Model, GraniteMoeModel):
     """GraniteHybrid is a hybrid SSM + Attention model that uses Mamba2 SSM
     layers and optionally uses MoE w/ a shared expert"""
+    # GGUF architecture id written into the output file.
     model_arch = gguf.MODEL_ARCH.GRANITE_HYBRID
+    # Attention layers need the Q/K un-permutation (inherited Llama behaviour).
     undo_permute = True
 
     def __init__(self, *args, **kwargs):
+        """Work out which layers are SSM vs attention, and fall back to a plain Granite
+        architecture when every layer is attention.
+        """
 
         # Hybrid mamba models use a prefix for the mamba-specific params.
         # TODO: Extend this if the prefix(es) need to be configurable
@@ -133,12 +151,15 @@ class GraniteHybridModel(Mamba2Model, GraniteMoeModel):
         super().__init__(*args, **kwargs)
 
         # Lists of which layers use ssm vs attention
+        # Layer indices partition into attention layers and SSM (Mamba2) layers.
         self._attn_layers = self.get_attn_layers()
         self._ssm_layers = [
             i for i in range(self.block_count)
             if i not in self._attn_layers
         ]
 
+        # (see note) non-hybrid siblings share this class, so rewrite the arch name written
+        # to the GGUF header.
         # There are some models in this family that are non-hybrid, but keep the
         # same parent class by setting all layers to "attention." If this is the
         # case, the model architecture needs to be updated to a standard
@@ -159,11 +180,17 @@ class GraniteHybridModel(Mamba2Model, GraniteMoeModel):
         #   disambiguate with top-level head_dim
         # NOTE 2: If needed for future models, this can be isolated in a method
         #   to separate the prefix setting and the keys used
+        # Mamba2 helpers expect d_model/n_group/d_inner; derive them from the hybrid config.
         self.d_model = self.find_hparam([f"{self.hparam_prefixes[0]}_head_dim", "hidden_size", "d_model"])
         self.n_group = self.find_hparam(["n_groups", "num_groups"])
         self.d_inner = self.find_hparam(["expand", "num_heads"]) * self.d_model
 
     def get_attn_layers(self):
+        """Return the indices of attention layers (the rest are Mamba2).
+
+        Supports an explicit list of layer type names, an explicit index list, or a
+        periodic pattern (every `attn_layer_period`-th layer starting at the offset).
+        """
         # Explicit list of layer type names
         if layer_types := self.hparams.get("layer_types"):
             return [
@@ -185,6 +212,7 @@ class GraniteHybridModel(Mamba2Model, GraniteMoeModel):
         return attn_layers
 
     def find_hparam(self, keys: Iterable[str], *args, **kwargs) -> Any:
+        """Look up an hparam under both its plain key and its "mamba_"-prefixed variant."""
         # Step 1: Validate input parameters, operational preconditions, and state
         prefixed = []
         for pfx in self.hparam_prefixes:
@@ -197,6 +225,7 @@ class GraniteHybridModel(Mamba2Model, GraniteMoeModel):
         return Mamba2Model.find_hparam(self, keys, *args, **kwargs)
 
     def modify_tensors(self, data_torch: Tensor, name: str, bid: int | None) -> Iterable[tuple[str, Tensor]]:
+        """Dispatch each tensor to the Mamba2 or Granite-MoE handler based on its layer type."""
         # Step 1: Validate input parameters, operational preconditions, and state
         if (
             name.endswith("block_sparse_moe.input_linear.weight")
@@ -205,6 +234,8 @@ class GraniteHybridModel(Mamba2Model, GraniteMoeModel):
             yield from GraniteMoeModel.modify_tensors(self, data_torch, name, bid)
             return
 
+        # Layers are dispatched by block id: SSM layers use Mamba2 tensor rules, attention
+        # layers the GraniteMoE ones; anything else (embeddings, norms) is mapped directly.
         # Determine whether this is a mamba layer or an attention layer
         if bid in self._ssm_layers:
             yield from Mamba2Model.modify_tensors(self, data_torch, name, bid)
@@ -223,6 +254,7 @@ class GraniteHybridModel(Mamba2Model, GraniteMoeModel):
         WARNING:Duplicated key name 'granitehybrid.context_length'
         """
         # Step 1: Validate input parameters, operational preconditions, and state
+        # Call the Granite parent explicitly: with two bases, super() would pick Mamba2 first.
         GraniteMoeModel.set_gguf_parameters(self)
 
         ## Mamba mixer params ##
@@ -236,6 +268,7 @@ class GraniteHybridModel(Mamba2Model, GraniteMoeModel):
 
         ## Attention params ##
         head_count_kv = self.find_hparam(["num_key_value_heads", "n_head_kv"])
+        # Per-layer KV head count: 0 for SSM layers, which have no attention heads.
         head_count_kv_vec = [
             head_count_kv if i in self._attn_layers else 0 for i in range(self.block_count)
         ]
@@ -243,6 +276,8 @@ class GraniteHybridModel(Mamba2Model, GraniteMoeModel):
             self.gguf_writer.add_rope_dimension_count(rope_dim)
         self.gguf_writer.add_head_count_kv(head_count_kv_vec)
 
+        # (see note) Bamba and non-hybrid variants use RoPE; Granite hybrids rely on SSM
+        # layers for position information and get an effectively unbounded context.
         ## If Bamba or non-hybrid, use rope, otherwise don't
         use_rope = (
             "BambaForCausalLM" in self.hparams["architectures"]
@@ -258,6 +293,7 @@ class GraniteHybridModel(Mamba2Model, GraniteMoeModel):
         assert self.d_inner % d_head == 0, f"SSM inner size {self.d_inner} not a multiple of head dim {d_head}"
 
     def set_vocab(self):
+        """Pad the vocab to a multiple of 8 (Mamba2 requirement), then use Mamba2's loader."""
         # Step 1: Validate input parameters, operational preconditions, and state
         self.hparams["pad_vocab_size_multiple"] = 8
         Mamba2Model.set_vocab(self)
@@ -265,19 +301,25 @@ class GraniteHybridModel(Mamba2Model, GraniteMoeModel):
 
 @ModelBase.register("GraniteSpeechForConditionalGeneration")
 class GraniteSpeechMmprojModel(MmprojModel):
+    """Converter for the Granite Speech audio encoder (Conformer) and Q-Former projector."""
+    # Audio-only mmproj: no vision tower.
     has_vision_encoder = False
     has_audio_encoder = True
 
+    # Per-layer buffer for batch-norm tensors until a layer's set is complete.
     _batch_norm_tensors: list[dict[str, Tensor]] | None = None
 
     def get_audio_config(self) -> dict[str, Any] | None:
+        """The audio encoder's hyperparameters live under "encoder_config"."""
         # Step 1: Validate input parameters, operational preconditions, and state
         return self.global_config.get("encoder_config")
 
     def set_gguf_parameters(self):
+        """Write audio-encoder and projector (Q-Former) parameters after renaming config keys."""
         # Step 1: Validate input parameters, operational preconditions, and state
         assert self.hparams_audio is not None
         a = self.hparams_audio
+        # Rename Granite encoder config keys to the generic names MmprojModel expects.
         a["hidden_size"] = a["hidden_dim"]
         a["intermediate_size"] = a["hidden_dim"] * a["feedforward_mult"]
         a["num_attention_heads"] = a["num_heads"]
@@ -298,6 +340,7 @@ class GraniteSpeechMmprojModel(MmprojModel):
         self.gguf_writer.add_audio_projector_head_count(p["projector_config"]["num_attention_heads"])
 
     def tensor_force_quant(self, name, new_name, bid, n_dims):
+        """Keep convolution weights in F32."""
         # Step 1: Validate input parameters, operational preconditions, and state
         if "encoder" in name or "projector" in name:
             if ".conv" in name and ".weight" in name:
@@ -306,6 +349,7 @@ class GraniteSpeechMmprojModel(MmprojModel):
 
     @classmethod
     def filter_tensors(cls, item: tuple[str, Callable[[], Tensor]]) -> tuple[str, Callable[[], Tensor]] | None:
+        """Drop attention-distance tables and batch-norm step counters (unused at inference)."""
         # Step 1: Validate input parameters, operational preconditions, and state
         name, gen = item
         if "attention_dists" in name or "num_batches_tracked" in name:
@@ -313,12 +357,18 @@ class GraniteSpeechMmprojModel(MmprojModel):
         return super().filter_tensors(item)
 
     def modify_tensors(self, data_torch: Tensor, name: str, bid: int | None) -> Iterable[tuple[str, Tensor]]:
+        """Fold batch-norm into scale/shift, split fused K/V, and squeeze conv kernels.
+
+        Generator: yields nothing until all batch-norm tensors for a layer arrived.
+        """
+        # Inference-time batch-norm: y = a*x + b with a = w/sqrt(var+eps), b = bias - mean*a.
         # fold running_mean, running_var and eps into weight and bias for batch_norm
         if "batch_norm" in name and "encoder.layers." in name:
             if self._batch_norm_tensors is None:
                 self._batch_norm_tensors = [{} for _ in range(self.block_count)]
             assert bid is not None
             self._batch_norm_tensors[bid][name] = data_torch
+            # Wait for weight, bias, running_mean and running_var (num_batches_tracked was filtered out).
             if len(self._batch_norm_tensors[bid]) < 4:
                 return
             prefix = f"encoder.layers.{bid}.conv.batch_norm"
@@ -333,12 +383,14 @@ class GraniteSpeechMmprojModel(MmprojModel):
             yield from super().modify_tensors(b, f"encoder.layers.{bid}.conv.batch_norm.bias", bid)
             return
 
+        # Fused K/V projection: first half of dim 0 is K, second half is V.
         if ".attn.to_kv.weight" in name:
             k_weight, v_weight = data_torch.chunk(2, dim=0)
             yield from super().modify_tensors(k_weight, name.replace("to_kv", "to_k"), bid)
             yield from super().modify_tensors(v_weight, name.replace("to_kv", "to_v"), bid)
             return
 
+        # Drop the singleton kernel axis of pointwise convolutions so they are 2-D matrices.
         if ("up_conv" in name or "down_conv" in name) and name.endswith(".weight"):
             if data_torch.ndim == 3 and data_torch.shape[2] == 1:
                 data_torch = data_torch.squeeze(2)

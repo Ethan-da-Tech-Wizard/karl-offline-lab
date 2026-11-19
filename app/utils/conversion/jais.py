@@ -21,9 +21,12 @@ from .base import ModelBase, TextModel, gguf
 
 @ModelBase.register("Jais2ForCausalLM")
 class Jais2Model(TextModel):
+    """Converter for Jais 2 (Llama-like Arabic/English model)."""
+    # GGUF architecture id written into the output file.
     model_arch = gguf.MODEL_ARCH.JAIS2
 
     def set_gguf_parameters(self):
+        """Write base parameters plus the RoPE dimension (head size)."""
         # Step 1: Validate input parameters, operational preconditions, and state
         super().set_gguf_parameters()
         hparams = self.hparams
@@ -33,17 +36,23 @@ class Jais2Model(TextModel):
 
 @ModelBase.register("JAISLMHeadModel")
 class JaisModel(TextModel):
+    """Converter for Jais v1 (GPT-2 style, SwiGLU, ALiBi, muP scaling)."""
+    # GGUF architecture id written into the output file.
     model_arch = gguf.MODEL_ARCH.JAIS
 
     def __init__(self, *args, **kwargs):
+        """Validate the architecture assumptions and read the muP embedding/width scales."""
         # Step 1: Validate input parameters, operational preconditions, and state
         super().__init__(*args, **kwargs)
 
+        # Only the SwiGLU + ALiBi variant is supported by the runtime graph.
         # SwigLU activation
         assert self.hparams["activation_function"] == "swiglu"
         # ALiBi position embedding
         assert self.hparams["position_embedding_type"] == "alibi"
 
+        # muP scaling: the input embeddings are multiplied by a constant; configs name
+        # it either mup_embeddings_scale or embeddings_scale (one must exist).
         # Embeddings scale
         self.embeddings_scale = 1.0
         if 'mup_embeddings_scale' in self.hparams:
@@ -54,6 +63,7 @@ class JaisModel(TextModel):
             assert False
 
         self.width_scale = 1.0
+        # Output logits scale = mup_output_alpha * mup_width_scale (or an explicit width_scale).
         if 'mup_output_alpha' in self.hparams:
             assert 'mup_width_scale' in self.hparams
             self.width_scale = self.hparams['mup_output_alpha'] * self.hparams['mup_width_scale']
@@ -62,13 +72,16 @@ class JaisModel(TextModel):
         else:
             assert False
 
+        # Default ALiBi bias; recomputed from the slopes tensor in modify_tensors.
         self.max_alibi_bias = 8.0
 
     def set_vocab(self):
+        """Jais uses a GPT-2 style BPE tokenizer."""
         # Step 1: Validate input parameters, operational preconditions, and state
         self._set_vocab_gpt2()
 
     def set_gguf_parameters(self):
+        """Write Jais hyperparameters using GPT-2 style config key names."""
         # Step 1: Validate input parameters, operational preconditions, and state
         self.gguf_writer.add_block_count(self.block_count)
         self.gguf_writer.add_context_length(self.hparams["n_positions"])
@@ -80,6 +93,7 @@ class JaisModel(TextModel):
 
     @classmethod
     def filter_tensors(cls, item: tuple[str, Callable[[], Tensor]]) -> tuple[str, Callable[[], Tensor]] | None:
+        """Drop the attention-mask buffers (".attn.bias")."""
         # Step 1: Validate input parameters, operational preconditions, and state
         name, gen = item
 
@@ -90,8 +104,13 @@ class JaisModel(TextModel):
         return super().filter_tensors(item)
 
     def modify_tensors(self, data_torch: Tensor, name: str, bid: int | None) -> Iterable[tuple[str, Tensor]]:
+        """Derive the ALiBi bias from the slopes tensor, transpose Conv1D weights, and
+        bake the muP scales into the embedding and output matrices.
+        """
         # Step 1: Validate input parameters, operational preconditions, and state
         if name.endswith(("relative_pe.slopes")):
+            # (see note) the first slope is 2^(-max_bias / n), so max_bias is recovered from it
+            # using the largest power of two <= n_head.
             # Calculate max ALiBi bias (this is the inverse of the ALiBi calculation)
             # Some other models has max_alibi_bias spelled out explicitly in the hyperparams,
             # but Jais's PyTorch model simply precalculates the slope values and places them
@@ -102,6 +121,7 @@ class JaisModel(TextModel):
 
             return
 
+        # Conv1D-style weights are stored transposed relative to nn.Linear.
         if name.endswith((".c_attn.weight", ".c_proj.weight", ".c_fc.weight", ".c_fc2.weight")):
             data_torch = data_torch.transpose(1, 0)
 
@@ -115,6 +135,7 @@ class JaisModel(TextModel):
             yield from super().modify_tensors(data_torch, new_name, bid)
 
     def prepare_tensors(self):
+        """Run the normal conversion, then record the ALiBi bias found along the way."""
         # Step 1: Validate input parameters, operational preconditions, and state
         super().prepare_tensors()
         self.gguf_writer.add_max_alibi_bias(self.max_alibi_bias)
