@@ -78,9 +78,9 @@ class StableLMModel(TextModel):
             self._q_norms[bid][name] = data_torch
 
             if len(self._q_norms[bid]) >= n_head:
-                return self._stack_qk_norm(bid, n_head, self._q_norms[bid], "q_layernorm")
-            else:
-                return
+                yield from self._stack_qk_norm(bid, n_head, self._q_norms[bid], "q_layernorm")
+            # Either way this partial norm tensor is consumed; the stacked result is what gets emitted.
+            return
 
         if name.find("k_layernorm.norms") != -1:
             assert bid is not None
@@ -91,9 +91,8 @@ class StableLMModel(TextModel):
             self._k_norms[bid][name] = data_torch
 
             if len(self._k_norms[bid]) >= n_kv_head:
-                return self._stack_qk_norm(bid, n_kv_head, self._k_norms[bid], "k_layernorm")
-            else:
-                return
+                yield from self._stack_qk_norm(bid, n_kv_head, self._k_norms[bid], "k_layernorm")
+            return
 
         yield from super().modify_tensors(data_torch, name, bid)
 
