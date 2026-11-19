@@ -14,6 +14,17 @@ Hosts a local WebSocket server to bridge communication between Karl's Multi-Agen
 and editor extensions (such as VS Code/Code OSS).
 """
 
+# Design notes:
+#   * Transport: JSON-RPC 2.0 over WebSocket. Loopback binds use plain WS (so
+#     editor webviews accept it); any non-loopback bind requires TLS and fails
+#     closed without a certificate (see _start_server).
+#   * Auth: bearer tokens persisted in data/bridge_token.json, each mapped to a
+#     list of scopes; METHOD_SCOPES decides which scope each RPC method needs.
+#   * Threading: an asyncio loop runs on a dedicated daemon thread, while Qt
+#     objects (orchestrator, chat threads) live on the GUI thread. Shared state
+#     is guarded by _threads_lock / _clients_lock.
+
+# --- standard library and third-party imports ---
 import logging
 import os
 import json
@@ -33,6 +44,7 @@ from websockets.http11 import Response
 from typing import Set, Optional, Any
 from PyQt6.QtCore import Qt
 
+# --- Karl internals: engine, RAG, UI helpers reused by RPC handlers, key storage ---
 from app.engine import config_store
 from app.engine.swarm_orchestrator import SwarmOrchestratorThread, rollback_swarm_run
 from app.engine.inference_service import InferenceService
@@ -45,6 +57,7 @@ from app.utils.correlation_logger import new_correlation_id, set_correlation_id
 from app.utils.swarm_agent_profiles import load_agent_profiles, save_agent_profile
 
 
+# Module logger; handlers and levels are configured by the application entrypoint.
 logger = logging.getLogger("karl.websocket")
 
 # Adapter/artifact names are used to build filesystem paths under data/adapters/
@@ -54,9 +67,17 @@ logger = logging.getLogger("karl.websocket")
 _SAFE_ADAPTER_NAME_RE = re.compile(r"^[A-Za-z0-9_\-]{1,64}$")
 
 
+# Rate limiter used to throttle per-client request rates (classic token bucket:
+# a bucket of `capacity` tokens refilled continuously at `fill_rate` tokens/s).
 class TokenBucket:
     """Thread-safe Token Bucket rate limiter."""
     def __init__(self, capacity: float, fill_rate: float):
+        """Create a full bucket.
+
+        Args:
+            capacity: Maximum burst size (tokens the bucket can hold).
+            fill_rate: Tokens added back per second.
+        """
         # Step 1: Validate input parameters, operational preconditions, and state
         self.capacity = capacity
         self.fill_rate = fill_rate
@@ -65,8 +86,13 @@ class TokenBucket:
         self._lock = threading.Lock()
 
     def consume(self, amount: float = 1.0) -> bool:
+        """Try to take `amount` tokens; return True if allowed, False if rate-limited.
+
+        Refill is computed lazily from elapsed wall time, so no timer thread is needed.
+        """
         # Step 1: Validate input parameters, operational preconditions, and state
         with self._lock:
+            # Lazy refill: credit the tokens earned since the last call, capped at capacity.
             now = time.time()
             elapsed = now - self.last_update
             self.last_update = now
@@ -146,13 +172,18 @@ class WebSocketServerManager:
         self.started_event = threading.Event()
         self._start_loop_thread()
 
+    # --- Security / protocol constants ---
     _TOKEN_LIFETIME = 43_200      # 12 hours in seconds
     _LEASE_AUDIT_INTERVAL = 60    # seconds between session-lease sweeps
+    # Application-defined WebSocket close codes (4000-4999 range) telling the
+    # client why the server dropped it: bad/missing auth, session lease timed
+    # out, or its token was revoked.
     _CLOSE_CODE_UNAUTHORIZED = 4001
     _CLOSE_CODE_LEASE_EXPIRED = 4002
     _CLOSE_CODE_REVOKED = 4003
     _TOKEN_PATH = "data/bridge_token.json"
 
+    # The full scope set granted to the admin token.
     # Ordered from least to most privileged — also written to bridge_token.json.
     _FULL_SCOPES: list[str] = [
         "read:telemetry",
@@ -190,9 +221,12 @@ class WebSocketServerManager:
         "stop_task":          "admin:execute",
         "fit_vectorizer":     "write:kb",
     }
+    # Self-signed localhost TLS material, generated on first run by _ensure_ssl_certs.
     _SSL_CERT_PATH = "data/ssl/localhost.crt"
     _SSL_KEY_PATH = "data/ssl/localhost.key"
+    # JSON-RPC protocol version string required in every request/response envelope.
     _JSONRPC_VERSION = "2.0"
+    # Standard JSON-RPC 2.0 error codes mapped to their canonical messages.
     _RPC_ERROR_MESSAGES = {
         -32700: "Parse error",
         -32600: "Invalid Request",
@@ -200,6 +234,8 @@ class WebSocketServerManager:
         -32602: "Invalid params",
         -32603: "Internal error",
     }
+    # Whitelist of every RPC method the dispatcher will route; anything else yields
+    # a "Method not found" (-32601) error before any handler runs.
     _RPC_METHODS = {
         "authenticate",
         "refresh_token",
@@ -240,12 +276,17 @@ class WebSocketServerManager:
     def _ensure_ssl_certs(self):
         """Generates self-signed localhost SSL certificates if missing."""
         # Step 1: Validate input parameters, operational preconditions, and state
+        # Make sure the certificate directory exists before openssl writes into it.
         ssl_dir = os.path.dirname(self._SSL_CERT_PATH)
         os.makedirs(ssl_dir, exist_ok=True)
         
+        # Only generate when either half of the cert/key pair is missing, so existing
+        # (possibly operator-provisioned) certificates are never overwritten.
         if not os.path.exists(self._SSL_CERT_PATH) or not os.path.exists(self._SSL_KEY_PATH):
             logger.info("Generating self-signed SSL certificates for WSS...")
             try:
+                # Shell out to openssl: avoids a Python crypto dependency for a one-off
+                # 10-year self-signed cert valid for CN=localhost.
                 # Use openssl command if available
                 cmd = [
                     "openssl", "req", "-x509", "-newkey", "rsa:2048",
@@ -262,10 +303,13 @@ class WebSocketServerManager:
     def _init_security(self):
         """Initialise the multi-token store and safe-path rules."""
         # Step 1: Validate input parameters, operational preconditions, and state
+        # bridge_token: the admin token; _token_store: token -> scopes for all tokens.
         self.bridge_token: str = ""
         self._token_created_at: float = 0.0
         self._token_store: dict[str, list[str]] = {}
 
+        # Token source precedence: KARL_BRIDGE_TOKEN env var (operator-supplied, e.g.
+        # in containers) > persisted token file > freshly generated token.
         env_token = os.environ.get("KARL_BRIDGE_TOKEN", "").strip()
         if env_token:
             self.bridge_token = env_token
@@ -278,6 +322,8 @@ class WebSocketServerManager:
                 # Execute guarded operations and establish recovery boundaries
                 with open(self._TOKEN_PATH, "r", encoding="utf-8") as f:
                     payload = json.load(f)
+                # Two on-disk formats exist: the current {"tokens": {...}} multi-token file
+                # and the legacy single {"token": ...} file, which is migrated in place.
                 if "tokens" in payload:
                     # New multi-token format
                     self._token_store = {k: list(v) for k, v in payload["tokens"].items()}
@@ -293,10 +339,13 @@ class WebSocketServerManager:
                     (tok for tok, sc in self._token_store.items() if "admin:execute" in sc),
                     "",
                 )
+                # Rotate when the store has expired or contains no admin-capable token;
+                # otherwise just refresh the keychain copy.
                 if time.time() - self._token_created_at > self._TOKEN_LIFETIME or not self.bridge_token:
                     self._rotate_token()
                 else:
                     self._save_token_safe(self.bridge_token)
+            # Corrupt/unreadable token file: fail safe by issuing a brand-new token.
             except Exception:
                 self._rotate_token()
         else:
@@ -372,6 +421,7 @@ class WebSocketServerManager:
 
     def _generate_token(self) -> str:
         # Step 1: Validate input parameters, operational preconditions, and state
+        """Return a new random 128-bit token as a 32-char hex string (uuid4)."""
         return uuid.uuid4().hex
 
     def _rotate_token(self) -> None:
@@ -473,10 +523,18 @@ class WebSocketServerManager:
         return True
 
     def _seed_codex(self):
+        """Install/refresh the bundled "Codex" reference library on disk.
+
+        Writes each DEFAULT_LIBRARY topic as an .html file under data/codex_library and
+        stamps a .version file, so the docs workspace and the bridge's codex RPCs have
+        content on first run. Re-seeds only when the stamped version differs (or the
+        directory has no html/md files), so user edits survive normal restarts.
+        """
         # Step 1: Validate input parameters, operational preconditions, and state
         library_dir = "data/codex_library"
         os.makedirs(library_dir, exist_ok=True)
         version_filepath = os.path.join(library_dir, ".version")
+        # Bump this when DEFAULT_LIBRARY content changes to force a re-seed.
         current_version = "5.0"
 
         needs_upgrade = True
@@ -489,9 +547,11 @@ class WebSocketServerManager:
             except OSError as exc:
                 logger.warning("could not read codex version file %s: %s", version_filepath, exc)
 
+        # Re-seed if the version stamp is stale OR the library was emptied.
         if needs_upgrade or not [f for f in os.listdir(library_dir) if f.endswith((".html", ".md"))]:
             for topic, content in DEFAULT_LIBRARY.items():
                 # Iterate over items, evaluate loop invariant, and update progress
+                # Sanitize the topic title into a filesystem-safe filename (no separators/dots).
                 safe_name = "".join(c for c in topic if c.isalnum() or c in (" ", "_", "-")).strip()
                 filepath = os.path.join(library_dir, f"{safe_name}.html")
                 try:
@@ -508,14 +568,22 @@ class WebSocketServerManager:
                 logger.warning("could not write codex version file %s: %s", version_filepath, exc)
 
     def _active_model_config(self) -> dict:
+        """Return the persisted active-model selection ({"filename", "adapter"})."""
         # Step 1: Validate input parameters, operational preconditions, and state
         return config_store.get_active_model()
 
     def _read_model_registry(self) -> list[dict]:
+        """Return the model registry entries (tiers shipped in data/model_registry.json)."""
         # Step 1: Validate input parameters, operational preconditions, and state
         return config_store.get_model_registry()
 
     def _list_models(self) -> dict:
+        """Build the list_models RPC payload.
+
+        Merges two sources: registry entries (marked installed if the GGUF exists in
+        data/models) and stray local .gguf files not in the registry. Each item carries
+        installed/active flags and on-disk size in GiB so the client can render a picker.
+        """
         # Step 1: Validate input parameters, operational preconditions, and state
         models_dir = os.path.join("data", "models")
         active = self._active_model_config()
@@ -552,6 +620,7 @@ class WebSocketServerManager:
                 "source": "registry",
             })
 
+        # Second pass: surface any local GGUF files that the registry doesn't know about.
         if os.path.exists(models_dir):
             try:
                 # Execute guarded operations and establish recovery boundaries
@@ -588,6 +657,7 @@ class WebSocketServerManager:
         }
 
     def _list_adapters(self) -> dict:
+        """Return the names of LoRA adapter directories under data/adapters."""
         # Step 1: Validate input parameters, operational preconditions, and state
         adapters_dir = os.path.join("data", "adapters")
         adapters = []
@@ -604,6 +674,17 @@ class WebSocketServerManager:
         return {"adapters": adapters}
 
     def _set_active_model(self, filename: str, adapter: str | None = None) -> dict:
+        """Persist a new active model (and optional adapter) and drop the loaded model.
+
+        Both names are reduced with os.path.basename and rejected if that changes them,
+        so a caller cannot smuggle path separators (traversal) into data/models paths.
+        The model is only unloaded here; it reloads lazily on the next generation.
+
+        Raises:
+            ValueError: invalid filename/adapter name.
+            FileNotFoundError: the GGUF isn't installed.
+            OSError: the active_model.json write failed.
+        """
         # Step 1: Validate input parameters, operational preconditions, and state
         safe_filename = os.path.basename(filename or "")
         if not safe_filename or safe_filename != filename:
@@ -631,12 +712,14 @@ class WebSocketServerManager:
         }
 
     def _prompt_pairs_dir(self) -> str:
+        """Return (and create if needed) the directory holding saved A/B prompt pairs."""
         # Step 1: Validate input parameters, operational preconditions, and state
         path = os.path.join("data", "prompt_pairs")
         os.makedirs(path, exist_ok=True)
         return path
 
     def _safe_prompt_pair_name(self, name: str) -> str:
+        """Sanitize a client-supplied pair name into [A-Za-z0-9_-] so it is a safe file stem."""
         # Step 1: Validate input parameters, operational preconditions, and state
         safe_name = re.sub(r"[^a-zA-Z0-9_\-]", "_", (name or "").strip())
         if not safe_name:
@@ -644,10 +727,16 @@ class WebSocketServerManager:
         return safe_name
 
     def _prompt_pair_path(self, name: str) -> str:
+        """Absolute-ish JSON file path for a prompt pair, derived only from the sanitized name."""
         # Step 1: Validate input parameters, operational preconditions, and state
         return os.path.join(self._prompt_pairs_dir(), f"{self._safe_prompt_pair_name(name)}.json")
 
     def _list_prompt_pairs(self) -> dict:
+        """List all saved prompt pairs with their system/user prompts and model names.
+
+        Unreadable or corrupt files are logged and reported with empty fields rather
+        than failing the whole listing.
+        """
         # Step 1: Validate input parameters, operational preconditions, and state
         pairs = []
         for filename in sorted(os.listdir(self._prompt_pairs_dir())):
@@ -675,6 +764,7 @@ class WebSocketServerManager:
         return {"pairs": pairs}
 
     def _get_prompt_pair(self, name: str) -> dict:
+        """Load one saved prompt pair by name; raises FileNotFoundError if absent."""
         # Step 1: Validate input parameters, operational preconditions, and state
         safe_name = self._safe_prompt_pair_name(name)
         path = self._prompt_pair_path(safe_name)
@@ -686,6 +776,7 @@ class WebSocketServerManager:
         return data
 
     def _save_prompt_pair(self, params: dict) -> dict:
+        """Persist a Prompt Lab A/B pair (prompts, models, toggles, captured outputs) as JSON."""
         # Step 1: Validate input parameters, operational preconditions, and state
         name = self._safe_prompt_pair_name(params.get("name", ""))
         data = {
@@ -712,6 +803,7 @@ class WebSocketServerManager:
         return {"name": name, "saved": True}
 
     def _delete_prompt_pair(self, name: str) -> dict:
+        """Delete a saved prompt pair; idempotent if the file is already gone."""
         # Step 1: Validate input parameters, operational preconditions, and state
         safe_name = self._safe_prompt_pair_name(name)
         path = self._prompt_pair_path(safe_name)
@@ -720,10 +812,12 @@ class WebSocketServerManager:
         return {"name": safe_name, "deleted": True}
 
     def _kb_supported_extensions(self) -> set[str]:
+        """File extensions the RAG ingester can parse (must match RAGPipeline.ingest_file)."""
         # Step 1: Validate input parameters, operational preconditions, and state
         return {".pdf", ".docx", ".txt", ".md", ".py", ".csv"}
 
     def _kb_snapshot(self) -> dict:
+        """Summarize the knowledge base: per-source chunk counts, totals, ingest-in-progress flag."""
         # Step 1: Validate input parameters, operational preconditions, and state
         self.rag._load_index()
         sources = []
@@ -753,6 +847,11 @@ class WebSocketServerManager:
         }
 
     def _collect_kb_files(self, path: str, recursive: bool) -> list[str]:
+        """Resolve `path` (file or directory) into a sorted list of ingestible files.
+
+        Raises ValueError for unsupported single files, FileNotFoundError for bad paths.
+        Recursive walks prune VCS/venv/cache directories to avoid indexing junk.
+        """
         # Step 1: Validate input parameters, operational preconditions, and state
         if not path:
             raise ValueError("Path is required.")
@@ -771,6 +870,7 @@ class WebSocketServerManager:
         if recursive:
             for root, dirs, names in os.walk(expanded):
                 # Iterate over items, evaluate loop invariant, and update progress
+                # Prune in place (os.walk honors edits to `dirs`) so noisy directories are skipped.
                 dirs[:] = [d for d in dirs if d not in {".git", "venv", ".venv", "__pycache__", "node_modules"}]
                 for name in names:
                     # Iterate over items, evaluate loop invariant, and update progress
@@ -788,6 +888,12 @@ class WebSocketServerManager:
         return sorted(files)
 
     def _start_kb_ingest(self, params: dict) -> dict:
+        """Validate params and start background KB ingestion; return immediately.
+
+        Only one ingest may run at a time. Progress is streamed to clients as
+        `kb_ingest_progress` notifications and completion as `kb_ingest_finished`
+        (carrying a fresh KB snapshot), all tagged with the returned task_id.
+        """
         # Step 1: Validate input parameters, operational preconditions, and state
         if self.kb_ingest_thread and self.kb_ingest_thread.is_alive():
             raise RuntimeError("Knowledge Base ingestion is already running.")
@@ -796,6 +902,8 @@ class WebSocketServerManager:
         recursive = bool(params.get("recursive", True))
         chunk_size = int(params.get("chunk_size", 200))
         overlap = int(params.get("overlap", 50))
+        # Bounds keep a bad client from requesting degenerate chunking (tiny chunks
+        # explode the index; overlap >= size would never advance).
         if chunk_size < 50 or chunk_size > 2000:
             raise ValueError("chunk_size must be between 50 and 2000.")
         if overlap < 0 or overlap >= chunk_size:
@@ -822,6 +930,8 @@ class WebSocketServerManager:
                     "status": event.get("status", "parsed"),
                 })
 
+            # Prefer the batched ingest_files API; fall back to per-file ingestion on
+            # older RAG pipelines that lack it.
             if hasattr(self.rag, "ingest_files"):
                 result = self.rag.ingest_files(
                     files,
@@ -851,6 +961,7 @@ class WebSocketServerManager:
                             "filename": filename,
                             "chunks": chunks,
                         })
+                    # One bad file must not abort the batch; record it and continue.
                     except Exception as exc:
                         errors.append({
                             "path": filepath,
@@ -876,6 +987,7 @@ class WebSocketServerManager:
                 "snapshot": self._kb_snapshot(),
             })
 
+        # Daemon thread so a long ingest can't block process shutdown.
         self.kb_ingest_thread = threading.Thread(target=worker, daemon=True)
         self.kb_ingest_thread.start()
         return {
@@ -886,6 +998,11 @@ class WebSocketServerManager:
         }
 
     def _search_kb(self, params: dict) -> dict:
+        """Run a dense KB search for the search_kb RPC.
+
+        top_k is clamped to [1, 25]. `threshold` is a maximum L2 distance (smaller is
+        closer); 0 disables filtering. Returns hits plus a KB snapshot for the UI.
+        """
         # Step 1: Validate input parameters, operational preconditions, and state
         query = (params.get("query") or "").strip()
         if not query:
@@ -926,6 +1043,7 @@ class WebSocketServerManager:
         }
 
     def _runtime_status(self) -> dict:
+        """Build the get_runtime_status payload: bridge, activity, model, adapter, RSS memory."""
         # Step 1: Validate input parameters, operational preconditions, and state
         active_model = self._active_model_config()
         loaded = ModelLoader.is_loaded()
@@ -935,6 +1053,7 @@ class WebSocketServerManager:
         swarm_active = bool(self.orchestrator and self.orchestrator.isRunning())
         chat_active = bool(self.chat_thread and self.chat_thread.isRunning())
 
+        # psutil is optional; report RAM as None when unavailable.
         ram_mb = None
         try:
             # Execute guarded operations and establish recovery boundaries
@@ -975,6 +1094,11 @@ class WebSocketServerManager:
         message: str | None = None,
         data: Any = None,
     ) -> dict:
+        """Build a JSON-RPC 2.0 error envelope.
+
+        Falls back to the canonical message for `code` when `message` is not given;
+        `data` carries optional human-readable detail (e.g. the parse error text).
+        """
         # Step 1: Validate input parameters, operational preconditions, and state
         error = {
             "code": code,
@@ -989,6 +1113,7 @@ class WebSocketServerManager:
         }
 
     def _rpc_result_response(self, req_id: Any, result: Any) -> dict:
+        """Build a JSON-RPC 2.0 success envelope for request `req_id`."""
         # Step 1: Validate input parameters, operational preconditions, and state
         return {
             "jsonrpc": self._JSONRPC_VERSION,
@@ -1004,14 +1129,24 @@ class WebSocketServerManager:
         message: str | None = None,
         data: Any = None,
     ) -> None:
+        """Serialize and send an error response over `websocket`."""
         # Step 1: Validate input parameters, operational preconditions, and state
         await websocket.send(json.dumps(self._rpc_error_response(code, req_id, message, data)))
 
     async def _send_rpc_result(self, websocket, req_id: Any, result: Any) -> None:
+        """Serialize and send a success response over `websocket`."""
         # Step 1: Validate input parameters, operational preconditions, and state
         await websocket.send(json.dumps(self._rpc_result_response(req_id, result)))
 
     def _parse_json_rpc_request(self, message: str) -> tuple[dict | None, dict | None]:
+        """Parse and structurally validate one raw JSON-RPC request string.
+
+        Returns (request, None) on success, or (None, error_response) where the
+        error uses the matching standard code: -32700 bad JSON, -32600 not a valid
+        request object, -32601 unknown method (not in _RPC_METHODS), -32602 when
+        `params` is present but not an object. A missing/null `params` is
+        normalized to {} so handlers can always call params.get(...).
+        """
         # Step 1: Validate input parameters, operational preconditions, and state
         try:
             # Execute guarded operations and establish recovery boundaries
@@ -1047,8 +1182,15 @@ class WebSocketServerManager:
         return data, None
 
     def _validate_rpc_params(self, method: str, params: dict) -> str | None:
+        """Check per-method required parameters before dispatch.
+
+        Returns an error string describing the first problem found, or None when the
+        params are acceptable. This is shape validation only; semantic checks (path
+        safety, existence) happen inside the individual handlers.
+        """
         # Step 1: Validate input parameters, operational preconditions, and state
         def require_string(name: str) -> str | None:
+            # Local helper: a required, non-blank string parameter.
             # Step 1: Validate input parameters, operational preconditions, and state
             value = params.get(name)
             if not isinstance(value, str) or not value.strip():
@@ -1123,12 +1265,19 @@ class WebSocketServerManager:
         return None
 
     def _record_generation_metrics(self, diagnostics: dict | None) -> None:
+        """Normalize generation diagnostics into the metrics served at /metrics.
+
+        Diagnostics come from different backends with different key names, so each
+        value is read under its primary and alternate names. If no explicit KV-cache
+        hit rate is given it is derived as cached_tokens / total_prefill_tokens.
+        """
         # Step 1: Validate input parameters, operational preconditions, and state
         diagnostics = diagnostics or {}
         prefill = diagnostics.get("prefill_duration_sec", diagnostics.get("prefill_time", 0.0))
         tps = diagnostics.get("tokens_per_second", diagnostics.get("generation_tps", 0.0))
         vram_delta = diagnostics.get("vram_usage_mb_delta", diagnostics.get("vram_delta_mb", 0.0))
 
+        # Derive the hit rate from token counts when the backend didn't report one.
         kv_hit_rate = diagnostics.get("kv_cache_hit_rate")
         if kv_hit_rate is None:
             kv_cache = diagnostics.get("kv_cache") or {}
@@ -1147,6 +1296,7 @@ class WebSocketServerManager:
         }
 
     def _metric_float(self, value: Any) -> float:
+        """Coerce to float, treating None/garbage as 0.0 so metrics never raise."""
         # Step 1: Validate input parameters, operational preconditions, and state
         try:
             # Execute guarded operations and establish recovery boundaries
@@ -1157,6 +1307,7 @@ class WebSocketServerManager:
             return 0.0
 
     def _process_rss_bytes(self) -> int:
+        """Return this process's resident set size in bytes (0 if psutil is missing)."""
         # Step 1: Validate input parameters, operational preconditions, and state
         try:
             # Execute guarded operations and establish recovery boundaries
@@ -1166,6 +1317,7 @@ class WebSocketServerManager:
             return 0
 
     def _prometheus_metrics(self) -> str:
+        """Render last-generation and connection gauges in Prometheus text exposition format."""
         # Step 1: Validate input parameters, operational preconditions, and state
         metrics = {
             "karl_active_connections": len(self.clients),
@@ -1199,6 +1351,7 @@ class WebSocketServerManager:
         return "\n".join(lines) + "\n"
 
     def _http_response(self, status_code: int, reason: str, content_type: str, body: str) -> Response:
+        """Build a websockets Response with an accurate Content-Length for plain HTTP replies."""
         # Step 1: Validate input parameters, operational preconditions, and state
         return Response(
             status_code,
@@ -1211,6 +1364,7 @@ class WebSocketServerManager:
         )
 
     def _is_websocket_upgrade(self, request) -> bool:
+        """True when the request carries WebSocket upgrade headers."""
         # Step 1: Validate input parameters, operational preconditions, and state
         headers = getattr(request, "headers", {}) or {}
         try:
@@ -1222,6 +1376,11 @@ class WebSocketServerManager:
         return upgrade.lower() == "websocket" or "upgrade" in connection.lower()
 
     def _process_http_request(self, connection, request) -> Response | None:
+        """websockets `process_request` hook: answer plain HTTP before the WS handshake.
+
+        Serves GET /metrics (Prometheus scrape, unauthenticated) and 404s anything that
+        is not a WebSocket upgrade. Returning None lets the handshake proceed.
+        """
         # Step 1: Validate input parameters, operational preconditions, and state
         path = getattr(request, "path", "") or ""
         parsed = urlparse(path)
@@ -1312,12 +1471,18 @@ class WebSocketServerManager:
 
     def _start_loop_thread(self):
         """Starts a background daemon thread running an asyncio event loop."""
+        # Dedicated loop so asyncio never competes with the Qt event loop.
         # Step 1: Validate input parameters, operational preconditions, and state
         self.loop = asyncio.new_event_loop()
         self.loop_thread = threading.Thread(target=self._run_loop, daemon=True)
         self.loop_thread.start()
 
     def _run_loop(self):
+        """Thread body: bind the server, start the lease auditor, then run the loop forever.
+
+        On exit all pending tasks are cancelled and awaited before the loop is closed
+        so no coroutine is destroyed mid-flight.
+        """
         # Step 1: Validate input parameters, operational preconditions, and state
         asyncio.set_event_loop(self.loop)
         self.loop.run_until_complete(self._start_server())
@@ -1340,7 +1505,9 @@ class WebSocketServerManager:
                 pass
             self.loop.close()
 
+    # Discovery file clients read to find the active port/token without config.
     _DISCOVERY_PATH = pathlib.Path.home() / ".karl" / "service_discovery.json"
+    # Number of consecutive ports tried, starting at the configured one.
     _PORT_RANGE = 10  # try self.port through self.port + 9
 
     def _build_ssl_context(self):
@@ -1355,6 +1522,13 @@ class WebSocketServerManager:
         raise RuntimeError("SSL context required for WSS enforcement.")
 
     async def _start_server(self):
+        """Bind the WebSocket server (called once on the loop thread).
+
+        Loopback hosts use plain WS; any other KARL_WS_HOST requires TLS and fails
+        closed (no plaintext fallback). Walks _PORT_RANGE ports to survive conflicts.
+        Failures are logged, not raised, and started_event is always set so callers
+        waiting on startup never hang.
+        """
         # Step 1: Validate input parameters, operational preconditions, and state
         try:
             # Execute guarded operations and establish recovery boundaries
@@ -1472,6 +1646,7 @@ class WebSocketServerManager:
         self.clients.clear()
 
     async def _stop_server(self):
+        """Coroutine run on the loop to stop lease auditing and close the server and clients."""
         # Step 1: Validate input parameters, operational preconditions, and state
         audit_task = getattr(self, "_lease_audit_task", None)
         if audit_task is not None:
@@ -1499,7 +1674,18 @@ class WebSocketServerManager:
         self._remove_service_discovery()
 
     async def _handler(self, websocket, path=None):
+        # Per-connection coroutine: authenticates the handshake, registers the client,
+        # then loops over incoming JSON-RPC frames until the socket closes.
+        #
+        # Custom JSON-RPC error codes used below (server-defined range):
+        #   -32000 generic application error / bad token for authenticate or refresh
+        #   -32001 permission or security-policy denial (missing scope, blocked path)
+        #   -32005 rate limited (global or heavy-method bucket)
+        # Per-frame order: rate limit -> parse -> param validation -> auth/refresh
+        # methods -> scope check -> dispatch.
         # ── Connection-stage token authentication ─────────────────────────────
+        # websockets versions expose the request path differently (legacy handler arg,
+        # `.request.path`, or `.path`); try each so the token can be read from the URL.
         raw_path = path or ""
         if not raw_path:
             try:
@@ -1513,9 +1699,13 @@ class WebSocketServerManager:
         
         parsed = urlparse(raw_path)
         qs = parse_qs(parsed.query)
+        # The token travels in the connection URL (?token=...) because browser/webview
+        # WebSocket APIs cannot set custom headers on the handshake.
         url_token = qs.get("token", [""])[0]
 
         token_scopes = self._get_token_scopes(url_token)
+        # Defensive fallback: a token that validates but yields no scope list gets the
+        # full scope set (legacy single-token behavior).
         if token_scopes is None and self._validate_token(url_token):
             token_scopes = list(self._FULL_SCOPES)
         if token_scopes is None:
@@ -1528,6 +1718,7 @@ class WebSocketServerManager:
             return
         # ─────────────────────────────────────────────────────────────────────
 
+        # Short random id used only to label this client in logs and the client list.
         client_id = str(uuid.uuid4())[:8]
         ip = "unknown"
         try:
@@ -1536,6 +1727,8 @@ class WebSocketServerManager:
         except Exception:
             pass
 
+        # Register the connection; each client gets two independent token buckets:
+        # a general one for all frames and a stricter one for expensive operations.
         with self._clients_lock:
             self.clients.add(websocket)
             self.client_metadata[websocket] = {
@@ -1554,12 +1747,15 @@ class WebSocketServerManager:
             # Execute guarded operations and establish recovery boundaries
             async for message in websocket:
                 # Rate Limiting DoS Protection (checked first before parsing to prevent parser exhaustion)
+                # Rate Limiting DoS Protection (checked first before parsing to prevent parser exhaustion)
                 with self._clients_lock:
                     client_meta = self.client_metadata.get(websocket)
                 
                 if client_meta:
                     global_limiter = client_meta.get("rate_limit_global")
                     if global_limiter and not global_limiter.consume():
+                        # Echo back the request id (when the frame is parseable) so the client can
+                        # correlate the throttle error with its request.
                         # Try a lightweight peek to extract req_id if valid JSON-RPC
                         req_id = None
                         try:
@@ -1589,8 +1785,11 @@ class WebSocketServerManager:
                 token = params.get("token")
 
                 # Heavy Method Rate Limiting
+                # Heavy Method Rate Limiting
                 if client_meta:
                     heavy_limiter = client_meta.get("rate_limit_heavy")
+                    # Methods that start long-running or resource-heavy work get a tighter bucket
+                    # (burst 3, refill 0.5/s) than ordinary calls.
                     heavy_methods = {
                         "submit_chat", "submit_task", "set_active_model",
                         "ingest_path", "start_auto_train", "start_mini_train"
@@ -1619,6 +1818,8 @@ class WebSocketServerManager:
                 with self._clients_lock:
                     client_meta = self.client_metadata.get(websocket, {})
 
+                # `authenticate` is kept for protocol compatibility; the handshake token already
+                # authenticated the connection.
                 if method == "authenticate":
                     # This method is now redundant for clients who passed handshake
                     is_valid = self._validate_token(token)
@@ -1673,6 +1874,8 @@ class WebSocketServerManager:
 
                 # Scope enforcement — verify the client's token carries the
                 # required scope for this method before dispatching.
+                # Scope enforcement — look up the single scope this method requires.
+                # Methods absent from METHOD_SCOPES need only an authenticated connection.
                 required_scope = self.METHOD_SCOPES.get(method)
                 if required_scope is not None:
                     client_scopes = client_meta.get("scopes", [])
@@ -1685,6 +1888,9 @@ class WebSocketServerManager:
                         )
                         continue
 
+                # ── Method dispatch: each branch validates its params, calls a handler, and
+                # replies with a JSON-RPC result or error. Unhandled exceptions are caught by
+                # the except clause that closes this try block.
                 try:
                     # Execute guarded operations and establish recovery boundaries
                     if method == "get_runtime_status":
@@ -1752,6 +1958,8 @@ class WebSocketServerManager:
                             "result": self._kb_snapshot()
                         }))
 
+                    # Path-taking RPCs must clear _is_safe_path (blocklist + symlink resolution)
+                    # before anything touches the filesystem.
                     elif method == "ingest_path":
                         path = params.get("path", "")
                         if not self._is_safe_path(path):
@@ -1815,6 +2023,9 @@ class WebSocketServerManager:
                             "profiles": load_agent_profiles()
                         })
 
+                    # submit_task: start (or restart) the Architect/Coder/Tester swarm on a
+                    # workspace. Any run already in flight is stopped first so only one
+                    # orchestrator exists at a time.
                     elif method == "submit_task":
                         objective = params.get("objective")
                         workspace_path = params.get("workspace_path")
@@ -1858,6 +2069,8 @@ class WebSocketServerManager:
                             )
                             self.orchestrator_owner = websocket
 
+                            # Bind PyQt signals with DirectConnection to bypass thread event loop queues.
+                            # Each swarm signal is re-published as a JSON-RPC notification to all clients.
                             # Bind PyQt signals with DirectConnection to bypass thread event loop queues
                             self.orchestrator.status_update.connect(
                                 lambda msg: self._send_notification("status_update", {"message": msg}),
@@ -1968,6 +2181,8 @@ class WebSocketServerManager:
                             "result": {"status": "started"}
                         }))
 
+                    # rollback_swarm_run: restore files from a swarm run's backup snapshot
+                    # (latest run when run_id is omitted).
                     elif method == "rollback_swarm_run":
                         workspace_path = params.get("workspace_path")
                         run_id = params.get("run_id") or None
@@ -1988,6 +2203,7 @@ class WebSocketServerManager:
                             "result": result
                         }))
 
+                    # swarm_commit_edits: apply the subset of proposed edits the user cherry-picked.
                     elif method == "swarm_commit_edits":
                         selected = params.get("selected_filepaths", [])
                         with self._threads_lock:
@@ -2008,6 +2224,7 @@ class WebSocketServerManager:
                                     }
                                 }))
 
+                    # swarm_inject_guidance: steer an in-flight swarm run with a user message for a file.
                     elif method == "swarm_inject_guidance":
                         filepath = params.get("filepath")
                         message = params.get("message")
@@ -2029,6 +2246,9 @@ class WebSocketServerManager:
                                     }
                                 }))
 
+                    # swarm_pause / swarm_resume / swarm_step: flow control for the active run.
+                    # The caller must name the active run_id so a stale client cannot control a
+                    # different run that replaced it.
                     elif method in ("swarm_pause", "swarm_resume", "swarm_step"):
                         run_id = params.get("run_id")
                         with self._threads_lock:
@@ -2056,6 +2276,7 @@ class WebSocketServerManager:
                                     self._rpc_result_response(req_id, {"status": status})
                                 ))
 
+                    # swarm_override_task: queue replacement instructions for one file's task in the active run.
                     elif method == "swarm_override_task":
                         run_id = params.get("run_id")
                         filepath = params.get("filepath")
@@ -2077,6 +2298,8 @@ class WebSocketServerManager:
                                     self._rpc_result_response(req_id, {"status": "override_queued"})
                                 ))
 
+                    # swarm_get_history: details of one past run, or a list of all runs (imported
+                    # lazily to keep bridge startup light).
                     elif method == "swarm_get_history":
                         run_id = params.get("run_id")
                         from app.utils.swarm_replay import SwarmReplayManager
@@ -2087,6 +2310,8 @@ class WebSocketServerManager:
                             result = {"runs": replay.list_past_runs()}
                         await websocket.send(json.dumps(self._rpc_result_response(req_id, result)))
 
+                    # submit_chat: run a single chat generation on behalf of this client, with
+                    # per-connection history, optional RAG context and optional agent-profile overrides.
                     elif method == "submit_chat":
                         message = params.get("message")
                         workspace_path = params.get("workspace_path")
@@ -2103,6 +2328,7 @@ class WebSocketServerManager:
                             }))
                             continue
 
+                        # Only one generation/swarm at a time: stop whatever is running first.
                         with self._threads_lock:
                             # Stop orchestrator if running
                             if self.orchestrator and self.orchestrator.isRunning():
@@ -2115,6 +2341,7 @@ class WebSocketServerManager:
                                     self.chat_thread.request_stop()
                                 self.chat_thread.wait()
 
+                        # Get client history
                         # Get client history
                         history = self.client_histories.setdefault(websocket, [])
                         history.append({"role": "user", "content": message})
@@ -2154,6 +2381,8 @@ class WebSocketServerManager:
                             if profile_prompt and not system_prompt.startswith(profile_prompt):
                                 system_prompt = profile_prompt + "\n" + system_prompt
 
+                        # Callbacks below close over this connection's history list (not the
+                        # websocket) so the assistant reply is stored even if later lookups fail.
                         _history_ref = history
 
                         def _on_chat_finished(
@@ -2179,6 +2408,8 @@ class WebSocketServerManager:
                                 {"error": message_text},
                             )
 
+                        # run_generation starts a worker thread and returns it; a circuit-breaker
+                        # error (repeated model-load failures) is surfaced as an internal error.
                         try:
                             # Execute guarded operations and establish recovery boundaries
                             chat_thread = self._inference_service.run_generation(
@@ -2218,6 +2449,8 @@ class WebSocketServerManager:
                             "result": {"status": "started"}
                         }))
 
+                    # create_custom_agent: persist a user-defined agent profile to
+                    # data/custom_agents.json and hot-reload the profile registry.
                     elif method == "create_custom_agent":
                         # Validate params
                         name = params.get("name", "")
@@ -2320,6 +2553,8 @@ class WebSocketServerManager:
                             "result": custom_only
                         }))
 
+                    # list_codex_topics / get_codex_content: browse the seeded reference library.
+                    # Topic names are sanitized to a safe filename stem before being opened.
                     elif method == "list_codex_topics":
                         library_dir = "data/codex_library"
                         topics = []
@@ -2353,6 +2588,7 @@ class WebSocketServerManager:
                             "result": {"content": content}
                         }))
 
+                    # compute_diff: character-level HTML diff, reusing Prompt Lab's renderer.
                     elif method == "compute_diff":
                         text_a = params.get("text_a", "")
                         text_b = params.get("text_b", "")
@@ -2363,6 +2599,10 @@ class WebSocketServerManager:
                             "result": {"diff_html": diff_html}
                         }))
 
+                    # start_auto_train: launch auto_train.py as a subprocess and stream its
+                    # output to clients as auto_train_log notifications. The adapter name is
+                    # validated against _SAFE_ADAPTER_NAME_RE because it becomes a path under
+                    # data/adapters.
                     elif method == "start_auto_train":
                         topic = params.get("topic")
                         adapter_name = params.get("adapter_name")
@@ -2442,6 +2682,8 @@ class WebSocketServerManager:
                             "result": {"status": "started"}
                         }))
 
+                    # fit_vectorizer: fit a TF-IDF embedder on the supplied documents and return
+                    # the vocabulary and per-document vectors (used by the embedding visualizer).
                     elif method == "fit_vectorizer":
                         documents = params.get("documents", [])
                         if not documents:
@@ -2476,6 +2718,9 @@ class WebSocketServerManager:
                             }
                         }))
 
+                    # start_mini_train: train the tiny educational GPT on a Shakespeare corpus.
+                    # If data/tiny_shakespeare.txt is absent, a short built-in excerpt is
+                    # repeated 20x and written to that path so later runs reuse it.
                     elif method == "start_mini_train":
                         lr = float(params.get("lr", 0.001))
                         max_iters = int(params.get("max_iters", 100))
@@ -2528,6 +2773,7 @@ class WebSocketServerManager:
                             with open(shakespeare_path, "w", encoding="utf-8") as f:
                                 f.write(dataset_text)
 
+                        # Fixed small-model hyperparameters; only lr, iterations and batch size are caller-tunable.
                         config = {
                             "batch_size": batch_size,
                             "block_size": 64,
@@ -2540,6 +2786,7 @@ class WebSocketServerManager:
                             "sample_interval": 50
                         }
 
+                        # Replace any previous mini-train run, and forward its signals as status notifications.
                         with self._threads_lock:
                             if hasattr(self, "mini_train_thread") and self.mini_train_thread and self.mini_train_thread.isRunning():
                                 self.mini_train_thread.stop()
@@ -2583,6 +2830,7 @@ class WebSocketServerManager:
                             }
                         }))
 
+                    # stop_task: request a cooperative stop of whichever job (swarm or chat) is running.
                     elif method == "stop_task":
                         with self._threads_lock:
                             status = "idle"
@@ -2599,6 +2847,7 @@ class WebSocketServerManager:
                             "result": {"status": status}
                         }))
 
+                    # Unreachable for methods in _RPC_METHODS without a branch; defensive fallback.
                     else:
                         await websocket.send(json.dumps({
                             "jsonrpc": "2.0",
@@ -2609,12 +2858,16 @@ class WebSocketServerManager:
                             }
                         }))
 
+                # Any handler failure becomes an internal error (-32603); the connection stays open.
                 except Exception as inner_e:
                     logger.exception("Error handling WebSocket RPC method %r", method)
                     await self._send_rpc_error(websocket, -32603, req_id, data=str(inner_e))
 
+        # Normal client disconnects are not errors.
         except websockets.exceptions.ConnectionClosed:
             pass
+        # Cleanup on disconnect: stop work this client started (so orphaned runs don't
+        # keep burning the GPU) and drop all per-connection state.
         finally:
             with self._threads_lock:
                 if getattr(self, "orchestrator_owner", None) == websocket:
@@ -2646,6 +2899,7 @@ class WebSocketServerManager:
             latency = -1.0
             try:
                 # websockets.connection.latency is in seconds
+                # websockets.connection.latency is in seconds
                 latency = ws.latency * 1000.0 # ms
             except Exception:
                 pass
@@ -2675,6 +2929,7 @@ class WebSocketServerManager:
             return len(self.clients)
 
     async def _broadcast_notification(self, method: str, params: dict):
+        """Send one notification to all clients concurrently; prune clients whose send failed."""
         # Step 1: Validate input parameters, operational preconditions, and state
         payload = json.dumps({
             "jsonrpc": "2.0",
