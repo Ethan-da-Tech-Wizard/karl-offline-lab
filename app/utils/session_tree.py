@@ -15,6 +15,14 @@ Classes:
   SessionTree - Branching conversation: a tree of messages with a cursor (current_id) selecting the active branch.
 """
 
+# Role in the app: SessionTree is the data model behind Workbench conversations (see AGENTS.md "Session Branching").
+# The Workbench chat view renders the active path, the branch navigator lists leaf_nodes(), MemoryManager and
+# session_repository persist the tree through to_dict()/save(), and the inference threads receive the active path
+# as a plain list of {"role", "content"} dicts (the list-style methods at the bottom make the tree a drop-in
+# replacement for the old list-based chat_history).
+# Structure: a dummy system node with id "root" holds every first message, so the tree can have several alternative
+# first messages. Every other node is one chat message; siblings are alternative continuations ("branches"). A cursor
+# (current_id) selects the active branch. Tests: tests/test_session_tree.py.
 from __future__ import annotations
 
 import re
@@ -22,6 +30,7 @@ import uuid
 from dataclasses import dataclass
 
 # Matches <think>...</think> reasoning blocks across lines, ignoring case.
+# DOTALL lets "." cross newlines inside a reasoning block; IGNORECASE tolerates <Think> from sloppy model output.
 _THINK_RE = re.compile(r"<think>.*?</think>", re.DOTALL | re.IGNORECASE)
 
 
@@ -32,9 +41,14 @@ def _strip_thoughts(node_dict: dict) -> dict:
     is the SessionTree-side equivalent, since SessionTree.save() is the path
     actual sessions are written through, not MemoryManager.
     """
+    # Only assistant messages carry reasoning; user content is stored exactly as typed.
     if node_dict.get("role") == "assistant":
         node_dict["content"] = _THINK_RE.sub("", node_dict.get("content") or "").strip()
+
+        # The separate `thought` field is cleared as well, otherwise the trace would still be written via to_dict().
         node_dict["thought"] = None
+
+    # Recursion mirrors the tree shape, so every branch (not only the active one) is sanitised.
     for child in node_dict.get("children", []):
         _strip_thoughts(child)
     return node_dict
@@ -44,6 +58,8 @@ def _strip_thoughts(node_dict: dict) -> dict:
 class SessionTreeStats:
     """Immutable summary counts for a tree (nodes, message nodes, leaves, deepest message depth).
     """
+    # Field meanings: total_nodes counts the dummy root; message_nodes excludes it; leaf_count is the number of branch tips;
+    # max_depth is the longest root-to-message distance (a one-message chat has depth 1).
     total_nodes: int
     message_nodes: int
     leaf_count: int
@@ -64,12 +80,18 @@ class SessionNode:
         """Create a node; a UUID is generated if no id is given."""
         self.role = role
         self.content = content
+
+        # Caller-supplied ids are kept so loaded sessions and tests get stable references; new nodes get random UUIDs.
         self.id = node_id or str(uuid.uuid4())
+
+        # `or []` creates a fresh list per node; a default [] argument would be shared by every node.
         self.children = children or []
         # Weak back-pointer used to walk up to the root; it is deliberately not serialized (to_dict) because
         # the tree structure already implies it, and from_dict/_rebuild_maps restore it on load.
         self.parent = parent
         self.thought = thought
+
+        # Attachments are opaque JSON-able dicts (e.g. image references) carried with the message.
         self.attachments = attachments or []
 
     def add_child(
@@ -81,6 +103,7 @@ class SessionNode:
         thought: str = None,
     ) -> 'SessionNode':
         """Create a child node under this one, append it and return it."""
+        # Passing parent=self wires the back-pointer immediately, so get_active_path() works without a rebuild.
         child = SessionNode(role, content, node_id=node_id, parent=self, attachments=attachments, thought=thought)
         self.children.append(child)
         return child
@@ -92,6 +115,7 @@ class SessionNode:
             "role": self.role,
             "content": self.content,
             "thought": self.thought,
+            # Recursive; deep conversations are limited by Python's recursion limit, which chat depth never approaches.
             "children": [c.to_dict() for c in self.children]
         }
         if self.attachments:
@@ -109,6 +133,8 @@ class SessionNode:
             attachments=data.get("attachments", []),
             parent=parent
         )
+
+        # Children are attached after the parent exists so each child can receive its parent pointer.
         node.children = [cls.from_dict(c, parent=node) for c in data.get("children", [])]
         return node
 
@@ -121,6 +147,7 @@ class SessionTree:
     """
     def __init__(self, root: SessionNode = None, current_node_id: str = None):
         """Wrap an existing root or create an empty tree with a dummy system root."""
+        # A brand-new tree gets a dummy "root" system node; a loaded tree keeps the root (and cursor) it was saved with.
         if root is None:
             self.root = SessionNode(role="system", content="Root", node_id="root")
             self.current_id = self.root.id
@@ -129,11 +156,13 @@ class SessionTree:
             self.current_id = current_node_id or self.root.id
         
         # id -> node index makes cursor moves O(1) instead of searching the whole tree on every click.
+        # Index built eagerly so the first set_current_node call is already O(1).
         self.nodes_map = {}
         self._rebuild_maps()
 
     def _rebuild_maps(self):
         """Rebuild the id->node index and re-link parent pointers by walking from the root."""
+        # Reset first: nodes removed from the tree must not linger in the index.
         self.nodes_map = {}
         def _walk(node):
             self.nodes_map[node.id] = node
@@ -157,8 +186,11 @@ class SessionTree:
 
     def add_message(self, role: str, content: str, attachments: list | None = None, thought: str = None) -> SessionNode:
         """Append a message as a child of the current node and move the cursor to it."""
+        # New messages always attach below the cursor: sending after moving the cursor to an older node creates a branch.
         parent = self.current_node
         child = parent.add_child(role, content, attachments=attachments, thought=thought)
+
+        # Update the index incrementally instead of rebuilding the whole map for every message.
         self.nodes_map[child.id] = child
         self.current_id = child.id
         return child
@@ -172,8 +204,11 @@ class SessionTree:
         thought: str = None,
     ) -> SessionNode | None:
         """Move to node_id and optionally append a new child as a fresh branch."""
+        # Unknown ids return None instead of raising so UI handlers can ignore stale clicks.
         if not self.set_current_node(node_id):
             return None
+
+        # Without a role this is a pure cursor move ("switch to that branch"); with a role it also starts a new branch there.
         if role is None:
             return self.current_node
         return self.add_message(role, content, attachments=attachments, thought=thought)
@@ -185,6 +220,7 @@ class SessionTree:
         path = []
         curr = self.current_node
         while curr is not None:
+            # The dummy root is not a real message and must never reach the model prompt.
             if curr.id != self.root.id:  # Skip the dummy root
                 path.append(curr)
             curr = curr.parent
@@ -196,6 +232,7 @@ class SessionTree:
         """
         items = []
         for n in self.get_active_path():
+            # Only role/content/id (and attachments) are exposed: this shape is what inference code and prompt builders consume.
             item = {"role": n.role, "content": n.content, "id": n.id}
             if n.attachments:
                 item["attachments"] = n.attachments
@@ -215,6 +252,7 @@ class SessionTree:
 
     def update_current_node_content(self, text: str):
         """Replace the text of the current node (used while streaming a reply)."""
+        # Called for every streamed token batch, so it deliberately does no validation or index work.
         self.current_node.content = text
 
     def update_node_content(self, node_id: str, text: str) -> bool:
@@ -240,6 +278,7 @@ class SessionTree:
 
         # Recursion depth equals conversation depth, which is small for chat sessions, so no explicit stack is needed.
         def _walk(node: SessionNode):
+            # Filtering out the root id is defensive: a root never appears as a child in normal trees.
             message_children = [child for child in node.children if child.id != self.root.id]
             if node.id != self.root.id and not message_children:
                 leaves.append(node)
@@ -266,6 +305,7 @@ class SessionTree:
 
         _walk(self.root, 0)
         return SessionTreeStats(
+            # leaf_count reuses leaf_nodes() so the two definitions of "leaf" cannot drift apart.
             total_nodes=total,
             message_nodes=message_nodes,
             leaf_count=len(self.leaf_nodes()),
@@ -277,6 +317,8 @@ class SessionTree:
         path = self.get_active_path()
         if not path:
             return "root"
+
+        # First 8 hex characters of the id are enough to tell sibling branches apart in the UI label.
         leaf = path[-1]
         return f"{leaf.role}:{leaf.id[:8]}"
 
@@ -290,6 +332,7 @@ class SessionTree:
     @classmethod
     def from_dict(cls, data: dict) -> 'SessionTree':
         """Rebuild a tree from serialized data; empty or malformed data yields a fresh tree."""
+        # Corrupt or legacy session files must not crash the Workbench; they degrade to an empty conversation.
         if not data or "root" not in data:
             return cls()
         root = SessionNode.from_dict(data["root"])
@@ -299,6 +342,8 @@ class SessionTree:
         """Reset to a fresh empty tree."""
         self.root = SessionNode(role="system", content="Root", node_id="root")
         self.current_id = self.root.id
+
+        # The index is rebuilt by hand here because clear() replaced the root without calling _rebuild_maps().
         self.nodes_map = {self.root.id: self.root}
 
     def copy(self) -> 'SessionTree':
@@ -324,11 +369,13 @@ class SessionTree:
 
     def __bool__(self):
         """True when the active path contains at least one message."""
+        # Defining __bool__ keeps `if chat_history:` working: an empty conversation is falsy, as an empty list was.
         return len(self.get_active_path()) > 0
 
     def append(self, msg: dict):
         """Add a message dict (needs 'role' and 'content') after the current node."""
         if not isinstance(msg, dict) or "role" not in msg or "content" not in msg:
+            # Fail loudly: silently dropping a malformed message would corrupt the conversation.
             raise TypeError("Appended message must be a dict containing 'role' and 'content'")
         self.add_message(msg["role"], msg["content"], attachments=msg.get("attachments"))
 
@@ -339,11 +386,17 @@ class SessionTree:
         """Write this tree to data/sessions/{session_id}.json. Returns the path."""
         import os
         import json
+
+        # Created on demand so a fresh install can save its first session.
         os.makedirs(self.SESSIONS_DIR, exist_ok=True)
         if session_id is None:
             import uuid
+
+            # Short ids are friendlier in file names and lists; collisions across a few thousand sessions are very unlikely.
             session_id = str(uuid.uuid4())[:8]
         path = os.path.join(self.SESSIONS_DIR, f"{session_id}.json")
+
+        # Serialised first, then stripped, so the in-memory tree is never modified by saving.
         payload = self.to_dict()
         # Reasoning traces are removed from the saved copy only; the in-memory tree keeps them.
         _strip_thoughts(payload["root"])
@@ -368,6 +421,8 @@ class SessionTree:
         import json
         with open(path, "r", encoding="utf-8") as f:
             data = json.load(f)
+
+        # Files written before session ids existed load with the placeholder id "unknown".
         session_id = data.get("session_id", "unknown")
         tree = cls.from_dict(data)
         return tree, session_id
@@ -380,6 +435,8 @@ class SessionTree:
         if not os.path.exists(cls.SESSIONS_DIR):
             return []
         sessions = []
+
+        # Reverse name order is only a cheap first ordering; the authoritative sort by modification time follows below.
         for fname in sorted(os.listdir(cls.SESSIONS_DIR), reverse=True):
             if not fname.endswith(".json"):
                 continue
@@ -397,11 +454,15 @@ class SessionTree:
             # from the list, so unreadable or non-session JSON files are skipped silently.
             except Exception:
                 pass
+
+        # Newest-first by file modification time, which also reflects later edits to an old session.
         sessions.sort(key=lambda x: x["mtime"], reverse=True)
         return sessions
 
     def delete_session_file(self, path: str):
         """Delete a session file if it exists."""
         import os
+
+        # Idempotent: deleting an already-removed file (e.g. from two UI actions) is not an error.
         if os.path.exists(path):
             os.remove(path)
