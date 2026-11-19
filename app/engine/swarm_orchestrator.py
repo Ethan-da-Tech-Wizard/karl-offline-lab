@@ -598,11 +598,12 @@ class SwarmOrchestratorThread(QThread):
             "backup_path": backup_path,
             "existed": existed,
         })
-        # Not written atomically (plain write_text): a crash during this write can leave a truncated
-        # manifest, in which case rollback_swarm_run() raises on json.loads rather than guessing.
+        # Written atomically: dump to a sibling temp file, then os.replace over manifest.json, so a
+        # crash mid-write can never leave a truncated manifest for rollback_swarm_run() to choke on.
         manifest_path = self._backup_root / "manifest.json"
         manifest_path.parent.mkdir(parents=True, exist_ok=True)
-        manifest_path.write_text(
+        tmp_path = manifest_path.with_name(manifest_path.name + ".tmp")
+        tmp_path.write_text(
             json.dumps({
                 "run_id": self._run_id,
                 "workspace_path": self.state.workspace_path,
@@ -610,6 +611,7 @@ class SwarmOrchestratorThread(QThread):
             }, indent=2),
             encoding="utf-8",
         )
+        os.replace(tmp_path, manifest_path)
 
     # ── Drift detection ──────────────────────────────────────────────────────
 
