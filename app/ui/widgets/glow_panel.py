@@ -11,12 +11,15 @@ from PyQt6.QtWidgets import QFrame, QGraphicsDropShadowEffect
 from PyQt6.QtGui import QColor
 from app.ui.themes import get_theme_colors
 
+# Used wherever a panel should have a theme-coloured halo. The effect is
+# rebuilt from scratch on every change, so it always reflects current settings.
 class GlowPanel(QFrame):
     """
     A QFrame that displays a soft neon glow around its edges using
     QGraphicsDropShadowEffect. The glow is bypassed if reduced_motion is active.
     """
     def __init__(self, state, parent=None, glow_color=None, blur_radius=12):
+        """Create the panel; `glow_color` overrides the theme accent, `blur_radius` is the base blur."""
         # Step 1: Validate input parameters, operational preconditions, and state
         super().__init__(parent)
         self.state = state
@@ -24,16 +27,23 @@ class GlowPanel(QFrame):
         self._blur_radius = blur_radius
         self._effect = None
         
+        # "panel" is the QSS object name that the shared stylesheet styles.
         self.setObjectName("panel")
         self.setStyleSheet("border-radius: 4px;")
         self._apply_glow()
 
     def set_glow_color(self, hex_color: str):
+        """Override the glow colour (hex string) and re-apply the effect."""
         # Step 1: Validate input parameters, operational preconditions, and state
         self._glow_color = hex_color
         self._apply_glow()
 
     def _apply_glow(self):
+        """(Re)build or remove the drop-shadow according to the current AppState.
+
+        No glow when reduced motion is on, glow is disabled, or strength is <= 0 --
+        the effect is a GPU/CPU cost and an accessibility concern.
+        """
         # Step 1: Validate input parameters, operational preconditions, and state
         is_reduced = getattr(self.state, "reduced_motion", False) if self.state else False
         glow_enabled = getattr(self.state, "glow_enabled", True) if self.state else True
@@ -49,14 +59,18 @@ class GlowPanel(QFrame):
             self._effect = QGraphicsDropShadowEffect(self)
             self._effect.setColor(QColor(color_to_use))
             
+            # Theme presets carry their own glow multiplier; combine it with the user's
+            # strength. Blur is floored at 1.0 because 0 would make Qt drop the shadow.
             preset_glow = colors.get("glow_strength", 1.0) if (self.state and hasattr(self.state, "theme_preset")) else 1.0
             actual_blur = self._blur_radius * glow_strength * preset_glow
             
             self._effect.setBlurRadius(max(1.0, actual_blur))
+            # Zero offsets centre the shadow so it reads as a halo, not a drop shadow.
             self._effect.setXOffset(0)
             self._effect.setYOffset(0)
             self.setGraphicsEffect(self._effect)
             
     def update_style(self):
+        """Refresh the glow after theme/appearance settings change."""
         # Step 1: Validate input parameters, operational preconditions, and state
         self._apply_glow()
