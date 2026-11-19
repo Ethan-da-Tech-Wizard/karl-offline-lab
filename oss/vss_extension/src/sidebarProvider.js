@@ -192,9 +192,11 @@ class KarlSidebarProvider {
      */
     sendRpc(method, params) {
         if (this.socket && this.socket.readyState === WebSocket.OPEN) {
-            // Random request id; replies are not matched to requests here (fire-and-forget).
-            // NOTE: it can collide with the fixed ids (such as 30) the webview uses.
-            const reqId = Math.floor(Math.random() * 10000);
+            // Replies are not matched to requests here (fire-and-forget), but ids must still be
+            // unique. Count up from 100000 so they never collide with the small fixed ids
+            // (such as 30) that other code paths send.
+            this._rpcSeq = (this._rpcSeq || 100000) + 1;
+            const reqId = this._rpcSeq;
             this.socket.send(JSON.stringify({
                 jsonrpc: "2.0",
                 id: reqId,
