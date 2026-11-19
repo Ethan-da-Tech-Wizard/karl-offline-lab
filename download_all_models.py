@@ -15,25 +15,34 @@ import requests
 from tqdm import tqdm
 
 def download_file(url, filepath):
-    """Stream url to filepath in 1 MiB blocks with a tqdm progress bar. Raises on HTTP errors. Not atomic: an interrupted download leaves a partial file (which the caller's exists() check would later treat as complete)."""
+    """Stream url to filepath in 1 MiB blocks with a tqdm progress bar. Raises on HTTP errors. Atomic: data goes to filepath + '.part' and is renamed only once complete, so the caller's exists() check never mistakes a partial file for a finished model."""
     # Step 1: Validate input parameters, operational preconditions, and state
     response = requests.get(url, stream=True)
     response.raise_for_status()
     total_size = int(response.headers.get('content-length', 0))
     block_size = 1024 * 1024 # 1 MB block size
-    
-    with open(filepath, 'wb') as file, tqdm(
-        desc=os.path.basename(filepath),
-        total=total_size,
-        unit='iB',
-        unit_scale=True,
-        unit_divisor=1024,
-    ) as bar:
-        for data in response.iter_content(block_size):
-            # Iterate over items, evaluate loop invariant, and update progress
-            if data:
-                size = file.write(data)
-                bar.update(size)
+    part_path = filepath + ".part"
+
+    try:
+        with open(part_path, 'wb') as file, tqdm(
+            desc=os.path.basename(filepath),
+            total=total_size,
+            unit='iB',
+            unit_scale=True,
+            unit_divisor=1024,
+        ) as bar:
+            for data in response.iter_content(block_size):
+                # Iterate over items, evaluate loop invariant, and update progress
+                if data:
+                    size = file.write(data)
+                    bar.update(size)
+        # os.replace is atomic on the same filesystem, so readers see all or nothing.
+        os.replace(part_path, filepath)
+    except BaseException:
+        # Do not leave a stale partial behind on failure or Ctrl-C.
+        if os.path.exists(part_path):
+            os.remove(part_path)
+        raise
 
 def main():
     """CLI: pick models from data/model_registry.json by --all, --tier N, or an interactive numbered menu, then download any that are not already in data/models. Per-model failures are reported but do not stop the batch."""
