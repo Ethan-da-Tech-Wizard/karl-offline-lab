@@ -2834,7 +2834,12 @@ class WorkbenchWorkspace(QMainWindow):
         if not action:
             return
             
-        fname = item.text()
+        # The item text is only a preview; the real file lives in UserRole. Helpers expect a bare file name.
+        import os
+        path = item.data(Qt.ItemDataRole.UserRole)
+        if not path:
+            return
+        fname = os.path.basename(path)
         if action == rename_action:
             self._rename_session(fname)
         elif action == dup_action:
@@ -2882,8 +2887,9 @@ class WorkbenchWorkspace(QMainWindow):
         try:
             # Execute guarded operations and establish recovery boundaries
             os.rename(old_path, new_path)
-            if self._current_session_file == fname:
-                self._current_session_file = new_name
+            # _current_session_file holds a full path, so compare paths rather than the bare name.
+            if self._current_session_file and os.path.realpath(self._current_session_file) == os.path.realpath(old_path):
+                self._current_session_file = new_path
             self._refresh_sessions()
         except Exception as e:
             QMessageBox.critical(self, "Error", f"Failed to rename file: {e}")
@@ -2927,7 +2933,7 @@ class WorkbenchWorkspace(QMainWindow):
             try:
                 # Execute guarded operations and establish recovery boundaries
                 os.remove(path)
-                if self._current_session_file == fname:
+                if self._current_session_file and os.path.realpath(self._current_session_file) == os.path.realpath(path):
                     self._current_session_file = None
                     self.chat_history.clear()
                     self._populate_branches_tree()
