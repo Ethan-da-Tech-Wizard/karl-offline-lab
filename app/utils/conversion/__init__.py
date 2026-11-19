@@ -43,12 +43,14 @@ TEXT_MODEL_MAP: dict[str, str] = {
     "ApertusForCausalLM": "llama",
     "ArceeForCausalLM": "llama",
     "ArcticForCausalLM": "arctic",
+    # Audio-capable multimodal checkpoints appear in BOTH tables: here the module converts the language-model half; the encoder half is picked up from MMPROJ_MODEL_MAP below. The same HF architecture string therefore yields two GGUF files (text + mmproj).
     "AudioFlamingo3ForConditionalGeneration": "qwen",
     "BaiChuanForCausalLM": "baichuan",
     "BaichuanForCausalLM": "baichuan",
     "BailingMoeForCausalLM": "bailingmoe",
     "BailingMoeV2ForCausalLM": "bailingmoe",
     "BambaForCausalLM": "granite",
+    # BERT-family encoders (BERT, DistilBERT, Camembert, ...) share one module because they use the same transformer-encoder tensor layout; only the head differs.
     "BertForMaskedLM": "bert",
     "BertForSequenceClassification": "bert",
     "BertModel": "bert",
@@ -67,6 +69,7 @@ TEXT_MODEL_MAP: dict[str, str] = {
     "DbrxForCausalLM": "dbrx",
     "DeciLMForCausalLM": "deci",
     "DeepseekForCausalLM": "deepseek",
+    # DeepSeek V1 has its own class (DeepseekModel); V2 and V3 share DeepseekV2Model, and V3.2 subclasses that, so all of them live in one module.
     "DeepseekV2ForCausalLM": "deepseek",
     "DeepseekV3ForCausalLM": "deepseek",
     "DeepseekV32ForCausalLM": "deepseek",
@@ -242,6 +245,7 @@ TEXT_MODEL_MAP: dict[str, str] = {
     "TalkieForCausalLM": "talkie",
     "UMT5ForConditionalGeneration": "t5",
     "UMT5Model": "t5",
+    # Whisper-style audio encoders (Voxtral, Qwen2-Audio, GLM-ASR, MERaLiON2, Ultravox) are converted by classes in the ultravox module; the text-side UltravoxModel entry only exists to raise and point users at --mmproj.
     "UltravoxModel": "ultravox",
     "VLlama3ForCausalLM": "llama",
     "VoxtralForConditionalGeneration": "llama",
@@ -252,6 +256,7 @@ TEXT_MODEL_MAP: dict[str, str] = {
     "YoutuForCausalLM": "deepseek",
     "YoutuVLForConditionalGeneration": "deepseek",
     "modeling_grove_moe.GroveMoeForCausalLM": "grovemoe",
+    # Some trust_remote_code checkpoints report 'module.Class' as their architecture string, so the module-prefixed spelling needs its own key next to the plain class name.
     "modeling_sarvam_moe.SarvamMoEForCausalLM": "bailingmoe",
 }
 
@@ -268,6 +273,7 @@ MMPROJ_MODEL_MAP: dict[str, str] = {
     "Gemma3ForConditionalGeneration": "gemma",
     "Gemma3nForConditionalGeneration": "gemma",
     "Gemma4ForConditionalGeneration": "gemma",
+    # The GLM-4V / GLM-OCR vision tower is implemented as a subclass of the Qwen3-VL vision converter (Glm4VVisionModel), hence the shared module.
     "Glm4vForConditionalGeneration": "qwen3vl",
     "Glm4vMoeForConditionalGeneration": "qwen3vl",
     "GlmOcrForConditionalGeneration": "qwen3vl",
@@ -287,6 +293,7 @@ MMPROJ_MODEL_MAP: dict[str, str] = {
     "MERaLiON2ForConditionalGeneration": "ultravox",
     "MiMoV2ForCausalLM": "mimo",
     "MiniCPMV4_6ForConditionalGeneration": "minicpm",
+    # Mistral 3.1 ships a Pixtral-style vision encoder, which the llava module's LlavaVisionModel converts (it handles both the HF and Mistral-native layouts).
     "Mistral3ForConditionalGeneration": "llava",
     "NemotronH_Nano_VL_V2": "nemotron",
     "PaddleOCRVisionModel": "ernie",
@@ -356,6 +363,7 @@ def get_model_class(name: str, mmproj: bool = False) -> Type[ModelBase]:
     if name not in relevant_map:
         raise NotImplementedError(f"Architecture {name!r} not supported!")
     module_name = relevant_map[name]
+    # Importing the module runs its @ModelBase.register decorators, which fill ModelBase._model_classes; the lookup below only works after this import.
     __import__(f"conversion.{module_name}")
     # Registered classes are stored per ModelType, then by architecture name.
     model_type = ModelType.MMPROJ if mmproj else ModelType.TEXT
