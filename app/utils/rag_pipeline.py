@@ -1067,10 +1067,15 @@ class RAGPipeline:
         if self.index.ntotal == 0:
             return []
 
-        if mode == "sparse":
-            return self.retrieve_sparse(query, top_k=top_k, source_filter=source_filter)
-        elif mode == "hybrid":
-            return self.retrieve_hybrid(query, top_k=top_k, source_filter=source_filter)
+        if mode in ("sparse", "hybrid"):
+            if mode == "sparse":
+                results = self.retrieve_sparse(query, top_k=top_k, source_filter=source_filter)
+            else:
+                results = self.retrieve_hybrid(query, top_k=top_k, source_filter=source_filter)
+            # Both modes report a 0..1 distance (1 - similarity / scaled RRF), so the same cut-off applies.
+            if threshold > 0.0:
+                results = [r for r in results if r["distance"] <= threshold]
+            return results
 
         # Hybrid Search: check if query wants to list/show all workers in a specific department.
         # These rules are hardcoded for one document set (department names) and act as an exact-match shortcut.
