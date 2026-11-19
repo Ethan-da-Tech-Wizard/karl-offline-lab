@@ -1226,14 +1226,18 @@ function runLab() {
         vscode.postMessage({ command: 'show_error', text: 'Karl is disconnected.' });
         return;
     }
+    // Switch to "running" state: lock the Run button and reset both outputs, so stale text from an
+    // earlier comparison can never be mistaken for the new result.
     labRunning = true;
     currentLabTarget = 'A';
+    // Raw (unrendered) outputs are accumulated here by handleResponseToken(); the diff uses them.
     labOutputA = '';
     labOutputB = '';
     $('labRunBtn').disabled = true;
     $('labOutputA').innerText = 'Generating output A...';
     $('labOutputB').innerText = 'Waiting...';
     $('labDiff').innerText = 'Waiting for both runs...';
+    // Starts with A; handleChatFinished() will call sendLabMessage('B', ...) when A completes.
     sendLabMessage('A', $('labSysA').value, $('labUser').value);
 }
 
@@ -1244,9 +1248,12 @@ function runLab() {
  * @param {string} userMsg
  */
 function sendLabMessage(target, systemPrompt, userMsg) {
+    // currentLabTarget tells handleResponseToken which output box receives the incoming tokens.
     currentLabTarget = target;
+    // Shared sampling settings, extended with this side's own system prompt (A and B differ only there).
     const params = hyperparams();
     params.system_prompt = systemPrompt;
+    // Ids 10 and 11 let karl_socket.js tell the A reply from the B reply.
     rpc(10 + (target === 'A' ? 0 : 1), 'submit_chat', {
         message: userMsg,
         hyperparams: params
@@ -1257,6 +1264,7 @@ function sendLabMessage(target, systemPrompt, userMsg) {
  * Render the diff of the two lab outputs.
  */
 function computeLabDiff() {
+    // renderLabDiff (karl_render.js) shows a word/line diff with additions and deletions highlighted.
     renderLabDiff(labOutputA, labOutputB);
 }
 
@@ -1264,7 +1272,9 @@ function computeLabDiff() {
  * Ask the backend for the selected (or typed) saved prompt pair (rpc id 41).
  */
 function loadSelectedPromptPair() {
+    // The dropdown wins; otherwise the typed name is used so a pair can be loaded by typing.
     const name = $('promptPairSelect').value || $('promptPairName').value.trim();
+    // rpc id 41 -> get_prompt_pair; the reply is handed to applyPromptPair().
     if (name) rpc(41, 'get_prompt_pair', { name });
 }
 
@@ -1279,7 +1289,9 @@ function savePromptPair() {
         vscode.postMessage({ command: 'show_error', text: 'Prompt pair name is required.' });
         return;
     }
+    // Both sides intentionally use the same user message today (one shared textbox).
     const userMsg = $('labUser').value;
+    // rpc id 42 -> save_prompt_pair. The server stores the JSON under data/prompt_pairs/<name>.json.
     rpc(42, 'save_prompt_pair', {
         name,
         system_a: $('labSysA').value,
@@ -1290,6 +1302,7 @@ function savePromptPair() {
         rag_b: $('karlRag').checked,
         loop_a: $('karlLoop').checked,
         loop_b: $('karlLoop').checked,
+        // Both the raw stream and the displayed text are saved, so loading shows exactly what was seen.
         output_a_raw: labOutputA,
         output_b_raw: labOutputB,
         output_a_display: $('labOutputA').innerText,
@@ -1302,6 +1315,7 @@ function savePromptPair() {
  */
 function deletePromptPair() {
     const name = $('promptPairSelect').value || $('promptPairName').value.trim();
+    // rpc id 43 -> delete_prompt_pair.
     if (name) rpc(43, 'delete_prompt_pair', { name });
 }
 
@@ -1310,15 +1324,19 @@ function deletePromptPair() {
  * @param {any} result
  */
 function applyPromptPair(result) {
+    // Defensive: server replies may be null on error.
     if (!result || typeof result !== 'object') return;
     if (result.name) $('promptPairName').value = result.name;
+    // `!== undefined` checks (not truthiness) let an empty string legitimately clear a field.
     if (result.system_a !== undefined) $('labSysA').value = result.system_a;
     if (result.user_a  !== undefined) $('labUser').value  = result.user_a;
     if (result.system_b !== undefined) $('labSysB').value = result.system_b;
     if (result.rag_a   !== undefined) $('karlRag').checked  = !!result.rag_a;
     if (result.loop_a  !== undefined) $('karlLoop').checked = !!result.loop_a;
+    // Outputs reset to '' when the saved pair has none, so no stale output survives a load.
     labOutputA = result.output_a_raw || '';
     labOutputB = result.output_b_raw || '';
+    // Only redraw the diff when there is something to compare.
     if (labOutputA || labOutputB) {
         $('labOutputA').innerText = result.output_a_display || labOutputA;
         $('labOutputB').innerText = result.output_b_display || labOutputB;
@@ -1328,14 +1346,17 @@ function applyPromptPair(result) {
 }
 
 /**
+ // Queue invariants: newest first, one entry per path, at most 50 so persisted state stays small.
  * Add the path in the knowledge-base path box to the ingest queue (newest first, no duplicates, max 50).
  */
 function addKbQueuePath() {
     const ingestPath = $('kbPath').value.trim();
+    // Empty path: nothing to queue; tell the user instead of silently ignoring the click.
     if (!ingestPath) {
         vscode.postMessage({ command: 'show_error', text: 'Choose a file or folder before adding it to the queue.' });
         return;
     }
+    // filter() removes an older entry for the same path, which moves it to the front with status 'queued'.
     kbQueue = [{ path: ingestPath, status: 'queued' }, ...kbQueue.filter(item => item.path !== ingestPath)].slice(0, 50);
     renderKbQueue();
 }
@@ -1344,9 +1365,11 @@ function addKbQueuePath() {
  * Start processing the knowledge-base queue (adds the typed path first if the queue is empty).
  */
 function ingestKbQueue() {
+    // Convenience: pressing Ingest with an empty queue ingests whatever path is typed.
     if (!kbQueue.length) {
         addKbQueuePath();
     }
+    // kbQueueRunning prevents starting a second concurrent ingest while one is still streaming results.
     if (!kbQueue.length || kbQueueRunning) return;
     ingestNextQueuedPath();
 }
@@ -1356,6 +1379,7 @@ function ingestKbQueue() {
  */
 function ingestNextQueuedPath() {
     const next = kbQueue.find(item => item.status === 'queued');
+    // Queue drained: reset flags and refresh the source list so new documents appear.
     if (!next) {
         kbQueueRunning = false;
         renderKbQueue();
@@ -1363,11 +1387,16 @@ function ingestNextQueuedPath() {
         return;
     }
     kbQueueRunning = true;
+    // Mark running before the RPC so the UI shows progress immediately.
     next.status = 'running';
+    // ingestKbPath reads the path from the textbox, so the queued path is copied there first.
     $('kbPath').value = next.path;
     renderKbQueue();
     ingestKbPath();
+// Called by the socket layer when ingest completes or fails, so the next queue item can start.
 }
+// @param {string} status 'done' or 'failed'; shown as a badge in the queue list.
+
 
 function markCurrentKbQueueDone(status) {
     const running = kbQueue.find(item => item.status === 'running');
@@ -1377,11 +1406,14 @@ function markCurrentKbQueueDone(status) {
     }
 }
 
+// Validates the ingest form, then sends rpc id 51 (ingest_path). The reply/progress notifications
+// are handled in karl_socket.js, which calls markCurrentKbQueueDone and ingestNextQueuedPath.
 function ingestKbPath() {
     if (!isConnected()) {
         vscode.postMessage({ command: 'show_error', text: 'Karl is disconnected.' });
         return;
     }
+    // Default chunk of 200 words and overlap 0 mirror RAGPipeline.ingest_file defaults on the Python side.
     const ingestPath = $('kbPath').value.trim();
     const chunkSize = Number($('kbChunkSize').value) || 200;
     const overlap = Number($('kbOverlap').value) || 0;
@@ -1389,10 +1421,12 @@ function ingestKbPath() {
         vscode.postMessage({ command: 'show_error', text: 'Choose a file or folder to ingest.' });
         return;
     }
+    // The sliding window would never advance if overlap >= chunk size, so reject it before the call.
     if (overlap >= chunkSize) {
         vscode.postMessage({ command: 'show_error', text: 'Overlap must be lower than chunk size.' });
         return;
     }
+    // Disable the button until the reply arrives so the same ingest cannot be double-submitted.
     $('kbIngestBtn').disabled = true;
     $('kbIngestState').innerText = 'Starting';
     rpc(51, 'ingest_path', {
@@ -1403,22 +1437,30 @@ function ingestKbPath() {
     });
 }
 
+// Retrieval preview: runs the real RAG search (rpc id 52) so the user can tune top-k and the
+// distance threshold before relying on them in chat.
 function searchKb() {
     const query = $('kbQuery').value.trim();
     if (!query) {
         vscode.postMessage({ command: 'show_error', text: 'Enter a retrieval preview query.' });
         return;
     }
+    // Immediate placeholder: search can take a moment while the embedder warms up.
     $('kbResults').innerHTML = '<div class="result-card">Searching index...</div>';
+    // Recent queries are stored (up to 12) for the quick-pick list.
     rememberKbQuery(query);
     rpc(52, 'search_kb', {
         query,
         top_k: Number($('kbTopK').value) || 5,
+        // 0 means "no distance cut-off".
         threshold: Number($('kbThreshold').value) || 0,
+        // null = search all sources; a name restricts the search to one ingested file.
         source_filter: $('kbSourceFilter').value || null
     });
 }
 
+// Same RPC method as the knowledge-base search but with its own id (53) and result box, so the Swarm
+// panel's reply is routed to renderSwarmRagResults instead of the KB panel.
 function searchSwarmRag() {
     const query = $('swarmRagQuery').value.trim();
     if (!query) {
@@ -1433,7 +1475,10 @@ function searchSwarmRag() {
     });
 }
 
+// Renders the reply of rpc id 53. Each card offers Copy and "Inject Into Objective" buttons; the
+// click handlers are delegated elsewhere using the data-idx attribute, which indexes lastSwarmRagResults.
 function renderSwarmRagResults(payload) {
+    // Normalise a null/odd payload so the function never throws inside the message handler.
     if (!payload || typeof payload !== 'object') payload = {};
     const results = Array.isArray(payload.results) ? payload.results : [];
     lastSwarmRagResults = results;
@@ -1442,6 +1487,7 @@ function renderSwarmRagResults(payload) {
         return `
         <div class="result-card">
             <div class="result-meta">Rank ${escapeHtml(result.rank ?? index)} · ${escapeHtml(result.source_file || 'unknown')} · Chunk ${escapeHtml(result.chunk_id || '0')} · dist=${Number(result.distance || 0).toFixed(4)}</div>
+            // Text is escaped (it is document content, untrusted) and cut to 1800 characters to keep the DOM small.
             <pre>${escapeHtml(result.text || '').slice(0, 1800)}</pre>
             <div class="action-row compact-actions" style="margin-top:6px;">
                 <button data-idx="${index}" data-copy>Copy</button>
@@ -1451,9 +1497,14 @@ function renderSwarmRagResults(payload) {
     `; }).join('') : '<div class="result-card">No chunks matched the current query and threshold.</div>';
 }
 
+// Used for features the VS Code client offers in the UI but whose Python RPC does not exist yet
+// (training validation, tokenizer preview...). Shows an explicit explanation rather than failing silently.
+// @param {string} feature  human-readable feature name; also selects which log panel gets the note
+// @param {string} method   the missing bridge method name
 function requiresBridgeSupport(feature, method) {
     const text = `${feature} requires Karl bridge method "${method}". The VS Code workspace is ready, but this backend endpoint is not exposed by the current desktop bridge.`;
     vscode.postMessage({ command: 'show_error', text });
+    // Echo the message into the panel belonging to that feature, so it is visible where the user clicked.
     if ($('trainingLog') && feature.toLowerCase().includes('training')) {
         $('trainingLog').innerText += `\n[Bridge Required] ${text}`;
     }
@@ -1465,11 +1516,15 @@ function requiresBridgeSupport(feature, method) {
     }
 }
 
+// Placeholder handler for the Training "Validate" button until the bridge exposes validation.
 function validateTrainingForm() {
     vscode.postMessage({ command: 'show_error', text: 'Training validation requires bridge support.' });
 }
 
+// Remember a launched task for the "Recent tasks" quick list (newest first, same text+workflow
+// de-duplicated, at most 15 kept) and persist it in the webview state.
 function rememberTask(workflowId, title, objective, filepath) {
+    // Whitespace-only objectives are not worth remembering.
     const text = String(objective || '').trim();
     if (!text) return;
     recentTasks = [
@@ -1480,26 +1535,34 @@ function rememberTask(workflowId, title, objective, filepath) {
     persist();
 }
 
+// Same pattern for knowledge-base queries (limit 12).
 function rememberKbQuery(query) {
     recentKbQueries = [query, ...recentKbQueries.filter(item => item !== query)].slice(0, 12);
     renderRecentKbQueries();
     persist();
 }
 
+// Adds a running entry to the task queue panel and returns its id so the caller can finish it later.
 function addTask(mode, objective) {
+    // Millisecond timestamp ids are unique enough because tasks are started by a human click.
     const id = `task-${Date.now()}`;
     taskQueue.unshift({ id, mode, objective, status: 'running', at: new Date().toISOString() });
     renderTaskQueue();
     return id;
 }
 
+// Marks the active task done/failed and clears the active id. map() makes a new array so the render
+// function sees an updated reference.
 function finishActiveTask(status) {
+    // Nothing to do when no task is active (e.g. a stop arrived twice).
     if (!activeTaskId) return;
     taskQueue = taskQueue.map(task => task.id === activeTaskId ? { ...task, status } : task);
     activeTaskId = '';
     renderTaskQueue();
 }
 
+// Client-side filter of the codex topic list; no RPC. Matches case-insensitively on item text
+// and toggles `display` (grid because .source-item uses a grid layout).
 function filterCodex() {
     const q = $('codexSearch').value.toLowerCase();
     $('codexList').querySelectorAll('.source-item').forEach(item => {
@@ -1507,6 +1570,8 @@ function filterCodex() {
     });
 }
 
+// Collects the generation settings used by every chat/lab/swarm request. `|| default` handles
+// empty or NaN inputs; the defaults (0.7/0.95/2048/5/0) match the Python workbench defaults.
 function hyperparams() {
     return {
         temperature: Number($('karlTemp').value) || 0.7,
@@ -1520,20 +1585,26 @@ function hyperparams() {
 }
 
 // ── WS-state MutationObserver ─────────────────────────────────────────────────
+// ── WS-state MutationObserver ─────────────────────────────────────────────────
 // Watches #statusDot className changes and mirrors the state to
 // body.dataset.wsState so CSS can drive the chat-border animation.
 // Detail: a MutationObserver reacts to class changes on the status dot. While a reply is generating,
 // the "generating" state is left alone so the animation is not interrupted.
 function _initWsStateObserver() {
+    // The status dot class is the single source of truth for connection state.
     const dot = $('statusDot');
     if (!dot) return;
+    // Take the first class that is not the base class, e.g. "connected" or "offline".
     function _sync() {
         const state = [...dot.classList].find(c => c !== 'status-dot') || 'offline';
+        // Do not overwrite "generating": sendChatMessage sets it and handleChatFinished clears it.
         if (document.body.dataset.wsState !== 'generating') {
             document.body.dataset.wsState = state;
         }
     }
+    // Initial sync, since the observer only reports later changes.
     _sync();
+    // attributeFilter limits callbacks to class changes, so the observer does not fire for unrelated edits.
     new MutationObserver(_sync).observe(dot, { attributes: true, attributeFilter: ['class'] });
 }
 
@@ -1544,26 +1615,34 @@ function _initWsStateObserver() {
 // a data attribute so it only happens once.
 function _initChatInnerTabs() {
     const chatSection = $('workspace-chat');
+    // Idempotency guard: a second call (hot reload, repeated init) would otherwise nest the panels again.
     if (!chatSection || chatSection.dataset.innerTabsReady) return;
     // Guard: never restructure the tab twice.
     chatSection.dataset.innerTabsReady = '1';
 
+    // Existing nodes are looked up here and re-parented below, preserving their ids so every other
+    // function that calls $('chatMessages') etc. keeps working.
     const thoughtsBox  = $('introspectionBox');
     const chatMessages = $('chatMessages');
     const composer     = chatSection.querySelector('.composer');
     const sectionHead  = chatSection.querySelector('.section-head');
+    // Bail out if the markup changed and an expected element is missing, rather than half-building the tabs.
     if (!thoughtsBox || !chatMessages || !composer) return;
 
     // ── Tab bar ────────────────────────────────────────────────────────────────
+    // ── Tab bar ────────────────────────────────────────────────────────────────
     const tabBar = document.createElement('div');
     tabBar.className = 'chat-inner-tabs';
+    // data-inner-tab names the panel id to show; the click handler for these buttons is wired below.
     tabBar.innerHTML = `
         <button class="chat-inner-tab active" data-inner-tab="chatPanel">Chat</button>
         <button class="chat-inner-tab" data-inner-tab="reasoningPanel">Reasoning</button>
         <button class="chat-inner-tab" data-inner-tab="swarmPanel">Swarm</button>
+        // Thoughts toggle lives in the bar so it stays visible whichever panel is open.
         <button class="chat-toggle active" id="thoughtsVisToggle" title="Show / hide inline thought stream">◈ Thoughts</button>
     `;
 
+    // appendChild moves existing nodes (it does not copy them), preserving their event listeners.
     // ── Panel 1: chat messages + composer ─────────────────────────────────────
     const chatPanel = document.createElement('div');
     chatPanel.id = 'chatPanel';
@@ -1573,9 +1652,11 @@ function _initChatInnerTabs() {
     chatPanel.appendChild(composer);
 
     // ── Panel 2: full reasoning view ──────────────────────────────────────────
+    // ── Panel 2: full reasoning view ──────────────────────────────────────────
     const reasoningPanel = document.createElement('div');
     reasoningPanel.id = 'reasoningPanel';
     reasoningPanel.className = 'chat-tab-panel';
+    // The #reasoningFullView <pre> is filled by the thought-token handler in karl_render.js.
     reasoningPanel.innerHTML = `
         <div style="margin-bottom:8px;">
             <div class="eyebrow">Full Reasoning Stream</div>
@@ -1585,6 +1666,7 @@ function _initChatInnerTabs() {
     `;
 
     // ── Panel 3: swarm progress feed ──────────────────────────────────────────
+    // ── Panel 3: swarm progress feed ──────────────────────────────────────────
     const swarmPanel = document.createElement('div');
     swarmPanel.id = 'swarmPanel';
     swarmPanel.className = 'chat-tab-panel';
@@ -1593,6 +1675,8 @@ function _initChatInnerTabs() {
             <div class="eyebrow">Swarm Progress Feed</div>
             <div style="color:var(--karl-muted);font-size:10px;margin-top:3px;">Real-time agent execution timeline</div>
         </div>
+        // #swarmFeed receives timeline cards from the swarm notification handlers; data-swarm-empty marks
+        // the placeholder that is removed on the first event.
         <div id="swarmFeed" class="swarm-feed">
             <div style="color:var(--karl-muted);padding:8px;font-size:11px;" data-swarm-empty>No swarm activity yet.</div>
         </div>
