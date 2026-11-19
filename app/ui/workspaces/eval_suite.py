@@ -151,7 +151,8 @@ class _EvalThread(QThread):
                     "adapter_name": self.adapter_name,
                     "dataset_name": self.dataset_path,
                     "accuracy": report.pass_rate,
-                    # mrr (mean reciprocal rank) exists only for retrieval datasets, hence the getattr default.
+                    # mrr (mean reciprocal rank) is not an attribute of the harness report here, so getattr falls
+                # back to 0.0; it is kept in the archive record for schema compatibility.
                     "mrr": getattr(report, "mrr", 0.0),
                     "timestamp": datetime.now(timezone.utc).isoformat(),
                     "items": items,
@@ -692,7 +693,7 @@ class EvalSuiteWorkspace(QWidget):
         self._thread.error.connect(self._on_error)
         self._thread.start()
 
-    # Command-palette entry point (Ctrl+K "Run evaluation").
+    # Command-palette entry point (MainWindow wires it to a palette command).
     def run_suite(self):
         """Public entry point used by the command palette; same as pressing Run."""
         self._run()
