@@ -34,10 +34,12 @@ from app.ui.themes import MONO
 from app.ui.widgets.model_combo import ModelComboBox
 
 
+# Module logger for evaluation-run diagnostics.
 logger = logging.getLogger("karl.eval_suite")
 
 
 def _section(text: str) -> QLabel:
+    """Create a section-header label (QSS object name 'section-header')."""
     # Step 1: Validate input parameters, operational preconditions, and state
     lbl = QLabel(text)
     lbl.setObjectName("section-header")
@@ -45,6 +47,7 @@ def _section(text: str) -> QLabel:
 
 
 def _hline() -> QFrame:
+    """Create a horizontal divider line."""
     # Step 1: Validate input parameters, operational preconditions, and state
     f = QFrame()
     f.setFrameShape(QFrame.Shape.HLine)
@@ -53,12 +56,17 @@ def _hline() -> QFrame:
 
 # ── eval thread ───────────────────────────────────────────────────────────────
 
+# Runs the evaluation harness off the GUI thread (a run executes the model
+# once per case and can take minutes). Results travel back via signals only;
+# the widget never touches the harness directly.
 class _EvalThread(QThread):
+    # Signals: progress(current, total), done(report), error(message).
     progress = pyqtSignal(int, int)    # current, total
     done     = pyqtSignal(object)      # EvalReport
     error    = pyqtSignal(str)
 
     def __init__(self, dataset_path: str, workflow_name: str, rag, model_name: str | None = None, adapter_name: str | None = None):
+        """Store the run parameters; `rag` is the shared retrieval index used by the harness."""
         # Step 1: Validate input parameters, operational preconditions, and state
         super().__init__()
         self.dataset_path = dataset_path
@@ -68,9 +76,16 @@ class _EvalThread(QThread):
         self.adapter_name = adapter_name
 
     def run(self):
+        """Execute the harness, emit the report, then best-effort archive it.
+
+        The report is emitted to the UI first, so a failure while auto-saving the
+        result to the training curator is only logged and never hides results.
+        """
         # Step 1: Validate input parameters, operational preconditions, and state
         try:
             # Execute guarded operations and establish recovery boundaries
+            # Imported lazily: the harness pulls in heavy engine modules that should not
+            # load at application startup.
             from eval.harness import EvalHarness
             harness = EvalHarness(self.rag)
             report = harness.run(
@@ -84,6 +99,8 @@ class _EvalThread(QThread):
             try:
                 # Execute guarded operations and establish recovery boundaries
                 from app.utils.training_curator import save_eval_result
+                # Flatten each graded case into the record shape that save_eval_result expects.
+                # Note `expected_answer` is taken from the grader's detail text.
                 items = []
                 for case in getattr(report, "cases", []):
                     # Iterate over items, evaluate loop invariant, and update progress
@@ -96,6 +113,7 @@ class _EvalThread(QThread):
                         "passed": grade.get("passed", False),
                         "score": grade.get("score", 0.0),
                     })
+                # Run-level summary stored alongside the per-case items.
                 report_dict = {
                     "model_name": self.model_name or "unknown",
                     "adapter_name": self.adapter_name,
@@ -114,6 +132,8 @@ class _EvalThread(QThread):
 
 # ── workspace ─────────────────────────────────────────────────────────────────
 
+# Left side: run configuration (dataset, model, workflow) and a dataset case
+# editor. Right side: results list with pass/fail filters and a detail inspector.
 class EvalSuiteWorkspace(QWidget):
     """Evaluation workspace for dataset editing, execution, and report review."""
 
@@ -123,6 +143,7 @@ class EvalSuiteWorkspace(QWidget):
         super().__init__(parent)
         self.state = state
         self.setObjectName("workspace-root")
+        # Strong references keep running QThreads alive until they finish.
         self._active_threads = set()
         self._loaded_cases = []
         self._build_ui()
@@ -138,12 +159,14 @@ class EvalSuiteWorkspace(QWidget):
         splitter.setHandleWidth(1)
         splitter.addWidget(self._build_left())
         splitter.addWidget(self._build_right())
+        # Right (results) side gets twice the width of the control side.
         splitter.setStretchFactor(0, 1)
         splitter.setStretchFactor(1, 2)
 
         root.addWidget(splitter)
 
     def _build_left(self) -> QWidget:
+        """Build the left panel: a 'Run Config' tab and an 'Edit Dataset' tab."""
         # Step 1: Validate input parameters, operational preconditions, and state
         w = QWidget()
         layout = QVBoxLayout(w)
@@ -154,6 +177,7 @@ class EvalSuiteWorkspace(QWidget):
         self._left_tabs = QTabWidget()
         self._left_tabs.setObjectName("left-tabs")
 
+        # Run Config: dataset path, model/adapter, workflow, run button, summary.
         # ── TAB 1: RUN CONFIG ───────────────────────────────────────────────
         run_tab = QWidget()
         run_layout = QVBoxLayout(run_tab)
@@ -182,6 +206,7 @@ class EvalSuiteWorkspace(QWidget):
         rl = QHBoxLayout(row)
         rl.setContentsMargins(0, 0, 0, 0)
         rl.setSpacing(6)
+        # Read-only: the path is chosen through the browse dialog so it is always a real file.
         self._dataset_path = QLineEdit()
         self._dataset_path.setPlaceholderText("path to eval dataset.jsonl")
         self._dataset_path.setReadOnly(True)
@@ -194,6 +219,7 @@ class EvalSuiteWorkspace(QWidget):
         rl.addWidget(browse)
         dp_layout.addWidget(row)
 
+        # Chosen model/adapter is passed to the harness thread explicitly.
         # Model / Adapter selection
         model_row = QWidget()
         ml = QHBoxLayout(model_row)
@@ -209,6 +235,8 @@ class EvalSuiteWorkspace(QWidget):
         ml.addWidget(self._model_combo, 1)
         dp_layout.addWidget(model_row)
 
+        # Workflows come from core.workflows; the combo stores the id as item data
+        # while displaying 'label (id)'.
         # Workflow selection
         from core.workflows import list_workflows
         wf_row = QWidget()
@@ -246,6 +274,7 @@ class EvalSuiteWorkspace(QWidget):
         cp_layout.addWidget(self._run_btn)
 
         self._progress = QProgressBar()
+        # Progress bar is only shown while a run is active.
         self._progress.setVisible(False)
         self._progress.setFixedHeight(12)
         cp_layout.addWidget(self._progress)
@@ -263,6 +292,9 @@ class EvalSuiteWorkspace(QWidget):
         run_layout.addStretch()
         self._left_tabs.addTab(run_tab, "Run Config")
 
+        # Edit Dataset: edits are applied to the in-memory case list live (every field
+        # change calls _save_current_form_to_memory) and only written to disk by
+        # 'Save Dataset Changes'.
         # ── TAB 2: EDIT DATASET ─────────────────────────────────────────────
         edit_tab = QWidget()
         edit_layout = QVBoxLayout(edit_tab)
@@ -368,11 +400,13 @@ class EvalSuiteWorkspace(QWidget):
         grader_lbl.setFixedWidth(70)
         gl.addWidget(grader_lbl)
         self._edit_case_grader = QComboBox()
+        # Grader ids understood by the eval harness.
         self._edit_case_grader.addItems(["keyword_hit", "exact_match", "json_valid", "groundedness", "not_in_context"])
         self._edit_case_grader.currentTextChanged.connect(self._on_grader_changed)
         gl.addWidget(self._edit_case_grader)
         form_layout.addWidget(grader_row)
 
+        # This row doubles as 'Keys' for json_valid; see _update_grader_fields_visibility.
         # Keywords
         self._kw_row = QWidget()
         self._kw_row_layout = QHBoxLayout(self._kw_row)
@@ -412,6 +446,7 @@ class EvalSuiteWorkspace(QWidget):
         return w
 
     def _build_right(self) -> QWidget:
+        """Build the right panel: 'Results List' and 'Detail Inspector' tabs."""
         # Step 1: Validate input parameters, operational preconditions, and state
         w = QWidget()
         layout = QVBoxLayout(w)
@@ -428,6 +463,8 @@ class EvalSuiteWorkspace(QWidget):
         res_layout.setSpacing(6)
         res_layout.addWidget(_section("RESULTS LIST"))
 
+        # Filters only hide tree rows; they do not alter the report. Export stays
+        # disabled until a run has produced a report.
         # Filter & Export Row
         filter_row = QWidget()
         fr_lay = QHBoxLayout(filter_row)
@@ -456,6 +493,7 @@ class EvalSuiteWorkspace(QWidget):
         res_layout.addWidget(filter_row)
 
         self._results_tree = QTreeWidget()
+        # Columns: case id, grader, PASS/FAIL, 80-char response preview.
         self._results_tree.setHeaderLabels(["case", "grader", "pass", "response"])
         self._results_tree.setColumnWidth(0, 220)
         self._results_tree.setColumnWidth(1, 100)
@@ -485,6 +523,11 @@ class EvalSuiteWorkspace(QWidget):
     # ── logic ─────────────────────────────────────────────────────────────────
 
     def _browse(self):
+        """Pick a dataset, load it into the editor, and auto-select a matching workflow.
+
+        The workflow is guessed by testing whether a workflow id appears in the
+        file name (first match wins).
+        """
         # Step 1: Validate input parameters, operational preconditions, and state
         path, _ = QFileDialog.getOpenFileName(
             self, "Select eval dataset", "", "JSONL (*.jsonl);;All Files (*)"
@@ -502,6 +545,13 @@ class EvalSuiteWorkspace(QWidget):
                     break
 
     def _run(self):
+        """Validate prerequisites and start an evaluation in a background thread.
+
+        Preflight: a base model must already be loaded and the dataset must exist.
+        The progress bar starts indeterminate (range 0,0) until the first progress
+        signal reports a total.
+        """
+        # Without a loaded model every case would fail, so stop early with guidance.
         # Preflight check
         from app.engine.model_loader import ModelLoader
         if not ModelLoader.is_loaded():
@@ -529,6 +579,7 @@ class EvalSuiteWorkspace(QWidget):
         self._last_report = None
         self._export_report_btn.setEnabled(False)
 
+        # The first progress callback starts the elapsed-time clock.
         # Reset ETA variables
         self._eval_start_time = None
 
@@ -541,6 +592,8 @@ class EvalSuiteWorkspace(QWidget):
             model_name = model_data.get("model")
             adapter_name = model_data.get("adapter")
 
+        # Thread bookkeeping: remember it while running, drop it on finish, and let Qt
+        # delete the C++ object afterwards.
         self._thread = _EvalThread(path, workflow, self.state.rag, model_name=model_name, adapter_name=adapter_name)
         self._active_threads.add(self._thread)
         self._thread.finished.connect(
@@ -553,10 +606,12 @@ class EvalSuiteWorkspace(QWidget):
         self._thread.start()
 
     def run_suite(self):
+        """Public entry point used by the command palette; same as pressing Run."""
         # Step 1: Validate input parameters, operational preconditions, and state
         self._run()
 
     def _on_progress(self, current: int, total: int):
+        """Update the progress bar and a simple linear ETA (average time per case so far)."""
         # Step 1: Validate input parameters, operational preconditions, and state
         import time
         if not getattr(self, "_eval_start_time", None):
@@ -584,6 +639,7 @@ class EvalSuiteWorkspace(QWidget):
 
 
     def _on_done(self, report):
+        """Show metrics and populate the results list when a run completes."""
         # Step 1: Validate input parameters, operational preconditions, and state
         self._progress.setVisible(False)
         self._run_btn.setEnabled(True)
@@ -595,6 +651,7 @@ class EvalSuiteWorkspace(QWidget):
         failed = report.failed
         pass_rate = report.pass_rate
 
+        # 10-segment text bar for the pass rate.
         # Compute block bar representing the pass rate (10 segments)
         filled = int(round(pass_rate * 10))
         empty = 10 - filled
@@ -625,6 +682,7 @@ class EvalSuiteWorkspace(QWidget):
             ])
             item.setTextAlignment(2, Qt.AlignmentFlag.AlignCenter)
             item.setForeground(2, QColor("#2DD4A0") if case_passed else QColor("#F05050"))
+            # Attach the full case object so the detail view needs no lookup.
             item.setData(0, Qt.ItemDataRole.UserRole, case)
             self._results_tree.addTopLevelItem(item)
 
@@ -632,12 +690,18 @@ class EvalSuiteWorkspace(QWidget):
 
 
     def _on_error(self, msg: str):
+        """Re-enable controls and show the (HTML-escaped) error message."""
         # Step 1: Validate input parameters, operational preconditions, and state
         self._progress.setVisible(False)
         self._run_btn.setEnabled(True)
         self._summary_lbl.setText(f"<span style='color:#F05050;'>error: {html.escape(msg)}</span>")
 
     def _on_result_selected(self, item, _prev):
+        """Render a themed HTML detail view (status, grader detail, error, prompt,
+        output, retrieved context) for the clicked result and switch to that tab.
+
+        All model/user text is passed through html.escape before being embedded.
+        """
         # Step 1: Validate input parameters, operational preconditions, and state
         if not item:
             return
@@ -729,10 +793,12 @@ class EvalSuiteWorkspace(QWidget):
     # ── model selection helpers ───────────────────────────────────────────────
 
     def _refresh_model_combo(self):
+        """Rescan models/adapters in the model dropdown."""
         # Step 1: Validate input parameters, operational preconditions, and state
         self._model_combo.refresh_models()
 
     def showEvent(self, event):
+        """Refresh the model dropdown each time the workspace is shown."""
         # Step 1: Validate input parameters, operational preconditions, and state
         super().showEvent(event)
         self._refresh_model_combo()
@@ -740,6 +806,12 @@ class EvalSuiteWorkspace(QWidget):
     # ── dataset editor helpers ────────────────────────────────────────────────
 
     def _load_dataset_for_editing(self, path: str):
+        """Read a JSONL dataset into memory and fill the case list.
+
+        Blank lines and lines starting with '#' are skipped; malformed lines are
+        logged and ignored. List signals are blocked so loading does not trigger
+        save-on-selection logic.
+        """
         # Step 1: Validate input parameters, operational preconditions, and state
         self._loaded_cases = []
         self._edit_cases_list.blockSignals(True)
@@ -777,6 +849,7 @@ class EvalSuiteWorkspace(QWidget):
             self._edit_cases_list.blockSignals(False)
 
     def _on_edit_case_selected(self, current, previous):
+        """Persist the form into the previously selected case, then load the new one."""
         # Step 1: Validate input parameters, operational preconditions, and state
         if previous:
             row = self._edit_cases_list.row(previous)
@@ -789,6 +862,12 @@ class EvalSuiteWorkspace(QWidget):
             self._clear_fields()
 
     def _save_fields_to_case(self, index: int):
+        """Copy the form values into case dict `index`.
+
+        Optional keys (context, expected) are removed when empty. Grader-specific
+        keys are kept consistent: keyword_hit stores keywords+require_all,
+        json_valid stores schema_keys, other graders store neither.
+        """
         # Step 1: Validate input parameters, operational preconditions, and state
         if index < 0 or index >= len(self._loaded_cases):
             return
@@ -833,6 +912,8 @@ class EvalSuiteWorkspace(QWidget):
             if "schema_keys" in case:
                 del case["schema_keys"]
             
+        # Keep the list label in sync when the id is edited (signals blocked to avoid
+        # a re-entrant selection change).
         # Update list item text if ID changed
         item = self._edit_cases_list.item(index)
         if item and item.text() != case["id"]:
@@ -841,6 +922,7 @@ class EvalSuiteWorkspace(QWidget):
             self._edit_cases_list.blockSignals(False)
 
     def _load_case_to_fields(self, index: int):
+        """Fill the form from case `index` (signals blocked so loading is not 'editing')."""
         # Step 1: Validate input parameters, operational preconditions, and state
         if index < 0 or index >= len(self._loaded_cases):
             self._clear_fields()
@@ -878,6 +960,7 @@ class EvalSuiteWorkspace(QWidget):
         self._block_form_signals(False)
 
     def _add_case(self):
+        """Append a new placeholder case (exact_match grader) and select it."""
         # Step 1: Validate input parameters, operational preconditions, and state
         current_item = self._edit_cases_list.currentItem()
         if current_item:
@@ -897,6 +980,7 @@ class EvalSuiteWorkspace(QWidget):
         self._edit_cases_list.setCurrentItem(new_item)
 
     def _delete_case(self):
+        """Delete the selected case after confirmation and select a neighbour."""
         # Step 1: Validate input parameters, operational preconditions, and state
         current_item = self._edit_cases_list.currentItem()
         if not current_item:
@@ -919,6 +1003,11 @@ class EvalSuiteWorkspace(QWidget):
                 self._clear_fields()
 
     def _save_dataset(self):
+        """Write all cases back to the dataset file as JSONL (one JSON object per line).
+
+        This overwrites the file in place, so comments/blank lines that were in the
+        original are not preserved.
+        """
         # Step 1: Validate input parameters, operational preconditions, and state
         current_item = self._edit_cases_list.currentItem()
         if current_item:
@@ -940,6 +1029,7 @@ class EvalSuiteWorkspace(QWidget):
             QMessageBox.critical(self, "Save Error", f"Could not save dataset: {e}")
 
     def _clear_fields(self):
+        """Blank the editor form without emitting change signals."""
         # Step 1: Validate input parameters, operational preconditions, and state
         self._block_form_signals(True)
         self._edit_case_id.clear()
@@ -951,6 +1041,7 @@ class EvalSuiteWorkspace(QWidget):
         self._block_form_signals(False)
 
     def _block_form_signals(self, block: bool):
+        """Block/unblock signals on every editor field at once."""
         # Step 1: Validate input parameters, operational preconditions, and state
         self._edit_case_id.blockSignals(block)
         self._edit_case_prompt.blockSignals(block)
@@ -961,6 +1052,7 @@ class EvalSuiteWorkspace(QWidget):
         self._edit_case_req_all.blockSignals(block)
 
     def _save_current_form_to_memory(self):
+        """Write the live form back into the in-memory case for the selected row."""
         # Step 1: Validate input parameters, operational preconditions, and state
         current_item = self._edit_cases_list.currentItem()
         if current_item:
@@ -968,11 +1060,13 @@ class EvalSuiteWorkspace(QWidget):
             self._save_fields_to_case(row)
 
     def _on_grader_changed(self, grader: str):
+        """Slot: show the right fields for the chosen grader and store the change."""
         # Step 1: Validate input parameters, operational preconditions, and state
         self._update_grader_fields_visibility(grader)
         self._save_current_form_to_memory()
 
     def _update_grader_fields_visibility(self, grader: str):
+        """Show/hide the keywords/'require all' rows depending on the grader type."""
         # Step 1: Validate input parameters, operational preconditions, and state
         if grader == "keyword_hit":
             self._kw_lbl.setText("Keywords:")
@@ -989,6 +1083,7 @@ class EvalSuiteWorkspace(QWidget):
             self._req_row.setVisible(False)
 
     def _apply_results_filter(self):
+        """Hide result rows according to the 'Show Passed' / 'Show Failed' checkboxes."""
         # Step 1: Validate input parameters, operational preconditions, and state
         show_pass = self._filter_pass_chk.isChecked()
         show_fail = self._filter_fail_chk.isChecked()
@@ -1000,6 +1095,7 @@ class EvalSuiteWorkspace(QWidget):
             item.setHidden(not should_show)
 
     def _export_eval_report(self):
+        """Save the last report (summary plus per-case results) as a JSON file chosen by the user."""
         # Step 1: Validate input parameters, operational preconditions, and state
         if not getattr(self, "_last_report", None):
             return
