@@ -10,6 +10,15 @@
 # ==============================================================================
 
 
+# This module is the shared core of the GGUF conversion package (a split-out copy of
+# llama.cpp's convert_hf_to_gguf.py). It defines:
+#   * ModelBase / TextModel / MmprojModel: abstract converters that index checkpoint
+#     tensors, optionally dequantise them, rename them to GGUF names and write the file;
+#   * the vocabulary helpers shared by text models;
+#   * LazyTorchTensor: a lazily evaluated tensor wrapper so huge checkpoints can be
+#     converted without loading everything into RAM.
+# Per-architecture subclasses live in the sibling modules and register themselves with
+# @ModelBase.register(...).
 from __future__ import annotations
 
 import ast
@@ -32,6 +41,8 @@ import torch
 if TYPE_CHECKING:
     from torch import Tensor
 
+# Prefer the gguf-py bundled next to this tree (so conversion matches the converter
+# version) unless NO_LOCAL_GGUF is set to use the installed package instead.
 if 'NO_LOCAL_GGUF' not in os.environ:
     sys.path.insert(1, str(Path(__file__).parent.parent / 'gguf-py'))
 import gguf
@@ -39,6 +50,8 @@ from gguf.vocab import MistralTokenizerType, MistralVocab
 
 try:
     # Execute guarded operations and establish recovery boundaries
+    # mistral_common is optional: it is only needed for Mistral-native checkpoints, so
+    # its absence is recorded in _mistral_common_installed instead of failing at import.
     from mistral_common.tokens.tokenizers.base import TokenizerVersion # type: ignore[import-not-found, ty:unresolved-import]
     from mistral_common.tokens.tokenizers.multimodal import DATASET_MEAN as _MISTRAL_COMMON_DATASET_MEAN, DATASET_STD as _MISTRAL_COMMON_DATASET_STD # type: ignore[import-not-found, ty:unresolved-import]
     from mistral_common.tokens.tokenizers.tekken import Tekkenizer # type: ignore[import-not-found, ty:unresolved-import]
@@ -48,6 +61,8 @@ try:
 
     _mistral_common_installed = True
     _mistral_import_error_msg = ""
+# Fallback constants (CLIP dataset mean/std) keep image preprocessing metadata
+# usable without mistral_common; the Tekken/SentencePiece types become None placeholders.
 except ImportError:
     _MISTRAL_COMMON_DATASET_MEAN = (0.48145466, 0.4578275, 0.40821073)
     _MISTRAL_COMMON_DATASET_STD = (0.26862954, 0.26130258, 0.27577711)
@@ -62,13 +77,16 @@ except ImportError:
     )
 
 
+# Logger name is kept from the original script so existing log filters still match.
 logger = logging.getLogger("hf-to-gguf")
 
 
+# Type variable for the class decorator ModelBase.register (returns the same class).
 AnyModel = TypeVar("AnyModel", bound="type[ModelBase]")
 
 
 class SentencePieceTokenTypes(IntEnum):
+    """Token type ids used by SentencePiece-style vocabs (values match the GGUF token types)."""
     NORMAL = 1
     UNKNOWN = 2
     CONTROL = 3
@@ -78,11 +96,21 @@ class SentencePieceTokenTypes(IntEnum):
 
 
 class ModelType(IntEnum):
+    """Kind of converter: TEXT (language model) or MMPROJ (vision/audio projector)."""
     TEXT = 1
     MMPROJ = 2
 
 
 class ModelBase:
+    """Abstract base for every converter.
+
+    Responsibilities: index the checkpoint's tensors (lazily), dequantise them if the
+    checkpoint is quantised, let subclasses rename/transform them, and write the
+    resulting GGUF file through gguf.GGUFWriter. Subclasses must set `model_arch`,
+    `block_count` and `tensor_map`, and implement `set_gguf_parameters`.
+    `_model_classes` is the registry filled by the `register` decorator.
+    """
+    # Architecture-name registry: ModelType -> {HF architecture name -> converter class}.
     _model_classes: dict[ModelType, dict[str, type[ModelBase]]] = {
         ModelType.TEXT: {},
         ModelType.MMPROJ: {},
@@ -105,6 +133,7 @@ class ModelBase:
     dir_model_card: Path
     remote_hf_model_id: str | None
 
+    # (see below) required class/instance attributes supplied by subclasses.
     # subclasses should define this!
     model_arch: gguf.MODEL_ARCH
 
@@ -112,11 +141,13 @@ class ModelBase:
     block_count: int
     tensor_map: gguf.TensorNameMap
 
+    # Class-level defaults that Mistral-native subclasses override.
     # Mistral format specifics
     is_mistral_format: bool = False
     disable_mistral_community_chat_template: bool = False
     sentence_transformers_dense_modules: bool = False
 
+    # (see note) set globally by the CLI before a converter is instantiated.
     # MTP (multi-token prediction) export modes; set by main() before instantiation.
     # Architectures opt in by overriding the handling (see _Qwen35MtpMixin).
     mtp_only: bool = False
@@ -131,7 +162,13 @@ class ModelBase:
                  sentence_transformers_dense_modules: bool = False,
                  fuse_gate_up_exps: bool = False,
                  fp8_as_q8: bool = False):
+        """Create a converter for one checkpoint directory.
+
+        Validates the class is concrete, loads hyperparameters, indexes tensors, guesses the
+        output type from the first weight if requested, and configures the GGUF writer.
+        """
         # Step 1: Validate input parameters, operational preconditions, and state
+        # The three abstract bases must not be instantiated; only architecture subclasses can.
         if type(self) is ModelBase or \
                 type(self) is TextModel or \
                 type(self) is MmprojModel:
@@ -146,23 +183,31 @@ class ModelBase:
         self.is_big_endian = is_big_endian
         self.endianess = gguf.GGUFEndian.BIG if is_big_endian else gguf.GGUFEndian.LITTLE
         self.use_temp_file = use_temp_file
+        # Remote models are always lazy: their tensors must not be downloaded up front.
         self.lazy = not eager or (remote_hf_model_id is not None)
         self.dry_run = dry_run
         self.remote_hf_model_id = remote_hf_model_id
         self.sentence_transformers_dense_modules = sentence_transformers_dense_modules
         self.fuse_gate_up_exps = fuse_gate_up_exps
+        # Buffers used when --fuse-gate-up-exps is on: gate and up expert tensors of a layer
+        # are held until both have arrived, then concatenated.
         self._gate_exp_buffer: dict[int, Tensor] = {}
         self._up_exp_buffer: dict[int, Tensor] = {}
         self.hparams = ModelBase.load_hparams(self.dir_model, self.is_mistral_format) if hparams is None else hparams
         self.model_tensors = self.index_tensors(remote_hf_model_id=remote_hf_model_id)
         self.metadata_override = metadata_override
         self.model_name = model_name
+        # Where model-card metadata is read from (overridden by the LoRA converter).
         self.dir_model_card = dir_model  # overridden in convert_lora_to_gguf.py
+        # Flags set while indexing/dequantising when the checkpoint contains NVFP4/MXFP4 data
+        # (those tensors are repacked directly instead of being dequantised).
         self._is_nvfp4 = False
         self._is_mxfp4 = False
         self._fp8_as_q8 = fp8_as_q8
         self._fp8_dequantized: set[str] = set()
 
+        # (see note) with ftype GUESSED, look at the first matrix-shaped tensor: bf16 -> BF16,
+        # fp16 -> F16, otherwise fall back to F16.
         # Apply heuristics to figure out typical tensor encoding based on first tensor's dtype
         # NOTE: can't use field "torch_dtype" in config.json, because some finetunes lie.
         if self.ftype == gguf.LlamaFileType.GUESSED:
@@ -183,6 +228,8 @@ class ModelBase:
                 self.ftype = gguf.LlamaFileType.MOSTLY_F16
                 logger.info("heuristics unable to detect tensor dtype, defaulting to --outtype f16")
 
+        # path=None: the file name is decided later (prepare_metadata / write), and sharding
+        # (split_max_*) is handled by the writer.
         # Configure GGUF Writer
         self.gguf_writer = gguf.GGUFWriter(path=None, arch=gguf.MODEL_ARCH_NAMES[self.model_arch], endianess=self.endianess, use_temp_file=self.use_temp_file,
                                            split_max_tensors=split_max_tensors, split_max_size=split_max_size, dry_run=dry_run, small_first_shard=small_first_shard)
@@ -192,12 +239,17 @@ class ModelBase:
 
     @classmethod
     def add_prefix_to_filename(cls, path: Path, prefix: str) -> Path:
+        """Return `path` with `prefix` prepended to its file name (stem + suffix)."""
         # Step 1: Validate input parameters, operational preconditions, and state
         stem, suffix = path.stem, path.suffix
         new_name = f"{prefix}{stem}{suffix}"
         return path.with_name(new_name)
 
     def find_hparam(self, keys: Iterable[str], optional: bool = False) -> Any:
+        """Return the value of the first key in `keys` found in the hyperparameters.
+
+        Raises KeyError if none is present, unless `optional` is True (returns None).
+        """
         # Step 1: Validate input parameters, operational preconditions, and state
         key = next((k for k in keys if k in self.hparams), None)
         if key is not None:
@@ -207,9 +259,17 @@ class ModelBase:
         raise KeyError(f"could not find any of: {keys}")
 
     def index_tensors(self, remote_hf_model_id: str | None = None) -> dict[str, Callable[[], Tensor]]:
+        """Build {tensor name: loader callable} for the whole checkpoint.
+
+        The callables are lazy: nothing is read until they are called. Sources are, in
+        order: a remote Hugging Face repo, local .safetensors shards, or .bin shards.
+        Every tensor passes through `filter_tensors`, which may rename or drop it.
+        """
         # Step 1: Validate input parameters, operational preconditions, and state
         tensors: dict[str, Callable[[], Tensor]] = {}
 
+        # Remote path: list tensors from the Hub and wrap each in a lazy remote loader
+        # (`r=remote_tensor` binds the loop variable at definition time).
         if remote_hf_model_id is not None:
             is_safetensors = True
 
@@ -224,6 +284,7 @@ class ModelBase:
 
             return tensors
 
+        # Mistral-native checkpoints are named consolidated*.safetensors.
         prefix = "model" if not self.is_mistral_format else "consolidated"
         part_names: list[str] = ModelBase.get_model_part_names(self.dir_model, prefix, ".safetensors")
         is_safetensors: bool = len(part_names) > 0
@@ -234,6 +295,8 @@ class ModelBase:
         tensor_names_from_parts: set[str] = set()
 
         if not self.is_mistral_format:
+            # If a *.index.json weight map exists it defines the shard list and the expected
+            # tensor names, which are verified against the shards at the end.
             index_name = "model.safetensors" if is_safetensors else "pytorch_model.bin"
             index_name += ".index.json"
             index_file = self.dir_model / index_name
@@ -262,6 +325,8 @@ class ModelBase:
             else:
                 ctx = contextlib.nullcontext(torch.load(str(self.dir_model / part_name), map_location="cpu", mmap=True, weights_only=True))
 
+            # Open each shard in turn; safetensors are memory-mapped, .bin files are loaded
+            # with weights_only=True to avoid executing pickled code.
             with ctx as model_part:
                 assert model_part is not None
 
@@ -285,6 +350,8 @@ class ModelBase:
                         tname, tgen = titem
                         tensors[tname] = tgen
 
+        # Cross-check the index against what the shards really contain and give a precise
+        # error (missing files vs. mismatched names) instead of failing later mid-conversion.
         # verify tensor name presence and identify potentially missing files
         if len(tensor_names_from_index) > 0:
             if len(tensor_names_from_parts.symmetric_difference(tensor_names_from_index)) > 0:
@@ -303,10 +370,12 @@ class ModelBase:
 
     @staticmethod
     def _scale_is_trivial(scale: Tensor) -> bool:
+        """True if `scale` is a single value equal to 1.0 (so storing it would be pointless)."""
         # Step 1: Validate input parameters, operational preconditions, and state
         return scale.numel() <= 1 and abs(float(scale.float().sum()) - 1.0) < 1e-6
 
     def _write_scale_tensor(self, scale_name: str, scale: Tensor):
+        """Write a per-tensor scale as an F32 tensor, unless it is trivially 1.0."""
         # Step 1: Validate input parameters, operational preconditions, and state
         if not self._scale_is_trivial(scale):
             scale_f32 = scale.float().numpy().flatten()
@@ -314,6 +383,7 @@ class ModelBase:
             self.gguf_writer.add_tensor(scale_name, scale_f32)
 
     def _write_scales_tensor(self, scale_name: str, scales: list[float]):
+        """Write per-expert scales as an F32 tensor, unless they are all (nearly) 1.0."""
         # Step 1: Validate input parameters, operational preconditions, and state
         if not np.allclose(scales, 1.0, atol=1e-6):
             scale_vals = np.array(scales, dtype=np.float32)
@@ -321,10 +391,18 @@ class ModelBase:
             self.gguf_writer.add_tensor(scale_name, scale_vals)
 
     def dequant_model(self):
+        """Dequantise quantised checkpoints (in place) into regular float tensors.
+
+        Supported quant_config methods: bitnet, fp8, gptq, compressed-tensors (several
+        formats) and modelopt. NVFP4 data is left alone for _generate_nvfp4_tensors.
+        Tensors are replaced by lazy lambdas, so no dequantisation work happens here.
+        """
+        # Pure NVFP4 checkpoints are handled elsewhere; nothing left to dequantise.
         # If all quantized tensors were already handled (e.g. pure NVFP4), skip
         if self._is_nvfp4 and not any(k.endswith((".weight_scale", ".weight_scale_inv")) for k in self.model_tensors):
             return
 
+        # Collected while iterating (can't mutate the dict during iteration) and applied at the end.
         tensors_to_remove: list[str] = []
         new_tensors: dict[str, Callable[[], Tensor]] = {}
 
@@ -332,6 +410,7 @@ class ModelBase:
             quant_method = quant_config.get("quant_method")
 
             def dequant_bitnet(weight: Tensor, scale: Tensor) -> Tensor:
+                """Unpack BitNet 2-bit weights (4 per byte) to {-1, 0, +1} and divide by the scale."""
                 # Step 1: Validate input parameters, operational preconditions, and state
                 weight = weight.view(torch.uint8)
                 orig_shape = weight.shape
@@ -341,10 +420,16 @@ class ModelBase:
                 data = data & 3
                 data = (data.float() - 1).reshape((orig_shape[0] * 4, *orig_shape[1:]))
 
+                # BitNet stores the inverse of the scale, hence the division.
                 # The scale is inverted
                 return data / scale.float()
 
             def dequant_simple(weight: Tensor, scale: Tensor, block_size: Sequence[int] | None = None) -> Tensor:
+                """Multiply a quantised weight by its (possibly block-wise) scale.
+
+                Block-wise scales are expanded to element granularity with repeat_interleave and
+                cropped when the weight size is not a multiple of the block size.
+                """
                 # Step 1: Validate input parameters, operational preconditions, and state
                 scale = scale.float()
 
@@ -363,8 +448,10 @@ class ModelBase:
 
                 return weight.float() * scale
 
+            # (see link) GPTQ stores bit-packed integers; unpack with shifts and masks.
             # ref: https://github.com/ModelCloud/GPTQModel/blob/037c5c0f6c9e33c500d975b038d02e7ca437546d/gptqmodel/nn_modules/qlinear/__init__.py#L437-L476
             def dequant_gptq(g_idx: Tensor, qweight: Tensor, qzeros: Tensor, scales: Tensor) -> Tensor:
+                """Dequantise a GPTQ layer: weight = scale[g_idx] * (q - zero[g_idx]), transposed."""
                 # Step 1: Validate input parameters, operational preconditions, and state
                 bits = quant_config["bits"]
                 assert bits in (2, 3, 4, 8)
@@ -401,6 +488,7 @@ class ModelBase:
 
                 weight = weight.reshape(weight.shape[0] * weight.shape[1], weight.shape[2])
 
+                # Original GPTQ stores zero-points minus one; v2 stores them as-is.
                 # gptq_v2 doesn't need to offset zeros
                 if quant_config.get("checkpoint_format", "gptq") == "gptq":
                     zeros += 1
@@ -408,6 +496,11 @@ class ModelBase:
                 return (scales[g_idx].float() * (weight - zeros[g_idx]).float()).T
 
             def dequant_packed(w: Tensor, scale: Tensor, shape_tensor: Tensor, zero_point: Tensor | None, num_bits: int, group_size: int):
+                """Dequantise compressed-tensors "pack-quantized" integer weights.
+
+                Values (and optional zero-points) are packed into int32 words along dim 1 (weights)
+                or dim 0 (zero-points); `shape_tensor` gives the unpadded shape.
+                """
                 # Step 1: Validate input parameters, operational preconditions, and state
                 assert w.dtype == torch.int32
                 shape = tuple(shape_tensor.tolist())
@@ -442,6 +535,8 @@ class ModelBase:
 
                 return (unpacked * scale.unsqueeze(-1).float()).reshape(shape)
 
+            # Each branch rewires model_tensors: the weight's loader is wrapped in a lambda that
+            # dequantises on demand, and the auxiliary scale tensors are scheduled for removal.
             if quant_method == "bitnet":
                 for name in self.model_tensors.keys():
                     # Iterate over items, evaluate loop invariant, and update progress
@@ -451,6 +546,7 @@ class ModelBase:
                         s = self.model_tensors[name]
                         self.model_tensors[weight_name] = lambda w=w, s=s: dequant_bitnet(w(), s())
                         tensors_to_remove.append(name)
+            # FP8 with `*_scale_inv` scales (and Mistral-native `qscale_*` variants).
             elif quant_method == "fp8":
                 block_size = quant_config.get("weight_block_size")
                 for name in self.model_tensors.keys():
@@ -478,6 +574,7 @@ class ModelBase:
                             self._fp8_dequantized.add(weight_name)
                     if name.endswith(".qscale_act"):
                         tensors_to_remove.append(name)
+            # GPTQ: rebuild a plain ".weight" from qweight/qzeros/scales/g_idx.
             elif quant_method == "gptq":
                 for name in self.model_tensors.keys():
                     # Iterate over items, evaluate loop invariant, and update progress
@@ -501,6 +598,7 @@ class ModelBase:
                                 ".scales",
                             )
                         ]
+            # compressed-tensors covers several formats; nvfp4 variants are deferred.
             elif quant_method == "compressed-tensors":
                 quant_format = quant_config["format"]
                 groups = quant_config["config_groups"]
@@ -563,6 +661,7 @@ class ModelBase:
                     pass
                 else:
                     raise NotImplementedError(f"Quant format {quant_format!r} for method {quant_method!r} is not yet supported")
+            # (see note) FP8 tensors are dequantised here; NVFP4 ones later.
             elif quant_method == "modelopt":
                 # Mixed-precision ModelOpt models: NVFP4 tensors are handled by
                 # _generate_nvfp4_tensors; FP8 tensors have 1D weight_scale and
@@ -588,6 +687,7 @@ class ModelBase:
             elif quant_method is not None:
                 raise NotImplementedError(f"Quant method is not yet supported: {quant_method!r}")
 
+        # Apply the collected removals and additions after iteration.
         for name in tensors_to_remove:
             # Iterate over items, evaluate loop invariant, and update progress
             if name in self.model_tensors:
@@ -599,6 +699,11 @@ class ModelBase:
 
     @classmethod
     def filter_tensors(cls, item: tuple[str, Callable[[], Tensor]]) -> tuple[str, Callable[[], Tensor]] | None:
+        """Hook run on every (name, loader) pair at indexing time; return None to drop it.
+
+        The base implementation normalises two names common to many models and strips the
+        "language_model." prefix. Subclasses extend it and then call super().
+        """
         # Step 1: Validate input parameters, operational preconditions, and state
         name, gen = item
 
@@ -611,12 +716,14 @@ class ModelBase:
         return name, gen
 
     def get_tensors(self) -> Iterator[tuple[str, Tensor]]:
+        """Yield (name, tensor) for every indexed tensor, materialising each in turn."""
         # Step 1: Validate input parameters, operational preconditions, and state
         for name, gen in self.model_tensors.items():
             # Iterate over items, evaluate loop invariant, and update progress
             yield name, gen()
 
     def format_tensor_name(self, key: gguf.MODEL_TENSOR, bid: int | None = None, suffix: str = ".weight") -> str:
+        """GGUF tensor name for `key` (block id substituted if needed) plus `suffix`."""
         # Step 1: Validate input parameters, operational preconditions, and state
         if key not in gguf.MODEL_TENSORS[self.model_arch]:
             raise ValueError(f"Missing {key!r} for MODEL_TENSORS of {self.model_arch!r}")
@@ -627,6 +734,7 @@ class ModelBase:
         return name + suffix
 
     def match_model_tensor_name(self, name: str, key: gguf.MODEL_TENSOR, bid: int | None, suffix: str = ".weight") -> bool:
+        """True if `name` equals the GGUF name of `key` for this architecture/block."""
         # Step 1: Validate input parameters, operational preconditions, and state
         if key not in gguf.MODEL_TENSORS[self.model_arch]:
             return False
@@ -641,6 +749,10 @@ class ModelBase:
         return name == (key_name + suffix)
 
     def map_tensor_name(self, name: str, try_suffixes: Sequence[str] = (".weight", ".bias")) -> str:
+        """Translate a HuggingFace tensor name to its GGUF name via the architecture's tensor map.
+
+        Raises ValueError when the name has no mapping.
+        """
         # Step 1: Validate input parameters, operational preconditions, and state
         new_name = self.tensor_map.get_name(key=name, try_suffixes=try_suffixes)
         if new_name is None:
@@ -648,13 +760,21 @@ class ModelBase:
         return new_name
 
     def set_gguf_parameters(self):
+        """Write architecture hyperparameters to the GGUF header (must be overridden)."""
         # Step 1: Validate input parameters, operational preconditions, and state
         raise NotImplementedError("set_gguf_parameters() must be implemented in subclasses")
 
     def modify_tensors(self, data_torch: Tensor, name: str, bid: int | None) -> Iterable[tuple[str, Tensor]]:
+        """Map one tensor to zero or more (GGUF name, tensor) pairs.
+
+        Subclasses override this to split, merge or reshape tensors. With
+        fuse_gate_up_exps the gate and up expert tensors of a layer are buffered and
+        emitted as one concatenated tensor.
+        """
         # Step 1: Validate input parameters, operational preconditions, and state
         new_name = self.map_tensor_name(name)
 
+        # (see note) emits nothing until both halves of the layer have been seen.
         # Handle gate/up expert tensor fusion if enabled
         if self.fuse_gate_up_exps and bid is not None:
             if self.match_model_tensor_name(new_name, gguf.MODEL_TENSOR.FFN_GATE_EXP, bid):
@@ -680,19 +800,24 @@ class ModelBase:
         return [(new_name, data_torch)]
 
     def tensor_force_quant(self, name: str, new_name: str, bid: int | None, n_dims: int) -> gguf.GGMLQuantizationType | bool:
+        """Return a quantisation type to force for this tensor, or False for no override."""
         # Step 1: Validate input parameters, operational preconditions, and state
         del new_name, bid  # unused
+        # (see note) dequantised-from-FP8 matrices are stored as Q8_0 when --fp8-as-q8 is on.
         # Force FP8-original tensors to Q8_0 when requested; Q8_0 is faster than F16/BF16.
         if self._fp8_as_q8 and name in self._fp8_dequantized and n_dims >= 2:
             return gguf.GGMLQuantizationType.Q8_0
         return False
 
+    # (see note) the base class yields none.
     # some models need extra generated tensors (like rope_freqs)
     def generate_extra_tensors(self) -> Iterable[tuple[str, Tensor]]:
+        """Yield additional tensors that are not in the checkpoint (e.g. precomputed rope_freqs)."""
         # Step 1: Validate input parameters, operational preconditions, and state
         return ()
 
     @staticmethod
+    # (Layout detail) 64 values per super-block: 4 one-byte UE4M3 scales then 32 bytes of 4-bit data.
     def _nvfp4_pack(weight: Tensor, scale: Tensor) -> tuple[np.ndarray, list[int]]:
         """Repack NVFP4 ModelOpt tensors into ggml super-block layout.
         Preserves original E4M3 scale bits as UE4M3 (strip sign bit).
@@ -703,6 +828,7 @@ class ModelBase:
         out_features = weight.shape[0]
         n_blocks = scale.shape[1]
 
+        # Each byte holds two 4-bit values; split low/high nibbles into 16 values per block.
         # Unpack ModelOpt nibble-packed weights
         w = weight.reshape(out_features, n_blocks, 8)
         vals = torch.stack([w & 0x0F, w >> 4], dim=-1).reshape(out_features, n_blocks, 16)
@@ -719,6 +845,7 @@ class ModelBase:
         return raw, [out_features, n_super * 64]
 
     def _repack_nvfp4(self, name: str, weight: Tensor, scale: Tensor, scale2: Tensor, input_scale: Tensor):
+        """Write one NVFP4 weight as raw NVFP4 data plus its scale and input-scale tensors."""
         # Step 1: Validate input parameters, operational preconditions, and state
         new_name = self.map_tensor_name(name)
 
@@ -729,7 +856,13 @@ class ModelBase:
         self._write_scale_tensor(new_name.replace(".weight", ".scale"), scale2)
         self._write_scale_tensor(new_name.replace(".weight", ".input_scale"), input_scale)
 
+    # Per-layer expert merging happens here so that all experts are not held in memory at once.
     def _generate_nvfp4_tensors(self):
+        """Write all NVFP4-quantised weights straight to the GGUF and drop them from model_tensors.
+
+        A weight qualifies when a 2-D+ `<name>.weight_scale` exists. Per-expert MoE weights
+        are collected per (layer, projection) and written as one stacked tensor.
+        """
         # Per-layer expert merging to avoid holding all experts in memory
         expert_blocks: dict[tuple[int, str], list[tuple[int, np.ndarray]]] = {}
         expert_scales: dict[tuple[int, str], list[tuple[int, float]]] = {}
@@ -747,6 +880,7 @@ class ModelBase:
             input_scale_name = name.replace(".weight", ".input_scale")
             if scale_name not in self.model_tensors:
                 continue
+            # Lazy tensors must be materialised here because repacking works on raw bytes.
             # Force eager materialization of lazy tensors
             weight = LazyTorchTensor.to_eager(self.model_tensors[name]())
             scale = LazyTorchTensor.to_eager(self.model_tensors[scale_name]())
@@ -766,6 +900,8 @@ class ModelBase:
                 consumed.append(input_scale_name)
 
             # Check if this is a per-expert tensor
+            # Expert weights (".experts.<id>.<gate|up|down>_proj.weight") are batched per layer and
+            # projection so the stacked 3-D tensor can be written once all experts are present.
             m = re.search(r'\.experts\.(\d+)\.(gate_proj|up_proj|down_proj)\.weight$', name)
             if m:
                 expert_id = int(m.group(1))
@@ -793,6 +929,7 @@ class ModelBase:
             else:
                 self._repack_nvfp4(name, weight, scale, scale2, input_scale)
 
+        # Safety net for when n_experts was not known: write whatever was collected.
         # Flush any remaining experts (fallback if n_experts was unknown)
         for bid, proj_type in list(expert_blocks.keys()):
             # Iterate over items, evaluate loop invariant, and update progress
@@ -810,6 +947,10 @@ class ModelBase:
                 del self.model_tensors[name]
 
     def _flush_nvfp4_experts(self, key, expert_blocks, expert_scales, expert_input_scales, expert_shapes, bid, proj_type):
+        """Stack one layer/projection's collected experts (sorted by expert id) and write them.
+
+        Also writes the per-expert weight scales and input scales as extra tensors.
+        """
         # Step 1: Validate input parameters, operational preconditions, and state
         experts = expert_blocks.pop(key)
         scales = expert_scales.pop(key)
@@ -832,6 +973,13 @@ class ModelBase:
         del experts, merged
 
     def prepare_tensors(self):
+        """Convert and write every tensor to the GGUF writer.
+
+        Steps: detect NVFP4/MXFP4 quantisation, repack NVFP4 data, dequantise other
+        quantised weights, then for each tensor pick the output block id and quantisation
+        type and hand it to gguf_writer.
+        """
+        # (see note) quantisation info may be in config.json or in a separate hf_quant_config.json.
         # detect NVFP4 quantization (ModelOpt and Compressed-tensors formats)
         quantization_config = self.hparams.get("quantization_config") or {}
         quant_algo = quantization_config.get("quant_algo")
@@ -841,6 +989,8 @@ class ModelBase:
         quant_layers = quantization_config.get("quantized_layers") or {}
         quant_config_file = self.dir_model / "hf_quant_config.json"
 
+        # Fall back to hf_quant_config.json (written by NVIDIA ModelOpt) when the main config
+        # does not describe the quantisation fully.
         if (not quant_algo or not quant_layers) and quant_config_file.is_file():
             with open(quant_config_file, "r", encoding="utf-8") as f:
                 hf_quant_config = json.load(f)
@@ -856,6 +1006,7 @@ class ModelBase:
                 quant_groups = quant_config.get("config_groups", quant_groups) or {}
                 quant_layers = quant_config.get("quantized_layers", quant_layers) or {}
 
+        # (see note) detect NVFP4 even when quant_algo is a per-layer mix of formats.
         # Some models use per-tensor quant_algo (e.g. "MIXED_PRECISION" with
         # per-layer NVFP4/FP8) instead of a single global "NVFP4" value.
         nvfp4_compressed_tensors = quant_method == "compressed-tensors" and (
@@ -873,11 +1024,14 @@ class ModelBase:
         self._is_nvfp4 = quant_algo == "NVFP4"
         self._is_mxfp4 = quant_method == "mxfp4"
 
+        # Order matters: NVFP4 tensors are consumed first so dequant_model only sees the rest.
         # NVFP4 weights are repacked and written directly to gguf_writer.
         # This must run before dequant_model so NVFP4 tensors are removed
         # from model_tensors, leaving only non-NVFP4 (e.g. FP8) for dequant.
         if self._is_nvfp4:
             if nvfp4_compressed_tensors:
+                # compressed-tensors stores global scales (multipliers); ModelOpt-style names store
+                # the reciprocal, so wrap each loader with a 1/x transform.
                 # Convert compressed-tensors 'global' scales into the reciprocal
                 def inverse_scale(gen):
                     # Step 1: Validate input parameters, operational preconditions, and state
@@ -887,6 +1041,7 @@ class ModelBase:
                         return 1.0 / scale
                     return load
 
+                # Rename tensors to the ModelOpt naming so the rest of the code needs one path.
                 # Change the compressed-tensors names to the ModelOpt names for handling consistently later
                 for name in list(self.model_tensors.keys()):
                     # Iterate over items, evaluate loop invariant, and update progress
@@ -906,12 +1061,14 @@ class ModelBase:
 
         self.dequant_model()
 
+        # (see note) only used to align the log columns.
         # Handle empty tensor_map for models with block_count=0 (like MobileNetV5)
         if self.tensor_map.mapping:
             max_name_len = max(len(s) for _, s in self.tensor_map.mapping.values()) + len(".weight,")
         else:
             max_name_len = len("vision_encoder.weight,")  # Default reasonable length
 
+        # Extra (generated) tensors first, then every real tensor, all through the same pipeline.
         for name, data_torch in chain(self.generate_extra_tensors(), self.get_tensors()):
             # we don't need these
             if name.endswith((".attention.masked_bias", ".attention.bias", ".rotary_emb.inv_freq")):
@@ -919,10 +1076,12 @@ class ModelBase:
 
             old_dtype = data_torch.dtype
 
+            # Only f16/f32 are passed on; bf16, fp8 etc. go through float32 first.
             # convert any unsupported data types to float32
             if data_torch.dtype not in (torch.float16, torch.float32):
                 data_torch = data_torch.to(torch.float32)
 
+            # Block id heuristic: the first all-digit component of the HF name (e.g. "layers.12").
             # use the first number-like part of the tensor name as the block id
             bid = None
             for part in name.split("."):
@@ -931,6 +1090,7 @@ class ModelBase:
                     bid = int(part)
                     break
 
+            # Subclasses may turn one input tensor into several outputs (or none).
             for new_name, data_torch in (self.modify_tensors(data_torch, name, bid)):
                 # TODO: why do we squeeze here?
                 # data = data_torch.squeeze().numpy()
@@ -939,10 +1099,13 @@ class ModelBase:
                 n_dims = len(data.shape)
                 data_qtype: gguf.GGMLQuantizationType | bool = self.tensor_force_quant(name, new_name, bid, n_dims)
 
+                # (see note) norms and vectors are always stored in F32.
                 # Most of the codebase that takes in 1D tensors or norms only handles F32 tensors
                 if n_dims <= 1 or new_name.endswith("_norm.weight"):
                     data_qtype = gguf.GGMLQuantizationType.F32
 
+                # Tensors that llama.cpp always keeps in F32 (small, precision-critical or
+                # convolution-like weights); the list mirrors the quantiser in llama.cpp.
                 # Conditions should closely match those in llama_model_quantize_internal in llama.cpp
                 # Some tensor types are always in float32
                 if data_qtype is False and (
@@ -979,6 +1142,8 @@ class ModelBase:
                 ):
                     data_qtype = gguf.GGMLQuantizationType.F32
 
+                # Ternary file types (TQ1_0/TQ2_0) cannot represent embeddings/output well, so these
+                # stay F16 there.
                 if data_qtype is False and any(
                     self.match_model_tensor_name(new_name, key, bid)
                     for key in (
@@ -997,6 +1162,7 @@ class ModelBase:
                         # TODO: use Q4_K and Q6_K
                         data_qtype = gguf.GGMLQuantizationType.F16
 
+                # Anything still undecided follows the requested overall file type.
                 # No override (data_qtype is False), or wants to be quantized (data_qtype is True)
                 if isinstance(data_qtype, bool):
                     if self.ftype == gguf.LlamaFileType.ALL_F32:
@@ -1024,6 +1190,7 @@ class ModelBase:
 
                 shape = gguf.quant_shape_from_byte_shape(data.shape, data_qtype) if data.dtype == np.uint8 else data.shape
 
+                # (see note) ggml lists dimensions in the reverse order of numpy/torch.
                 # reverse shape to make it similar to the internal ggml dimension order
                 shape_str = f"{{{', '.join(str(n) for n in reversed(shape))}}}"
 
@@ -1033,16 +1200,22 @@ class ModelBase:
                 self.gguf_writer.add_tensor(new_name, data, raw_dtype=data_qtype)
 
     def set_type(self):
+        """Declare the GGUF file as a model (MmprojModel overrides this)."""
         # Step 1: Validate input parameters, operational preconditions, and state
         self.gguf_writer.add_type(gguf.GGUFType.MODEL)
 
     def prepare_metadata(self, vocab_only: bool):
+        """Load/derive model metadata (name, size label) and write header key/values.
+
+        Also upgrades the file type to NVFP4/MXFP4 when the weights were already in that format.
+        """
 
         # Step 1: Validate input parameters, operational preconditions, and state
         total_params, shared_params, expert_params, expert_count = self.gguf_writer.get_total_parameter_count()
 
         self.metadata = gguf.Metadata.load(self.metadata_override, self.dir_model_card, self.model_name, total_params)
 
+        # (see note) for remote models the repo id is the best available name.
         # If we are using HF model id, set the metadata name to the model id
         if self.remote_hf_model_id:
             self.metadata.name = self.remote_hf_model_id
@@ -1073,10 +1246,12 @@ class ModelBase:
         self.gguf_writer.add_quantization_version(gguf.GGML_QUANT_VERSION)
 
     def write_vocab(self):
+        """Write only the vocabulary (--vocab-only); implemented by TextModel."""
         # Step 1: Validate input parameters, operational preconditions, and state
         raise NotImplementedError("write_vocab() must be implemented in subclasses")
 
     def write(self):
+        """Run the whole conversion: tensors, metadata, then header, KV data and tensor data."""
         # Step 1: Validate input parameters, operational preconditions, and state
         self.prepare_tensors()
         self.prepare_metadata(vocab_only=False)
@@ -1087,6 +1262,7 @@ class ModelBase:
 
     @staticmethod
     def get_model_part_names(dir_model: Path, prefix: str, suffix: str) -> list[str]:
+        """Sorted file names in `dir_model` that start with `prefix` and end with `suffix`."""
         # Step 1: Validate input parameters, operational preconditions, and state
         part_names: list[str] = []
         for filename in os.listdir(dir_model):
@@ -1100,6 +1276,11 @@ class ModelBase:
 
     @staticmethod
     def load_hparams(dir_model: Path, is_mistral_format: bool):
+        """Load the model's config (params.json for Mistral-native, else config.json).
+
+        Also normalises different multimodal wrappers so the text config is always under
+        "text_config".
+        """
         # Step 1: Validate input parameters, operational preconditions, and state
         if is_mistral_format:
             with open(dir_model / "params.json", "r", encoding="utf-8") as f:
@@ -1107,6 +1288,7 @@ class ModelBase:
             return config
 
         try:
+            # Remote code is never executed; models needing it fall back to the raw config.json.
             # for security reason, we don't allow loading remote code by default
             # if a model need remote code, we will fallback to config.json
             config = AutoConfig.from_pretrained(dir_model, trust_remote_code=False).to_dict()
@@ -1134,6 +1316,10 @@ class ModelBase:
 
     @classmethod
     def register(cls, *names: str) -> Callable[[AnyModel], AnyModel]:
+        """Class decorator factory: register a converter class under HF architecture names.
+
+        MMPROJ architectures are stored separately from text ones.
+        """
         # Step 1: Validate input parameters, operational preconditions, and state
         assert names
 
@@ -1167,6 +1353,13 @@ class ModelBase:
 
 
 class TextModel(ModelBase):
+    """Base class for language-model converters.
+
+    Adds hyperparameter normalisation (text_config merging, RoPE parameters), the
+    generic GGUF parameter writer and the family of vocabulary builders
+    (`_set_vocab_*`). Subclasses must define `model_arch`.
+    """
+    # Selects the TEXT registry in ModelBase.register / get_model_class.
     model_type = ModelType.TEXT
     hf_arch: str
 
@@ -1174,22 +1367,29 @@ class TextModel(ModelBase):
         # Step 1: Validate input parameters, operational preconditions, and state
         super().__init__(*args, **kwargs)
         if not self.is_mistral_format:
+            # HF architecture name (e.g. "LlamaForCausalLM"); Mistral-native checkpoints have none.
             self.hf_arch = get_model_architecture(self.hparams, self.model_type)
         else:
             self.hf_arch = ""
 
+        # Multimodal configs nest the language model's settings under text_config; flatten them
+        # so find_hparam can see them (nested keys override top-level ones).
         if "text_config" in self.hparams:
             # move the text_config to the root level
             self.hparams = {**self.hparams, **self.hparams["text_config"]}
 
+        # Number of transformer blocks, under whichever key this config uses.
         self.block_count = self.find_hparam(["n_layers", "num_hidden_layers", "n_layer", "num_layers"])
         self.tensor_map = gguf.get_tensor_name_map(self.model_arch, self.block_count)
 
+        # RoPE settings live under rope_parameters (new HF) or rope_scaling (old HF).
         self.rope_parameters = self.hparams.get("rope_parameters", self.hparams.get("rope_scaling")) or {}
 
         rope_theta = self.find_hparam(["global_rope_theta", "rope_global_theta", "rope_theta_global", "rope_theta", "rotary_emb_base"], optional=True)
         local_rope_theta = self.find_hparam(["local_rope_theta", "rope_local_theta", "rope_theta_local", "swa_rope_theta", "rope_local_base_freq"], optional=True)
 
+        # Normalise legacy layouts: if the config is not split into full/sliding attention
+        # sections, mirror theta/type into rope_parameters so later code reads one place.
         # Ensure "rope_theta" and "rope_type" is mirrored in rope_parameters
         if "full_attention" not in self.rope_parameters and "sliding_attention" not in self.rope_parameters:
             if local_rope_theta is not None:
@@ -1201,6 +1401,8 @@ class TextModel(ModelBase):
 
     @classmethod
     def __init_subclass__(cls):
+        """Enforce that every concrete subclass defines its own `model_arch` class attribute."""
+        # (see note) a plain class-attribute check is used instead of an abstract property.
         # can't use an abstract property, because overriding it without type errors
         # would require using decorated functions instead of simply defining the property
         if "model_arch" not in cls.__dict__:
@@ -1208,6 +1410,11 @@ class TextModel(ModelBase):
 
     @classmethod
     def filter_tensors(cls, item: tuple[str, Callable[[], Tensor]]) -> tuple[str, Callable[[], Tensor]] | None:
+        """Drop multimodal (vision/audio/projector) tensors; they belong to the mmproj GGUF.
+
+        The long prefix/substring list covers the naming of many different VLM and
+        audio-LM checkpoints.
+        """
         # Step 1: Validate input parameters, operational preconditions, and state
         name, gen = item
 
@@ -1225,14 +1432,21 @@ class TextModel(ModelBase):
         return super().filter_tensors(item)
 
     def set_vocab(self):
+        """Default vocabulary: GPT-2 style BPE. Architectures with other tokenizers override this."""
         # Step 1: Validate input parameters, operational preconditions, and state
         self._set_vocab_gpt2()
 
     def prepare_metadata(self, vocab_only: bool):
+        """Finish metadata and decide the output file name, then write the tokenizer.
+
+        If `fname_out` is a directory a conventional name is generated from the metadata
+        and output type; otherwise the given name is used as a template.
+        """
         # Step 1: Validate input parameters, operational preconditions, and state
         super().prepare_metadata(vocab_only=vocab_only)
 
         total_params = self.gguf_writer.get_total_parameter_count()[0]
+        # (see note) e.g. MOSTLY_Q8_0 -> "Q8_0" for use in the file name.
         # Extract the encoding scheme from the file type name. e.g. 'gguf.LlamaFileType.MOSTLY_Q8_0' --> 'Q8_0'
         output_type: str = self.ftype.name.partition("_")[2]
 
@@ -1248,6 +1462,7 @@ class TextModel(ModelBase):
             self.fname_out = self.fname_out / f"{fname_default}.gguf"
         else:
             # Output path is a custom defined templated filename
+            # (see note) a template path does not exist yet, so is_file() would be wrong.
             # Note: `not is_dir()` is used because `.is_file()` will not detect
             #       file template strings as it doesn't actually exist as a file
 
@@ -1258,6 +1473,12 @@ class TextModel(ModelBase):
         self.set_vocab()
 
     def set_gguf_parameters(self):
+        """Write the standard hyperparameters found in most HF configs.
+
+        Each value is looked up under several common key names and written only if
+        present: context length, embedding/FFN sizes, head counts, RoPE scaling (linear,
+        YaRN, LongRoPE), MoE expert counts and gating, norm epsilons and head dims.
+        """
         # Step 1: Validate input parameters, operational preconditions, and state
         self.gguf_writer.add_block_count(self.block_count)
 
@@ -1285,6 +1506,7 @@ class TextModel(ModelBase):
             self.gguf_writer.add_causal_attention(False)
             logger.info("gguf: causal attention = False")
 
+        # Only the full-attention RoPE settings are used for the main scaling parameters.
         # TODO: Handle "sliding_attention" similarly when models start implementing it
         rope_params = self.rope_parameters.get("full_attention", self.rope_parameters)
         if (rope_type := rope_params.get("rope_type")) is not None:
@@ -1308,6 +1530,7 @@ class TextModel(ModelBase):
                 if (yarn_beta_slow := rope_params.get("beta_slow")) is not None:
                     self.gguf_writer.add_rope_scaling_yarn_beta_slow(yarn_beta_slow)
                 # self.gguf_writer.add_rope_scaling_yarn_log_mul(rope_params["mscale_all_dim"])
+            # LongRoPE factor tables are tensors, not metadata; only the scaling type is written here.
             elif rope_type == "su" or rope_type == "longrope":
                 rope_gguf_type = gguf.RopeScalingType.LONGROPE
                 self.gguf_writer.add_rope_scaling_type(rope_gguf_type)
@@ -1321,6 +1544,7 @@ class TextModel(ModelBase):
                 logger.warning(f"Unknown RoPE type: {rope_type}")
             logger.info(f"gguf: rope scaling type = {rope_gguf_type.name}")
 
+        # Multi-dimensional RoPE (M-RoPE): sections are padded to four dims [t, h, w, extra].
         if "mrope_section" in self.rope_parameters:
             mrope_section = self.rope_parameters["mrope_section"]
             # Pad to 4 dimensions [time, height, width, extra]
@@ -1372,6 +1596,7 @@ class TextModel(ModelBase):
         logger.info(f"gguf: file type = {self.ftype}")
 
     def write_vocab(self):
+        """Write a vocab-only GGUF (no tensors) for --vocab-only runs."""
         # Step 1: Validate input parameters, operational preconditions, and state
         if len(self.gguf_writer.tensors) != 1:
             raise ValueError('Splitting the vocabulary is not supported')
@@ -1382,6 +1607,11 @@ class TextModel(ModelBase):
         self.gguf_writer.close()
 
     def does_token_look_special(self, token: str | bytes) -> bool:
+        """Heuristic: does this added token look like a control/special token?
+
+        Some tokenizers mark real control tokens as "not special", so names like <|...|>,
+        <unusedN>, <pad> or <mask> are treated as special regardless.
+        """
         # Step 1: Validate input parameters, operational preconditions, and state
         if isinstance(token, (bytes, bytearray)):
             token_text = token.decode(encoding="utf-8")
@@ -1390,6 +1620,7 @@ class TextModel(ModelBase):
         else:
             token_text = token
 
+        # (see note) the exact names below come from specific model families.
         # Some models mark some added tokens which ought to be control tokens as not special.
         # (e.g. command-r, command-r-plus, deepseek-coder, gemma{,-2})
         seems_special = token_text in (
@@ -1405,8 +1636,15 @@ class TextModel(ModelBase):
 
         return seems_special
 
+    # (see note) builds token list/types for BPE and WordPiece tokenizers via AutoTokenizer.
     # used for GPT-2 BPE and WordPiece vocabs
     def get_vocab_base(self) -> tuple[list[str], list[int], str]:
+        """Build (tokens, token types, pre-tokenizer id) from an AutoTokenizer vocabulary.
+
+        Ids without a token become [PAD<i>] (UNUSED). Added tokens are CONTROL if the
+        tokenizer says they are special (or they look special), otherwise USER_DEFINED;
+        the rest are NORMAL.
+        """
         # Step 1: Validate input parameters, operational preconditions, and state
         tokens: list[str] = []
         toktypes: list[int] = []
@@ -1414,6 +1652,7 @@ class TextModel(ModelBase):
         from transformers import AutoTokenizer
         tokenizer = AutoTokenizer.from_pretrained(self.dir_model)
         vocab_size = self.hparams.get("vocab_size", len(tokenizer.vocab))  # ty: ignore[unresolved-attribute]
+        # Every real token id must fit inside the declared vocab size.
         assert max(tokenizer.vocab.values()) < vocab_size  # ty: ignore[unresolved-attribute]
 
         tokpre = self.get_vocab_base_pre(tokenizer)
@@ -1431,6 +1670,8 @@ class TextModel(ModelBase):
             else:
                 token: str = reverse_vocab[i]
                 if token in added_vocab:
+                    # (see note) tokens are round-tripped through the tokenizer so they match what the
+                    # runtime would produce when matching special tokens in text.
                     # The tokenizer in llama.cpp assumes the CONTROL and USER_DEFINED tokens are pre-normalized.
                     # To avoid unexpected issues - we make sure to normalize non-normalized tokens
                     if not added_tokens_decoder[i].normalized:
@@ -1442,6 +1683,7 @@ class TextModel(ModelBase):
                     if added_tokens_decoder[i].special or self.does_token_look_special(token):
                         toktypes.append(gguf.TokenType.CONTROL)
                     else:
+                        # (see note) "▁" (SentencePiece space) in user-defined tokens becomes a normal space.
                         # NOTE: this was added for Gemma.
                         # Encoding and decoding the tokens above isn't sufficient for this case.
                         token = token.replace(b"\xe2\x96\x81".decode("utf-8"), " ")  # pre-normalize user-defined spaces
@@ -1457,6 +1699,13 @@ class TextModel(ModelBase):
     # ref:  https://github.com/ggml-org/llama.cpp/pull/6920
     # Marker: Start get_vocab_base_pre
     def get_vocab_base_pre(self, tokenizer) -> str:
+        """Identify the BPE pre-tokenizer by fingerprinting how the tokenizer splits a test string.
+
+        A fixed tricky string (chktxt) is encoded and the SHA-256 of the token ids is
+        compared with known hashes; each match yields the pre-tokenizer name that is
+        written as "tokenizer.ggml.pre". This function body is generated by
+        convert_hf_to_gguf_update.py (see the notes above) and is not edited by hand.
+        """
         # encoding this string and hashing the resulting tokens would (hopefully) give us a unique identifier that
         # is specific for the BPE pre-tokenizer used by the model
         # we will use this unique identifier to write a "tokenizer.ggml.pre" entry in the GGUF file which we can
@@ -1762,10 +2011,12 @@ class TextModel(ModelBase):
         # Marker: End get_vocab_base_pre
 
     def _set_vocab_none(self) -> None:
+        """Declare that the model has no tokenizer (tokenizer model "none")."""
         # Step 1: Validate input parameters, operational preconditions, and state
         self.gguf_writer.add_tokenizer_model("none")
 
     def _set_vocab_gpt2(self) -> None:
+        """Write a GPT-2 style BPE vocab: tokens, types, pre-tokenizer id and merges."""
         # Step 1: Validate input parameters, operational preconditions, and state
         tokens, toktypes, tokpre = self.get_vocab_base()
         self.gguf_writer.add_tokenizer_model("gpt2")
@@ -1777,6 +2028,7 @@ class TextModel(ModelBase):
         special_vocab.add_to_gguf(self.gguf_writer)
 
     def _set_vocab_hybriddna(self):
+        """Write the HybridDNA vocab: a BPE vocab plus DNA k-mer tokens."""
         # Step 1: Validate input parameters, operational preconditions, and state
         from transformers import AutoTokenizer
         tokenizer = AutoTokenizer.from_pretrained(self.dir_model, trust_remote_code=True)
@@ -1784,6 +2036,7 @@ class TextModel(ModelBase):
         assert max(tokenizer.vocab.values()) < vocab_size  # ty: ignore[unresolved-attribute]
 
         reverse_vocab = {id_: encoded_tok for encoded_tok, id_ in tokenizer.vocab.items()}  # ty: ignore[unresolved-attribute]
+        # (see note) the marker suffix keeps colliding k-mers distinct without changing their meaning.
         # k-mers can share text with a base-vocab BPE token (e.g. CCCCCC) and get
         # dropped by get_vocab(); a reserved marker suffix (U+E000) keeps each
         # k-mer's own id (llama.cpp strips it on detokenization)
@@ -1821,6 +2074,11 @@ class TextModel(ModelBase):
         special_vocab.add_to_gguf(self.gguf_writer)
 
     def _set_vocab_qwen(self):
+        """Write the vocab for original Qwen (tiktoken-based) models.
+
+        Merges are reconstructed from the tokenizer's mergeable ranks (see QwenModel.bpe)
+        because no merges file exists; special tokens come from tokenizer.special_tokens.
+        """
         # Step 1: Validate input parameters, operational preconditions, and state
         from .qwen import QwenModel
 
@@ -1844,10 +2102,13 @@ class TextModel(ModelBase):
             vocab[QwenModel.token_bytes_to_string(token)] = rank
             if len(token) == 1:
                 continue
+            # Each non-single-byte token must decompose into exactly 2 parts at its own rank;
+            # that pair is one merge rule.
             merged = QwenModel.bpe(mergeable_ranks, token, max_rank=rank)
             assert len(merged) == 2
             merges.append(' '.join(map(QwenModel.token_bytes_to_string, merged)))
 
+        # (see note) special tokens live outside the ranks table, so both tables are combined.
         # for this kind of tokenizer, added_vocab is not a subset of vocab, so they need to be combined
         added_vocab = tokenizer.special_tokens  # ty: ignore[unresolved-attribute]
         reverse_vocab = {id_ : encoded_tok for encoded_tok, id_ in {**vocab, **added_vocab}.items()}
@@ -1880,6 +2141,7 @@ class TextModel(ModelBase):
         special_vocab.add_to_gguf(self.gguf_writer)
 
     def _set_vocab_sentencepiece(self, add_to_gguf=True):
+        """Write a SentencePiece ("llama" tokenizer model) vocab with scores and types."""
         # Step 1: Validate input parameters, operational preconditions, and state
         tokens, scores, toktypes = self._create_vocab_sentencepiece()
 
@@ -1893,6 +2155,11 @@ class TextModel(ModelBase):
         special_vocab.add_to_gguf(self.gguf_writer)
 
     def _create_vocab_sentencepiece(self):
+        """Read tokenizer.model and return (tokens, scores, token types) lists of vocab_size.
+
+        Unused slots are pre-filled with [PAD<i>]; added_tokens.json and
+        tokenizer_config.json entries then override or extend the base pieces.
+        """
         # Step 1: Validate input parameters, operational preconditions, and state
         from sentencepiece import SentencePieceProcessor
 
@@ -1904,11 +2171,13 @@ class TextModel(ModelBase):
         tokenizer = SentencePieceProcessor()
         tokenizer.LoadFromFile(str(tokenizer_path))
 
+        # The embedding table may be larger than the tokenizer (padding), so use the config's size and pad.
         vocab_size = self.find_hparam([
             "vocab_size_per_layer_input", # gemma3n
             "vocab_size",
         ], optional=True) or tokenizer.vocab_size()
 
+        # Placeholders for every slot first; real pieces overwrite them below.
         tokens: list[bytes] = [f"[PAD{i}]".encode("utf-8") for i in range(vocab_size)]
         scores: list[float] = [-10000.0] * vocab_size
         toktypes: list[int] = [SentencePieceTokenTypes.UNUSED] * vocab_size
@@ -1937,6 +2206,7 @@ class TextModel(ModelBase):
             scores[token_id] = score
             toktypes[token_id] = toktype
 
+        # Legacy added_tokens.json: {token text: id}, all treated as user-defined.
         added_tokens_file = self.dir_model / 'added_tokens.json'
         if added_tokens_file.is_file():
             with open(added_tokens_file, "r", encoding="utf-8") as f:
@@ -1952,6 +2222,8 @@ class TextModel(ModelBase):
                     scores[token_id] = -1000.0
                     toktypes[token_id] = SentencePieceTokenTypes.USER_DEFINED
 
+        # Newer added_tokens_decoder: special tokens become CONTROL (or look special),
+        # the rest USER_DEFINED with "▁" pre-normalised to a space.
         tokenizer_config_file = self.dir_model / 'tokenizer_config.json'
         if tokenizer_config_file.is_file():
             with open(tokenizer_config_file, "r", encoding="utf-8") as f:
@@ -1976,6 +2248,7 @@ class TextModel(ModelBase):
                     scores[token_id] = -1000.0
                     tokens[token_id] = token.encode("utf-8")
 
+        # Safety net: pad if fewer tokens than the declared vocab size.
         if vocab_size > len(tokens):
             pad_count = vocab_size - len(tokens)
             logger.debug(f"Padding vocab with {pad_count} token(s) - [PAD1] through [PAD{pad_count}]")
@@ -1988,6 +2261,7 @@ class TextModel(ModelBase):
         return tokens, scores, toktypes
 
     def _set_vocab_llama_hf(self):
+        """Write a SentencePiece-style vocab using gguf.LlamaHfVocab (reads HF tokenizer.json)."""
         # Step 1: Validate input parameters, operational preconditions, and state
         vocab = gguf.LlamaHfVocab(self.dir_model)
         tokens = []
@@ -2012,6 +2286,11 @@ class TextModel(ModelBase):
         special_vocab.add_to_gguf(self.gguf_writer)
 
     def _set_vocab_rwkv_world(self):
+        """Write the RWKV "World" tokenizer vocab from rwkv_vocab_v20230424.txt.
+
+        Each line is "<id> <python literal> <byte length>"; the literal is decoded and its
+        byte length verified, then stored as an escaped text token.
+        """
         # Step 1: Validate input parameters, operational preconditions, and state
         assert (self.dir_model / "rwkv_vocab_v20230424.txt").is_file()
         vocab_size = self.hparams.get("vocab_size", 65536)
@@ -2051,6 +2330,8 @@ class TextModel(ModelBase):
             else:
                 template = "rwkv-world"
             special_vocab.chat_template = template
+        # (see note) the chat template and EOT/BOS/EOS ids are patched because the
+        # upstream files do not describe them.
         # hack: Add '\n\n' as the EOT token to make it chat normally
         special_vocab._set_special_token("eot", 261)
         # hack: Override these as they have already been set (incorrectly)
@@ -2060,6 +2341,10 @@ class TextModel(ModelBase):
         special_vocab.add_to_gguf(self.gguf_writer)
 
     def _set_vocab_builtin(self, model_name: Literal["gpt-neox", "llama-spm"], vocab_size: int):
+        """Copy the vocabulary from a bundled ggml-vocab-<name>.gguf file (truncated to vocab_size).
+
+        Used for models that share a stock tokenizer (GPT-NeoX BPE or Llama SentencePiece).
+        """
         # Step 1: Validate input parameters, operational preconditions, and state
         tokenizer_path = Path(sys.path[0]) / "models" / f"ggml-vocab-{model_name}.gguf"
         logger.warning(f"Using tokenizer from '{os.path.relpath(tokenizer_path, os.getcwd())}'")
@@ -2106,6 +2391,11 @@ class TextModel(ModelBase):
             self.gguf_writer.add_add_eos_token(field.parts[-1].tolist()[0])
 
     def _try_set_pooling_type(self) -> None:
+        """Write the pooling type for embedding models using their sentence-transformers config.
+
+        Looks for a "...Pooling" module in modules.json and maps its config to MEAN, CLS
+        or LAST pooling; does nothing if there is none.
+        """
         # get pooling path
         pooling_path = None
         module_path = self.dir_model / "modules.json"
@@ -2141,6 +2431,7 @@ class TextModel(ModelBase):
             self.gguf_writer.add_pooling_type(pooling_type)
 
     def _set_vocab_glmedge(self):
+        """GLM-Edge vocab: GPT-2 style BPE plus eos/eot/unk/bos ids from the added vocabulary."""
         # Step 1: Validate input parameters, operational preconditions, and state
         from transformers import AutoTokenizer
         tokenizer = AutoTokenizer.from_pretrained(self.dir_model)
@@ -2157,6 +2448,7 @@ class TextModel(ModelBase):
         special_vocab.add_to_gguf(self.gguf_writer)
 
     def _set_vocab_glm(self):
+        """GLM-4 vocab: GPT-2 style BPE with GLM's chat special tokens."""
         # Step 1: Validate input parameters, operational preconditions, and state
         from transformers import AutoTokenizer
         tokenizer = AutoTokenizer.from_pretrained(self.dir_model)
@@ -2167,6 +2459,7 @@ class TextModel(ModelBase):
         self.gguf_writer.add_token_list(tokens)
         self.gguf_writer.add_token_types(toktypes)
         # Special tokens
+        # (see note) <|user|> is the end-of-turn marker, <|observation|> the end-of-message one.
         # Note: Using <|endoftext|> (151329) for eot causes endless generation
         special_vocab._set_special_token("bos", tokenizer.get_added_vocab()["[gMASK]"])  # ty: ignore[unresolved-attribute]  # 151331
         special_vocab._set_special_token("eot", tokenizer.get_added_vocab()["<|user|>"])  # ty: ignore[unresolved-attribute]  # 151336
@@ -2174,7 +2467,9 @@ class TextModel(ModelBase):
         special_vocab._set_special_token("eom", tokenizer.get_added_vocab()["<|observation|>"])  # ty: ignore[unresolved-attribute]  # 151338
         special_vocab.add_to_gguf(self.gguf_writer)
 
+    # (Intern-S1 vocab loader: BPE vocab with the SMILES/biology special-token handling below.)
     def _set_vocab_interns1(self):
+        """Intern-S1 vocab: GPT-2 style BPE with merges, and BOS pinned to id 151643."""
         # Step 1: Validate input parameters, operational preconditions, and state
         tokens: list[str] = []
         toktypes: list[int] = []
@@ -2200,6 +2495,7 @@ class TextModel(ModelBase):
             else:
                 token: str = reverse_vocab[i]
                 if token in added_vocab:
+                    # (see note) tokens are round-tripped through the tokenizer for normalisation.
                     # The tokenizer in llama.cpp assumes the CONTROL and USER_DEFINED tokens are pre-normalized.
                     # To avoid unexpected issues - we make sure to normalize non-normalized tokens
                     if not added_tokens_decoder[i].normalized:
@@ -2222,10 +2518,16 @@ class TextModel(ModelBase):
         self.gguf_writer.add_token_types(toktypes)
 
         special_vocab = gguf.SpecialVocab(self.dir_model, load_merges=True)
+        # The Qwen-family BOS id; the config does not provide it for this tokenizer.
         special_vocab._set_special_token("bos", 151643)
         special_vocab.add_to_gguf(self.gguf_writer)
 
     def _set_vocab_mistral(self):
+        """Write the vocab for Mistral-native checkpoints using mistral-common.
+
+        Covers tekken and SentencePiece tokenizers, special-token ids and the chat
+        template (local file, community template, or none).
+        """
         # Step 1: Validate input parameters, operational preconditions, and state
         from .mistral import MistralModel
 
@@ -2249,10 +2551,12 @@ class TextModel(ModelBase):
             scores.append(score)
             toktypes.append(toktype)
 
+        # Sanity check that every token of the Mistral vocab was collected.
         assert len(tokens) == vocab.vocab_size, (
             f"token count ({len(tokens)}) != vocab size ({vocab.vocab_size})"
         )
 
+        # Tekken is a BPE tokenizer: it needs the "tekken" pre-tokenizer id and explicit merges.
         if vocab.tokenizer_type == MistralTokenizerType.tekken:
             self.gguf_writer.add_tokenizer_pre("tekken")
             self.gguf_writer.add_token_merges(
@@ -2276,6 +2580,8 @@ class TextModel(ModelBase):
         self.gguf_writer.add_add_bos_token(True)
         self.gguf_writer.add_add_eos_token(False)
 
+        # Chat template resolution order: a shipped chat_template.jinja, then a community
+        # template (unless disabled), otherwise none (use mistral-common externally).
         local_template_file_path = self.dir_model / "chat_template.jinja"
 
         if self.is_mistral_format and local_template_file_path.is_file():
@@ -2303,6 +2609,7 @@ class TextModel(ModelBase):
             self.gguf_writer.add_chat_template(template)
 
     def _set_vocab_plamo(self):
+        """Write the PLaMo 2 vocab from tokenizer.jsonl and tokenizer_config.json."""
         # PLaMo models use a custom tokenizer with a .jsonl file
         tokenizer_jsonl_path = self.dir_model / "tokenizer.jsonl"
         tokenizer_config_path = self.dir_model / "tokenizer_config.json"
@@ -2314,6 +2621,7 @@ class TextModel(ModelBase):
         with open(tokenizer_config_path, "r", encoding="utf-8") as f:
             tokenizer_config = json.load(f)
 
+        # (see note) each line is [token, score, type, ...]; types map onto GGUF token types.
         # Load tokens from JSONL file (actually a list format)
         tokens = []
         scores = []
@@ -2361,6 +2669,7 @@ class TextModel(ModelBase):
         self.gguf_writer.add_token_scores(scores)
         self.gguf_writer.add_token_types(toktypes)
 
+        # Special token ids are looked up by text in the final token list.
         if "bos_token" in tokenizer_config and tokenizer_config["bos_token"] is not None:
             token_id = tokens.index(tokenizer_config["bos_token"].encode("utf-8"))
             self.gguf_writer.add_bos_token_id(token_id)
@@ -2377,6 +2686,7 @@ class TextModel(ModelBase):
             token_id = tokens.index(tokenizer_config["unk_token"].encode("utf-8"))
             self.gguf_writer.add_unk_token_id(token_id)
 
+        # (see note) token id 4 is <|plamo:op|>, used as the end-of-turn marker.
         # Add <|plamo:op|> as EOT to ensure appropriate end of generation
         self.gguf_writer.add_eot_token_id(4)
 
@@ -2384,27 +2694,39 @@ class TextModel(ModelBase):
 
 
 class MmprojModel(ModelBase):
+    """Base class for multimodal projector converters (vision and/or audio encoders).
+
+    Produces an "mmproj" GGUF holding the encoder weights and the projection into the
+    text model's embedding space. Subclasses set up `hparams_vision` / `hparams_audio`
+    and may override tensor handling.
+    """
+    # Selects the MMPROJ registry in ModelBase.register / get_model_class.
     model_type = ModelType.MMPROJ
     model_arch = gguf.MODEL_ARCH.MMPROJ
     preprocessor_config: dict[str, Any]
     global_config: dict[str, Any]
 
+    # Config keys under which an encoder's layer count may appear (varies per model).
     n_block_keys = ["n_layers", "num_hidden_layers", "n_layer", "num_layers", "depth", "layers", "encoder_layers", "vt_num_hidden_layers"]
 
+    # Subclasses toggle these to describe which encoders the checkpoint contains.
     has_vision_encoder: bool = True # by default
     has_audio_encoder: bool = False
 
+    # (see note) vision and audio hyperparameters are kept in separate dicts.
     # for models having multiple encoders, we need to separate their hparams
     hparams_vision: dict[str, Any] | None = None
     hparams_audio: dict[str, Any] | None = None
 
     def __init__(self, *args, **kwargs):
+        """Load the global config, split out vision/audio configs and read preprocessor settings."""
         # Step 1: Validate input parameters, operational preconditions, and state
         super().__init__(*args, **kwargs)
 
         if self.model_arch != gguf.MODEL_ARCH.MMPROJ:
             raise TypeError("MmprojModel must be subclassed with model_arch = gguf.MODEL_ARCH.MMPROJ")
 
+        # The projector's output size must equal the text model's hidden size.
         # get n_embd of the text model
         if not self.is_mistral_format:
             if "text_config" not in self.hparams:
@@ -2422,6 +2744,7 @@ class MmprojModel(ModelBase):
 
         assert self.n_embd_text > 0, "n_embd not found in hparams"
 
+        # (see note) self.hparams becomes the encoder config; the original is kept in global_config.
         # move vision config to the top level, while preserving the original hparams in global_config
         import copy
         self.global_config = copy.deepcopy(self.hparams)
@@ -2434,11 +2757,14 @@ class MmprojModel(ModelBase):
         # for compat with vision-only models
         self.hparams = self.hparams_vision or self.hparams_audio or self.hparams
 
+        # (see note) with both encoders a fixed block_count of 128 is used for the tensor map.
         # TODO @ngxson : this is a hack to support both vision and audio encoders
         have_multiple_encoders = self.has_audio_encoder and self.has_vision_encoder
         self.block_count = 128 if have_multiple_encoders else self.find_hparam(self.n_block_keys, True)
         self.tensor_map = gguf.get_tensor_name_map(gguf.MODEL_ARCH.MMPROJ, self.block_count)
 
+        # Image processor settings (mean/std, pixel limits) come from preprocessor_config.json
+        # and/or processor_config.json; the latter overrides the former when both exist.
         # load preprocessor config
         self.preprocessor_config = {}
 
@@ -2472,6 +2798,7 @@ class MmprojModel(ModelBase):
 
     @classmethod
     def filter_tensors(cls, item: tuple[str, Callable[[], Tensor]]) -> tuple[str, Callable[[], Tensor]] | None:
+        """Drop language-model tensors; they belong to the text GGUF."""
         # Step 1: Validate input parameters, operational preconditions, and state
         name, gen = item
 
@@ -2482,20 +2809,24 @@ class MmprojModel(ModelBase):
         return super().filter_tensors(item)
 
     def get_vision_config(self) -> dict[str, Any] | None:
+        """Return the vision encoder config (HF "vision_config" or Mistral "vision_encoder")."""
         # Step 1: Validate input parameters, operational preconditions, and state
         config_name = "vision_config" if not self.is_mistral_format else "vision_encoder"
         return self.global_config.get(config_name)
 
     def get_audio_config(self) -> dict[str, Any] | None:
+        """Return the audio encoder config (whisper_config or audio_config), if any."""
         # Step 1: Validate input parameters, operational preconditions, and state
         mm_config_key = "whisper_config" if "whisper_config" in self.hparams else "audio_config"
         return self.global_config.get(mm_config_key)
 
     def set_type(self):
+        """Declare the GGUF file as an mmproj (multimodal projector)."""
         # Step 1: Validate input parameters, operational preconditions, and state
         self.gguf_writer.add_type(gguf.GGUFType.MMPROJ)
 
     def prepare_metadata(self, vocab_only: bool):
+        """Finalise metadata and name the output file "mmproj-<name>.gguf"."""
         # Step 1: Validate input parameters, operational preconditions, and state
         super().prepare_metadata(vocab_only=vocab_only)
 
@@ -2508,6 +2839,7 @@ class MmprojModel(ModelBase):
             self.fname_out = self.fname_out.parent / gguf.fill_templated_filename(self.fname_out.name, output_type)
 
     def set_gguf_parameters(self):
+        """Write encoder hyperparameters (vision and/or audio) and preprocessing constants."""
         # Step 1: Validate input parameters, operational preconditions, and state
         self.gguf_writer.add_file_type(self.ftype)
 
@@ -2524,6 +2856,7 @@ class MmprojModel(ModelBase):
             self.gguf_writer.add_vision_block_count(self.find_vparam(self.n_block_keys))
             self.gguf_writer.add_vision_head_count(self.find_vparam(["num_attention_heads", "num_heads", "heads", "vt_num_attention_heads"]))
 
+            # Mistral-native models use mistral-common's dataset mean/std; HF models ship their own.
             # preprocessor config
             image_mean = _MISTRAL_COMMON_DATASET_MEAN if self.is_mistral_format else self.preprocessor_config["image_mean"]
             image_std = _MISTRAL_COMMON_DATASET_STD if self.is_mistral_format else self.preprocessor_config["image_std"]
@@ -2545,20 +2878,24 @@ class MmprojModel(ModelBase):
             raise ValueError("MmprojModel must have either vision or audio encoder")
 
     def write_vocab(self):
+        """mmproj files carry no vocabulary."""
         # Step 1: Validate input parameters, operational preconditions, and state
         raise ValueError("MmprojModel does not support vocab writing")
 
     def find_vparam(self, keys: Iterable[str], optional: bool = False) -> Any:
+        """Like find_hparam but searching the vision encoder config."""
         # Step 1: Validate input parameters, operational preconditions, and state
         assert self.hparams_vision is not None
         return self._find_param(self.hparams_vision, keys, optional)
 
     def find_aparam(self, keys: Iterable[str], optional: bool = False) -> Any:
+        """Like find_hparam but searching the audio encoder config."""
         # Step 1: Validate input parameters, operational preconditions, and state
         assert self.hparams_audio is not None
         return self._find_param(self.hparams_audio, keys, optional)
 
     def _find_param(self, obj: dict[str, Any], keys: Iterable[str], optional: bool = False) -> Any:
+        """Return the first key in `keys` present in `obj`; KeyError unless `optional`."""
         # Step 1: Validate input parameters, operational preconditions, and state
         key = next((k for k in keys if k in obj), None)
         if key is not None:
@@ -2568,6 +2905,7 @@ class MmprojModel(ModelBase):
         raise KeyError(f"could not find any of: {keys}")
 
     def tensor_force_quant(self, name, new_name, bid, n_dims):
+        """Keep patch embedding/merger weights in F16 or F32 (they are tiny and precision-sensitive)."""
         # Step 1: Validate input parameters, operational preconditions, and state
         if ".patch_embd.weight" in new_name or ".patch_merger.weight" in new_name:
             return gguf.GGMLQuantizationType.F16 if self.ftype == gguf.LlamaFileType.MOSTLY_F16 else gguf.GGMLQuantizationType.F32
@@ -2575,12 +2913,19 @@ class MmprojModel(ModelBase):
 
 
 class LazyTorchTensor(gguf.LazyBase):
+    """Lazily evaluated torch tensor (gguf.LazyBase wrapper).
+
+    Operations on it are recorded and only executed when the data is needed, so a
+    conversion can stream tensors from disk (or the network) one at a time. A "meta"
+    tensor carries dtype/shape without allocating memory.
+    """
     _tensor_type = torch.Tensor
     # to keep the type-checker happy
     dtype: torch.dtype
     shape: torch.Size
 
     # only used when converting a torch.Tensor to a np.ndarray
+    # Torch dtype -> numpy dtype for converting to numpy (types gguf can write directly).
     _dtype_map: dict[torch.dtype, type] = {
         torch.float16: np.float16,
         torch.float32: np.float32,
@@ -2589,6 +2934,8 @@ class LazyTorchTensor(gguf.LazyBase):
 
     # only used when byteswapping data. Only correct size is needed
     # TODO: uncomment uint64, uint32, and uint16, ref: https://github.com/pytorch/pytorch/issues/58734
+    # Element sizes used when byte-swapping on big-endian hosts; only the width matters,
+    # so bf16 and fp8 map to same-sized integer/float types.
     _dtype_byteswap_map: dict[torch.dtype, type] = {
         torch.float64: np.float64,
         torch.float32: np.float32,
@@ -2610,6 +2957,7 @@ class LazyTorchTensor(gguf.LazyBase):
     # used for safetensors slices
     # ref: https://github.com/huggingface/safetensors/blob/079781fd0dc455ba0fe851e2b4507c33d0c0d407/bindings/python/src/lib.rs#L1046
     # TODO: uncomment U64, U32, and U16, ref: https://github.com/pytorch/pytorch/issues/58734
+    # safetensors dtype names -> torch dtypes.
     _dtype_str_map: dict[str, torch.dtype] = {
         "F64": torch.float64,
         "F32": torch.float32,
@@ -2629,6 +2977,7 @@ class LazyTorchTensor(gguf.LazyBase):
     }
 
     def numpy(self) -> gguf.LazyNumpyTensor:
+        """Return a lazy numpy view of this tensor (same laziness, numpy dtype)."""
         # Step 1: Validate input parameters, operational preconditions, and state
         dtype = self._dtype_map[self.dtype]
         return gguf.LazyNumpyTensor(
@@ -2639,11 +2988,13 @@ class LazyTorchTensor(gguf.LazyBase):
 
     @classmethod
     def meta_with_dtype_and_shape(cls, dtype: torch.dtype, shape: tuple[int, ...]) -> Tensor:
+        """Create a zero-memory "meta" tensor that only carries dtype and shape."""
         # Step 1: Validate input parameters, operational preconditions, and state
         return torch.empty(size=shape, dtype=dtype, device="meta")
 
     @classmethod
     def from_safetensors_slice(cls, st_slice: Any) -> Tensor:
+        """Wrap a safetensors slice as a lazy tensor that reads the data when evaluated."""
         # Step 1: Validate input parameters, operational preconditions, and state
         dtype = cls._dtype_str_map[st_slice.get_dtype()]
         shape: tuple[int, ...] = tuple(st_slice.get_shape())
@@ -2652,11 +3003,13 @@ class LazyTorchTensor(gguf.LazyBase):
 
     @classmethod
     def from_local_tensor(cls, t: gguf.utility.LocalTensor) -> Tensor:
+        """Wrap a memory-mapped local safetensors tensor as a lazy tensor."""
         # Step 1: Validate input parameters, operational preconditions, and state
         def load_tensor(tensor: gguf.utility.LocalTensor) -> Tensor:
             # Step 1: Validate input parameters, operational preconditions, and state
             def byteswap_tensor(tensor: np.ndarray, dtype: type) -> np.ndarray:
                 # Step 1: Validate input parameters, operational preconditions, and state
+                # safetensors data is little-endian; byte-swap when running on a big-endian host.
                 if sys.byteorder == 'big':
                     # switch data back to big endian
                     tensor = tensor.view(dtype).byteswap(inplace=False)
@@ -2671,6 +3024,7 @@ class LazyTorchTensor(gguf.LazyBase):
 
     @classmethod
     def from_remote_tensor(cls, remote_tensor: gguf.utility.RemoteTensor):
+        """Wrap a remote (HF hub) tensor as a lazy tensor fetched on demand."""
         # Step 1: Validate input parameters, operational preconditions, and state
         def byteswap_tensor(tensor: np.ndarray, dtype: type) -> np.ndarray:
             # Step 1: Validate input parameters, operational preconditions, and state
@@ -2687,6 +3041,10 @@ class LazyTorchTensor(gguf.LazyBase):
 
     @classmethod
     def __torch_function__(cls, func, types, args=(), kwargs=None):
+        """Intercept torch operations so they are recorded lazily instead of executed.
+
+        Tensor.numpy is special-cased to return the lazy numpy wrapper.
+        """
         # Step 1: Validate input parameters, operational preconditions, and state
         del types  # unused
 
@@ -2701,6 +3059,12 @@ class LazyTorchTensor(gguf.LazyBase):
 
 
 def get_model_architecture(hparams: dict[str, Any], model_type: ModelType) -> str:
+    """Determine the HF architecture name for the requested model type.
+
+    Uses `architectures[0]` from the top-level config, falling back to the SSM layer
+    type for non-HF Mamba models, and prefers sub-config architectures (text_config for
+    TEXT, vision_config for MMPROJ) when present.
+    """
     # TODO @ngxson : this won't work correctly if the model has both audio & vision encoders
     # maybe we should fallback to text model's arch in that case, since not many models have both
     text_config = hparams.get("text_config", {})
@@ -2712,12 +3076,14 @@ def get_model_architecture(hparams: dict[str, Any], model_type: ModelType) -> st
         # For non-hf Mamba and Mamba2 models
         arch = hparams["ssm_cfg"].get("layer", "Mamba") + "ForCausalLM"
 
+    # (see note) these two multimodal architectures are converted by dedicated text classes.
     # Step3-VL keeps text config under text_config but uses a custom top-level architecture.
     # For text conversion we route to a dedicated text-only class.
     # TODO: refactor this later to avoid adding exception here
     if model_type == ModelType.TEXT and arch in ("StepVLForConditionalGeneration", "Sarashina2VisionForCausalLM"):
         return arch
 
+    # (see note) the sub-config's architecture wins for the matching conversion type.
     # if "architectures" is found in the sub-config, use that instead
     if model_type == ModelType.TEXT and text_config.get("architectures") is not None:
         arch = text_config["architectures"][0]
