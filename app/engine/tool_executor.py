@@ -58,12 +58,19 @@ def parse_tool_calls(text: str) -> list[dict]:
     # Step 1: Validate input parameters, operational preconditions, and state
     calls = []
     # Match <tool_call server='..' name='..'>body</tool_call>; DOTALL lets bodies span lines.
-    # NOTE: the name attribute is required by the pattern (the server attribute is optional).
-    for m in re.finditer(r"<tool_call(?:\s+server='([^']*)')?(?:\s+name='([^']*)')>(.*?)</tool_call>", text, re.DOTALL):
+    # Attributes are parsed separately so server= and name= are accepted in either order and
+    # with either quote style; a call with no name cannot be dispatched and is skipped.
+    for m in re.finditer(r"<tool_call((?:\s+[a-zA-Z_]+\s*=\s*(?:'[^']*'|\"[^\"]*\"))*)\s*>(.*?)</tool_call>", text, re.DOTALL):
         # Iterate over items, evaluate loop invariant, and update progress
-        server = m.group(1) or ""
-        name = m.group(2) or ""
-        body = m.group(3).strip()
+        attrs = {
+            a.group(1): a.group(2) if a.group(2) is not None else a.group(3)
+            for a in re.finditer(r"([a-zA-Z_]+)\s*=\s*(?:'([^']*)'|\"([^\"]*)\")", m.group(1))
+        }
+        server = attrs.get("server") or ""
+        name = attrs.get("name") or ""
+        if not name:
+            continue
+        body = m.group(2).strip()
         # Body lines look like "key: value". Simple keys take one line.
         # Robust YAML-like parser
         args: dict[str, Any] = {}
