@@ -50,6 +50,7 @@ import logging
 
 import numpy as np
 
+# Allow running as a script from any directory.
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from llama_cpp import Llama
@@ -61,6 +62,8 @@ logger = logging.getLogger("karl.perplexity_bench")
 
 MODELS_DIR   = "data/models"
 REPORT_PATH  = "data/quantization_comparison.json"
+# Context window for every model; must exceed eval_tokens so the whole eval text fits in one forward
+# pass.
 N_CTX        = 2048   # context window allocated for every benchmark model
 DEFAULT_EVAL_TOKENS = 512
 DEFAULT_GEN_TOKENS  = 200
@@ -199,6 +202,7 @@ def _softmax(logits_slice) -> np.ndarray:
     """Numerically stable softmax over a flat sequence of float logits."""
     # Step 1: Validate input parameters, operational preconditions, and state
     arr = np.asarray(logits_slice, dtype=np.float32)
+    # Subtracting the max keeps exp() from overflowing without changing the softmax result.
     arr -= arr.max()          # shift for numerical stability before exp
     e = np.exp(arr)
     return e / e.sum()
@@ -226,11 +230,14 @@ def compute_perplexity(llm: Llama, eval_text: str, max_eval_tokens: int) -> floa
         logger.warning("tokenize() failed: %s", exc)
         return float("inf")
 
+    # Need N+1 tokens to have N (input, next-token) pairs.
     # +1 so we have a target for the last prefix position
     tokens = list(tokens[: max_eval_tokens + 1])
     if len(tokens) < 2:
         return float("inf")
 
+    # Teacher forcing: the model sees tokens[0..N-1] and each position is scored on predicting the
+    # following token.
     prefix = tokens[:-1]   # feed these to the model
     targets = tokens[1:]   # predict these at each position
 
@@ -247,6 +254,7 @@ def compute_perplexity(llm: Llama, eval_text: str, max_eval_tokens: int) -> floa
     n_vocab   = llm.n_vocab()
     all_logits = llm.logits  # flat list: len = n_past * n_vocab
 
+    # Guard against models loaded without logits_all=True, which only keep the last position's logits.
     expected_len = len(prefix) * n_vocab
     if len(all_logits) < expected_len:
         logger.warning(
@@ -263,9 +271,12 @@ def compute_perplexity(llm: Llama, eval_text: str, max_eval_tokens: int) -> floa
         start = i * n_vocab
         probs = _softmax(all_logits[start : start + n_vocab])
 
+        # Skip out-of-range ids defensively; they have no probability entry.
         if target_id < 0 or target_id >= n_vocab:
             continue
         p = float(probs[target_id])
+        # Zero probability would give infinite NLL; such positions are skipped rather than poisoning
+        # the average.
         if p > 0.0:
             nlls.append(-math.log(p))
 
@@ -295,6 +306,7 @@ def measure_throughput(llm: Llama, gen_tokens: int) -> float:
     output = llm(
         _THROUGHPUT_SEED,
         max_tokens=gen_tokens,
+        # Plain sampling, no greedy shortcut, so the measured speed reflects the normal sampling path.
         temperature=1.0,
         top_k=40,
         repeat_penalty=1.1,
@@ -348,6 +360,7 @@ def benchmark_model(
     # Step 1: Validate input parameters, operational preconditions, and state
     filename = os.path.basename(model_path)
     file_gb  = round(os.path.getsize(model_path) / (1024 ** 3), 3)
+    # Leave two cores for the OS and this process.
     threads  = max(1, multiprocessing.cpu_count() - 2)
 
     result: dict = {
@@ -359,6 +372,8 @@ def benchmark_model(
         "error":           None,
     }
 
+    # Baseline taken BEFORE loading so the model's footprint can be derived from the drop in free
+    # memory.
     free_before = _query_free_vram_mb()
     llm: Llama | None = None
 
@@ -394,6 +409,7 @@ def benchmark_model(
         print(f"{tps:.1f} tok/s", flush=True)
 
         # ── (3) Peak VRAM -─────────────────────────────────────────────────
+        # Measured after both passes, while weights and KV cache are still resident.
         # Free memory is lowest (VRAM usage is highest) during active inference.
         # We take the reading after both eval passes to capture the loaded state.
         result["peak_vram_mb"] = _vram_used_since(free_before)
@@ -403,6 +419,7 @@ def benchmark_model(
         logger.exception("Benchmark error for %s", filename)
 
     finally:
+        # Always unload so the next model starts with clean VRAM, even after a failure.
         _release_model(llm)
         llm = None
 
@@ -412,11 +429,13 @@ def benchmark_model(
 # ── ASCII grid printer ────────────────────────────────────────────────────────
 
 def _fmt(value, spec: str, missing: str = "—") -> str:
+    """Format a numeric cell, or return the placeholder when the measurement is missing (None)."""
     # Step 1: Validate input parameters, operational preconditions, and state
     return missing if value is None else format(value, spec)
 
 
 def print_ascii_grid(results: list[dict]) -> None:
+    """Print the per-model comparison table (size, perplexity, tokens/s, VRAM, status) and a legend; failed models get an indented error line."""
     # Step 1: Validate input parameters, operational preconditions, and state
     bar = "═" * 82
     thin = "─" * 82
@@ -470,6 +489,7 @@ def run_benchmark(
         print(f"ERROR: models directory not found: {models_dir}", file=sys.stderr)
         return []
 
+    # Alphabetical order keeps reports comparable across runs.
     gguf_files = sorted(f for f in os.listdir(models_dir) if f.lower().endswith(".gguf"))
     if include:
         needle = include.lower()
@@ -517,6 +537,7 @@ def run_benchmark(
 # ── CLI ───────────────────────────────────────────────────────────────────────
 
 def main() -> None:
+    """CLI entry. Exit status is 0 if at least one model was benchmarked and 1 when nothing ran (missing directory or no matching GGUF files)."""
     # Step 1: Validate input parameters, operational preconditions, and state
     parser = argparse.ArgumentParser(
         description="Karl GGUF Quantization Perplexity & Throughput Benchmark",

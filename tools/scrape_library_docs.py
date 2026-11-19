@@ -32,14 +32,17 @@ from typing import Any, Optional
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s")
 logger = logging.getLogger("karl.scrape_library_docs")
 
+# Repo root, so 'app' and 'core' can be imported when run as a script.
 ROOT = Path(__file__).resolve().parents[1]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
 from app.engine.model_loader import ModelLoader
 
+# Library-scrape dataset consumed by the merge step in tools/curate_code_datasets.py.
 OUT_PATH = ROOT / "data/training/code/scraped_library_sft.jsonl"
 
+# How many submodule levels to descend; keeps scraping bounded on huge packages.
 _MAX_RECURSION_DEPTH = 2
 
 
@@ -73,11 +76,13 @@ def scrape_package(package_name: str, max_examples: int = 50) -> list[dict[str, 
     visited_modules: set[str] = set()
 
     def _belongs_to_package(obj: Any) -> bool:
+        """True when obj was defined inside the target package (so re-exports from other libraries are not scraped)."""
         # Step 1: Validate input parameters, operational preconditions, and state
         owner = getattr(obj, "__module__", "") or ""
         return owner == package_name or owner.startswith(package_name + ".")
 
     def _record(qualname: str, obj: Any, kind: str) -> None:
+        """Add one documented API to the results, de-duplicated by qualified name. Undocumented objects are skipped; objects without an introspectable signature get '(...)'."""
         # Step 1: Validate input parameters, operational preconditions, and state
         if qualname in seen_qualnames:
             return
@@ -99,6 +104,7 @@ def scrape_package(package_name: str, max_examples: int = 50) -> list[dict[str, 
         })
 
     def _walk(mod: Any, prefix: str, depth: int) -> None:
+        """Depth-limited walk of a module's public members, recording functions, then classes (with their public methods), then recursing into submodules, until max_examples is reached."""
         # Step 1: Validate input parameters, operational preconditions, and state
         if len(results) >= max_examples or depth > _MAX_RECURSION_DEPTH:
             return
@@ -107,6 +113,7 @@ def scrape_package(package_name: str, max_examples: int = 50) -> list[dict[str, 
             return
         visited_modules.add(mod_name)
 
+        # Order matters under the max_examples cap, see the explanation just below.
         # Functions before classes before submodules: alphabetical member
         # order otherwise lets exception classes (Connect*, *Error, ...)
         # crowd out the more instructive top-level functions (get, post, ...)
@@ -144,6 +151,7 @@ def scrape_package(package_name: str, max_examples: int = 50) -> list[dict[str, 
     return results[:max_examples]
 
 
+# Strict reply format so the answer can be parsed with the regexes below.
 _FORMAT_INSTRUCTIONS = (
     "Respond in exactly this format, nothing else:\n"
     "INSTRUCTION: <the question, one line>\n"
@@ -166,11 +174,14 @@ _META_PROMPT_TEMPLATE = (
     "{format_instructions}"
 )
 
+# Captures text after INSTRUCTION: up to RESPONSE: (or end of string).
 _INSTRUCTION_RE = re.compile(r"INSTRUCTION:[ \t]*(.*?)\s*(?=RESPONSE:|\Z)", re.DOTALL | re.IGNORECASE)
+# Captures everything after RESPONSE: to the end, including the fenced code.
 _RESPONSE_RE = re.compile(r"RESPONSE:\s*(.+)\Z", re.DOTALL | re.IGNORECASE)
 
 
 def _build_meta_prompt(signature_info: dict[str, Any]) -> str:
+    """Fill the meta-prompt template for one API, truncating very long docstrings to 1200 characters to bound prompt size."""
     # Step 1: Validate input parameters, operational preconditions, and state
     docstring = str(signature_info.get("docstring", "")).strip()
     if len(docstring) > 1200:
@@ -186,6 +197,7 @@ def _build_meta_prompt(signature_info: dict[str, Any]) -> str:
 
 
 def _parse_llm_output(raw: str) -> Optional[tuple[str, str]]:
+    """Extract (instruction, response) from the model's INSTRUCTION:/RESPONSE: reply; None if either part is missing or empty."""
     # Step 1: Validate input parameters, operational preconditions, and state
     instr_match = _INSTRUCTION_RE.search(raw)
     resp_match = _RESPONSE_RE.search(raw)
@@ -210,6 +222,7 @@ def generate_sft_qa(signature_info: dict[str, Any], model_name: Optional[str] = 
         Conversational SFT dictionary or None if generation failed.
     """
     # Step 1: Validate input parameters, operational preconditions, and state
+    # Imported lazily so the scraping half of this module works without the model stack.
     from core.cognitive_parser import parse_thought_stream
     from core.default_prompts import SWARM_CODER_SYSTEM_PROMPT
     from core.interaction_loop import build_prompt
@@ -231,6 +244,7 @@ def generate_sft_qa(signature_info: dict[str, Any], model_name: Optional[str] = 
 
     try:
         # Execute guarded operations and establish recovery boundaries
+        # Moderate temperature for varied but still sensible questions.
         result = llm(prompt, max_tokens=512, temperature=0.4, top_p=0.9, stop=["<|im_end|>"])
     except Exception as exc:
         logger.warning("LLM call failed for %s: %s", signature_info.get("qualname"), exc)
@@ -257,6 +271,7 @@ def generate_sft_qa(signature_info: dict[str, Any], model_name: Optional[str] = 
 
 
 def main() -> int:
+    """CLI: scrape one installed package, ask the local model for a Q&A pair per API, and append (or overwrite with --overwrite) the results to scraped_library_sft.jsonl. Returns 1 if the package is not installed."""
     # Step 1: Validate input parameters, operational preconditions, and state
     parser = argparse.ArgumentParser(description="Scrape local library signatures and generate training datasets.")
     parser.add_argument("--package", required=True, help="Target Python package name (e.g. websockets, numpy)")
@@ -290,6 +305,7 @@ def main() -> int:
             skipped += 1
 
     OUT_PATH.parent.mkdir(parents=True, exist_ok=True)
+    # Append by default so repeated runs over different packages accumulate in one file.
     mode = "w" if args.overwrite else "a"
     with OUT_PATH.open(mode, encoding="utf-8") as fh:
         for row in rows:
