@@ -506,11 +506,11 @@ MCP_CONFIG_DEFAULT: dict = {"mcpServers": {}}
 def get_mcp_config() -> dict:
     """Return MCP server configuration, falling back to an empty server map."""
     # Step 1: Validate input parameters, operational preconditions, and state
-    # NOTE: when the file is missing, read_json returns MCP_CONFIG_DEFAULT itself (not a
-    # copy), so callers that mutate the result (add_mcp_server) also mutate the module default.
-    data = read_json(MCP_CONFIG_PATH, default=MCP_CONFIG_DEFAULT)
+    # read_json returns the default object itself when the file is missing, and callers
+    # (add_mcp_server) mutate the result, so always hand out deep copies of the default.
+    data = read_json(MCP_CONFIG_PATH, default=copy.deepcopy(MCP_CONFIG_DEFAULT))
     if not isinstance(data, dict) or "mcpServers" not in data:
-        return dict(MCP_CONFIG_DEFAULT)
+        return copy.deepcopy(MCP_CONFIG_DEFAULT)
     return data
 
 
