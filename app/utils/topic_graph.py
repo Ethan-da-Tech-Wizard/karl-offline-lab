@@ -19,7 +19,6 @@ driving even coverage across the training curriculum.
 class TopicNode:
     """One node in the topic tree, tracking how often it has been selected."""
     def __init__(self, name: str, parent=None):
-        # Step 1: Validate input parameters, operational preconditions, and state
         self.name = name
         self.parent = parent
         self.children = []
@@ -31,7 +30,6 @@ class DynamicTopicGraph:
     """
     def __init__(self):
         """Build the root, the two categories and five leaf topics."""
-        # Step 1: Validate input parameters, operational preconditions, and state
         self.root = TopicNode("root")
 
         math_node   = TopicNode("math",   self.root)
@@ -47,7 +45,6 @@ class DynamicTopicGraph:
 
     def get_underrepresented_topic(self) -> str:
         """Return the leaf name with the lowest selection frequency and increment it."""
-        # Step 1: Validate input parameters, operational preconditions, and state
         under = min(self.leaves, key=lambda node: node.frequency)
         under.frequency += 1
         return under.name

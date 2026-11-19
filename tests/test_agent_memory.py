@@ -15,7 +15,6 @@ from app.engine.agent_memory import CodebaseMemory
 
 def test_codebase_memory_indexes_functions_classes_and_methods(tmp_path):
     """build_index() scans a workspace and records functions (name, args, docstring) and classes with their methods; the JSON persisted at db_path must equal the returned index so memory survives restarts."""
-    # Step 1: Validate input parameters, operational preconditions, and state
     workspace = tmp_path / "workspace"
     workspace.mkdir()
     (workspace / "math_utils.py").write_text(
@@ -56,7 +55,6 @@ class Calculator:
 
 def test_query_memory_returns_matching_signature_text(tmp_path):
     """query_memory(keywords) returns a compact '- file: def name(args) -> doc' line for matching symbols, the text format later injected into prompts."""
-    # Step 1: Validate input parameters, operational preconditions, and state
     workspace = tmp_path / "workspace"
     workspace.mkdir()
     (workspace / "math_utils.py").write_text(
@@ -75,7 +73,6 @@ def test_query_memory_returns_matching_signature_text(tmp_path):
 
 def test_coder_agent_injects_codebase_signature_reference(tmp_path):
     """CoderAgent.generate must include a 'Codebase Interfaces & Signatures Reference' section built from the workspace index in the prompt it sends to the model, so generated code calls existing helpers with correct signatures. The model is replaced by a fake that records prompts."""
-    # Step 1: Validate input parameters, operational preconditions, and state
     from app.engine.swarm_agents import CoderAgent
 
     workspace = tmp_path / "workspace"
@@ -89,7 +86,6 @@ def test_coder_agent_injects_codebase_signature_reference(tmp_path):
     # Capture every prompt so the test can see what context the Coder was given.
     def fake_llm(prompt, **kwargs):
         """Record each prompt and return a canned completion that calls add()."""
-        # Step 1: Validate input parameters, operational preconditions, and state
         prompts.append(prompt)
         return {"choices": [{"text": "def use_add(a, b):\n    return add(a, b)\n"}]}
 

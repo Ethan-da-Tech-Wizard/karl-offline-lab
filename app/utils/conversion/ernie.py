@@ -31,7 +31,6 @@ class Ernie4_5Model(TextModel):
 
     def set_vocab(self):
         """SentencePiece vocab, plus the add_prefix_space flag from tokenizer_config.json."""
-        # Step 1: Validate input parameters, operational preconditions, and state
         self._set_vocab_sentencepiece()
 
         tokenizer_config_file = self.dir_model / 'tokenizer_config.json'
@@ -43,13 +42,11 @@ class Ernie4_5Model(TextModel):
 
     def set_gguf_parameters(self):
         """No ERNIE-specific parameters; the base class writes everything needed."""
-        # Step 1: Validate input parameters, operational preconditions, and state
         super().set_gguf_parameters()
 
     @classmethod
     def filter_tensors(cls, item: tuple[str, Callable[[], Tensor]]) -> tuple[str, Callable[[], Tensor]] | None:
         """Rename the "ernie." prefix to "model." so standard name mapping applies."""
-        # Step 1: Validate input parameters, operational preconditions, and state
         name, gen = item
 
         if "ernie." in name:
@@ -59,13 +56,12 @@ class Ernie4_5Model(TextModel):
 
     def modify_tensors(self, data_torch: Tensor, name: str, bid: int | None) -> Iterable[tuple[str, Tensor]]:
         """Split the fused qkv_proj and up_gate_proj tensors into separate tensors."""
-        # Step 1: Validate input parameters, operational preconditions, and state
         num_heads = self.hparams["num_attention_heads"]
         num_kv_heads = self.hparams["num_key_value_heads"]
         if (head_dim := self.hparams.get("head_dim")) is None:
             head_dim = self.hparams["hidden_size"] // num_heads
 
-        # (see note) rows are laid out [Q | K | V] along dim 0, with Q having
+        # rows are laid out [Q | K | V] along dim 0, with Q having
         # num_heads * head_dim rows and K/V num_kv_heads * head_dim rows each.
         # split the qkv weights
         # qkv_proj shape: [(num_heads + 2 * num_kv_heads) * head_dim, hidden_size]
@@ -80,7 +76,7 @@ class Ernie4_5Model(TextModel):
             yield from super().modify_tensors(q_proj_weight, name_q, bid)
             yield from super().modify_tensors(k_proj_weight, name_k, bid)
             yield from super().modify_tensors(v_proj_weight, name_v, bid)
-        # (see note) the fused matrix stacks gate then up, each half of dim 0.
+        # the fused matrix stacks gate then up, each half of dim 0.
         # split the up_gate_proj into gate and up
         # up_gate_proj shape: [2 * intermediate_size, hidden_size]
         elif "up_gate_proj" in name:
@@ -104,13 +100,11 @@ class Ernie4_5MoeModel(Ernie4_5Model):
 
     def __init__(self, *args, **kwargs):
         """Pre-allocate the per-layer expert buffers."""
-        # Step 1: Validate input parameters, operational preconditions, and state
         super().__init__(*args, **kwargs)
         self._experts = [{} for _ in range(self.block_count)]
 
     def set_gguf_parameters(self):
         """Write MoE sizing: expert counts, interleave step, leading dense layers and FFN widths."""
-        # Step 1: Validate input parameters, operational preconditions, and state
         super().set_gguf_parameters()
         self.gguf_writer.add_expert_count(self.hparams["moe_num_experts"])
         self.gguf_writer.add_expert_used_count(self.hparams["moe_k"])
@@ -128,7 +122,6 @@ class Ernie4_5MoeModel(Ernie4_5Model):
     @classmethod
     def filter_tensors(cls, item: tuple[str, Callable[[], Tensor]]) -> tuple[str, Callable[[], Tensor]] | None:
         """Drop Multi-Token-Prediction tensors, which llama.cpp does not support yet."""
-        # Step 1: Validate input parameters, operational preconditions, and state
         name, gen = item
 
         # skip Multi-Token Prediction (MTP) layers (again, same as DeepseekV2)
@@ -170,11 +163,9 @@ class Ernie4_5MoeModel(Ernie4_5Model):
             if len(self._experts[bid]) >= n_experts * 3:
                 # merge the experts into a single 3d tensor
                 for w_name in ["gate_proj", "up_proj", "down_proj"]:
-                    # Iterate over items, evaluate loop invariant, and update progress
                     datas: list[Tensor] = []
 
                     for xid in range(n_experts):
-                        # Iterate over items, evaluate loop invariant, and update progress
                         ename_to_retrieve = f"model.layers.{bid}.mlp.experts.{xid}.{w_name}.weight"
                         datas.append(self._experts[bid][ename_to_retrieve])
                         del self._experts[bid][ename_to_retrieve]
@@ -187,7 +178,6 @@ class Ernie4_5MoeModel(Ernie4_5Model):
 
     def prepare_tensors(self):
         """Run the normal conversion, then verify every expert tensor was merged."""
-        # Step 1: Validate input parameters, operational preconditions, and state
         super().prepare_tensors()
 
         # Anything still buffered here means the checkpoint was missing expert
@@ -216,7 +206,6 @@ class PaddleOCRVisionModel(MmprojModel):
 
     def __init__(self, *args, **kwargs):
         """Read pixel limits and derive the square image size from the maximum pixel area."""
-        # Step 1: Validate input parameters, operational preconditions, and state
         super().__init__(*args, **kwargs)
         assert self.hparams_vision is not None
         self.min_pixels = self.preprocessor_config["min_pixels"]
@@ -226,7 +215,6 @@ class PaddleOCRVisionModel(MmprojModel):
 
     def set_gguf_parameters(self):
         """Write the PaddleOCR projector type, pixel limits, GELU flag and norm epsilon."""
-        # Step 1: Validate input parameters, operational preconditions, and state
         super().set_gguf_parameters()
         assert self.hparams_vision is not None
         hparams = self.hparams_vision
@@ -239,7 +227,6 @@ class PaddleOCRVisionModel(MmprojModel):
     @classmethod
     def filter_tensors(cls, item: tuple[str, Callable[[], Tensor]]) -> tuple[str, Callable[[], Tensor]] | None:
         """Keep only vision-model and projector (mlp_AR) tensors and rename "visual." to "model."."""
-        # Step 1: Validate input parameters, operational preconditions, and state
         name, gen = item
 
         if "vision_model" not in name and "mlp_AR" not in name:

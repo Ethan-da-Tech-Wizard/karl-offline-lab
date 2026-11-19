@@ -24,7 +24,6 @@ from eval.harness import CaseResult, EvalHarness, EvalReport
 
 def _report(score: float, has_failure: bool) -> EvalReport:
     """Build a one-case EvalReport with the given score, either passing or failing, to script EvalHarness.run results."""
-    # Step 1: Validate input parameters, operational preconditions, and state
     case = CaseResult(
         case_id="c0", prompt="q", workflow="general_chat", template="t",
         output="out", grader="keyword_hit",
@@ -40,10 +39,8 @@ def _report(score: float, has_failure: bool) -> EvalReport:
 
 def _write_dataset(path: Path, n: int = 4) -> None:
     """Write n trivial JSONL eval cases to path."""
-    # Step 1: Validate input parameters, operational preconditions, and state
     with path.open("w", encoding="utf-8") as fh:
         for i in range(n):
-            # Iterate over items, evaluate loop invariant, and update progress
             fh.write(json.dumps({"id": f"c{i}", "prompt": f"q{i}", "expected": "ok"}) + "\n")
 
 
@@ -51,14 +48,12 @@ class TestMutatePrompt(unittest.TestCase):
     """Tests for PromptOptimizer.mutate_prompt (asking the local model to rewrite a prompt from failures)."""
     def test_returns_current_prompt_when_no_failures(self):
         """With nothing to fix, the prompt is returned unchanged and the model is never needed."""
-        # Step 1: Validate input parameters, operational preconditions, and state
         optimizer = PromptOptimizer()
         self.assertEqual(optimizer.mutate_prompt("base", []), "base")
 
     @patch("core.prompt_optimizer.ModelLoader.get_instance")
     def test_mutates_prompt_using_failures(self, mock_get_instance):
         """The model reply is cleaned (markdown fences stripped) and returned as the new prompt, and the model is called exactly once."""
-        # Step 1: Validate input parameters, operational preconditions, and state
         mock_llm = MagicMock(return_value={"choices": [{"text": "```\nRefined prompt text.\n```"}]})
         mock_get_instance.return_value = mock_llm
 
@@ -72,7 +67,6 @@ class TestMutatePrompt(unittest.TestCase):
     @patch("core.prompt_optimizer.ModelLoader.get_instance", side_effect=RuntimeError("no model"))
     def test_falls_back_to_current_prompt_on_load_failure(self, _mock):
         """If the model cannot be loaded the original prompt is kept rather than raising."""
-        # Step 1: Validate input parameters, operational preconditions, and state
         optimizer = PromptOptimizer()
         result = optimizer.mutate_prompt("Old prompt", [{"prompt": "x", "output": "y", "detail": "z"}])
         self.assertEqual(result, "Old prompt")
@@ -82,7 +76,6 @@ class TestOptimizeLoop(unittest.TestCase):
     """Tests for the hill-climbing loop PromptOptimizer.optimize_loop; EvalHarness.run is mocked with scripted scores in a fixed call order (baseline on mini-val, mini-train eval, candidate on mini-val)."""
     def test_requires_at_least_two_cases(self):
         """A dataset with one case cannot be split into train and validation sets, so ValueError is raised."""
-        # Step 1: Validate input parameters, operational preconditions, and state
         optimizer = PromptOptimizer()
         with tempfile.TemporaryDirectory() as tmp:
             dataset_path = Path(tmp) / "cases.jsonl"
@@ -92,7 +85,6 @@ class TestOptimizeLoop(unittest.TestCase):
 
     def test_unknown_prompt_key_falls_back_to_default(self):
         """An unregistered prompt key starts from DEFAULT_SYSTEM_PROMPT instead of failing (iterations=0 returns the starting prompt)."""
-        # Step 1: Validate input parameters, operational preconditions, and state
         optimizer = PromptOptimizer()
         with patch.object(EvalHarness, "run", return_value=_report(0.5, has_failure=False)):
             with tempfile.TemporaryDirectory() as tmp:
@@ -104,7 +96,6 @@ class TestOptimizeLoop(unittest.TestCase):
     @patch.object(EvalHarness, "run")
     def test_keeps_better_candidate(self, mock_run):
         """A candidate that scores higher on validation replaces the best prompt, and progress is reported once for the baseline and once for the iteration."""
-        # Step 1: Validate input parameters, operational preconditions, and state
         mock_run.side_effect = [
             _report(0.5, has_failure=True),   # baseline on mini-val
             _report(0.2, has_failure=True),   # mini-train eval -> has failures, triggers mutation
@@ -130,7 +121,6 @@ class TestOptimizeLoop(unittest.TestCase):
     @patch.object(EvalHarness, "run")
     def test_discards_worse_candidate(self, mock_run):
         """A lower-scoring candidate is discarded and the original preset prompt is returned (hill climbing never regresses)."""
-        # Step 1: Validate input parameters, operational preconditions, and state
         mock_run.side_effect = [
             _report(0.8, has_failure=True),   # baseline on mini-val
             _report(0.2, has_failure=True),   # mini-train eval -> triggers mutation
@@ -150,7 +140,6 @@ class TestOptimizeLoop(unittest.TestCase):
     @patch.object(EvalHarness, "run")
     def test_skips_mutation_when_no_train_failures(self, mock_run):
         """If the current prompt has no mini-train failures there is nothing to learn from, so mutate_prompt is not called."""
-        # Step 1: Validate input parameters, operational preconditions, and state
         mock_run.side_effect = [
             _report(0.9, has_failure=False),  # baseline on mini-val
             _report(1.0, has_failure=False),  # mini-train eval -> no failures, nothing to mutate

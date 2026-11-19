@@ -67,14 +67,12 @@ class SwarmReplayManager:
             List of dictionaries with run metadata:
             { "run_id": str, "timestamp": str, "objective": str, "steps_count": int, "success": bool }
         """
-        # Step 1: Validate input parameters, operational preconditions, and state
         logger.info("Scanning for past swarm runs in %s...", self.trace_dir)
         if not self.trace_dir.exists():
             return []
 
         runs: list[dict[str, Any]] = []
         for path in self.trace_dir.glob("run_*.json"):
-            # Iterate over items, evaluate loop invariant, and update progress
             run_id = path.stem[len("run_"):]
             nodes = self._read_nodes(path)
             if nodes is None:
@@ -110,7 +108,6 @@ class SwarmReplayManager:
                 ]
             }
         """
-        # Step 1: Validate input parameters, operational preconditions, and state
         logger.info("Retrieving details for swarm run ID '%s'...", run_id)
         path = self.trace_dir / f"run_{run_id}.json"
         nodes = self._read_nodes(path)
@@ -124,7 +121,6 @@ class SwarmReplayManager:
         steps: list[dict[str, Any]] = []
 
         for index, node in enumerate(nodes):
-            # Iterate over items, evaluate loop invariant, and update progress
             node_type = node.get("type")
 
             if node_type == "run_started":
@@ -177,11 +173,9 @@ class SwarmReplayManager:
     def _read_nodes(path: Path) -> Optional[list[dict]]:
         """Load the JSON list of cognition nodes, or None if the file is missing, corrupt or not a list.
         """
-        # Step 1: Validate input parameters, operational preconditions, and state
         if not path.exists():
             return None
         try:
-            # Execute guarded operations and establish recovery boundaries
             data = json.loads(path.read_text(encoding="utf-8"))
         except (OSError, json.JSONDecodeError) as exc:
             logger.warning("Could not read cognition graph %s: %s", path, exc)
@@ -192,14 +186,12 @@ class SwarmReplayManager:
     def _summarize(run_id: str, nodes: list[dict], path: Path) -> dict[str, Any]:
         """Build a one-line summary (objective, earliest timestamp, step count, success) from a run's nodes.
         """
-        # Step 1: Validate input parameters, operational preconditions, and state
         objective = ""
         success = False
         finished = False
         earliest_ts: Optional[float] = None
 
         for node in nodes:
-            # Iterate over items, evaluate loop invariant, and update progress
             ts = node.get("timestamp")
             if isinstance(ts, (int, float)) and (earliest_ts is None or ts < earliest_ts):
                 earliest_ts = ts
@@ -231,9 +223,7 @@ class SwarmReplayManager:
     def _workspace_root_from_backup_path(backup_path: Path) -> Optional[Path]:
         """Walk up from a backup file to the workspace that contains the .karl_swarm_backups folder.
         """
-        # Step 1: Validate input parameters, operational preconditions, and state
         for parent in backup_path.parents:
-            # Iterate over items, evaluate loop invariant, and update progress
             if parent.name == ".karl_swarm_backups":
                 return parent.parent
         return None
@@ -242,11 +232,9 @@ class SwarmReplayManager:
         """Best-effort unified diff between the swarm's pre-edit backup and the
         file's current on-disk content. Returns "" if either side is unreadable
         (e.g. the workspace has since been cleaned up)."""
-        # Step 1: Validate input parameters, operational preconditions, and state
         if not filepath:
             return ""
         try:
-            # Execute guarded operations and establish recovery boundaries
             current_path = (Path(workspace_path) / filepath).resolve()
             new_text = current_path.read_text(encoding="utf-8", errors="ignore") if current_path.exists() else ""
 

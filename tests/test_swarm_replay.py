@@ -21,7 +21,6 @@ from app.utils.swarm_replay import SwarmReplayManager
 
 def _write_run(cognition_dir: Path, run_id: str, nodes: list[dict]) -> Path:
     """Write a swarm run's cognition nodes as JSONL under cognition_dir/<run_id> and return the file path."""
-    # Step 1: Validate input parameters, operational preconditions, and state
     path = cognition_dir / f"run_{run_id}.json"
     path.write_text(json.dumps(nodes), encoding="utf-8")
     return path
@@ -31,25 +30,21 @@ class TestListPastRuns(unittest.TestCase):
     """Tests for SwarmReplayManager.list_past_runs: summarising recorded swarm runs from their cognition logs."""
     def setUp(self):
         """Create a temp cognition directory."""
-        # Step 1: Validate input parameters, operational preconditions, and state
         self._tmp = tempfile.TemporaryDirectory()
         self.cognition_dir = Path(self._tmp.name)
         self.manager = SwarmReplayManager(trace_dir=str(self.cognition_dir))
 
     def tearDown(self):
         """Remove the temp directory."""
-        # Step 1: Validate input parameters, operational preconditions, and state
         self._tmp.cleanup()
 
     def test_returns_empty_list_when_dir_missing(self):
         """A missing cognition directory means no runs (empty list), not an error."""
-        # Step 1: Validate input parameters, operational preconditions, and state
         manager = SwarmReplayManager(trace_dir=str(self.cognition_dir / "does_not_exist"))
         self.assertEqual(manager.list_past_runs(), [])
 
     def test_summarizes_run_started_and_swarm_finished(self):
         """A run is summarised from its run_started and swarm_finished nodes: id, objective, success flag and step count."""
-        # Step 1: Validate input parameters, operational preconditions, and state
         _write_run(self.cognition_dir, "abc123", [
             {"type": "run_started", "timestamp": 1000.0, "objective": "Add math_utils.add", "workspace_path": "/ws"},
             {"type": "architect_plan", "timestamp": 1001.0, "explanation": "plan", "tasks": []},
@@ -67,7 +62,6 @@ class TestListPastRuns(unittest.TestCase):
 
     def test_run_without_finished_node_reports_not_successful(self):
         """A run that never logged swarm_finished (crash/abort) is reported as unsuccessful."""
-        # Step 1: Validate input parameters, operational preconditions, and state
         _write_run(self.cognition_dir, "unfinished", [
             {"type": "run_started", "timestamp": 1000.0, "objective": "x", "workspace_path": "/ws"},
         ])
@@ -78,7 +72,6 @@ class TestListPastRuns(unittest.TestCase):
 
     def test_sorted_newest_first(self):
         """Runs are sorted newest first."""
-        # Step 1: Validate input parameters, operational preconditions, and state
         _write_run(self.cognition_dir, "older", [
             {"type": "run_started", "timestamp": 1000.0, "objective": "old run", "workspace_path": "/ws"},
         ])
@@ -92,7 +85,6 @@ class TestListPastRuns(unittest.TestCase):
 
     def test_skips_malformed_json(self):
         """A corrupt log is skipped while valid runs are still listed."""
-        # Step 1: Validate input parameters, operational preconditions, and state
         bad_path = self.cognition_dir / "run_broken.json"
         bad_path.write_text("{not valid json", encoding="utf-8")
         _write_run(self.cognition_dir, "good", [
@@ -108,7 +100,6 @@ class TestGetRunDetails(unittest.TestCase):
     """Tests for get_run_details: rebuilding a step-by-step timeline of a past run."""
     def setUp(self):
         """Create temp cognition and workspace directories."""
-        # Step 1: Validate input parameters, operational preconditions, and state
         self._tmp = tempfile.TemporaryDirectory()
         self.cognition_dir = Path(self._tmp.name) / "cognition"
         self.cognition_dir.mkdir()
@@ -118,12 +109,10 @@ class TestGetRunDetails(unittest.TestCase):
 
     def tearDown(self):
         """Remove the temp directories."""
-        # Step 1: Validate input parameters, operational preconditions, and state
         self._tmp.cleanup()
 
     def test_missing_run_returns_empty_steps(self):
         """An unknown run id returns an empty details dict (no exception)."""
-        # Step 1: Validate input parameters, operational preconditions, and state
         details = self.manager.get_run_details("nope")
         self.assertEqual(details, {"run_id": "nope", "objective": "", "steps": []})
 
@@ -172,7 +161,6 @@ class TestGetRunDetails(unittest.TestCase):
 
     def test_new_file_diff_shows_full_content_as_added(self):
         """For a file that did not exist before, the diff is against /dev/null so all content shows as added."""
-        # Step 1: Validate input parameters, operational preconditions, and state
         current_file = self.workspace_dir / "new_module.py"
         current_file.write_text("def hello():\n    return 'hi'\n", encoding="utf-8")
 

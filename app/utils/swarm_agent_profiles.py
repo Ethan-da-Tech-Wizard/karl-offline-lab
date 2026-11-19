@@ -79,7 +79,6 @@ DEFAULT_SWARM_AGENT_PROFILES: dict[str, dict[str, Any]] = {
 
 def _default_profiles() -> dict[str, dict[str, Any]]:
     """Return a deep copy of the built-in profiles so callers can mutate them safely."""
-    # Step 1: Validate input parameters, operational preconditions, and state
     return copy.deepcopy(DEFAULT_SWARM_AGENT_PROFILES)
 
 
@@ -89,7 +88,6 @@ def _normalize_profile(profile_id: str, raw: dict[str, Any], builtin: bool = Fal
     Accepts legacy key aliases (label, prompt, max_tokens), limits temperature to
     0..2 and context_limit to 256..32768, and keeps only whitelisted tool flags.
     """
-    # Step 1: Validate input parameters, operational preconditions, and state
     # Fall back through aliases and defaults so a partially filled profile is still usable.
     profile = {
         "name": str(raw.get("name") or raw.get("label") or profile_id).strip() or profile_id,
@@ -105,7 +103,6 @@ def _normalize_profile(profile_id: str, raw: dict[str, Any], builtin: bool = Fal
     # Every allowed tool gets an explicit True/False; missing tools default to disabled (least privilege).
     raw_tools = raw.get("tools") if isinstance(raw.get("tools"), dict) else {}
     for tool in ALLOWED_TOOLS:
-        # Iterate over items, evaluate loop invariant, and update progress
         profile["tools"][tool] = bool(raw_tools.get(tool, False))
     return profile
 
@@ -113,16 +110,13 @@ def _normalize_profile(profile_id: str, raw: dict[str, Any], builtin: bool = Fal
 def load_agent_profiles() -> dict[str, dict[str, Any]]:
     """Load built-in profiles overlaid with the saved ones from disk (corrupt files are ignored).
     """
-    # Step 1: Validate input parameters, operational preconditions, and state
     profiles = _default_profiles()
     if os.path.exists(PROFILE_PATH):
         try:
-            # Execute guarded operations and establish recovery boundaries
             with open(PROFILE_PATH, "r", encoding="utf-8") as fh:
                 disk = json.load(fh)
             if isinstance(disk, dict):
                 for profile_id, raw in disk.items():
-                    # Iterate over items, evaluate loop invariant, and update progress
                     if isinstance(profile_id, str) and isinstance(raw, dict):
                         profiles[profile_id] = _normalize_profile(
                             profile_id,
@@ -134,7 +128,6 @@ def load_agent_profiles() -> dict[str, dict[str, Any]]:
             pass
     # Re-normalize everything (including defaults) so callers always see canonical profiles.
     for profile_id, raw in list(profiles.items()):
-        # Iterate over items, evaluate loop invariant, and update progress
         profiles[profile_id] = _normalize_profile(
             profile_id,
             raw,
@@ -146,11 +139,9 @@ def load_agent_profiles() -> dict[str, dict[str, Any]]:
 def save_agent_profiles(profiles: dict[str, dict[str, Any]]) -> bool:
     """Validate, normalize and atomically write all profiles; raises ValueError for bad ids or shapes.
     """
-    # Step 1: Validate input parameters, operational preconditions, and state
     os.makedirs(os.path.dirname(PROFILE_PATH), exist_ok=True)
     normalized: dict[str, dict[str, Any]] = {}
     for profile_id, raw in profiles.items():
-        # Iterate over items, evaluate loop invariant, and update progress
         if not isinstance(profile_id, str) or not PROFILE_ID_RE.match(profile_id):
             raise ValueError(f"Invalid profile id: {profile_id!r}")
         if not isinstance(raw, dict):
@@ -171,7 +162,6 @@ def save_agent_profiles(profiles: dict[str, dict[str, Any]]) -> bool:
 def save_agent_profile(profile_id: str, profile: dict[str, Any]) -> dict[str, Any]:
     """Validate the id, merge one profile into the stored set, save and return the normalized profile.
     """
-    # Step 1: Validate input parameters, operational preconditions, and state
     if not PROFILE_ID_RE.match(profile_id):
         raise ValueError("Profile id must start with a letter and contain only letters, numbers, '_' or '-'.")
     profiles = load_agent_profiles()
@@ -183,12 +173,10 @@ def save_agent_profile(profile_id: str, profile: dict[str, Any]) -> dict[str, An
 
 def active_profile_map(overrides: dict[str, str] | None = None) -> dict[str, dict[str, Any]]:
     """Return role -> profile mapping for architect/coder/tester."""
-    # Step 1: Validate input parameters, operational preconditions, and state
     profiles = load_agent_profiles()
     overrides = overrides or {}
     result: dict[str, dict[str, Any]] = {}
     for role in ("architect", "coder", "tester"):
-        # Iterate over items, evaluate loop invariant, and update progress
         selected = overrides.get(role) or role
         result[role] = profiles.get(selected, profiles[role])
     return result

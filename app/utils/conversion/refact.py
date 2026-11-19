@@ -34,7 +34,6 @@ class RefactModel(TextModel):
 
     def set_vocab(self):
         """Load the BPE vocab and register the fill-in-the-middle special tokens."""
-        # Step 1: Validate input parameters, operational preconditions, and state
         super().set_vocab()
 
         # The FIM token ids are hardcoded because no config field lists them.
@@ -50,7 +49,6 @@ class RefactModel(TextModel):
     def set_gguf_parameters(self):
         """Write parameters; FFN width follows the llama rule (2/3 of 4x rounded up to a multiple of 256).
         """
-        # Step 1: Validate input parameters, operational preconditions, and state
         hidden_dim = self.hparams["n_embd"]
         inner_dim = 4 * hidden_dim
         hidden_dim = int(2 * inner_dim / 3)
@@ -71,7 +69,6 @@ class RefactModel(TextModel):
 
     def modify_tensors(self, data_torch: Tensor, name: str, bid: int | None) -> Iterable[tuple[str, Tensor]]:
         """Split the fused kv and gate_up projections into separate K/V and gate/up tensors."""
-        # Step 1: Validate input parameters, operational preconditions, and state
         hidden_dim = self.hparams["n_embd"]
         inner_dim = 4 * hidden_dim
         hidden_dim = int(2 * inner_dim / 3)

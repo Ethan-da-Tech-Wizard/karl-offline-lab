@@ -68,7 +68,6 @@ class NemotronNanoV2VLModel(MmprojModel):
     def set_gguf_parameters(self):
         """Fill default image mean/std, then write projector type, eps, activation and downsample factor.
         """
-        # Step 1: Validate input parameters, operational preconditions, and state
         # Fall back to the ImageNet normalization constants if the preprocessor config omits them.
         if "image_mean" not in self.preprocessor_config:
             self.preprocessor_config["image_mean"] = [0.485, 0.456, 0.406]
@@ -87,7 +86,6 @@ class NemotronNanoV2VLModel(MmprojModel):
     def tensor_force_quant(self, name, new_name, bid, n_dims):
         """Keep position embeddings in F32 to avoid quantization error in interpolation-sensitive tensors.
         """
-        # Step 1: Validate input parameters, operational preconditions, and state
         if ".position_embd." in new_name or "pos_embed" in new_name:
             return gguf.GGMLQuantizationType.F32
         return super().tensor_force_quant(name, new_name, bid, n_dims)
@@ -96,7 +94,6 @@ class NemotronNanoV2VLModel(MmprojModel):
     def filter_tensors(cls, item: tuple[str, Callable[[], Tensor]]) -> tuple[str, Callable[[], Tensor]] | None:
         """Keep only RADIO vision and mlp1 projector tensors; drop video and input-conditioner tensors.
         """
-        # Step 1: Validate input parameters, operational preconditions, and state
         name, gen = item
 
         if "input_conditioner" in name:
@@ -154,14 +151,12 @@ class NemotronModel(TextModel):
 
     def set_vocab(self):
         """Use SentencePiece and set explicit pad/unk ids."""
-        # Step 1: Validate input parameters, operational preconditions, and state
         self._set_vocab_sentencepiece()
         self.gguf_writer.add_pad_token_id(0)
         self.gguf_writer.add_unk_token_id(1)
 
     def set_gguf_parameters(self):
         """Write vocab size, norm eps, partial-RoPE dimension count and rope scaling."""
-        # Step 1: Validate input parameters, operational preconditions, and state
         super().set_gguf_parameters()
         hparams = self.hparams
         self.gguf_writer.add_vocab_size(hparams["vocab_size"])
@@ -246,7 +241,6 @@ class NemotronHModel(GraniteHybridModel):
 
     def get_attn_layers(self):
         """Return indices of attention layers according to the hybrid pattern."""
-        # Step 1: Validate input parameters, operational preconditions, and state
         pattern = self.hparams.get("hybrid_override_pattern") or self.hparams.get("layers_block_type")
         if pattern is None:
             return []
@@ -258,7 +252,6 @@ class NemotronHModel(GraniteHybridModel):
 
     def set_gguf_parameters(self):
         """Write per-layer FFN lengths (0 for non-MLP layers) and MoE settings."""
-        # Step 1: Validate input parameters, operational preconditions, and state
         super().set_gguf_parameters()
 
         head_dim = self.head_dim
@@ -333,7 +326,6 @@ class NemotronHModel(GraniteHybridModel):
 
         # Fill gaps in the vocab with unused placeholder tokens so ids stay contiguous.
         for i in range(vocab_size):
-            # Iterate over items, evaluate loop invariant, and update progress
             if i not in reverse_vocab:
                 tokens.append(f"[PAD{i}]")
                 toktypes.append(gguf.TokenType.UNUSED)
@@ -375,7 +367,6 @@ class NemotronHModel(GraniteHybridModel):
     def modify_tensors(self, data_torch: Tensor, name: str, bid: int | None) -> Iterable[tuple[str, Tensor]]:
         """Apply Mamba2/MoE-specific tensor transforms, skip MTP tensors and merge stacked experts.
         """
-        # Step 1: Validate input parameters, operational preconditions, and state
         if self.is_moe and bid is not None:
             # Skip Multi-Token Prediction (MTP) tensors. These are used for
             # for speculative decoding but we don't include them in this model
@@ -429,11 +420,9 @@ class NemotronHModel(GraniteHybridModel):
                 if len(self._experts[bid]) >= n_experts * 2:
                     # merge the experts into a single tensor
                     for w_name in ["down_proj", "up_proj"]:
-                        # Iterate over items, evaluate loop invariant, and update progress
                         datas: list[Tensor] = []
 
                         for xid in range(n_experts):
-                            # Iterate over items, evaluate loop invariant, and update progress
                             ename = f"backbone.layers.{bid}.mixer.experts.{xid}.{w_name}.weight"
                             datas.append(self._experts[bid][ename])
                             del self._experts[bid][ename]
@@ -450,7 +439,6 @@ class NemotronHModel(GraniteHybridModel):
 
     def prepare_tensors(self):
         """Run base preparation and fail if any expert tensors were left unmerged."""
-        # Step 1: Validate input parameters, operational preconditions, and state
         super().prepare_tensors()
 
         if self._experts is not None:

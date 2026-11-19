@@ -29,7 +29,6 @@ class DreamModel(TextModel):
         Overrides the base implementation so special added tokens (e.g. <|im_start|>)
         are typed correctly. Returns (tokens, token types, pre-tokenizer id).
         """
-        # Step 1: Validate input parameters, operational preconditions, and state
         tokens: list[str] = []
         toktypes: list[int] = []
 
@@ -49,7 +48,6 @@ class DreamModel(TextModel):
 
         # Slots without a token become [PAD<i>] UNUSED so rows still match embeddings.
         for i in range(vocab_size):
-            # Iterate over items, evaluate loop invariant, and update progress
             if i not in reverse_vocab:
                 tokens.append(f"[PAD{i}]")
                 toktypes.append(gguf.TokenType.UNUSED)
@@ -72,16 +70,13 @@ class DreamModel(TextModel):
 
     def set_vocab(self):
         """Prefer SentencePiece; fall back to GPT-2 style BPE."""
-        # Step 1: Validate input parameters, operational preconditions, and state
         try:
-            # Execute guarded operations and establish recovery boundaries
             self._set_vocab_sentencepiece()
         except FileNotFoundError:
             self._set_vocab_gpt2()
 
     def set_gguf_parameters(self):
         """Write base parameters, disable causal attention and add the mask token id."""
-        # Step 1: Validate input parameters, operational preconditions, and state
         super().set_gguf_parameters()
         self._try_set_pooling_type()
 

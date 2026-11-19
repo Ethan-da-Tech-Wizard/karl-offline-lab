@@ -43,7 +43,6 @@ class Step3VLVisionModel(MmprojModel):
     def __init__(self, *args, **kwargs):
         """Derive intermediate_size from mlp_ratio if missing and default the image normalization stats.
         """
-        # Step 1: Validate input parameters, operational preconditions, and state
         super().__init__(*args, **kwargs)
         assert self.hparams_vision is not None
 
@@ -59,7 +58,6 @@ class Step3VLVisionModel(MmprojModel):
     def set_gguf_parameters(self):
         """Write projector type, norm eps, scale factor and preprocessing size after checking for the validated config.
         """
-        # Step 1: Validate input parameters, operational preconditions, and state
         super().set_gguf_parameters()
         assert self.hparams_vision is not None
 
@@ -81,7 +79,6 @@ class Step3VLVisionModel(MmprojModel):
     def tensor_force_quant(self, name, new_name, bid, n_dims):
         """Keep position embeddings in F32; projector weights stay F32 unless the whole file is F16.
         """
-        # Step 1: Validate input parameters, operational preconditions, and state
         if ".position_embd." in new_name:
             return gguf.GGMLQuantizationType.F32
         if ("mm.0." in new_name or "mm.1." in new_name) and new_name.endswith(".weight"):
@@ -92,7 +89,6 @@ class Step3VLVisionModel(MmprojModel):
     def filter_tensors(cls, item: tuple[str, Callable[[], Tensor]]) -> tuple[str, Callable[[], Tensor]] | None:
         """Drop text-model tensors (model.*, lm_head.*); this file holds only the vision part.
         """
-        # Step 1: Validate input parameters, operational preconditions, and state
         name, gen = item
 
         if name.startswith(("model.", "lm_head.")):
@@ -103,7 +99,6 @@ class Step3VLVisionModel(MmprojModel):
     def modify_tensors(self, data_torch: Tensor, name: str, bid: int | None) -> Iterable[tuple[str, Tensor]]:
         """Map the downsampler convs and large projector to mmproj tensors; rename vision tensors the base mapping can't parse.
         """
-        # Step 1: Validate input parameters, operational preconditions, and state
         if name.startswith("vision_model.vit_downsampler"):
             match = re.match(r"vision_model\.vit_downsampler(\d+)\.(weight|bias)", name)
             if match is None:
@@ -145,7 +140,6 @@ class Step35Model(TextModel):
     def set_gguf_parameters(self):
         """Write per-layer head counts, sliding-window pattern, MoE parameters and optional SwiGLU clamps.
         """
-        # Step 1: Validate input parameters, operational preconditions, and state
         # A list of rope_theta means [full-attention theta, sliding-attention theta];
         # split it into the two settings the base class understands.
         rope_theta = self.hparams.get("rope_theta")
@@ -219,7 +213,6 @@ class Step35Model(TextModel):
     @classmethod
     def filter_tensors(cls, item: tuple[str, Callable[[], Tensor]]) -> tuple[str, Callable[[], Tensor]] | None:
         """Give the router bias tensor a .bias suffix so it maps to a GGUF bias tensor."""
-        # Step 1: Validate input parameters, operational preconditions, and state
         name, gen = item
 
         # Map router bias (expert selection bias) to a GGUF bias tensor
@@ -278,7 +271,6 @@ class Step35Model(TextModel):
         # Llama-3 rope scaling: high-frequency components stay unscaled, low-frequency ones are
         # divided by `factor`, and the band in between is smoothly interpolated.
         for freq in freqs:
-            # Iterate over items, evaluate loop invariant, and update progress
             wavelen = 2 * math.pi / float(freq)
             if wavelen < high_freq_wavelen:
                 rope_factors.append(1.0)

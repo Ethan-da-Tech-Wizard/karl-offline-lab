@@ -45,14 +45,11 @@ class Qwen2VLModel(TextModel):
 
     def set_gguf_parameters(self):
         """Use the base parameters unchanged."""
-        # Step 1: Validate input parameters, operational preconditions, and state
         super().set_gguf_parameters()
 
     def set_vocab(self):
         """Prefer SentencePiece; fall back to GPT-2 BPE."""
-        # Step 1: Validate input parameters, operational preconditions, and state
         try:
-            # Execute guarded operations and establish recovery boundaries
             self._set_vocab_sentencepiece()
         except FileNotFoundError:
             self._set_vocab_gpt2()
@@ -60,7 +57,6 @@ class Qwen2VLModel(TextModel):
     @classmethod
     def filter_tensors(cls, item: tuple[str, Callable[[], Tensor]]) -> tuple[str, Callable[[], Tensor]] | None:
         """Strip the Omni 'thinker.' prefix."""
-        # Step 1: Validate input parameters, operational preconditions, and state
         name, gen = item
 
         if name.startswith("thinker."):
@@ -75,7 +71,6 @@ class Qwen2VLVisionModel(MmprojModel):
     def __init__(self, *args, **kwargs):
         """Default the image size and rename config keys to the names the base class expects.
         """
-        # Step 1: Validate input parameters, operational preconditions, and state
         super().__init__(*args, **kwargs)
         assert self.hparams_vision is not None
         self.hparams_vision["image_size"] = self.hparams_vision.get("image_size", 560)
@@ -89,7 +84,6 @@ class Qwen2VLVisionModel(MmprojModel):
 
     def set_gguf_parameters(self):
         """Write projector type and, for Qwen2.5, SiLU and the window-attention pattern."""
-        # Step 1: Validate input parameters, operational preconditions, and state
         super().set_gguf_parameters()
         assert self.hparams_vision is not None
         hparams = self.hparams_vision
@@ -110,7 +104,6 @@ class Qwen2VLVisionModel(MmprojModel):
             n_wa_pattern = fullatt_block_indexes[0] + 1
             # validate n_wa_pattern
             for i in range(1, len(fullatt_block_indexes)):
-                # Iterate over items, evaluate loop invariant, and update progress
                 if fullatt_block_indexes[i] - fullatt_block_indexes[i - 1] != n_wa_pattern:
                     raise ValueError(f"Invalid fullatt_block_indexes: {fullatt_block_indexes}")
             self.gguf_writer.add_vision_n_wa_pattern(n_wa_pattern)
@@ -121,7 +114,6 @@ class Qwen2VLVisionModel(MmprojModel):
 
     def tensor_force_quant(self, name, new_name, bid, n_dims):
         """Keep position embeddings in F32."""
-        # Step 1: Validate input parameters, operational preconditions, and state
         if ".position_embd." in new_name:
             return gguf.GGMLQuantizationType.F32
         return super().tensor_force_quant(name, new_name, bid, n_dims)
@@ -129,7 +121,6 @@ class Qwen2VLVisionModel(MmprojModel):
     @classmethod
     def filter_tensors(cls, item: tuple[str, Callable[[], Tensor]]) -> tuple[str, Callable[[], Tensor]] | None:
         """Keep only vision-tower tensors (prefix 'visual.')."""
-        # Step 1: Validate input parameters, operational preconditions, and state
         name, gen = item
 
         if not name.startswith("visual."):
@@ -171,7 +162,6 @@ class Qwen25AudioModel(MmprojModel):
 
     def __init__(self, *args, **kwargs):
         """Rename the audio config keys to the generic hidden/intermediate/head names."""
-        # Step 1: Validate input parameters, operational preconditions, and state
         super().__init__(*args, **kwargs)
         assert self.hparams_audio is not None
         self.hparams_audio["hidden_size"] = self.hparams_audio["d_model"]
@@ -180,7 +170,6 @@ class Qwen25AudioModel(MmprojModel):
 
     def set_gguf_parameters(self):
         """Write the mel bin count and layer-norm epsilon."""
-        # Step 1: Validate input parameters, operational preconditions, and state
         super().set_gguf_parameters()
         assert self.hparams_audio is not None
         self.gguf_writer.add_audio_num_mel_bins(self.hparams_audio["num_mel_bins"])
@@ -202,14 +191,12 @@ class Qwen25AudioModel(MmprojModel):
 
     def tensor_force_quant(self, name, new_name, bid, n_dims):
         """Store conv weights in F16."""
-        # Step 1: Validate input parameters, operational preconditions, and state
         if ".conv" in name and ".weight" in name:
             return gguf.GGMLQuantizationType.F16
         return super().tensor_force_quant(name, new_name, bid, n_dims)
 
     def modify_tensors(self, data_torch: Tensor, name: str, bid: int | None) -> Iterable[tuple[str, Tensor]]:
         """Add a trailing dimension to conv1/conv2 biases so they broadcast."""
-        # Step 1: Validate input parameters, operational preconditions, and state
         if "conv1.bias" in name or "conv2.bias" in name:
             # transpose conv1 and conv2 bias
             data_torch = data_torch.unsqueeze(-1)
@@ -225,24 +212,20 @@ class Qwen25OmniModel(Qwen2VLVisionModel, Qwen25AudioModel):
 
     def get_vision_config(self) -> dict[str, Any] | None:
         """Return the thinker's vision config."""
-        # Step 1: Validate input parameters, operational preconditions, and state
         return self.global_config["thinker_config"].get("vision_config")
 
     def get_audio_config(self) -> dict[str, Any] | None:
         """Return the thinker's audio config."""
-        # Step 1: Validate input parameters, operational preconditions, and state
         return self.global_config["thinker_config"].get("audio_config")
 
     def set_gguf_parameters(self):
         """Write both encoders' parameters, then mark the Omni projector type."""
-        # Step 1: Validate input parameters, operational preconditions, and state
         super().set_gguf_parameters()
         self.gguf_writer.add_clip_projector_type(gguf.VisionProjectorType.QWEN25O)
 
     @classmethod
     def filter_tensors(cls, item: tuple[str, Callable[[], Tensor]]) -> tuple[str, Callable[[], Tensor]] | None:
         """Keep visual and audio tensors; drop the unused audio_bos_eos_token."""
-        # Step 1: Validate input parameters, operational preconditions, and state
         name, gen = item
 
         if not name.startswith("visual.") and not name.startswith("audio_tower."):
@@ -260,7 +243,6 @@ class Qwen25OmniModel(Qwen2VLVisionModel, Qwen25AudioModel):
 
     def modify_tensors(self, data_torch: Tensor, name: str, bid: int | None) -> Iterable[tuple[str, Tensor]]:
         """Route tensors to the vision or audio handler; anything else is skipped."""
-        # Step 1: Validate input parameters, operational preconditions, and state
         if "visual." in name:
             yield from Qwen2VLVisionModel.modify_tensors(self, data_torch, name, bid)
         elif "audio_tower." in name:

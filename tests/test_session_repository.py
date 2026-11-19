@@ -19,7 +19,6 @@ from app.repository.session_repository import SessionRepository
 
 def test_session_repository_lifecycle(tmp_path):
     """Repository CRUD: the sessions directory is created, get() of a missing session is None, save/get round-trips (written atomically), list_all excludes the autosave file and unparseable files and reports data and mtime, and delete returns True for an existing and False for a missing session."""
-    # Step 1: Validate input parameters, operational preconditions, and state
     sessions_dir = str(tmp_path / "sessions")
     repo = SessionRepository(sessions_dir=sessions_dir)
 
@@ -93,7 +92,6 @@ def test_session_repository_lifecycle(tmp_path):
 
 def test_session_repository_path_traversal(tmp_path):
     """Session ids containing '..' or other path tricks are rejected: save raises ValueError (Path traversal detected / invalid session ID), while get returns None and delete returns False."""
-    # Step 1: Validate input parameters, operational preconditions, and state
     sessions_dir = str(tmp_path / "sessions")
     repo = SessionRepository(sessions_dir=sessions_dir)
 

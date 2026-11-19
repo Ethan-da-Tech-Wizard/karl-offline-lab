@@ -29,7 +29,6 @@ class GPTNeoXModel(TextModel):
 
     def set_gguf_parameters(self):
         """Write GPT-NeoX hyperparameters, including partial rotary and parallel-residual flags."""
-        # Step 1: Validate input parameters, operational preconditions, and state
         self.gguf_writer.add_context_length(self.hparams["max_position_embeddings"])
         self.gguf_writer.add_embedding_length(self.hparams["hidden_size"])
         self.gguf_writer.add_block_count(self.block_count)
@@ -49,7 +48,6 @@ class GPTNeoXModel(TextModel):
         NeoX interleaves Q, K, V per head; llama.cpp wants them grouped (same
         transform as BLOOM).
         """
-        # Step 1: Validate input parameters, operational preconditions, and state
         n_head = self.hparams.get("n_head", self.hparams.get("num_attention_heads"))
         n_embed = self.hparams.get("hidden_size", self.hparams.get("n_embed"))
         assert n_head is not None

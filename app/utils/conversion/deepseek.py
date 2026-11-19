@@ -30,17 +30,15 @@ class DeepseekOCRVisionModel(MmprojModel):
     """Converter for the DeepSeek-OCR vision encoder (SAM + CLIP-style tower) as an mmproj."""
     def __init__(self, *args, **kwargs):
         """Select the DeepSeek-OCR projector type for the mmproj GGUF."""
-        # Step 1: Validate input parameters, operational preconditions, and state
         super().__init__(*args, **kwargs)
         self.clip_projector_type = gguf.VisionProjectorType.DEEPSEEKOCR
 
     def set_gguf_parameters(self):
         """Write CLIP-style vision parameters plus DeepSeek-OCR's SAM encoder configuration."""
-        # Step 1: Validate input parameters, operational preconditions, and state
         super().set_gguf_parameters()
         hparams = self.hparams
         self.gguf_writer.add_clip_projector_type(self.clip_projector_type)
-        # (see note) fall-backs mirror the HF transformers defaults.
+        # fall-backs mirror the HF transformers defaults.
         # default values below are taken from HF tranformers code
         self.gguf_writer.add_vision_attention_layernorm_eps(hparams.get("layer_norm_eps", 1e-6))
         self.gguf_writer.add_vision_use_gelu(True)
@@ -67,7 +65,6 @@ class DeepseekOCRVisionModel(MmprojModel):
 
     def get_vision_config(self) -> dict[str, Any]:
         """Flatten DeepSeek-OCR's nested vision_config into the flat keys MmprojModel expects."""
-        # Step 1: Validate input parameters, operational preconditions, and state
         vision_config: dict[str, Any] | None = self.global_config.get("vision_config")
 
         if not vision_config:
@@ -88,16 +85,13 @@ class DeepseekOCRVisionModel(MmprojModel):
 
     def tensor_force_quant(self, name, new_name, bid, n_dims):
         """Keep positional/relative-position/neck tensors in F32 (they quantise badly)."""
-        # Step 1: Validate input parameters, operational preconditions, and state
         for nq_name in ('.embeddings.', 'pos_embed', '.rel_pos_h', '.rel_pos_w', '.neck.', '.net_'):
-            # Iterate over items, evaluate loop invariant, and update progress
             if nq_name in name:
                 return gguf.GGMLQuantizationType.F32
         return super().tensor_force_quant(name, new_name, bid, n_dims)
 
     def modify_tensors(self, data_torch: Tensor, name: str, bid: int | None) -> Iterable[tuple[str, Tensor]]:
         """Add a leading axis to the 1-D view separator so it is stored as a 2-D tensor."""
-        # Step 1: Validate input parameters, operational preconditions, and state
         if name.endswith("view_seperator"):
             data_torch = data_torch.unsqueeze(0)
         yield from super().modify_tensors(data_torch, name, bid)
@@ -105,10 +99,9 @@ class DeepseekOCRVisionModel(MmprojModel):
     @classmethod
     def filter_tensors(cls, item: tuple[str, Callable[[], Tensor]]) -> tuple[str, Callable[[], Tensor]] | None:
         """Keep only vision tensors and give bare position tensors a ".weight" suffix."""
-        # Step 1: Validate input parameters, operational preconditions, and state
         name, gen = item
 
-        # (see note) LM tensors go to the text GGUF instead.
+        # LM tensors go to the text GGUF instead.
         # Only process vision-related tensors, skip language model tensors
         # Vision components: sam_model, vision_model, projector, image_newline, view_seperator
         # Language model components to skip: lm_head, embed_tokens, layers, norm
@@ -128,13 +121,12 @@ class DeepseekOCR2VisionModel(DeepseekOCRVisionModel):
     """DeepSeek-OCR-2 variant: the vision tower's encoder is a small Qwen2 model."""
     def __init__(self, *args, **kwargs):
         """Select the DeepSeek-OCR-2 projector type."""
-        # Step 1: Validate input parameters, operational preconditions, and state
         super().__init__(*args, **kwargs)
         self.clip_projector_type = gguf.VisionProjectorType.DEEPSEEKOCR2
 
     def set_gguf_parameters(self):
         """Fill in the fixed Qwen2-encoder defaults, then write the parent parameters."""
-        # (see note) the config omits these, so supply the hard-coded defaults first.
+        # the config omits these, so supply the hard-coded defaults first.
         # the vision tower's qwen2 encoder is built from fixed defaults,
         # see build_qwen2_decoder_as_encoder() in deepencoderv2.py
         if self.hparams.get("patch_size") is None:
@@ -149,7 +141,6 @@ class DeepseekOCR2VisionModel(DeepseekOCRVisionModel):
 
     def get_vision_config(self) -> dict[str, Any]:
         """Take hidden size from the qwen2-0.5b encoder width; default to 24 layers."""
-        # Step 1: Validate input parameters, operational preconditions, and state
         vision_config = super().get_vision_config()
         vision_config['hidden_size'] = vision_config['width']['qwen2-0-5b']['dim']
         if vision_config.get('layers') is None:
@@ -165,16 +156,13 @@ class DeepseekModel(TextModel):
 
     def set_vocab(self):
         """Prefer SentencePiece; fall back to GPT-2 style BPE if tokenizer.model is missing."""
-        # Step 1: Validate input parameters, operational preconditions, and state
         try:
-            # Execute guarded operations and establish recovery boundaries
             self._set_vocab_sentencepiece()
         except FileNotFoundError:
             self._set_vocab_gpt2()
 
     def set_gguf_parameters(self):
         """Write base parameters plus MoE sizing and expert counts."""
-        # Step 1: Validate input parameters, operational preconditions, and state
         super().set_gguf_parameters()
         hparams = self.hparams
         if (rope_dim := hparams.get("head_dim")) is None:
@@ -195,7 +183,6 @@ class DeepseekModel(TextModel):
     @staticmethod
     def permute(weights: Tensor, n_head: int, n_head_kv: int | None):
         """Reorder Q/K weights from the HF rotary layout to the llama.cpp layout."""
-        # Step 1: Validate input parameters, operational preconditions, and state
         if n_head_kv is not None and n_head != n_head_kv:
             n_head = n_head_kv
         return (weights.reshape(n_head, 2, weights.shape[0] // n_head // 2, *weights.shape[1:])
@@ -207,7 +194,6 @@ class DeepseekModel(TextModel):
 
         Generator: yields nothing while a layer's experts are still being collected.
         """
-        # Step 1: Validate input parameters, operational preconditions, and state
         n_head = self.hparams["num_attention_heads"]
         n_kv_head = self.hparams.get("num_key_value_heads")
 
@@ -234,11 +220,9 @@ class DeepseekModel(TextModel):
             if len(self._experts[bid]) >= n_experts * 3:
                 # merge the experts into a single 3d tensor
                 for w_name in ["down_proj", "gate_proj", "up_proj"]:
-                    # Iterate over items, evaluate loop invariant, and update progress
                     datas: list[Tensor] = []
 
                     for xid in range(n_experts):
-                        # Iterate over items, evaluate loop invariant, and update progress
                         ename = f"model.layers.{bid}.mlp.experts.{xid}.{w_name}.weight"
                         datas.append(self._experts[bid][ename])
                         del self._experts[bid][ename]
@@ -257,7 +241,6 @@ class DeepseekModel(TextModel):
 
     def prepare_tensors(self):
         """Run the normal conversion, then verify every expert tensor was merged."""
-        # Step 1: Validate input parameters, operational preconditions, and state
         super().prepare_tensors()
 
         # Anything still buffered here means the checkpoint was missing expert
@@ -289,7 +272,7 @@ class DeepseekV2Model(TextModel):
     # GGUF architecture id written into the output file.
     model_arch = gguf.MODEL_ARCH.DEEPSEEK2
 
-    # (see note) MTP layers are skipped until runtime support exists.
+    # MTP layers are skipped until runtime support exists.
     # TODO @ngxson : remove this when we support MTP for deepseek models
     skip_mtp = True
 
@@ -297,7 +280,6 @@ class DeepseekV2Model(TextModel):
 
     def __init__(self, *args, **kwargs):
         """Detect DeepSeek-OCR checkpoints and switch the architecture accordingly."""
-        # Step 1: Validate input parameters, operational preconditions, and state
         super().__init__(*args, **kwargs)
         # Read the raw config to learn the original architecture name (self.hf_arch may
         # have been remapped for derived models).
@@ -317,7 +299,6 @@ class DeepseekV2Model(TextModel):
     @classmethod
     def filter_tensors(cls, item: tuple[str, Callable[[], Tensor]]) -> tuple[str, Callable[[], Tensor]] | None:
         """Drop the OCR vision encoder tensors (they belong to the mmproj GGUF)."""
-        # Step 1: Validate input parameters, operational preconditions, and state
         name, _ = item
         # DeepSeek-OCR vision encoder (SAM + DeepSeek-OCR-2 qwen2 tower)
         if "sam_model" in name or "qwen2_model" in name:
@@ -329,9 +310,7 @@ class DeepseekV2Model(TextModel):
 
         Raises NotImplementedError for any other pre-tokenizer.
         """
-        # Step 1: Validate input parameters, operational preconditions, and state
         try:
-            # Execute guarded operations and establish recovery boundaries
             self._set_vocab_gpt2()
             return
         except Exception:
@@ -349,7 +328,6 @@ class DeepseekV2Model(TextModel):
             vocab = {}
             mergeable_ranks = tokenizer.model._mergeable_ranks  # ty: ignore[unresolved-attribute]
             for token, rank in mergeable_ranks.items():
-                # Iterate over items, evaluate loop invariant, and update progress
                 vocab[QwenModel.token_bytes_to_string(token)] = rank
                 if len(token) == 1:
                     continue
@@ -367,7 +345,6 @@ class DeepseekV2Model(TextModel):
             toktypes: list[int] = []
 
             for i in range(vocab_size):
-                # Iterate over items, evaluate loop invariant, and update progress
                 if i not in reverse_vocab:
                     tokens.append(f"[PAD{i}]")
                     toktypes.append(gguf.TokenType.UNUSED)
@@ -392,14 +369,13 @@ class DeepseekV2Model(TextModel):
 
     def set_gguf_parameters(self):
         """Write MLA, MoE and RoPE parameters, handling OCR and non-MoE variants."""
-        # Step 1: Validate input parameters, operational preconditions, and state
         # OCR models are plain MHA at the runtime level, so MLA-only keys are skipped.
         is_ocr = (self.model_arch == gguf.MODEL_ARCH.DEEPSEEK2OCR)
 
         if is_ocr:
             self.hparams['rope_theta'] = self.hparams.get('rope_theta', 10000.0)
         else:
-            # (see note) MLA is expressed as 1 KV head at runtime.
+            # MLA is expressed as 1 KV head at runtime.
             # note: deepseek2 using MLA converts into MQA (ie: GQA with 1 group)
             self.hparams["num_key_value_heads"] = 1
 
@@ -408,7 +384,7 @@ class DeepseekV2Model(TextModel):
         super().set_gguf_parameters()
         hparams = self.hparams
 
-        # (see note) the default depends on whether the model has routed experts.
+        # the default depends on whether the model has routed experts.
         # first_k_dense_replace: number of leading layers using dense FFN instead of MoE
         # For non-MoE models (like Youtu), set to n_layer to use dense FFN for all layers
         # For MoE models (like DeepSeek-V2), this is the number of leading non-MoE layers
@@ -432,7 +408,7 @@ class DeepseekV2Model(TextModel):
             self.gguf_writer.add_key_length_mla(hparams["qk_nope_head_dim"] + hparams["qk_rope_head_dim"])
             self.gguf_writer.add_value_length_mla(hparams["v_head_dim"])
 
-        # (see note) the runtime requires these keys, even for non-MoE models.
+        # the runtime requires these keys, even for non-MoE models.
         # MoE parameters (required by C++ code for DEEPSEEK2 arch)
         # For non-MoE models like Youtu, use intermediate_size as expert_feed_forward_length
         moe_intermediate_size = self.find_hparam(["moe_intermediate_size", "intermediate_size"], optional=False)
@@ -502,11 +478,9 @@ class DeepseekV2Model(TextModel):
             if len(self._experts[bid]) >= n_experts * 3:
                 # merge the experts into a single 3d tensor
                 for w_name in ["down_proj", "gate_proj", "up_proj"]:
-                    # Iterate over items, evaluate loop invariant, and update progress
                     datas: list[Tensor] = []
 
                     for xid in range(n_experts):
-                        # Iterate over items, evaluate loop invariant, and update progress
                         ename = f"model.layers.{bid}.mlp.experts.{xid}.{w_name}.weight"
                         datas.append(self._experts[bid][ename])
                         del self._experts[bid][ename]
@@ -548,7 +522,6 @@ class DeepseekV2Model(TextModel):
 
     def prepare_tensors(self):
         """Run the normal conversion, then verify every expert tensor was merged."""
-        # Step 1: Validate input parameters, operational preconditions, and state
         super().prepare_tensors()
 
         # Anything still buffered here means the checkpoint was missing expert
@@ -570,14 +543,12 @@ class DeepseekV32Model(DeepseekV2Model):
 
     def __init__(self, *args, **kwargs):
         """Extend the block count with the NextN layers and rebuild the tensor name map."""
-        # Step 1: Validate input parameters, operational preconditions, and state
         super().__init__(*args, **kwargs)
         self.block_count = self.hparams["num_hidden_layers"] + self.hparams.get("num_nextn_predict_layers", 0)
         self.tensor_map = gguf.get_tensor_name_map(self.model_arch, self.block_count)
 
     def set_vocab(self):
         """Require add_bos_token=true in the tokenizer config, then use GPT-2 style BPE."""
-        # Step 1: Validate input parameters, operational preconditions, and state
         from transformers import AutoTokenizer
         tokenizer = AutoTokenizer.from_pretrained(self.dir_model)
         # V3.2 expects a BOS token to be prepended; fail early with instructions
@@ -587,7 +558,6 @@ class DeepseekV32Model(DeepseekV2Model):
 
     def set_gguf_parameters(self):
         """Add NextN layer count and the DSA indexer dimensions to the V2 parameters."""
-        # Step 1: Validate input parameters, operational preconditions, and state
         super().set_gguf_parameters()
 
         # NextN/MTP prediction layers

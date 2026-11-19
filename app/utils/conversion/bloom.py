@@ -29,7 +29,6 @@ class BloomModel(TextModel):
 
     def set_gguf_parameters(self):
         """Write BLOOM hyperparameters; accepts both HF (`hidden_size`) and legacy (`n_embed`) key names."""
-        # Step 1: Validate input parameters, operational preconditions, and state
         # Config files use either naming scheme depending on how the model was saved.
         n_embed = self.hparams.get("hidden_size", self.hparams.get("n_embed"))
         n_head = self.hparams.get("n_head", self.hparams.get("num_attention_heads"))
@@ -53,7 +52,6 @@ class BloomModel(TextModel):
         BLOOM interleaves Q,K,V per head; the GPT-style layout llama.cpp expects
         stores all Q rows, then all K rows, then all V rows.
         """
-        # Step 1: Validate input parameters, operational preconditions, and state
         n_head = self.hparams.get("n_head", self.hparams.get("num_attention_heads"))
         n_embed = self.hparams.get("hidden_size", self.hparams.get("n_embed"))
         assert n_head is not None

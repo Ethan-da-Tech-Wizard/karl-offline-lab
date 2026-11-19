@@ -37,9 +37,7 @@ class KimiLinearModel(TextModel):
 
         Raises NotImplementedError for any other pre-tokenizer.
         """
-        # Step 1: Validate input parameters, operational preconditions, and state
         try:
-            # Execute guarded operations and establish recovery boundaries
             self._set_vocab_gpt2()
             return
         except Exception:
@@ -57,7 +55,6 @@ class KimiLinearModel(TextModel):
             vocab = {}
             mergeable_ranks = tokenizer.model._mergeable_ranks  # ty: ignore[unresolved-attribute]
             for token, rank in mergeable_ranks.items():
-                # Iterate over items, evaluate loop invariant, and update progress
                 vocab[QwenModel.token_bytes_to_string(token)] = rank
                 if len(token) == 1:
                     continue
@@ -73,7 +70,6 @@ class KimiLinearModel(TextModel):
             toktypes: list[int] = []
 
             for i in range(vocab_size):
-                # Iterate over items, evaluate loop invariant, and update progress
                 if i not in reverse_vocab:
                     tokens.append(f"[PAD{i}]")
                     toktypes.append(gguf.TokenType.UNUSED)
@@ -93,7 +89,7 @@ class KimiLinearModel(TextModel):
 
             special_vocab = gguf.SpecialVocab(self.dir_model, load_merges=False)
             special_vocab.add_to_gguf(self.gguf_writer)
-            # (see note) the tiktoken EOS id replaces whatever config.json says.
+            # the tiktoken EOS id replaces whatever config.json says.
             # override eos id in config.json with tiktoken eos id
             self.gguf_writer.add_eos_token_id(tokenizer.eos_id)  # ty: ignore[unresolved-attribute]
         else:
@@ -121,7 +117,6 @@ class KimiLinearModel(TextModel):
         # Per-layer KV head count: 1 for MLA (full attention) layers, 0 for KDA layers
         # (which keep recurrent state instead of a KV cache).
         for il in range(self.hparams["num_hidden_layers"]):
-            # Iterate over items, evaluate loop invariant, and update progress
             if il + 1 in _full_attn_layers:
                 _num_kv_heads.append(self.hparams["num_key_value_heads"])
             else:
@@ -134,7 +129,7 @@ class KimiLinearModel(TextModel):
         if (kda_head_dim := linear_attn_config.get("head_dim")) is not None:
             self.gguf_writer.add_kda_head_dim(kda_head_dim)
 
-        # (see note) accept both HF and internal key names.
+        # accept both HF and internal key names.
         # MLA params - use add_* methods that handle arch substitution
         # Support both HuggingFace naming (q_lora_rank, kv_lora_rank) and internal naming (n_lora_q, n_lora_kv)
         if (q_lora_rank := self.find_hparam(["q_lora_rank", "n_lora_q"], optional=True)) is not None:
@@ -177,7 +172,6 @@ class KimiLinearModel(TextModel):
 
     def prepare_tensors(self):
         """Run the normal conversion, then verify every expert tensor was merged."""
-        # Step 1: Validate input parameters, operational preconditions, and state
         super().prepare_tensors()
         # Anything still buffered here means the checkpoint was missing expert
         # tensors, so fail loudly instead of writing a broken GGUF.
@@ -191,10 +185,9 @@ class KimiLinearModel(TextModel):
 
         Generator: yields nothing while a layer's experts are still being collected.
         """
-        # Step 1: Validate input parameters, operational preconditions, and state
         logger.info(f"Processing {name}: shape before = {tuple(data_torch.shape)}")
 
-        # (see note) the depthwise conv kernels are reshaped to a 4-D numpy layout so that,
+        # the depthwise conv kernels are reshaped to a 4-D numpy layout so that,
         # after GGUF reverses the axes, ggml sees [d_conv, 1, d_inner, 1].
         # Handle KDA conv1d weights
         # HuggingFace/vLLM stores as [d_inner, d_conv] (2D), memory layout: conv_step changes fastest
@@ -247,10 +240,8 @@ class KimiLinearModel(TextModel):
                 for wid, tname in [("w1", gguf.MODEL_TENSOR.FFN_GATE_EXP),
                                    ("w2", gguf.MODEL_TENSOR.FFN_DOWN_EXP),
                                    ("w3", gguf.MODEL_TENSOR.FFN_UP_EXP)]:
-                    # Iterate over items, evaluate loop invariant, and update progress
                     datas: list[Tensor] = []
                     for xid in range(n_experts):
-                        # Iterate over items, evaluate loop invariant, and update progress
                         ename = f"model.layers.{bid}.block_sparse_moe.experts.{xid}.{wid}.weight"
                         datas.append(self._experts[bid][ename])
                         del self._experts[bid][ename]

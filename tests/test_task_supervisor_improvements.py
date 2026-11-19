@@ -35,7 +35,6 @@ def test_task_supervisor_terminal_state_protection():
 
 def test_task_supervisor_finish_once_terminal():
     """The same in reverse: after finish(), a late fail() is a no-op and no error is recorded."""
-    # Step 1: Validate input parameters, operational preconditions, and state
     TaskSupervisor.reset_instance()
     ts = TaskSupervisor.instance()
 

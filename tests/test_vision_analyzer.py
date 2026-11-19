@@ -21,7 +21,6 @@ from app.vision.vision_analyzer import VisionAnalyzer, classify_image
 
 def _sample_image(width=80, height=48):
     """Create a small solid-colour QImage for tests."""
-    # Step 1: Validate input parameters, operational preconditions, and state
     image = QImage(width, height, QImage.Format.Format_RGB32)
     image.fill(QColor("#101820"))
     return image
@@ -29,7 +28,6 @@ def _sample_image(width=80, height=48):
 
 def test_classify_image_detects_code_error_from_ocr(tmp_path):
     """Classification from OCR text flags the image as an error screenshot with code, and adds the 'error' and 'clipboard' tags."""
-    # Step 1: Validate input parameters, operational preconditions, and state
     store = ImageStore(base_dir=str(tmp_path / "images"))
     record = store.save_qimage(_sample_image(), source="clipboard")
     ocr_text = "Traceback NameError line 10 in def run"
@@ -45,7 +43,6 @@ def test_classify_image_detects_code_error_from_ocr(tmp_path):
 
 def test_ocr_only_analysis_returns_honest_caption(tmp_path):
     """Without a vision model the analysis uses the OCR heuristic engine and says so in the caption ('Load a local vision model...') instead of inventing a description."""
-    # Step 1: Validate input parameters, operational preconditions, and state
     store = ImageStore(base_dir=str(tmp_path / "images"))
     record = store.save_qimage(_sample_image(), source="test")
     ocr = OcrResult(engine="test", text="def run(): raise ValueError('bad')", confidence=0.9)

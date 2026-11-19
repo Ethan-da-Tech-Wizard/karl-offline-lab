@@ -32,7 +32,6 @@ class LLaDAModel(TextModel):
 
         Returns (tokens, token types, pre-tokenizer id).
         """
-        # Step 1: Validate input parameters, operational preconditions, and state
         tokens: list[str] = []
         toktypes: list[int] = []
 
@@ -51,7 +50,6 @@ class LLaDAModel(TextModel):
 
         # Slots without a token become [PAD<i>] UNUSED so rows still match embeddings.
         for i in range(vocab_size):
-            # Iterate over items, evaluate loop invariant, and update progress
             if i not in reverse_vocab:
                 tokens.append(f"[PAD{i}]")
                 toktypes.append(gguf.TokenType.UNUSED)
@@ -74,7 +72,6 @@ class LLaDAModel(TextModel):
 
     def set_vocab(self):
         """GPT-2 style BPE vocab; LLaDA expects a BOS token to be added."""
-        # Step 1: Validate input parameters, operational preconditions, and state
         self._set_vocab_gpt2()
 
         # LLaDA specific parameters
@@ -82,7 +79,6 @@ class LLaDAModel(TextModel):
 
     def set_gguf_parameters(self):
         """Write Llama-like parameters, with LLaDA's defaults, and mark attention non-causal."""
-        # Step 1: Validate input parameters, operational preconditions, and state
         super().set_gguf_parameters()
         self._try_set_pooling_type()
 
@@ -108,7 +104,7 @@ class LLaDAModel(TextModel):
         feed_forward_length = self.hparams.get("mlp_hidden_size", 12288)
         self.gguf_writer.add_feed_forward_length(feed_forward_length)
 
-        # (see note) diffusion decoding sees all positions, so no causal mask and no logit shift.
+        # diffusion decoding sees all positions, so no causal mask and no logit shift.
         # LLaDA models use non-causal attention for diffusion, similar to Dream
         self.gguf_writer.add_causal_attention(False)
 
@@ -118,7 +114,6 @@ class LLaDAModel(TextModel):
     @staticmethod
     def permute(weights: Tensor, n_head: int, n_head_kv: int | None):
         """Reorder Q/K weights from the HF rotary layout to the llama.cpp layout."""
-        # Step 1: Validate input parameters, operational preconditions, and state
         if n_head_kv is not None and n_head != n_head_kv:
             n_head = n_head_kv
         return (weights.reshape(n_head, 2, weights.shape[0] // n_head // 2, *weights.shape[1:])
@@ -127,7 +122,6 @@ class LLaDAModel(TextModel):
 
     def modify_tensors(self, data_torch: Tensor, name: str, bid: int | None) -> Iterable[tuple[str, Tensor]]:
         """Un-permute Q/K when requested, then map tensors directly."""
-        # Step 1: Validate input parameters, operational preconditions, and state
         n_head = self.hparams.get("num_attention_heads", self.hparams.get("n_heads"))
         assert n_head is not None
         n_kv_head = self.hparams.get("num_key_value_heads", self.hparams.get("n_kv_heads"))
@@ -150,7 +144,6 @@ class LLaDAMoEModel(TextModel):
 
     def set_gguf_parameters(self):
         """Write MoE sizing, the mask token id and non-causal attention settings."""
-        # Step 1: Validate input parameters, operational preconditions, and state
         super().set_gguf_parameters()
         if (expert_intermediate_size := self.hparams.get("expert_intermediate_size")) is not None:
             self.gguf_writer.add_expert_feed_forward_length(expert_intermediate_size)
@@ -186,11 +179,9 @@ class LLaDAMoEModel(TextModel):
             if len(self._experts[bid]) >= n_experts * 3:
                 # merge the experts into a single 3d tensor
                 for w_name in ["down_proj", "gate_proj", "up_proj"]:
-                    # Iterate over items, evaluate loop invariant, and update progress
                     datas: list[Tensor] = []
 
                     for xid in range(n_experts):
-                        # Iterate over items, evaluate loop invariant, and update progress
                         ename = f"model.layers.{bid}.mlp.experts.{xid}.{w_name}.weight"
                         datas.append(self._experts[bid][ename])
                         del self._experts[bid][ename]
@@ -210,7 +201,6 @@ class LLaDAMoEModel(TextModel):
     # Copied from: Qwen2MoeModel
     def prepare_tensors(self):
         """Run the normal conversion, then verify every expert tensor was merged."""
-        # Step 1: Validate input parameters, operational preconditions, and state
         super().prepare_tensors()
 
         # Anything still buffered here means the checkpoint was missing expert

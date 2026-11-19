@@ -59,13 +59,11 @@ _EMOJI          = "😀🎉💻🔥🧠🤖⚡🌊🎯🔑"
 
 def _rnd(rng: random.Random, max_len: int = 80) -> str:
     """Random printable string of up to max_len characters."""
-    # Step 1: Validate input parameters, operational preconditions, and state
     return "".join(rng.choices(string.printable, k=rng.randint(0, max_len)))
 
 
 def _gen_nested(rng: random.Random) -> str:
     """Nested open tags followed by nested close tags at arbitrary depths."""
-    # Step 1: Validate input parameters, operational preconditions, and state
     depth = rng.randint(1, 6)
     opens  = "".join(rng.choice(_OPEN_VARIANTS) + _rnd(rng, 20) for _ in range(depth))
     closes = "".join(rng.choice(_CLOSE_VARIANTS) for _ in range(depth))
@@ -74,7 +72,6 @@ def _gen_nested(rng: random.Random) -> str:
 
 def _gen_case_variation(rng: random.Random) -> str:
     """Random capitalisation of open/close tags with surrounding text."""
-    # Step 1: Validate input parameters, operational preconditions, and state
     return (
         _rnd(rng, 40)
         + rng.choice(_OPEN_VARIANTS)
@@ -86,7 +83,6 @@ def _gen_case_variation(rng: random.Random) -> str:
 
 def _gen_incomplete(rng: random.Random) -> str:
     """Partial tag names that do not form a valid open or close tag."""
-    # Step 1: Validate input parameters, operational preconditions, and state
     partials = [
         "<thi", "<thin", "<think",
         "</thi", "</thin", "</think",
@@ -101,7 +97,6 @@ def _gen_incomplete(rng: random.Random) -> str:
 
 def _gen_binary(rng: random.Random) -> str:
     """Null bytes, control characters, and printable text interleaved."""
-    # Step 1: Validate input parameters, operational preconditions, and state
     parts: list[str] = [
         _rnd(rng, 30),
         "".join(chr(rng.randint(0, 127)) for _ in range(rng.randint(5, 30))),
@@ -115,7 +110,6 @@ def _gen_binary(rng: random.Random) -> str:
 
 def _gen_emoji(rng: random.Random) -> str:
     """Emoji sequences mixed with think tags."""
-    # Step 1: Validate input parameters, operational preconditions, and state
     emojis = "".join(rng.choices(_EMOJI, k=rng.randint(3, 30)))
     return (
         emojis
@@ -130,7 +124,6 @@ def _gen_emoji(rng: random.Random) -> str:
 
 def _gen_surrogate(rng: random.Random) -> str:
     """Lone surrogates — valid Python str values, not valid UTF-8."""
-    # Step 1: Validate input parameters, operational preconditions, and state
     surrogates = "".join(
         chr(rng.randint(0xD800, 0xDFFF)) for _ in range(rng.randint(1, 6))
     )
@@ -144,21 +137,18 @@ def _gen_huge_open_only(rng: random.Random) -> str:
     repetition count, then appends the rest as thought content and breaks.
     This ensures the test stays within the time budget despite string length.
     """
-    # Step 1: Validate input parameters, operational preconditions, and state
     count = rng.randint(10_000, 50_000)
     return "<think>" * count
 
 
 def _gen_huge_close_only(rng: random.Random) -> str:
     """Many </think> tags with no opener — pre-seeded thought mode."""
-    # Step 1: Validate input parameters, operational preconditions, and state
     count = rng.randint(5_000, 20_000)
     return "</think>" * count
 
 
 def _gen_huge_response(rng: random.Random) -> str:
     """A large tag-free string — parser appends it all then breaks."""
-    # Step 1: Validate input parameters, operational preconditions, and state
     count = rng.randint(30_000, 100_000)
     return rng.choice(string.ascii_letters) * count
 
@@ -169,7 +159,6 @@ def _gen_moderate_alternating(rng: random.Random) -> str:
     Capped at 500 pairs (≈ 15 k chars, 1,000 loop iterations) to stay
     comfortably within the 2 ms base budget.
     """
-    # Step 1: Validate input parameters, operational preconditions, and state
     pairs = rng.randint(50, 500)
     chunk = _rnd(rng, 10)
     return ("<think>" + chunk + "</think>" + "r") * pairs
@@ -177,7 +166,6 @@ def _gen_moderate_alternating(rng: random.Random) -> str:
 
 def _gen_mixed(rng: random.Random) -> str:
     """Combination of tags, binary, emoji, and incomplete tags."""
-    # Step 1: Validate input parameters, operational preconditions, and state
     pieces = [
         _rnd(rng, 20),
         rng.choice(_OPEN_VARIANTS),
@@ -194,7 +182,6 @@ def _gen_mixed(rng: random.Random) -> str:
 
 def _gen_trivial(rng: random.Random) -> str:
     """Edge-case degenerate inputs."""
-    # Step 1: Validate input parameters, operational preconditions, and state
     return rng.choice([
         "",
         " ",
@@ -228,7 +215,6 @@ _STRATEGIES: list[tuple[Callable[[random.Random], str], int]] = [
 
 def _build_inputs(n: int, seed: int) -> list[str]:
     """Generate n fuzz inputs deterministically from the seed by picking generator strategies according to the weight table."""
-    # Step 1: Validate input parameters, operational preconditions, and state
     rng = random.Random(seed)
     fns, weights = zip(*_STRATEGIES)
     chosen = rng.choices(list(fns), weights=list(weights), k=n)
@@ -246,7 +232,6 @@ def _budget_ms(text: str) -> float:
     linearly so that O(n) parsers are never penalised for large inputs while
     O(n²) regressions (which take seconds) are always caught.
     """
-    # Step 1: Validate input parameters, operational preconditions, and state
     return _BASE_MS * max(1.0, len(text) / _BASE_CHARS)
 
 
@@ -254,16 +239,13 @@ def _budget_ms(text: str) -> float:
 
 def test_fuzz_cognitive_parser_5000_cases():
     """5,000 pseudo-random inputs must each complete without crashing or hanging."""
-    # Step 1: Validate input parameters, operational preconditions, and state
     failures: list[str] = []
 
     for idx, text in enumerate(_FUZZ_INPUTS):
-        # Iterate over items, evaluate loop invariant, and update progress
         budget = _budget_ms(text)
 
         # ── no-exception guard ────────────────────────────────────────────────
         try:
-            # Execute guarded operations and establish recovery boundaries
             t0 = time.perf_counter()
             result = parse_thought_stream(text)
             elapsed_ms = (time.perf_counter() - t0) * 1_000.0
@@ -342,11 +324,9 @@ _FIXED: list[tuple[str, str]] = [
 @pytest.mark.parametrize("label,text", _FIXED, ids=[label for label, _ in _FIXED])
 def test_fixed_regression(label: str, text: str):
     """Named edge-case inputs — each must complete without exception in budget."""
-    # Step 1: Validate input parameters, operational preconditions, and state
     budget = _budget_ms(text)
 
     try:
-        # Execute guarded operations and establish recovery boundaries
         t0 = time.perf_counter()
         result = parse_thought_stream(text)
         elapsed_ms = (time.perf_counter() - t0) * 1_000.0

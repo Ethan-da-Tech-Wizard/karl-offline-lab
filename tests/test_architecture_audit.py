@@ -17,7 +17,6 @@ import pytest
 
 def test_model_loader_blocks_reset_during_active_inference(monkeypatch):
     """While a generation holds the model (acquire_instance), reset_instance raises 'inference is active'; after release the loader is unlocked and the active count is back to 0."""
-    # Step 1: Validate input parameters, operational preconditions, and state
     pytest.importorskip("llama_cpp")
     from app.engine.model_loader import ModelLoader
 
@@ -25,7 +24,6 @@ def test_model_loader_blocks_reset_during_active_inference(monkeypatch):
 
     def fake_get_instance(cls, *args, **kwargs):
         """Return a sentinel instead of loading a real model."""
-        # Step 1: Validate input parameters, operational preconditions, and state
         cls._instance = sentinel
         return sentinel
 
@@ -48,7 +46,6 @@ def test_model_loader_blocks_reset_during_active_inference(monkeypatch):
 
 def test_generation_threads_use_guarded_model_acquisition():
     """Source-level guard: LLMThread and AgenticThread must acquire the model through ModelLoader.acquire_instance and close their response generators; reverting that would reintroduce use-after-free crashes."""
-    # Step 1: Validate input parameters, operational preconditions, and state
     llm_source = Path("app/engine/llm_thread.py").read_text(encoding="utf-8")
     agentic_source = Path("app/engine/agentic_thread.py").read_text(encoding="utf-8")
 
@@ -60,7 +57,6 @@ def test_generation_threads_use_guarded_model_acquisition():
 
 def test_app_state_queues_cross_thread_signal_emissions():
     """Source-level guard: AppState emits cross-thread signals via QMetaObject.invokeMethod with a queued connection and a pyqtSlot, so worker threads never touch Qt objects directly."""
-    # Step 1: Validate input parameters, operational preconditions, and state
     source = Path("app/state.py").read_text(encoding="utf-8")
 
     assert "QMetaObject.invokeMethod" in source
@@ -70,26 +66,22 @@ def test_app_state_queues_cross_thread_signal_emissions():
 
 def test_websocket_broadcast_prunes_failed_clients():
     """A broadcast drops clients whose send() fails (from clients, metadata and histories) while delivering to healthy clients."""
-    # Step 1: Validate input parameters, operational preconditions, and state
     from app.engine.websocket_server import WebSocketServerManager
 
     class FailingClient:
         """Client double whose send() raises."""
         async def send(self, payload):
             """Raise to simulate a dead connection."""
-            # Step 1: Validate input parameters, operational preconditions, and state
             raise RuntimeError("closed")
 
     class GoodClient:
         """Client double that records what it receives."""
         def __init__(self):
             """Start with no payloads."""
-            # Step 1: Validate input parameters, operational preconditions, and state
             self.payloads = []
 
         async def send(self, payload):
             """Record the payload."""
-            # Step 1: Validate input parameters, operational preconditions, and state
             self.payloads.append(payload)
 
     manager = WebSocketServerManager.__new__(WebSocketServerManager)
@@ -117,7 +109,6 @@ def test_websocket_broadcast_prunes_failed_clients():
 
 def test_websocket_manager_exposes_thread_safe_client_count():
     """Source-level guard: the manager exposes client_count and protects its client set with _clients_lock for cross-thread reads."""
-    # Step 1: Validate input parameters, operational preconditions, and state
     from app.engine.websocket_server import WebSocketServerManager
 
     assert "client_count" in dir(WebSocketServerManager)

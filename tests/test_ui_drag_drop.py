@@ -20,23 +20,19 @@ class MockState:
     """AppState double providing a fake training curator and fake RAG with just the fields the Training Studio / Knowledge workspace reads."""
     def __init__(self):
         """Create the mock curator and RAG and attach them."""
-        # Step 1: Validate input parameters, operational preconditions, and state
         class MockCurator:
             """Fake training curator holding two example dicts."""
             def __init__(self):
                 """Seed the list with two examples (a thumbs_up and a corrected one)."""
-                # Step 1: Validate input parameters, operational preconditions, and state
                 self.examples = [
                     {"instruction": "say hello", "output": "hello there", "source": "thumbs_up"},
                     {"instruction": "fix python syntax", "output": "print('fixed')", "source": "corrected"}
                 ]
             def get_all_examples(self):
                 """Return the stored examples."""
-                # Step 1: Validate input parameters, operational preconditions, and state
                 return self.examples
             def delete_example(self, row):
                 """Remove an example by row index when in range."""
-                # Step 1: Validate input parameters, operational preconditions, and state
                 if 0 <= row < len(self.examples):
                     self.examples.pop(row)
         
@@ -44,22 +40,18 @@ class MockState:
             """Fake RAG pipeline reporting an empty knowledge base."""
             def list_sources(self):
                 """No sources."""
-                # Step 1: Validate input parameters, operational preconditions, and state
                 return []
             @property
             def is_encoder_loaded(self):
                 """Encoder is not loaded."""
-                # Step 1: Validate input parameters, operational preconditions, and state
                 return False
             @property
             def total_chunks(self):
                 """Zero chunks."""
-                # Step 1: Validate input parameters, operational preconditions, and state
                 return 0
             @property
             def total_sources(self):
                 """Zero sources."""
-                # Step 1: Validate input parameters, operational preconditions, and state
                 return 0
             INDEX_FILE = "index.faiss"
             META_FILE = "metadata.json"
@@ -71,7 +63,6 @@ class MockState:
 
 def test_dataset_list_model():
     """The Qt list model starts empty, exposes rows and get_item(i) (None when out of range) and formats display text from the example."""
-    # Step 1: Validate input parameters, operational preconditions, and state
     model = DatasetListModel()
     assert model.rowCount() == 0
 
@@ -91,7 +82,6 @@ def test_dataset_list_model():
 
 def test_drag_drop_filter():
     """Dropping files on the workspace accepts only supported types: the .py file is queued and the .png is not, and the status label reports 'Queued 1 file(s) via Drag & Drop.'."""
-    # Step 1: Validate input parameters, operational preconditions, and state
     state = MockState()
     # Instantiate workspace widget
     workspace = KnowledgeBaseWorkspace(state)
@@ -113,14 +103,11 @@ def test_drag_drop_filter():
         
         class MockDropEvent:
             def __init__(self, mime_data):
-                # Step 1: Validate input parameters, operational preconditions, and state
                 self._mime = mime_data
                 self.accepted = False
             def mimeData(self):
-                # Step 1: Validate input parameters, operational preconditions, and state
                 return self._mime
             def acceptProposedAction(self):
-                # Step 1: Validate input parameters, operational preconditions, and state
                 self.accepted = True
 
         mock_event = MockDropEvent(mime)

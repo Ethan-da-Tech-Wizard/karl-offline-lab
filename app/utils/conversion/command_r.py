@@ -27,10 +27,9 @@ class CommandR2Model(TextModel):
 
     def __init__(self, *args, **kwargs):
         """Fix up max_position_embeddings from the real trained context length."""
-        # Step 1: Validate input parameters, operational preconditions, and state
         super().__init__(*args, **kwargs)
 
-        # (see note) the config under-reports context, so prefer model_max_length when present.
+        # the config under-reports context, so prefer model_max_length when present.
         # max_position_embeddings = 8192 in config.json but model was actually
         # trained on 128k context length
         # aya-23 models don't have model_max_length specified
@@ -38,7 +37,6 @@ class CommandR2Model(TextModel):
 
     def set_gguf_parameters(self):
         """Write base parameters, the logit scale, and disable RoPE scaling."""
-        # Step 1: Validate input parameters, operational preconditions, and state
         super().set_gguf_parameters()
         self.gguf_writer.add_logit_scale(self.hparams["logit_scale"])
         self.gguf_writer.add_rope_scaling_type(gguf.RopeScalingType.NONE)
@@ -52,7 +50,6 @@ class Cohere2Model(TextModel):
 
     def set_gguf_parameters(self):
         """Write base parameters plus logit scale, sliding window, vocab size and RoPE size."""
-        # Step 1: Validate input parameters, operational preconditions, and state
         super().set_gguf_parameters()
 
         self.gguf_writer.add_logit_scale(self.hparams["logit_scale"])
@@ -68,7 +65,7 @@ class Cohere2Model(TextModel):
 
     def modify_tensors(self, data_torch: Tensor, name: str, bid: int | None) -> Iterable[tuple[str, Tensor]]:
         """Skip all-zero bias tensors; refuse conversion if a bias is non-zero."""
-        # (see note) raising on non-zero bias protects against silently dropping real weights.
+        # raising on non-zero bias protects against silently dropping real weights.
         # Cohere2 runtime in llama.cpp expects no bias tensors;
         # the actual weight only contains 0-value tensors as bias, we can skip them
         if name.endswith(".bias"):

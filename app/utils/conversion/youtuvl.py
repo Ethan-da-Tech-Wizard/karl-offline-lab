@@ -32,7 +32,6 @@ class YoutuVLVisionModel(MmprojModel):
     """Vision (mmproj) converter for Youtu-VL with window attention on irregular layers."""
     def __init__(self, *args, **kwargs):
         """Default the image size when the config omits it."""
-        # Step 1: Validate input parameters, operational preconditions, and state
         super().__init__(*args, **kwargs)
         assert self.hparams_vision is not None
         self.hparams_vision["image_size"] = self.hparams_vision.get("image_size", 560)
@@ -40,7 +39,6 @@ class YoutuVLVisionModel(MmprojModel):
     def set_gguf_parameters(self):
         """Write projector type, activation, merge size, window size and full-attention layer indices.
         """
-        # Step 1: Validate input parameters, operational preconditions, and state
         super().set_gguf_parameters()
 
         self.gguf_writer.add_clip_projector_type(gguf.VisionProjectorType.YOUTUVL)
@@ -74,7 +72,6 @@ class YoutuVLVisionModel(MmprojModel):
     def filter_tensors(cls, item: tuple[str, Callable[[], Tensor]]) -> tuple[str, Callable[[], Tensor]] | None:
         """Drop language-model tensors; only the vision encoder and projector are converted here.
         """
-        # Step 1: Validate input parameters, operational preconditions, and state
         name, gen = item
 
         # Skip language model tensors
@@ -89,7 +86,6 @@ class YoutuVLVisionModel(MmprojModel):
         """
         # Try to map the tensor using TensorNameMap (handles vision encoder and projector)
         try:
-            # Execute guarded operations and establish recovery boundaries
             yield from super().modify_tensors(data_torch, name, bid)
         except ValueError:
             # If mapping fails, log warning and skip

@@ -47,7 +47,6 @@ class LlamaModel(TextModel):
 
     def __init__(self, *args, **kwargs):
         """Initialise the base converter and record the original HF architecture name."""
-        # Step 1: Validate input parameters, operational preconditions, and state
         super().__init__(*args, **kwargs)
         # SmolVLM2 configs omit this key but later code requires it; 32 is the default used here.
         # fix for SmolVLM2, missing `num_attention_heads` in config.json
@@ -67,7 +66,6 @@ class LlamaModel(TextModel):
         Tries Mistral/tekken, then SentencePiece, then the HF Llama tokenizer, and
         finally GPT-2 style BPE (what Llama 3 uses).
         """
-        # Step 1: Validate input parameters, operational preconditions, and state
         # Special-cased architectures return early with their own vocab loaders.
         if self.origin_hf_arch == "GlmasrModel":
             return self._set_vocab_glmedge()
@@ -92,12 +90,10 @@ class LlamaModel(TextModel):
                     return self._set_vocab_hybriddna()
 
         try:
-            # Execute guarded operations and establish recovery boundaries
             # Fallback chain: SentencePiece -> HF llama tokenizer -> GPT-2 BPE (Llama 3).
             self._set_vocab_sentencepiece()
         except FileNotFoundError:
             try:
-                # Execute guarded operations and establish recovery boundaries
                 self._set_vocab_llama_hf()
             except (FileNotFoundError, TypeError):
                 # Llama 3
@@ -124,7 +120,6 @@ class LlamaModel(TextModel):
 
     def set_gguf_parameters(self):
         """Write base parameters, vocab size and the RoPE dimension count."""
-        # Step 1: Validate input parameters, operational preconditions, and state
         super().set_gguf_parameters()
         hparams = self.hparams
 
@@ -143,7 +138,6 @@ class LlamaModel(TextModel):
         With grouped-query attention the K projection has n_head_kv heads, so that
         count is used for the reshape.
         """
-        # Step 1: Validate input parameters, operational preconditions, and state
         # K/V use fewer heads than Q under GQA; reshape with the KV head count.
         if n_head_kv is not None and n_head != n_head_kv:
             n_head = n_head_kv
@@ -175,7 +169,6 @@ class LlamaModel(TextModel):
     @classmethod
     def filter_tensors(cls, item: tuple[str, Callable[[], Tensor]]) -> tuple[str, Callable[[], Tensor]] | None:
         """Strip the SmolVLM "text_model." prefix before the base class sees the name."""
-        # Step 1: Validate input parameters, operational preconditions, and state
         name, gen = item
 
         if "text_model." in name:
@@ -188,7 +181,6 @@ class LlamaModel(TextModel):
 
         Generator: yields nothing while a layer's experts are still being collected.
         """
-        # Step 1: Validate input parameters, operational preconditions, and state
         n_head = self.find_hparam(["n_heads", "num_attention_heads"])
         n_kv_head = self.find_hparam(["n_kv_heads", "num_key_value_heads"])
 
@@ -221,11 +213,9 @@ class LlamaModel(TextModel):
             if len(self._experts[bid]) >= n_experts * 3:
                 # merge the experts into a single 3d tensor
                 for wid in ["w1", "w2", "w3"]:
-                    # Iterate over items, evaluate loop invariant, and update progress
                     datas: list[Tensor] = []
 
                     for xid in range(n_experts):
-                        # Iterate over items, evaluate loop invariant, and update progress
                         ename = f"model.layers.{bid}.block_sparse_moe.experts.{xid}.{wid}.weight"
                         datas.append(self._experts[bid][ename])
                         del self._experts[bid][ename]
@@ -249,7 +239,6 @@ class LlamaModel(TextModel):
         components are left alone, low-frequency ones are divided by `factor`, and
         the band in between is smoothly interpolated.
         """
-        # Step 1: Validate input parameters, operational preconditions, and state
         if rope_params := self.rope_parameters.get("full_attention", self.rope_parameters):
             if rope_params.get("rope_type", '').lower() == "llama3":
                 base = rope_params.get("rope_theta", 10000.0)
@@ -272,7 +261,6 @@ class LlamaModel(TextModel):
                 rope_factors = []
                 # Per-frequency scale factor: 1 (no change), `factor` (full), or a smooth blend.
                 for freq in freqs:
-                    # Iterate over items, evaluate loop invariant, and update progress
                     wavelen = 2 * math.pi / freq
                     if wavelen < high_freq_wavelen:
                         rope_factors.append(1)
@@ -287,7 +275,6 @@ class LlamaModel(TextModel):
 
     def prepare_tensors(self):
         """Run the normal conversion, then verify every expert tensor was merged."""
-        # Step 1: Validate input parameters, operational preconditions, and state
         super().prepare_tensors()
 
         # Anything still buffered here means the checkpoint was missing expert
@@ -305,7 +292,6 @@ class ArceeModel(LlamaModel):
     model_arch = gguf.MODEL_ARCH.ARCEE
 
     def set_gguf_parameters(self):
-        # Step 1: Validate input parameters, operational preconditions, and state
         super().set_gguf_parameters()
         # Writes a pooling type only if the model config defines one (embedding use).
         self._try_set_pooling_type()
@@ -321,7 +307,6 @@ class Llama4Model(LlamaModel):
     undo_permute = False
 
     def __init__(self, *args, **kwargs):
-        # Step 1: Validate input parameters, operational preconditions, and state
         super().__init__(*args, **kwargs)
         # IMPORTANT: the normal "intermediate_size" is renamed to "intermediate_size_mlp", we need to undo this
         self.hparams["intermediate_size_moe"] = self.hparams["intermediate_size"]
@@ -329,12 +314,10 @@ class Llama4Model(LlamaModel):
 
     def set_vocab(self):
         """Llama 4 uses a GPT-2 style BPE tokenizer."""
-        # Step 1: Validate input parameters, operational preconditions, and state
         self._set_vocab_gpt2()
 
     def set_gguf_parameters(self):
         """Add Llama 4 MoE layout parameters and disable SWA when every layer is full attention."""
-        # Step 1: Validate input parameters, operational preconditions, and state
         super().set_gguf_parameters()
         self.gguf_writer.add_interleave_moe_layer_step(self.hparams["interleave_moe_layer_step"])
         self.gguf_writer.add_expert_feed_forward_length(self.hparams["intermediate_size_moe"])

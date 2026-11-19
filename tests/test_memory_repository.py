@@ -18,22 +18,18 @@ class MockInMemoryRepository:
     """Dictionary-backed stand-in for the session repository, so MemoryManager can be tested without touching disk."""
     def __init__(self):
         """Start with an empty store."""
-        # Step 1: Validate input parameters, operational preconditions, and state
         self.store = {}
 
     def save(self, session_id: str, session_tree: dict) -> None:
         """Store a session tree under its id."""
-        # Step 1: Validate input parameters, operational preconditions, and state
         self.store[session_id] = session_tree
 
     def get(self, session_id: str) -> dict | None:
         """Return a stored session or None."""
-        # Step 1: Validate input parameters, operational preconditions, and state
         return self.store.get(session_id)
 
     def list_all(self) -> list[dict]:
         """List stored sessions in the repository's record format, excluding the autosave checkpoint."""
-        # Step 1: Validate input parameters, operational preconditions, and state
         return [
             {"filename": sid, "data": data, "mtime": 123456789.0}
             for sid, data in self.store.items()
@@ -42,7 +38,6 @@ class MockInMemoryRepository:
 
     def delete(self, session_id: str) -> bool:
         """Remove a session; True if it existed."""
-        # Step 1: Validate input parameters, operational preconditions, and state
         if session_id in self.store:
             del self.store[session_id]
             return True

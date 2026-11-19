@@ -38,15 +38,12 @@ class _DeterministicEncoder:
 
     def encode(self, texts, batch_size: int = 32, show_progress_bar: bool = False):
         """Embed texts by hashing tokens into a fixed 384-dim L2-normalised vector."""
-        # Step 1: Validate input parameters, operational preconditions, and state
         if isinstance(texts, str):
             texts = [texts]
         vectors = []
         for text in texts:
-            # Iterate over items, evaluate loop invariant, and update progress
             vec = np.zeros(384, dtype="float32")
             for token in text.lower().split():
-                # Iterate over items, evaluate loop invariant, and update progress
                 vec[hash(token) % 384] += 1.0
             norm = np.linalg.norm(vec)
             if norm:
@@ -57,7 +54,6 @@ class _DeterministicEncoder:
 
 def _make_pipeline(index_path: str) -> RAGPipeline:
     """Create a RAGPipeline on the given index path with the deterministic encoder injected."""
-    # Step 1: Validate input parameters, operational preconditions, and state
     rag = RAGPipeline(index_path=index_path)
     rag._encoder = _DeterministicEncoder()
     return rag
@@ -68,7 +64,6 @@ def _make_pipeline(index_path: str) -> RAGPipeline:
 @pytest.fixture
 def tmp_dir():
     """Fixture: temporary directory removed after the test."""
-    # Step 1: Validate input parameters, operational preconditions, and state
     d = tempfile.mkdtemp()
     yield d
     shutil.rmtree(d, ignore_errors=True)
@@ -77,7 +72,6 @@ def tmp_dir():
 @pytest.fixture
 def rag(tmp_dir):
     """Fixture: a RAG pipeline using the temp directory."""
-    # Step 1: Validate input parameters, operational preconditions, and state
     return _make_pipeline(tmp_dir)
 
 
@@ -111,25 +105,19 @@ _QUERY = "artificial intelligence research applications"
 
 def _ingest_all(rag: RAGPipeline) -> None:
     """Ingest each of the five test documents as its own source."""
-    # Step 1: Validate input parameters, operational preconditions, and state
     for key, (text, _score) in _DOCS.items():
-        # Iterate over items, evaluate loop invariant, and update progress
         rag.ingest_text(text, source_name=f"{key}.txt", chunk_size=200, overlap=0)
 
 
 def _make_reranker_mock() -> MagicMock:
     """Return a mock CrossEncoder whose predict() uses text content to look up scores."""
 
-    # Step 1: Validate input parameters, operational preconditions, and state
     def _predict(pairs: list[tuple[str, str]]) -> np.ndarray:
         """Score each (query, chunk) pair by looking up the document keyword found in the chunk text, so reranker ordering is fully predetermined."""
-        # Step 1: Validate input parameters, operational preconditions, and state
         scores = []
         for _query, text in pairs:
-            # Iterate over items, evaluate loop invariant, and update progress
             score = 0.0
             for keyword, (_doc_text, s) in _DOCS.items():
-                # Iterate over items, evaluate loop invariant, and update progress
                 if keyword in text:
                     score = s
                     break
@@ -151,7 +139,6 @@ def test_reranker_overrides_rrf_ordering(rag):
     which order RRF selects them.  With top_k=3, the first three results must
     be epsilon, alpha, gamma in that order.
     """
-    # Step 1: Validate input parameters, operational preconditions, and state
     _ingest_all(rag)
     rag._reranker = _make_reranker_mock()
 
@@ -175,7 +162,6 @@ def test_reranker_overrides_rrf_ordering(rag):
 
 def test_reranker_scores_descend_monotonically(rag):
     """rerank_score attached to each result must decrease from rank 1 to rank N."""
-    # Step 1: Validate input parameters, operational preconditions, and state
     _ingest_all(rag)
     rag._reranker = _make_reranker_mock()
 
@@ -191,41 +177,35 @@ def test_reranker_scores_descend_monotonically(rag):
 
 def test_rerank_score_key_attached_to_all_results(rag):
     """Every result returned when use_reranker=True must carry a 'rerank_score' key."""
-    # Step 1: Validate input parameters, operational preconditions, and state
     _ingest_all(rag)
     rag._reranker = _make_reranker_mock()
 
     results = rag.retrieve_hybrid(_QUERY, top_k=3, use_reranker=True)
 
     for i, r in enumerate(results):
-        # Iterate over items, evaluate loop invariant, and update progress
         assert "rerank_score" in r, f"Result [{i}] missing 'rerank_score': {r.keys()}"
         assert isinstance(r["rerank_score"], float)
 
 
 def test_rrf_score_still_present_after_reranking(rag):
     """RRF metadata must be preserved alongside the rerank score."""
-    # Step 1: Validate input parameters, operational preconditions, and state
     _ingest_all(rag)
     rag._reranker = _make_reranker_mock()
 
     results = rag.retrieve_hybrid(_QUERY, top_k=3, use_reranker=True)
 
     for r in results:
-        # Iterate over items, evaluate loop invariant, and update progress
         assert "rrf_score" in r, f"rrf_score key missing after reranking: {r.keys()}"
 
 
 def test_rank_field_reflects_reranked_position(rag):
     """After reranking, r['rank'] must equal 1-based position in the output list."""
-    # Step 1: Validate input parameters, operational preconditions, and state
     _ingest_all(rag)
     rag._reranker = _make_reranker_mock()
 
     results = rag.retrieve_hybrid(_QUERY, top_k=3, use_reranker=True)
 
     for expected_rank, r in enumerate(results, 1):
-        # Iterate over items, evaluate loop invariant, and update progress
         assert r["rank"] == expected_rank, (
             f"Expected rank={expected_rank}, got {r['rank']}"
         )
@@ -235,7 +215,6 @@ def test_rank_field_reflects_reranked_position(rag):
 
 def test_reranker_called_with_query_chunk_pairs(rag):
     """predict() must receive a list of (query, chunk_text) tuples."""
-    # Step 1: Validate input parameters, operational preconditions, and state
     _ingest_all(rag)
     rag._reranker = _make_reranker_mock()
 
@@ -246,7 +225,6 @@ def test_reranker_called_with_query_chunk_pairs(rag):
 
     assert isinstance(pairs, list), "predict() arg must be a list"
     for pair in pairs:
-        # Iterate over items, evaluate loop invariant, and update progress
         assert isinstance(pair, tuple) and len(pair) == 2, (
             f"Each input must be a (query, text) tuple; got {pair!r}"
         )
@@ -259,7 +237,6 @@ def test_reranker_called_with_query_chunk_pairs(rag):
 
 def test_reranker_pool_limited_by_rerank_candidates(rag):
     """predict() must receive at most rerank_candidates pairs."""
-    # Step 1: Validate input parameters, operational preconditions, and state
     _ingest_all(rag)
 
     received_sizes: list[int] = []
@@ -267,7 +244,6 @@ def test_reranker_pool_limited_by_rerank_candidates(rag):
     mock = MagicMock()
     def _predict(pairs):
         """Record how many pairs predict() received and return zero scores."""
-        # Step 1: Validate input parameters, operational preconditions, and state
         received_sizes.append(len(pairs))
         return np.zeros(len(pairs), dtype="float32")
     mock.predict.side_effect = _predict
@@ -284,12 +260,10 @@ def test_reranker_pool_limited_by_rerank_candidates(rag):
 
 def test_top_k_slices_after_reranking(rag):
     """retrieve_hybrid must return exactly top_k results even when pool is larger."""
-    # Step 1: Validate input parameters, operational preconditions, and state
     _ingest_all(rag)
     rag._reranker = _make_reranker_mock()
 
     for top_k in (1, 2, 3):
-        # Iterate over items, evaluate loop invariant, and update progress
         results = rag.retrieve_hybrid(
             _QUERY, top_k=top_k, use_reranker=True, rerank_candidates=5
         )
@@ -302,7 +276,6 @@ def test_top_k_slices_after_reranking(rag):
 
 def test_fallback_to_rrf_when_reranker_property_returns_none(rag):
     """When the reranker property yields None, output must be RRF-ordered (no crash)."""
-    # Step 1: Validate input parameters, operational preconditions, and state
     _ingest_all(rag)
 
     with patch.object(type(rag), "reranker", new_callable=PropertyMock, return_value=None):
@@ -311,14 +284,12 @@ def test_fallback_to_rrf_when_reranker_property_returns_none(rag):
     assert isinstance(results, list)
     assert len(results) <= 3
     for r in results:
-        # Iterate over items, evaluate loop invariant, and update progress
         assert "rrf_score" in r
         assert "rerank_score" not in r, "rerank_score must not appear in RRF fallback"
 
 
 def test_fallback_to_rrf_on_predict_exception(rag):
     """If predict() raises, retrieve_hybrid must fall back to RRF order gracefully."""
-    # Step 1: Validate input parameters, operational preconditions, and state
     _ingest_all(rag)
 
     mock = MagicMock()
@@ -330,13 +301,11 @@ def test_fallback_to_rrf_on_predict_exception(rag):
     assert isinstance(results, list)
     assert len(results) <= 3
     for r in results:
-        # Iterate over items, evaluate loop invariant, and update progress
         assert "rerank_score" not in r
 
 
 def test_no_reranker_call_without_use_reranker_flag(rag):
     """Default call (use_reranker=False) must not touch the CrossEncoder at all."""
-    # Step 1: Validate input parameters, operational preconditions, and state
     _ingest_all(rag)
     mock = MagicMock()
     rag._reranker = mock
@@ -345,19 +314,16 @@ def test_no_reranker_call_without_use_reranker_flag(rag):
 
     mock.predict.assert_not_called()
     for r in results:
-        # Iterate over items, evaluate loop invariant, and update progress
         assert "rerank_score" not in r
 
 
 def test_no_rerank_score_in_plain_hybrid_results(rag):
     """rerank_score must not bleed into standard (non-reranker) results."""
-    # Step 1: Validate input parameters, operational preconditions, and state
     _ingest_all(rag)
 
     results = rag.retrieve_hybrid(_QUERY, top_k=3)
 
     for r in results:
-        # Iterate over items, evaluate loop invariant, and update progress
         assert "rerank_score" not in r, (
             f"Plain hybrid result unexpectedly contains rerank_score: {r}"
         )
@@ -367,7 +333,6 @@ def test_no_rerank_score_in_plain_hybrid_results(rag):
 
 def test_reranker_lazy_loads_on_first_property_access(rag):
     """The CrossEncoder must not be instantiated until reranker is first accessed."""
-    # Step 1: Validate input parameters, operational preconditions, and state
     assert rag._reranker is None, "reranker must not be created during __init__"
 
     mock_ce_class = MagicMock(return_value=MagicMock())
@@ -380,7 +345,6 @@ def test_reranker_lazy_loads_on_first_property_access(rag):
 
 def test_reranker_property_returns_none_and_does_not_retry_on_load_failure(rag):
     """A failed load must cache the failure and skip all future load attempts."""
-    # Step 1: Validate input parameters, operational preconditions, and state
     with patch(
         "sentence_transformers.CrossEncoder",
         side_effect=OSError("model weights not cached"),
@@ -402,7 +366,6 @@ def test_reranker_property_returns_none_and_does_not_retry_on_load_failure(rag):
 
 def test_reranker_property_caches_successful_instance(rag):
     """After a successful load the same object is returned on every subsequent access."""
-    # Step 1: Validate input parameters, operational preconditions, and state
     mock_instance = MagicMock()
 
     with patch("sentence_transformers.CrossEncoder", return_value=mock_instance):
@@ -417,7 +380,6 @@ def test_reranker_property_caches_successful_instance(rag):
 
 def test_retrieve_hybrid_with_reranker_on_empty_index_returns_empty(rag):
     """retrieve_hybrid must return [] without calling predict when the index is empty."""
-    # Step 1: Validate input parameters, operational preconditions, and state
     mock = MagicMock()
     rag._reranker = mock
 

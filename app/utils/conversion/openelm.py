@@ -44,7 +44,6 @@ class OpenELMModel(TextModel):
 
     def __init__(self, *args, **kwargs):
         """Read per-layer head counts and compute per-layer FFN dims from the multipliers."""
-        # Step 1: Validate input parameters, operational preconditions, and state
         super().__init__(*args, **kwargs)
 
         ffn_multipliers: list[float] = self.hparams["ffn_multipliers"]
@@ -63,16 +62,13 @@ class OpenELMModel(TextModel):
     def set_vocab(self):
         """Use the SentencePiece tokenizer, falling back to the built-in llama-spm vocab if its file is absent.
         """
-        # Step 1: Validate input parameters, operational preconditions, and state
         try:
-            # Execute guarded operations and establish recovery boundaries
             self._set_vocab_sentencepiece()
         except FileNotFoundError:
             self._set_vocab_builtin("llama-spm", self.hparams["vocab_size"])
 
     def set_gguf_parameters(self):
         """Write per-layer arrays (FFN dims, query and KV heads) and RoPE/norm settings."""
-        # Step 1: Validate input parameters, operational preconditions, and state
         n_embd = self._n_embd
         head_dim = self.hparams["head_dim"]
         rot_pct = 1.0
@@ -96,7 +92,6 @@ class OpenELMModel(TextModel):
 
     def find_hparam(self, keys: Iterable[str], optional: bool = False) -> Any:
         """Map the generic 'n_layers' key to OpenELM's num_transformer_layers."""
-        # Step 1: Validate input parameters, operational preconditions, and state
         if "n_layers" in keys:
             return self.hparams["num_transformer_layers"]
 

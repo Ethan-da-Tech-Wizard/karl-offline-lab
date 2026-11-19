@@ -31,7 +31,6 @@ class JanusProModel(LlamaModel):
     @classmethod
     def filter_tensors(cls, item: tuple[str, Callable[[], Tensor]]) -> tuple[str, Callable[[], Tensor]] | None:
         """Skip vision, aligner, VQ and generation tensors."""
-        # Step 1: Validate input parameters, operational preconditions, and state
         name, gen = item
 
         # Skip vision, aligner, and generation tensors
@@ -56,7 +55,6 @@ class JanusProVisionModel(MmprojModel):
     """Converter for Janus-Pro's vision tower and aligner (mmproj GGUF)."""
     def __init__(self, *args, **kwargs):
         """Derive intermediate_size from mlp_ratio when the vision config omits it."""
-        # Step 1: Validate input parameters, operational preconditions, and state
         super().__init__(*args, **kwargs)
         assert self.hparams_vision is not None
         if "intermediate_size" not in self.hparams_vision:
@@ -68,7 +66,6 @@ class JanusProVisionModel(MmprojModel):
 
     def set_gguf_parameters(self):
         """Write the Janus-Pro projector type, norm epsilon and activation."""
-        # Step 1: Validate input parameters, operational preconditions, and state
         super().set_gguf_parameters()
         assert self.hparams_vision is not None
 
@@ -85,7 +82,6 @@ class JanusProVisionModel(MmprojModel):
 
     def _map_aligner_tensor(self, data_torch: Tensor, name: str) -> Iterable[tuple[str, Tensor]]:
         """Map aligner tensors to projector format"""
-        # Step 1: Validate input parameters, operational preconditions, and state
         # The aligner is a small MLP (fc1 then hidden layers); each Linear becomes projector
         # layer mm.<index>, with fc1 as 0 and hidden_layers.N as N + 1.
         suffix = ".bias" if name.endswith(".bias") else ".weight"
@@ -115,7 +111,6 @@ class JanusProVisionModel(MmprojModel):
     @classmethod
     def filter_tensors(cls, item: tuple[str, Callable[[], Tensor]]) -> tuple[str, Callable[[], Tensor]] | None:
         """Skip image-generation components (VQ model, generation embeddings/aligner/head)."""
-        # Step 1: Validate input parameters, operational preconditions, and state
         name, gen = item
 
         # Skip generation-related components

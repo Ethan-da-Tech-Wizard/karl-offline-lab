@@ -35,7 +35,6 @@ class PixtralModel(LlavaVisionModel):
     def set_gguf_parameters(self):
         """Write the Pixtral projector type, SiLU activation, rope base and optional spatial merge.
         """
-        # Step 1: Validate input parameters, operational preconditions, and state
         super().set_gguf_parameters()
         self.gguf_writer.add_clip_projector_type(gguf.VisionProjectorType.PIXTRAL)
 
@@ -55,7 +54,6 @@ class PixtralModel(LlavaVisionModel):
     def map_tensor_name(self, name: str, try_suffixes: Sequence[str] = (".weight", ".bias")) -> str:
         """Map the Mistral vision-language adapter weights to mm.1/mm.2; everything else uses the default mapping.
         """
-        # Step 1: Validate input parameters, operational preconditions, and state
         if name == "vision_language_adapter.w_in.weight":
             return "mm.1.weight"
         elif name == "vision_language_adapter.w_in.bias":

@@ -33,7 +33,6 @@ class ChatGLMModel(TextModel):
         Ids beyond the underlying SentencePiece model (role / control tokens and
         unused padding) are classified by hand; the rest use SentencePiece's own flags.
         """
-        # Step 1: Validate input parameters, operational preconditions, and state
         dir_model = self.dir_model
         hparams = self.hparams
         tokens: list[bytes] = []
@@ -51,7 +50,6 @@ class ChatGLMModel(TextModel):
         special_tokens = ["[MASK]", "[gMASK]", "[sMASK]", "sop", "eop"] + role_special_tokens
         # Walk every id, including padding slots, so GGUF token tables match the embedding rows.
         for token_id in range(vocab_size):
-            # Iterate over items, evaluate loop invariant, and update progress
             piece = tokenizer._convert_id_to_token(token_id)  # ty: ignore[unresolved-attribute]
             # ChatGLM3's first three ids have non-standard text; normalise to <unk>/<bos>/<eos>.
             if token_id == 0:
@@ -113,7 +111,6 @@ class ChatGLMModel(TextModel):
     @staticmethod
     def token_bytes_to_string(b):
         """Convert raw token bytes to the GPT-2 byte-to-unicode printable form."""
-        # Step 1: Validate input parameters, operational preconditions, and state
         from transformers.models.gpt2.tokenization_gpt2 import bytes_to_unicode  # ty: ignore[unresolved-import]
         byte_encoder = bytes_to_unicode()
         return ''.join([byte_encoder[ord(char)] for char in b.decode('latin-1')])
@@ -125,15 +122,12 @@ class ChatGLMModel(TextModel):
         Repeatedly merges the adjacent pair with the lowest rank, stopping when no pair
         remains or the next merge would reach `max_rank`. Returns the resulting parts.
         """
-        # Step 1: Validate input parameters, operational preconditions, and state
         # Start from single bytes; merge the lowest-ranked adjacent pair each pass.
         parts = [bytes([b]) for b in token]
         while True:
-            # Iterate over items, evaluate loop invariant, and update progress
             min_idx = None
             min_rank = None
             for i, pair in enumerate(zip(parts[:-1], parts[1:])):
-                # Iterate over items, evaluate loop invariant, and update progress
                 rank = mergeable_ranks.get(pair[0] + pair[1])
                 if rank is not None and (min_rank is None or rank < min_rank):
                     min_idx = i
@@ -146,7 +140,6 @@ class ChatGLMModel(TextModel):
 
     def set_vocab(self):
         """Choose the ChatGLM3 vocab path or the GPT-2 style BPE path used by newer GLM models."""
-        # Step 1: Validate input parameters, operational preconditions, and state
         # Only the original ChatGLM3 repo uses the SentencePiece wrapper.
         if "THUDM/chatglm3-6b" in self.hparams.get("_name_or_path", ""):
             self.set_vocab_chatglm3()
@@ -179,7 +172,6 @@ class ChatGLMModel(TextModel):
 
     def set_gguf_parameters(self):
         """Write hyperparameters, tolerating the several key names GLM releases use."""
-        # Step 1: Validate input parameters, operational preconditions, and state
         n_embed = self.hparams.get("hidden_size", self.hparams.get("n_embed"))
         assert n_embed is not None
         n_head = self.hparams.get("n_head", self.hparams.get("num_attention_heads"))
@@ -210,7 +202,6 @@ class ChatGLMModel(TextModel):
     @classmethod
     def filter_tensors(cls, item: tuple[str, Callable[[], Tensor]]) -> tuple[str, Callable[[], Tensor]] | None:
         """Drop precomputed rotary inv_freq buffers and strip the "transformer." prefix."""
-        # Step 1: Validate input parameters, operational preconditions, and state
         name, gen = item
 
         # Not a weight: llama.cpp recomputes RoPE frequencies itself.

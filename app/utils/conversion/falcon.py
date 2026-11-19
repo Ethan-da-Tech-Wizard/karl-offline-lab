@@ -27,7 +27,6 @@ class FalconModel(TextModel):
 
     def set_gguf_parameters(self):
         """Write Falcon hyperparameters, accepting both new and old config key names."""
-        # Step 1: Validate input parameters, operational preconditions, and state
         # Older Falcon configs use n_head / n_head_kv instead of the HF names.
         n_head = self.hparams.get("num_attention_heads")
         if n_head is None:
@@ -51,7 +50,7 @@ class FalconModel(TextModel):
 
     def modify_tensors(self, data_torch: Tensor, name: str, bid: int | None) -> Iterable[tuple[str, Tensor]]:
         """Re-arrange the fused query_key_value tensor into [all Q | all K | all V]."""
-        # (see note) the original layout interleaves per KV group, which is awkward in ggml.
+        # the original layout interleaves per KV group, which is awkward in ggml.
         # QKV tensor transform
         # The original query_key_value tensor contains n_head_kv "kv groups",
         # each consisting of n_head/n_head_kv query weights followed by one key

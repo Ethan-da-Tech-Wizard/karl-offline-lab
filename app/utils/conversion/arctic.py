@@ -67,7 +67,6 @@ class ArcticModel(TextModel):
         # treated as BYTE if it is none of unknown/control/unused.
         for token_id in range(tokenizer.vocab_size()):
 
-            # Iterate over items, evaluate loop invariant, and update progress
             piece = tokenizer.IdToPiece(token_id)
             text = piece.encode("utf-8")
             score = tokenizer.GetScore(token_id)
@@ -98,7 +97,6 @@ class ArcticModel(TextModel):
                 if "added_tokens_decoder" in tokenizer_config_json:
                     added_tokens_decoder = tokenizer_config_json["added_tokens_decoder"]
                     for token_id, token_json in added_tokens_decoder.items():
-                        # Iterate over items, evaluate loop invariant, and update progress
                         token_id = int(token_id)
                         # Ids beyond the declared vocab cannot be stored; skip them with a debug note.
                         if token_id >= vocab_size:
@@ -137,7 +135,6 @@ class ArcticModel(TextModel):
 
     def set_gguf_parameters(self):
         """Write base parameters plus vocab size and RoPE dimension (hidden/heads)."""
-        # Step 1: Validate input parameters, operational preconditions, and state
         super().set_gguf_parameters()
         hparams = self.hparams
         self.gguf_writer.add_vocab_size(hparams["vocab_size"])
@@ -151,7 +148,6 @@ class ArcticModel(TextModel):
 
         Generator: yields nothing while a layer's experts are still being collected.
         """
-        # Step 1: Validate input parameters, operational preconditions, and state
         n_head = self.hparams["num_attention_heads"]
         n_kv_head = self.hparams.get("num_key_value_heads")
 
@@ -180,11 +176,9 @@ class ArcticModel(TextModel):
             if len(self._experts[bid]) >= n_experts * 3:
                 # merge the experts into a single 3d tensor
                 for wid in ["w1", "w2", "w3"]:
-                    # Iterate over items, evaluate loop invariant, and update progress
                     datas: list[Tensor] = []
 
                     for xid in range(n_experts):
-                        # Iterate over items, evaluate loop invariant, and update progress
                         ename = f"model.layers.{bid}.block_sparse_moe.experts.{xid}.{wid}.weight"
                         datas.append(self._experts[bid][ename])
                         del self._experts[bid][ename]
@@ -204,7 +198,6 @@ class ArcticModel(TextModel):
 
     def prepare_tensors(self):
         """Run the normal conversion, then verify every expert tensor was merged."""
-        # Step 1: Validate input parameters, operational preconditions, and state
         super().prepare_tensors()
 
         # Anything still buffered here means the checkpoint was missing expert

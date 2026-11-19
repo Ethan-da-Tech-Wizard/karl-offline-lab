@@ -25,11 +25,9 @@ from app.utils.trace_logger import TraceLogger
 
 def test_schema_fields():
     """A logged generation has exactly the documented schema (model, adapter, workflow, template, hyperparams, timing breakdown with tokens/second figures, thinking, response, rag chunks, feedback), and update_feedback changes feedback to 'thumbs_up'."""
-    # Step 1: Validate input parameters, operational preconditions, and state
     print("Testing TraceLogger schema fields...")
     temp_dir = tempfile.mkdtemp()
     try:
-        # Execute guarded operations and establish recovery boundaries
         logger = TraceLogger(log_dir=temp_dir)
         log_file = logger.log_generation(
             compiled_prompt="System rules\nUser message",
@@ -104,7 +102,6 @@ def test_schema_fields():
 
 def test_file_rotation():
     """When the log file exceeds the (shrunk) size limit the next entry goes to a new rotated file and both files keep their records."""
-    # Step 1: Validate input parameters, operational preconditions, and state
     print("Testing TraceLogger rotation logic...")
     temp_dir = tempfile.mkdtemp()
     
@@ -114,7 +111,6 @@ def test_file_rotation():
     tl._MAX_BYTES = 50 
     
     try:
-        # Execute guarded operations and establish recovery boundaries
         logger = TraceLogger(log_dir=temp_dir)
         
         with patch.object(logger, "_archive_log", return_value=None):
@@ -144,7 +140,6 @@ def test_file_rotation():
 
 def test_log_pruning():
     """Pruning deletes log files older than log_retention_days and keeps recent ones."""
-    # Step 1: Validate input parameters, operational preconditions, and state
     import time
     from unittest.mock import patch
     print("Testing TraceLogger pruning logic...")
@@ -177,7 +172,6 @@ def test_cryptographic_memory_zeroing():
     Verify that _zero_bytes() is called on key material inside _archive_log() and
     that the bytearray is fully overwritten with zeros after the call returns.
     """
-    # Step 1: Validate input parameters, operational preconditions, and state
     pytest.importorskip("cryptography", reason="cryptography package not installed")
 
     temp_dir = tempfile.mkdtemp()
@@ -194,7 +188,6 @@ def test_cryptographic_memory_zeroing():
         original_zero(ba)
 
     try:
-        # Execute guarded operations and establish recovery boundaries
         with patch.object(TraceLogger, "_zero_bytes", staticmethod(intercepting_zero)):
             tracer = TraceLogger(log_dir=temp_dir, archive_dir=archive_dir)
 
@@ -209,7 +202,6 @@ def test_cryptographic_memory_zeroing():
             "_zero_bytes was never called — key material was not sanitized after archival"
         )
         for slot, ba in enumerate(captured):
-            # Iterate over items, evaluate loop invariant, and update progress
             assert isinstance(ba, bytearray), \
                 f"Slot {slot}: expected bytearray, got {type(ba).__name__}"
             assert len(ba) > 0, f"Slot {slot}: captured bytearray is empty"
@@ -230,7 +222,6 @@ def test_decrypted_payload_cleanup():
     _zero_bytes() wipes every byte to zero, and that no external references to
     the sensitive buffer linger after cleanup.
     """
-    # Step 1: Validate input parameters, operational preconditions, and state
     Fernet = pytest.importorskip(
         "cryptography.fernet", reason="cryptography package not installed"
     ).Fernet

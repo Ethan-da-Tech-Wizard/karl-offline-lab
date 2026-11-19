@@ -31,7 +31,6 @@ class StarCoderModel(TextModel):
     def set_gguf_parameters(self):
         """Write StarCoder parameters; KV head count is 1 (multi-query) and the FFN is 4x the embedding.
         """
-        # Step 1: Validate input parameters, operational preconditions, and state
         self.gguf_writer.add_context_length(self.hparams["n_positions"])
         self.gguf_writer.add_embedding_length(self.hparams["n_embd"])
         self.gguf_writer.add_feed_forward_length(4 * self.hparams["n_embd"])

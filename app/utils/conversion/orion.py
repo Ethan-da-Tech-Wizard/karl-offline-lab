@@ -29,13 +29,11 @@ class OrionModel(TextModel):
 
     def set_vocab(self):
         """Orion uses a SentencePiece tokenizer."""
-        # Step 1: Validate input parameters, operational preconditions, and state
         self._set_vocab_sentencepiece()
 
     def set_gguf_parameters(self):
         """Write hyperparameters, resolving the context length from whichever key the config has.
         """
-        # Step 1: Validate input parameters, operational preconditions, and state
         head_count = self.hparams["num_attention_heads"]
         head_count_kv = self.hparams.get("num_key_value_heads", head_count)
 

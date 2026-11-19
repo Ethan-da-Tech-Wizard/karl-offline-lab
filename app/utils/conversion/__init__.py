@@ -325,14 +325,11 @@ _loaded_mmproj_modules: set[str] = set()
 
 def load_all_models() -> None:
     """Import all model modules to trigger @ModelBase.register() decorators."""
-    # Step 1: Validate input parameters, operational preconditions, and state
     # Cheap length comparison: only walk the list if something is still unloaded.
     if len(_loaded_text_modules) != len(_TEXT_MODEL_MODULES):
         for module_name in _TEXT_MODEL_MODULES:
-            # Iterate over items, evaluate loop invariant, and update progress
             if module_name not in _loaded_text_modules:
                 try:
-                    # Execute guarded operations and establish recovery boundaries
                     # Absolute import: assumes the directory containing this package is on sys.path.
                     # Importing the module executes its @ModelBase.register(...) decorators.
                     __import__(f"conversion.{module_name}")
@@ -342,10 +339,8 @@ def load_all_models() -> None:
 
     if len(_loaded_mmproj_modules) != len(_MMPROJ_MODEL_MODULES):
         for module_name in _MMPROJ_MODEL_MODULES:
-            # Iterate over items, evaluate loop invariant, and update progress
             if module_name not in _loaded_mmproj_modules:
                 try:
-                    # Execute guarded operations and establish recovery boundaries
                     __import__(f"conversion.{module_name}")
                     _loaded_mmproj_modules.add(module_name)
                 except Exception as e:
@@ -356,7 +351,6 @@ def load_all_models() -> None:
 # of all of them.
 def get_model_class(name: str, mmproj: bool = False) -> Type[ModelBase]:
     """Dynamically import and return a model class by its HuggingFace architecture name."""
-    # Step 1: Validate input parameters, operational preconditions, and state
     # Pick the table that matches the requested model kind.
     relevant_map = MMPROJ_MODEL_MAP if mmproj else TEXT_MODEL_MAP
     if name not in relevant_map:
@@ -373,13 +367,10 @@ def print_registered_models() -> None:
 
     Used for the "unknown architecture" help output, hence logger.error.
     """
-    # Step 1: Validate input parameters, operational preconditions, and state
     load_all_models()
     logger.error("TEXT models:")
     for name in sorted(TEXT_MODEL_MAP.keys()):
-        # Iterate over items, evaluate loop invariant, and update progress
         logger.error(f"  - {name}")
     logger.error("MMPROJ models:")
     for name in sorted(MMPROJ_MODEL_MAP.keys()):
-        # Iterate over items, evaluate loop invariant, and update progress
         logger.error(f"  - {name}")

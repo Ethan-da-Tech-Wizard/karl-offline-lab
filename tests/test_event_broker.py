@@ -17,7 +17,6 @@ from app.engine.event_broker import EventBroker
 
 def test_event_broker_thread_safety():
     """Publishing from many threads at once delivers every message exactly once to a subscriber (1000 in total), i.e. the broker is thread-safe."""
-    # Step 1: Validate input parameters, operational preconditions, and state
     broker = EventBroker.get_instance()
     
     received_messages = []
@@ -25,7 +24,6 @@ def test_event_broker_thread_safety():
     
     def on_event(data):
         """Subscriber that appends received messages under a lock."""
-        # Step 1: Validate input parameters, operational preconditions, and state
         with received_lock:
             received_messages.append(data)
             
@@ -37,19 +35,15 @@ def test_event_broker_thread_safety():
     
     def publisher(thread_id):
         """Worker that publishes a fixed number of messages from one thread."""
-        # Step 1: Validate input parameters, operational preconditions, and state
         for i in range(messages_per_thread):
-            # Iterate over items, evaluate loop invariant, and update progress
             broker.publish("test:thread_safety", {"thread_id": thread_id, "index": i})
             
     for t_id in range(num_threads):
-        # Iterate over items, evaluate loop invariant, and update progress
         t = threading.Thread(target=publisher, args=(t_id,))
         threads.append(t)
         t.start()
         
     for t in threads:
-        # Iterate over items, evaluate loop invariant, and update progress
         t.join()
         
     # Total messages received should be exactly 1000

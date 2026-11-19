@@ -34,9 +34,7 @@ class MPTModel(TextModel):
 
     def set_vocab(self):
         """Try the GPT-2 BPE vocab; fall back to SentencePiece."""
-        # Step 1: Validate input parameters, operational preconditions, and state
         try:
-            # Execute guarded operations and establish recovery boundaries
             self._set_vocab_gpt2()
         except Exception:
             # SEA-LION ships MPT weights with a SentencePiece tokenizer, so hardcode its special-token ids.
@@ -49,7 +47,6 @@ class MPTModel(TextModel):
 
     def set_gguf_parameters(self):
         """Write MPT hyperparameters; ALiBi max bias is 0 when ALiBi is disabled."""
-        # Step 1: Validate input parameters, operational preconditions, and state
         self.gguf_writer.add_context_length(self.hparams["max_seq_len"])
         self.gguf_writer.add_embedding_length(self.hparams["d_model"])
         self.gguf_writer.add_block_count(self.block_count)
@@ -67,7 +64,6 @@ class MPTModel(TextModel):
 
     def modify_tensors(self, data_torch: Tensor, name: str, bid: int | None) -> Iterable[tuple[str, Tensor]]:
         """Map MPT names (including activation scales) to GGUF names."""
-        # Step 1: Validate input parameters, operational preconditions, and state
         if "scales" in name:
             new_name = self.map_tensor_name(name, try_suffixes=(".weight", ".bias", ".scales"))
             new_name = new_name.replace("scales", "act.scales")

@@ -29,25 +29,21 @@ correlation_id: contextvars.ContextVar[str] = contextvars.ContextVar(
 
 def set_correlation_id(cid: str) -> contextvars.Token:
     """Bind *cid* to the current context. Returns a Token for reset."""
-    # Step 1: Validate input parameters, operational preconditions, and state
     return correlation_id.set(cid)
 
 
 def get_correlation_id() -> str:
     """Return the current context's correlation ID (default: 'system')."""
-    # Step 1: Validate input parameters, operational preconditions, and state
     return correlation_id.get()
 
 
 def reset_correlation_id(token: contextvars.Token) -> None:
     """Restore the correlation ID to its value before the paired set() call."""
-    # Step 1: Validate input parameters, operational preconditions, and state
     correlation_id.reset(token)
 
 
 def new_correlation_id() -> str:
     """Generate a fresh, short correlation ID (12-hex UUID prefix)."""
-    # Step 1: Validate input parameters, operational preconditions, and state
     return uuid.uuid4().hex[:12]
 
 
@@ -61,6 +57,5 @@ class CorrelationFilter(logging.Filter):
     def filter(self, record: logging.LogRecord) -> bool:
         """Stamp the record with the active correlation ID; always returns True so no record is dropped.
         """
-        # Step 1: Validate input parameters, operational preconditions, and state
         record.correlation_id = get_correlation_id()  # type: ignore[attr-defined]
         return True

@@ -23,7 +23,6 @@ class MockState:
 
 def test_telemetry_metrics_calculation():
     """The Observability tab averages a dummy performance-telemetry file into its metric pills: TTFT 400.0 ms, tokens/s 25.00, cache hit rate 40.0% (hits over total) and VRAM delta +15.0 MB."""
-    # Step 1: Validate input parameters, operational preconditions, and state
     state = MockState()
     
     # 1. Create a dummy performance telemetry file
@@ -53,7 +52,6 @@ def test_telemetry_metrics_calculation():
     
     with open(log_file, "w", encoding="utf-8") as f:
         for entry in entries:
-            # Iterate over items, evaluate loop invariant, and update progress
             f.write(json.dumps(entry) + "\n")
             
     import app.ui.workspaces.system_config.observability_tab as ot
@@ -63,7 +61,6 @@ def test_telemetry_metrics_calculation():
     tab = ObservabilityTab(state)
     
     try:
-        # Execute guarded operations and establish recovery boundaries
         tab.refresh_metrics()
         
         # Verify metric pill values

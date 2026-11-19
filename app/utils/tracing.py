@@ -32,7 +32,6 @@ class Tracer:
 
     def __init__(self, trace_dir: str | os.PathLike[str] = "data/logs/traces") -> None:
         """Set the output directory and create the per-context span stack."""
-        # Step 1: Validate input parameters, operational preconditions, and state
         self.trace_dir = Path(trace_dir)
         # A ContextVar holds the active span stack so each thread/async task has its own.
         # The default list is never mutated: _push/_pop always copy before changing it.
@@ -43,12 +42,10 @@ class Tracer:
 
     def span(self, name: str, attributes: dict[str, Any] | None = None) -> "Span":
         """Create a new Span bound to this tracer (use it in a with-block)."""
-        # Step 1: Validate input parameters, operational preconditions, and state
         return Span(name, attributes=attributes, tracer=self)
 
     def _push(self, span: "Span") -> None:
         """Make span the current innermost span (copy-on-write on the context's stack)."""
-        # Step 1: Validate input parameters, operational preconditions, and state
         stack = list(self._stack.get())
         stack.append(span)
         self._stack.set(stack)
@@ -56,7 +53,6 @@ class Tracer:
     def _pop(self, span: "Span") -> None:
         """Remove span from the stack; tolerates out-of-order exits by removing it wherever it is.
         """
-        # Step 1: Validate input parameters, operational preconditions, and state
         stack = list(self._stack.get())
         if stack and stack[-1] is span:
             stack.pop()
@@ -66,7 +62,6 @@ class Tracer:
 
     def current_span(self) -> "Span | None":
         """Return the innermost active span in this context, or None."""
-        # Step 1: Validate input parameters, operational preconditions, and state
         stack = self._stack.get()
         return stack[-1] if stack else None
 
@@ -78,7 +73,6 @@ class Tracer:
         interleave their writes.  Each span is a single line so partial
         interleaving produces at most a corrupted line, not a corrupted file.
         """
-        # Step 1: Validate input parameters, operational preconditions, and state
         self.trace_dir.mkdir(parents=True, exist_ok=True)
         path = self.trace_dir / f"spans_{datetime.now(timezone.utc).date().isoformat()}.jsonl"
         with path.open("a", encoding="utf-8") as fh:
@@ -99,7 +93,6 @@ class Span:
         tracer: Tracer | None = None,
     ) -> None:
         """Create a span record; ids and timing are assigned when the with-block is entered."""
-        # Step 1: Validate input parameters, operational preconditions, and state
         self.name = name
         self.attributes = dict(attributes or {})
         self.tracer = tracer or DEFAULT_TRACER
@@ -117,7 +110,6 @@ class Span:
     def __enter__(self) -> "Span":
         """Start timing, link to the parent span (inheriting its trace_id) and become the current span.
         """
-        # Step 1: Validate input parameters, operational preconditions, and state
         self._parent = self.tracer.current_span()
         self.trace_id = self._parent.trace_id if self._parent else str(uuid.uuid4())
         self.span_id = str(uuid.uuid4())
@@ -132,7 +124,6 @@ class Span:
     def __exit__(self, exc_type, exc, traceback) -> bool:
         """Stop timing, record any exception as ERROR (without swallowing it) and persist the tree if this is a root span.
         """
-        # Step 1: Validate input parameters, operational preconditions, and state
         # perf_counter is monotonic, so durations stay correct if the wall clock changes.
         self.duration_sec = round(time.perf_counter() - self._start_perf, 6)
         if exc_type is not None:
@@ -149,12 +140,10 @@ class Span:
 
     def set_attribute(self, key: str, value: Any) -> None:
         """Attach or overwrite a key/value attribute on the span."""
-        # Step 1: Validate input parameters, operational preconditions, and state
         self.attributes[key] = value
 
     def to_dict(self) -> dict[str, Any]:
         """Serialize the span and its children recursively to a JSON-safe dict."""
-        # Step 1: Validate input parameters, operational preconditions, and state
         payload: dict[str, Any] = {
             "trace_id": self.trace_id,
             "span_id": self.span_id,

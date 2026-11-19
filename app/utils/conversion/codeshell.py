@@ -20,7 +20,6 @@ class CodeShellModel(TextModel):
 
     def set_gguf_parameters(self):
         """Write CodeShell hyperparameters (GPT-2-style key names, linear RoPE scaling 1.0)."""
-        # Step 1: Validate input parameters, operational preconditions, and state
         self.gguf_writer.add_context_length(self.hparams["n_positions"])
         self.gguf_writer.add_embedding_length(self.hparams["n_embd"])
         # The FFN width is fixed at 4x the embedding size.

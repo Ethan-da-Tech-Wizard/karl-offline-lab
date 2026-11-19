@@ -29,12 +29,10 @@ class BaichuanModel(TextModel):
 
     def set_vocab(self):
         """Baichuan ships a SentencePiece tokenizer.model; use the standard loader."""
-        # Step 1: Validate input parameters, operational preconditions, and state
         self._set_vocab_sentencepiece()
 
     def set_gguf_parameters(self):
         """Write base parameters plus tensor layout and RoPE dimension count."""
-        # Step 1: Validate input parameters, operational preconditions, and state
         super().set_gguf_parameters()
 
         # Marks the weights as stored in the original Meta/Llama pth layout so the
@@ -44,7 +42,6 @@ class BaichuanModel(TextModel):
 
     def modify_tensors(self, data_torch: Tensor, name: str, bid: int | None) -> Iterable[tuple[str, Tensor]]:
         """Split the fused W_pack tensor into Q/K/V; delegate all other tensors."""
-        # Step 1: Validate input parameters, operational preconditions, and state
         head_count = self.hparams["num_attention_heads"]
         # Falls back to the full head count when the config has no GQA setting.
         head_count_kv = self.hparams.get("num_key_value_heads", head_count)
@@ -69,7 +66,6 @@ class BaichuanModel(TextModel):
 
         When K/V use fewer heads (GQA) the head count is divided by n_kv_head.
         """
-        # Step 1: Validate input parameters, operational preconditions, and state
         if n_kv_head is not None and n_head != n_kv_head:
             n_head //= n_kv_head
 
@@ -83,13 +79,11 @@ class BaichuanModel(TextModel):
         self, weights: Tensor, n_part: int, n_head: int, n_head_kv: int | None = None,
     ) -> Tensor:
         """Slice one third (Q, K or V by n_part) out of a fused matrix and un-permute it."""
-        # Step 1: Validate input parameters, operational preconditions, and state
         # Size of one third of the fused first dimension.
         r = weights.shape[0] // 3
         return self._reverse_hf_permute(weights[r * n_part:r * n_part + r, ...], n_head, n_head_kv)
 
     def _reverse_hf_part(self, weights: Tensor, n_part: int) -> Tensor:
         """Slice one third (Q, K or V by n_part) out of a fused matrix without permuting."""
-        # Step 1: Validate input parameters, operational preconditions, and state
         r = weights.shape[0] // 3
         return weights[r * n_part:r * n_part + r, ...]

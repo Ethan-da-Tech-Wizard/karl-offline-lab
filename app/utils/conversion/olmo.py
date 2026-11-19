@@ -42,7 +42,6 @@ class OlmoModel(TextModel):
 
     def set_gguf_parameters(self):
         """Write layer-norm eps and optional QKV clamp."""
-        # Step 1: Validate input parameters, operational preconditions, and state
         super().set_gguf_parameters()
         self.gguf_writer.add_layer_norm_eps(1e-5)
         clip_qkv = self.hparams.get("clip_qkv")
@@ -53,7 +52,6 @@ class OlmoModel(TextModel):
     # Copied from: LlamaModel
     def modify_tensors(self, data_torch: Tensor, name: str, bid: int | None) -> Iterable[tuple[str, Tensor]]:
         """Undo the HF q/k permutation, as the llama converter does."""
-        # Step 1: Validate input parameters, operational preconditions, and state
         n_head = self.hparams["num_attention_heads"]
         n_kv_head = self.hparams.get("num_key_value_heads")
 
@@ -79,7 +77,6 @@ class Olmo2Model(TextModel):
 
     def set_gguf_parameters(self):
         """Write the sliding-window size and a per-layer sliding-window pattern."""
-        # Step 1: Validate input parameters, operational preconditions, and state
         super().set_gguf_parameters()
 
         if "sliding_window" in self.hparams:
@@ -94,7 +91,6 @@ class Olmo2Model(TextModel):
                 # Olmo2 does not use sliding window attention.
                 # Olmo3 defaults to using sliding window for all layers except every 4th.
                 for i in range(self.hparams["num_hidden_layers"]):
-                    # Iterate over items, evaluate loop invariant, and update progress
                     sliding_window_pattern.append((i + 1) % 4 != 0)
 
             self.gguf_writer.add_sliding_window_pattern(sliding_window_pattern)
@@ -107,7 +103,6 @@ class OlmoeModel(TextModel):
 
     def set_gguf_parameters(self):
         """Write RMS norm epsilon."""
-        # Step 1: Validate input parameters, operational preconditions, and state
         super().set_gguf_parameters()
         self.gguf_writer.add_layer_norm_rms_eps(1e-5)
 
@@ -130,11 +125,9 @@ class OlmoeModel(TextModel):
             if len(self._experts[bid]) >= n_experts * 3:
                 # merge the experts into a single 3d tensor
                 for w_name in ["down_proj", "gate_proj", "up_proj"]:
-                    # Iterate over items, evaluate loop invariant, and update progress
                     datas: list[Tensor] = []
 
                     for xid in range(n_experts):
-                        # Iterate over items, evaluate loop invariant, and update progress
                         ename = f"model.layers.{bid}.mlp.experts.{xid}.{w_name}.weight"
                         datas.append(self._experts[bid][ename])
                         del self._experts[bid][ename]
@@ -153,7 +146,6 @@ class OlmoeModel(TextModel):
     # Copied from: Qwen2MoeModel
     def prepare_tensors(self):
         """Run base preparation and fail if any expert tensors were left unmerged."""
-        # Step 1: Validate input parameters, operational preconditions, and state
         super().prepare_tensors()
 
         if self._experts is not None:

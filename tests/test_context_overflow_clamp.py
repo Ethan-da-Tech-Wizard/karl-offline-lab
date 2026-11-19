@@ -87,7 +87,6 @@ def test_llm_thread_continuation_loop_uses_the_clamp():
     check is gated on the clamp having actually reduced the value (not just
     on the resulting number being small) -- see
     test_clamp_does_not_shrink_a_deliberately_small_configured_value."""
-    # Step 1: Validate input parameters, operational preconditions, and state
     import app.engine.llm_thread as llm_thread_module
 
     source = inspect.getsource(llm_thread_module.LLMThread.run)

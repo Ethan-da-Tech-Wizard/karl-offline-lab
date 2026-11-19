@@ -25,7 +25,6 @@ class CogVLMVisionModel(MmprojModel):
 
     def set_gguf_parameters(self):
         """Write base vision parameters, the layernorm epsilon and the CogVLM projector type."""
-        # Step 1: Validate input parameters, operational preconditions, and state
         super().set_gguf_parameters()
         self.gguf_writer.add_vision_attention_layernorm_eps(self.hparams.get("layer_norm_eps", 1e-6))
         self.gguf_writer.add_clip_projector_type(gguf.VisionProjectorType.COGVLM)
@@ -33,7 +32,6 @@ class CogVLMVisionModel(MmprojModel):
     @classmethod
     def filter_tensors(cls, item: tuple[str, Callable[[], Tensor]]) -> tuple[str, Callable[[], Tensor]] | None:
         """Keep only the vision-side tensors (prefix "model.vision.")."""
-        # Step 1: Validate input parameters, operational preconditions, and state
         name, gen = item
 
         # Language-model weights belong in the text GGUF, so drop them here.

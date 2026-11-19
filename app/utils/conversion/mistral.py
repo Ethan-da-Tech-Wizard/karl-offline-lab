@@ -51,7 +51,6 @@ class MistralModel(LlamaModel):
 
     def __init__(self, *args, **kwargs):
         """Fall back to the LLAMA arch for older checkpoints lacking llama_4_scaling."""
-        # Step 1: Validate input parameters, operational preconditions, and state
         super().__init__(*args, **kwargs)
         # Older models run on the plain llama graph; the architecture name written by the
         # GGUF writer and the tensor map must be switched to match.
@@ -85,7 +84,6 @@ class MistralModel(LlamaModel):
         from templates_dir. Raises ValueError for unknown tokenizers and
         FileNotFoundError if the template file is missing.
         """
-        # Step 1: Validate input parameters, operational preconditions, and state
         assert TokenizerVersion is not None and Tekkenizer is not None and SentencePieceTokenizer is not None, _mistral_import_error_msg
         assert isinstance(vocab.tokenizer, (Tekkenizer, SentencePieceTokenizer)), (
             f"Expected Tekkenizer or SentencePieceTokenizer, got {type(vocab.tokenizer)}"
@@ -125,7 +123,6 @@ class MistralModel(LlamaModel):
 
     def set_gguf_parameters(self):
         """Write base parameters then Mistral-specific rope/attention settings."""
-        # Step 1: Validate input parameters, operational preconditions, and state
         super().set_gguf_parameters()
         MistralModel.set_mistral_config(self.gguf_writer, self.hparams)
 
@@ -133,7 +130,6 @@ class MistralModel(LlamaModel):
     def set_mistral_config(gguf_writer: gguf.GGUFWriter, hparams: dict):
         """Write YaRN rope scaling and llama-4 attention temperature settings from Mistral params.
         """
-        # Step 1: Validate input parameters, operational preconditions, and state
         if "yarn" in hparams:
             yarn_params = hparams["yarn"]
             # apply_scale=True means scaling is applied elsewhere, so log multiplier is 0.
@@ -160,7 +156,6 @@ class MistralMoeModel(DeepseekV2Model):
     def __init__(self, *args, **kwargs):
         """Remap Mistral-format hparams to the DeepseekV2/HF names so the parent can be reused.
         """
-        # Step 1: Validate input parameters, operational preconditions, and state
         super().__init__(*args, **kwargs)
         logger.info("Using MistralMoeModel")
         # remap hparams from Mistral MoE format to DeepseekV2 format
@@ -188,11 +183,9 @@ class MistralMoeModel(DeepseekV2Model):
         }
         # mapping top-level keys
         for key, new_key in config_mapping.items():
-            # Iterate over items, evaluate loop invariant, and update progress
             if key in config:
                 config[new_key] = config[key]
         for new_key, (key, default_value) in top_level_mapping_with_default.items():
-            # Iterate over items, evaluate loop invariant, and update progress
             config[new_key] = config.get(key, default_value)
         # mapping MoE-specific keys
         moe_config_map = {
@@ -208,7 +201,6 @@ class MistralMoeModel(DeepseekV2Model):
         }
         moe = config["moe"]
         for key, new_key in moe_config_map.items():
-            # Iterate over items, evaluate loop invariant, and update progress
             if key in moe:
                 config[new_key] = moe[key]
         # DeepseekV2 expects these keys; Mistral MoE implies fixed values for them.
@@ -219,13 +211,11 @@ class MistralMoeModel(DeepseekV2Model):
 
     def set_vocab(self):
         """Use the mistral-common tokenizer."""
-        # Step 1: Validate input parameters, operational preconditions, and state
         self._set_vocab_mistral()
 
     def set_gguf_parameters(self):
         """Write DeepseekV2 parameters plus Mistral rope settings and attention temperature length.
         """
-        # Step 1: Validate input parameters, operational preconditions, and state
         super().set_gguf_parameters()
         MistralModel.set_mistral_config(self.gguf_writer, self.hparams)
         yarn_params = self.hparams["yarn"]
@@ -240,7 +230,6 @@ class MistralMoeModel(DeepseekV2Model):
     def filter_tensors(cls, item: tuple[str, Callable[[], Tensor]]) -> tuple[str, Callable[[], Tensor]] | None:
         """Rename Mistral tensor names to the HF/DeepseekV2 names the parent's tensor mapping expects.
         """
-        # Step 1: Validate input parameters, operational preconditions, and state
         name, gen = item
 
         # rename certain tensors so that we can reuse DeepseekV2Model modify_tensors logic

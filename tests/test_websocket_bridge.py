@@ -34,9 +34,7 @@ pytestmark = [pytest.mark.integration, pytest.mark.websocket]
 
 def _running_under_bwrap() -> bool:
     """True when PID 1 is bubblewrap, i.e. the tests run inside a sandbox where local sockets or system calls may be restricted (used to skip such cases)."""
-    # Step 1: Validate input parameters, operational preconditions, and state
     try:
-        # Execute guarded operations and establish recovery boundaries
         with open("/proc/1/comm", "r", encoding="utf-8") as f:
             return f.read().strip() == "bwrap"
     except OSError:
@@ -47,23 +45,19 @@ class FakeBridgeRAG:
     """In-memory stand-in for RAGPipeline: stores ingested chunks in a list and answers retrieval by simple lookup, so knowledge-base RPCs can be tested without FAISS, SQLite or an embedding model."""
     def __init__(self):
         """Start with an empty document list."""
-        # Step 1: Validate input parameters, operational preconditions, and state
         self.documents = []
 
     def _load_index(self):
         """No-op replacement for loading a persisted index."""
-        # Step 1: Validate input parameters, operational preconditions, and state
         return None
 
     @property
     def total_chunks(self):
         """Number of stored chunks."""
-        # Step 1: Validate input parameters, operational preconditions, and state
         return len(self.documents)
 
     def ingest_file(self, filepath, chunk_size=200, overlap=50):
         """Store a file's content as one chunk and return how many chunks were added."""
-        # Step 1: Validate input parameters, operational preconditions, and state
         filename = os.path.basename(filepath)
         with open(filepath, "r", encoding="utf-8", errors="ignore") as f:
             text = f.read()
@@ -77,7 +71,6 @@ class FakeBridgeRAG:
 
     def retrieve(self, query, top_k=3, source_filter=None, threshold=0.0):
         """Return the texts of matching chunks, applying the distance threshold when one is given."""
-        # Step 1: Validate input parameters, operational preconditions, and state
         results = self.retrieve_with_metadata(query, top_k=top_k, source_filter=source_filter)
         if threshold > 0:
             results = [r for r in results if r["distance"] <= threshold]
@@ -85,10 +78,8 @@ class FakeBridgeRAG:
 
     def retrieve_with_metadata(self, query, top_k=3, source_filter=None):
         """Return chunk dicts (optionally filtered by source file) with a fake distance: 0.05 when the query is a substring of the chunk text, otherwise 1.5."""
-        # Step 1: Validate input parameters, operational preconditions, and state
         results = []
         for idx, doc in enumerate(self.documents):
-            # Iterate over items, evaluate loop invariant, and update progress
             if source_filter and doc.get("source_file") != source_filter:
                 continue
             distance = 0.05 if query.lower() in doc.get("text", "").lower() else 1.5
@@ -104,7 +95,6 @@ class TestWebSocketBridge(unittest.TestCase):
     """Integration tests that start the real WebSocketServerManager on a test port and drive it with a websockets client: RPC methods, notifications, token auth and rotation. Qt events are pumped by a spinner task because signals cross threads."""
     def setUp(self):
         """Create a QCoreApplication, start the bridge server on port 8081 (a test-only port) and prepare a sandbox directory with a trivially passing test script."""
-        # Step 1: Validate input parameters, operational preconditions, and state
         if _running_under_bwrap():
             self.skipTest("Codex sandbox blocks reliable localhost WebSocket tests")
 
@@ -127,14 +117,12 @@ class TestWebSocketBridge(unittest.TestCase):
 
     def tearDown(self):
         """Remove the sandbox and reset the server singleton so the next test starts clean."""
-        # Step 1: Validate input parameters, operational preconditions, and state
         self.sandbox_dir.cleanup()
         # Clean shutdown and reset the singleton
         WebSocketServerManager.reset_instance()
 
     def _get_uri(self):
         """Build the client URL with the live bridge token, using wss when a TLS cert exists and ws otherwise."""
-        # Step 1: Validate input parameters, operational preconditions, and state
         token = self.manager.bridge_token
         proto = "ws"
         if os.path.exists(self.manager._SSL_CERT_PATH):
@@ -143,7 +131,6 @@ class TestWebSocketBridge(unittest.TestCase):
 
     def _get_ssl_context(self):
         """Client SSL context that accepts the self-signed test certificate, or None for plain ws."""
-        # Step 1: Validate input parameters, operational preconditions, and state
         import ssl
         if os.path.exists(self.manager._SSL_CERT_PATH):
             ssl_context = ssl.SSLContext(ssl.PROTOCOL_TLS_CLIENT)
@@ -154,10 +141,8 @@ class TestWebSocketBridge(unittest.TestCase):
 
     def test_runtime_status_rpc(self):
         """The runtime_status RPC returns bridge port, idle runtime state and model/adapter/system sections."""
-        # Step 1: Validate input parameters, operational preconditions, and state
         async def run_client():
             """Connect, call the runtime status RPC and assert the structure of the answer."""
-            # Step 1: Validate input parameters, operational preconditions, and state
             async with websockets.connect(self._get_uri(), ssl=self._get_ssl_context(), close_timeout=2) as ws:
                 payload = {
                     "jsonrpc": "2.0",
@@ -180,14 +165,12 @@ class TestWebSocketBridge(unittest.TestCase):
 
         loop = asyncio.new_event_loop()
         try:
-            # Execute guarded operations and establish recovery boundaries
             loop.run_until_complete(run_client())
         finally:
             loop.close()
 
     def test_model_registry_rpc(self):
         """The model registry RPCs list known model files and let a client change the active model; the response reflects the new selection."""
-        # Step 1: Validate input parameters, operational preconditions, and state
         active_path = os.path.join("data", "active_model.json")
         model_dir = os.path.join("data", "models")
         model_name = "test-websocket-model.gguf"
@@ -203,7 +186,6 @@ class TestWebSocketBridge(unittest.TestCase):
 
         async def run_client():
             """Connect, list registry models, set the active model and check the response."""
-            # Step 1: Validate input parameters, operational preconditions, and state
             async with websockets.connect(self._get_uri(), ssl=self._get_ssl_context(), close_timeout=2) as ws:
                 await ws.send(json.dumps({
                     "jsonrpc": "2.0",
@@ -227,13 +209,11 @@ class TestWebSocketBridge(unittest.TestCase):
 
         loop = asyncio.new_event_loop()
         try:
-            # Execute guarded operations and establish recovery boundaries
             loop.run_until_complete(run_client())
         finally:
             loop.close()
             if previous_active is None:
                 try:
-                    # Execute guarded operations and establish recovery boundaries
                     os.remove(active_path)
                 except FileNotFoundError:
                     pass
@@ -241,27 +221,23 @@ class TestWebSocketBridge(unittest.TestCase):
                 with open(active_path, "w", encoding="utf-8") as f:
                     f.write(previous_active)
             try:
-                # Execute guarded operations and establish recovery boundaries
                 os.remove(model_path)
             except FileNotFoundError:
                 pass
 
     def test_prompt_pair_rpc(self):
         """Prompt pairs (system A / system B) can be saved, listed, fetched and deleted through RPC."""
-        # Step 1: Validate input parameters, operational preconditions, and state
         pair_dir = os.path.join("data", "prompt_pairs")
         pair_name = "websocket_pair_test"
         pair_path = os.path.join(pair_dir, f"{pair_name}.json")
         os.makedirs(pair_dir, exist_ok=True)
         try:
-            # Execute guarded operations and establish recovery boundaries
             os.remove(pair_path)
         except FileNotFoundError:
             pass
 
         async def run_client():
             """Connect and exercise save, list, get and delete of a prompt pair."""
-            # Step 1: Validate input parameters, operational preconditions, and state
             async with websockets.connect(self._get_uri(), ssl=self._get_ssl_context(), close_timeout=2) as ws:
                 await ws.send(json.dumps({
                     "jsonrpc": "2.0",
@@ -311,19 +287,16 @@ class TestWebSocketBridge(unittest.TestCase):
 
         loop = asyncio.new_event_loop()
         try:
-            # Execute guarded operations and establish recovery boundaries
             loop.run_until_complete(run_client())
         finally:
             loop.close()
             try:
-                # Execute guarded operations and establish recovery boundaries
                 os.remove(pair_path)
             except FileNotFoundError:
                 pass
 
     def test_knowledge_base_rpc(self):
         """Knowledge-base RPCs: initial stats are empty, an ingest starts asynchronously and emits progress and finished notifications, and a search returns the ingested chunk with a close distance."""
-        # Step 1: Validate input parameters, operational preconditions, and state
         self.manager.rag = FakeBridgeRAG()
         doc_path = os.path.join(self.workspace_path, "notes.md")
         with open(doc_path, "w", encoding="utf-8") as f:
@@ -331,7 +304,6 @@ class TestWebSocketBridge(unittest.TestCase):
 
         async def run_client():
             """Connect, check empty stats, ingest a file, wait for the finish notification and search."""
-            # Step 1: Validate input parameters, operational preconditions, and state
             async with websockets.connect(self._get_uri(), ssl=self._get_ssl_context(), close_timeout=2) as ws:
                 await ws.send(json.dumps({
                     "jsonrpc": "2.0",
@@ -360,7 +332,6 @@ class TestWebSocketBridge(unittest.TestCase):
                 notifications = []
                 finished = None
                 for _ in range(10):
-                    # Iterate over items, evaluate loop invariant, and update progress
                     msg = json.loads(await asyncio.wait_for(ws.recv(), timeout=5.0))
                     method = msg.get("method")
                     if method:
@@ -394,7 +365,6 @@ class TestWebSocketBridge(unittest.TestCase):
 
         loop = asyncio.new_event_loop()
         try:
-            # Execute guarded operations and establish recovery boundaries
             loop.run_until_complete(run_client())
         finally:
             loop.close()
@@ -405,7 +375,6 @@ class TestWebSocketBridge(unittest.TestCase):
         # Mock LLM to return simple JSON plan and script contents
         def mock_llm(prompt, **kwargs):
             """Return a JSON architect plan and Python file content depending on the prompt."""
-            # Step 1: Validate input parameters, operational preconditions, and state
             if "tasks" in prompt:
                 plan = {
                     "explanation": "Create dummy python file",
@@ -423,9 +392,7 @@ class TestWebSocketBridge(unittest.TestCase):
 
         async def qt_event_loop_spinner():
             """Periodically processes Qt events to deliver cross-thread signals."""
-            # Step 1: Validate input parameters, operational preconditions, and state
             while True:
-                # Iterate over items, evaluate loop invariant, and update progress
                 QCoreApplication.processEvents()
                 await asyncio.sleep(0.01)
 
@@ -461,7 +428,6 @@ class TestWebSocketBridge(unittest.TestCase):
                     # 2. Consume progress notifications until finished_swarm is received
                     notifications = []
                     for _ in range(50):  # Safety iteration ceiling
-                        # Iterate over items, evaluate loop invariant, and update progress
                         raw_msg = await asyncio.wait_for(ws.recv(), timeout=15.0)
 
                         msg = json.loads(raw_msg)
@@ -479,7 +445,6 @@ class TestWebSocketBridge(unittest.TestCase):
                 # Clean shutdown of the spinner task
                 spinner.cancel()
                 try:
-                    # Execute guarded operations and establish recovery boundaries
                     await spinner
                 except asyncio.CancelledError:
                     pass
@@ -487,7 +452,6 @@ class TestWebSocketBridge(unittest.TestCase):
         # Run async client loop in main thread
         loop = asyncio.new_event_loop()
         try:
-            # Execute guarded operations and establish recovery boundaries
             loop.run_until_complete(run_client())
         finally:
             loop.close()
@@ -495,10 +459,8 @@ class TestWebSocketBridge(unittest.TestCase):
     @patch("app.engine.model_loader.ModelLoader.get_instance")
     def test_websocket_chat_flow(self, mock_get_llm):
         """Chat over the bridge: the RPC answers 'started' and streamed thought tokens, response tokens and a chat_finished notification arrive."""
-        # Step 1: Validate input parameters, operational preconditions, and state
         def mock_llm_stream(prompt, **kwargs):
             """When streaming, return the chunks <think>, 'Thinking', </think>, 'Hello world' (only 'Hello world' once the prompt already contains more than one </think>); non-streaming calls return 'Response'."""
-            # Step 1: Validate input parameters, operational preconditions, and state
             if kwargs.get("stream"):
                 if prompt.count("</think>") > 1:
                     return [
@@ -519,18 +481,14 @@ class TestWebSocketBridge(unittest.TestCase):
 
         async def qt_event_loop_spinner():
             """Periodically process Qt events so cross-thread signals are delivered while the async client waits."""
-            # Step 1: Validate input parameters, operational preconditions, and state
             while True:
-                # Iterate over items, evaluate loop invariant, and update progress
                 QCoreApplication.processEvents()
                 await asyncio.sleep(0.01)
 
         async def run_client():
             """Submit a chat request over the bridge and collect token notifications until chat_finished."""
-            # Step 1: Validate input parameters, operational preconditions, and state
             spinner = asyncio.create_task(qt_event_loop_spinner())
             try:
-                # Execute guarded operations and establish recovery boundaries
                 async with websockets.connect(self._get_uri(), ssl=self._get_ssl_context(), close_timeout=2) as ws:
                     chat_payload = {
                         "jsonrpc": "2.0",
@@ -557,7 +515,6 @@ class TestWebSocketBridge(unittest.TestCase):
 
                     notifications = []
                     for _ in range(50):
-                        # Iterate over items, evaluate loop invariant, and update progress
                         raw_msg = await asyncio.wait_for(ws.recv(), timeout=15.0)
                         msg = json.loads(raw_msg)
                         method = msg.get("method")
@@ -572,21 +529,18 @@ class TestWebSocketBridge(unittest.TestCase):
             finally:
                 spinner.cancel()
                 try:
-                    # Execute guarded operations and establish recovery boundaries
                     await spinner
                 except asyncio.CancelledError:
                     pass
 
         loop = asyncio.new_event_loop()
         try:
-            # Execute guarded operations and establish recovery boundaries
             loop.run_until_complete(run_client())
         finally:
             loop.close()
 
     def test_status_bar_reflection(self):
         """The GUI status bar shows 'VS Code: listening' while the bridge is up and 'VS Code: offline' after the server instance is reset."""
-        # Step 1: Validate input parameters, operational preconditions, and state
         from app.ui.widgets.status_bar import StatusBar
 
         # Instantiate StatusBar
@@ -605,10 +559,8 @@ class TestWebSocketBridge(unittest.TestCase):
 
     def test_token_connection_success(self):
         """A client presenting the valid bridge token can connect and make an RPC."""
-        # Step 1: Validate input parameters, operational preconditions, and state
         async def run_client():
             """Connect with the valid token and make a simple RPC."""
-            # Step 1: Validate input parameters, operational preconditions, and state
             async with websockets.connect(self._get_uri(), ssl=self._get_ssl_context(), close_timeout=2) as ws:
                 payload = {"jsonrpc": "2.0", "id": 1, "method": "get_runtime_status"}
                 await ws.send(json.dumps(payload))
@@ -633,7 +585,6 @@ class TestWebSocketBridge(unittest.TestCase):
         
         async def run_client():
             """Try to connect with an expired token and report the close code the server sends."""
-            # Step 1: Validate input parameters, operational preconditions, and state
             uri = f"ws://localhost:{self.port}/?token={expired_token}"
             if os.path.exists(self.manager._SSL_CERT_PATH):
                 uri = uri.replace("ws://", "wss://")
@@ -673,12 +624,10 @@ class TestWebSocketBridge(unittest.TestCase):
         # Attempting a connection with the old token should trigger rotation
         async def run_client():
             """Attempt a connection with the old token, which triggers token rotation."""
-            # Step 1: Validate input parameters, operational preconditions, and state
             uri = f"ws://localhost:{self.port}/?token={old_token}"
             if os.path.exists(self.manager._SSL_CERT_PATH):
                 uri = uri.replace("ws://", "wss://")
             try:
-                # Execute guarded operations and establish recovery boundaries
                 import websockets.exceptions
                 async with websockets.connect(uri, ssl=self._get_ssl_context(), close_timeout=2):
                     pass

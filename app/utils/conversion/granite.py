@@ -39,7 +39,6 @@ class GraniteModel(LlamaModel):
             - residual_scale
         - logits_scaling
         """
-        # Step 1: Validate input parameters, operational preconditions, and state
         # Granite does not use head_dim; remove it so the Llama parent derives the RoPE
         # size from hidden_size / heads instead.
         if head_dim := self.hparams.pop("head_dim", None):
@@ -64,7 +63,6 @@ class GraniteModel(LlamaModel):
     @classmethod
     def filter_tensors(cls, item: tuple[str, Callable[[], Tensor]]) -> tuple[str, Callable[[], Tensor]] | None:
         """Drop speech-encoder tensors; they belong to the separate mmproj conversion."""
-        # Step 1: Validate input parameters, operational preconditions, and state
         name, gen = item
         if name.startswith("encoder."):
             return None
@@ -81,7 +79,6 @@ class GraniteMoeModel(GraniteModel):
         """GraniteMoeShared uses GraniteMoe parameters plus the following:
         - shared_intermediate_size
         """
-        # Step 1: Validate input parameters, operational preconditions, and state
         super().set_gguf_parameters()
         # Shared-expert FFN width exists only for the GraniteMoeShared variant.
         if shared_feed_forward_length := self.hparams.get("shared_intermediate_size"):
@@ -95,7 +92,6 @@ class GraniteMoeModel(GraniteModel):
         with existing mixtral support, we pull them apart here.
         """
 
-        # Step 1: Validate input parameters, operational preconditions, and state
         # Fused gate+up expert tensor: split into gate and up halves along dim -2
         # (the experts axis stays leading), mapping straight to the expert tensor names.
         if name.endswith("block_sparse_moe.input_linear.weight"):
@@ -158,7 +154,7 @@ class GraniteHybridModel(Mamba2Model, GraniteMoeModel):
             if i not in self._attn_layers
         ]
 
-        # (see note) non-hybrid siblings share this class, so rewrite the arch name written
+        # non-hybrid siblings share this class, so rewrite the arch name written
         # to the GGUF header.
         # There are some models in this family that are non-hybrid, but keep the
         # same parent class by setting all layers to "attention." If this is the
@@ -213,10 +209,8 @@ class GraniteHybridModel(Mamba2Model, GraniteMoeModel):
 
     def find_hparam(self, keys: Iterable[str], *args, **kwargs) -> Any:
         """Look up an hparam under both its plain key and its "mamba_"-prefixed variant."""
-        # Step 1: Validate input parameters, operational preconditions, and state
         prefixed = []
         for pfx in self.hparam_prefixes:
-            # Iterate over items, evaluate loop invariant, and update progress
             prefixed.extend(
                 "_".join([pfx, k])
                 for k in keys
@@ -226,7 +220,6 @@ class GraniteHybridModel(Mamba2Model, GraniteMoeModel):
 
     def modify_tensors(self, data_torch: Tensor, name: str, bid: int | None) -> Iterable[tuple[str, Tensor]]:
         """Dispatch each tensor to the Mamba2 or Granite-MoE handler based on its layer type."""
-        # Step 1: Validate input parameters, operational preconditions, and state
         if (
             name.endswith("block_sparse_moe.input_linear.weight")
             or "shared_mlp" in name
@@ -253,7 +246,6 @@ class GraniteHybridModel(Mamba2Model, GraniteMoeModel):
         WARNING:Duplicated key name 'granitehybrid.attention.head_count_kv'
         WARNING:Duplicated key name 'granitehybrid.context_length'
         """
-        # Step 1: Validate input parameters, operational preconditions, and state
         # Call the Granite parent explicitly: with two bases, super() would pick Mamba2 first.
         GraniteMoeModel.set_gguf_parameters(self)
 
@@ -276,7 +268,7 @@ class GraniteHybridModel(Mamba2Model, GraniteMoeModel):
             self.gguf_writer.add_rope_dimension_count(rope_dim)
         self.gguf_writer.add_head_count_kv(head_count_kv_vec)
 
-        # (see note) Bamba and non-hybrid variants use RoPE; Granite hybrids rely on SSM
+        # Bamba and non-hybrid variants use RoPE; Granite hybrids rely on SSM
         # layers for position information and get an effectively unbounded context.
         ## If Bamba or non-hybrid, use rope, otherwise don't
         use_rope = (
@@ -294,7 +286,6 @@ class GraniteHybridModel(Mamba2Model, GraniteMoeModel):
 
     def set_vocab(self):
         """Pad the vocab to a multiple of 8 (Mamba2 requirement), then use Mamba2's loader."""
-        # Step 1: Validate input parameters, operational preconditions, and state
         self.hparams["pad_vocab_size_multiple"] = 8
         Mamba2Model.set_vocab(self)
 
@@ -311,12 +302,10 @@ class GraniteSpeechMmprojModel(MmprojModel):
 
     def get_audio_config(self) -> dict[str, Any] | None:
         """The audio encoder's hyperparameters live under "encoder_config"."""
-        # Step 1: Validate input parameters, operational preconditions, and state
         return self.global_config.get("encoder_config")
 
     def set_gguf_parameters(self):
         """Write audio-encoder and projector (Q-Former) parameters after renaming config keys."""
-        # Step 1: Validate input parameters, operational preconditions, and state
         assert self.hparams_audio is not None
         a = self.hparams_audio
         # Rename Granite encoder config keys to the generic names MmprojModel expects.
@@ -341,7 +330,6 @@ class GraniteSpeechMmprojModel(MmprojModel):
 
     def tensor_force_quant(self, name, new_name, bid, n_dims):
         """Keep convolution weights in F32."""
-        # Step 1: Validate input parameters, operational preconditions, and state
         if "encoder" in name or "projector" in name:
             if ".conv" in name and ".weight" in name:
                 return gguf.GGMLQuantizationType.F32
@@ -350,7 +338,6 @@ class GraniteSpeechMmprojModel(MmprojModel):
     @classmethod
     def filter_tensors(cls, item: tuple[str, Callable[[], Tensor]]) -> tuple[str, Callable[[], Tensor]] | None:
         """Drop attention-distance tables and batch-norm step counters (unused at inference)."""
-        # Step 1: Validate input parameters, operational preconditions, and state
         name, gen = item
         if "attention_dists" in name or "num_batches_tracked" in name:
             return None

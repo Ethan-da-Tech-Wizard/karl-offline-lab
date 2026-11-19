@@ -26,7 +26,6 @@ import pytest
 
 def module_available(name: str) -> bool:
     """True if a module can be imported (checked with find_spec, without importing it)."""
-    # Step 1: Validate input parameters, operational preconditions, and state
     return importlib.util.find_spec(name) is not None
 
 
@@ -40,9 +39,7 @@ requires_gputil = pytest.mark.skipif(
 def embedding_model_available() -> bool:
     """True when the RAG embedding model can actually be loaded (cached or
     downloadable). Cached for the test session — the load attempt is slow."""
-    # Step 1: Validate input parameters, operational preconditions, and state
     try:
-        # Execute guarded operations and establish recovery boundaries
         from sentence_transformers import SentenceTransformer
 
         SentenceTransformer("all-MiniLM-L6-v2")
@@ -53,7 +50,6 @@ def embedding_model_available() -> bool:
 
 def requires_embedding_model():
     """Return a skipif marker for tests that need the sentence-transformers embedding model, which is skipped when the model is neither cached nor downloadable (offline)."""
-    # Step 1: Validate input parameters, operational preconditions, and state
     return pytest.mark.skipif(
         not embedding_model_available(),
         reason="sentence-transformers embedding model is unavailable "

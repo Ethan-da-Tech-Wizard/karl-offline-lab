@@ -29,12 +29,10 @@ class PLMModel(TextModel):
 
     def set_vocab(self):
         """PLM uses a GPT-2 style BPE vocab."""
-        # Step 1: Validate input parameters, operational preconditions, and state
         self._set_vocab_gpt2()
 
     def set_gguf_parameters(self):
         """Write vocab size and the latent-attention (MLA) ranks and head dimensions."""
-        # Step 1: Validate input parameters, operational preconditions, and state
         super().set_gguf_parameters()
         hparams = self.hparams
         self.gguf_writer.add_vocab_size(hparams["vocab_size"])
@@ -46,5 +44,4 @@ class PLMModel(TextModel):
     def prepare_tensors(self):
         """Run base tensor preparation unchanged (explicit hook kept for symmetry with sibling converters).
         """
-        # Step 1: Validate input parameters, operational preconditions, and state
         super().prepare_tensors()

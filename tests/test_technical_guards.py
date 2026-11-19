@@ -44,7 +44,6 @@ class TestTechnicalGuards(unittest.TestCase):
 
     def tearDown(self):
         """Delete the temporary sandbox."""
-        # Step 1: Validate input parameters, operational preconditions, and state
         self.sandbox_dir.cleanup()
 
     @unittest.skipIf(shutil.which("rg") is None, "ripgrep (rg) not installed on this system")
@@ -98,7 +97,6 @@ class TestTechnicalGuards(unittest.TestCase):
 
     def test_hot_reload_keeps_previous_module_on_compile_error(self):
         """If a hot-reloaded hackable module fails to compile, the previously loaded module is kept and a 'blocked by compile error' notice is shown."""
-        # Step 1: Validate input parameters, operational preconditions, and state
         module_path = os.path.join(self.workspace_path, "hackable_module.py")
         with open(module_path, "w", encoding="utf-8") as f:
             f.write("VALUE = 1\n")
@@ -119,19 +117,16 @@ class TestTechnicalGuards(unittest.TestCase):
 
     def test_llm_trim_history_uses_tokenizer_counts(self):
         """History trimming counts real tokenizer tokens (not characters): the seed and most recent turns survive while old, token-heavy turns are dropped."""
-        # Step 1: Validate input parameters, operational preconditions, and state
         class TokenDenseMock:
             """Tokenizer double where each character is expensive, to force trimming."""
             def tokenize(self, text_bytes, add_bos=False):
                 """Return a token list sized by the text length."""
-                # Step 1: Validate input parameters, operational preconditions, and state
                 text = text_bytes.decode("utf-8")
                 return [0] * len(text)
 
         original_n_ctx = ModelLoader.n_ctx
         ModelLoader.n_ctx = lambda: 1200
         try:
-            # Execute guarded operations and establish recovery boundaries
             thread = LLMThread(
                 system_prompt="system",
                 chat_history=[],
@@ -152,12 +147,10 @@ class TestTechnicalGuards(unittest.TestCase):
 
     def test_llm_final_prompt_budget_drops_oversized_seed(self):
         """If even the first message is too large for the final prompt budget it is dropped, keeping the prompt within budget and retaining the most recent turn."""
-        # Step 1: Validate input parameters, operational preconditions, and state
         class TokenDenseMock:
             """Tokenizer double with expensive tokens."""
             def tokenize(self, text_bytes, add_bos=False):
                 """Return a token list sized by the text length."""
-                # Step 1: Validate input parameters, operational preconditions, and state
                 return [0] * len(text_bytes.decode("utf-8"))
 
         original_context_limit = ModelLoader.context_limit
@@ -165,7 +158,6 @@ class TestTechnicalGuards(unittest.TestCase):
         ModelLoader.context_limit = lambda: 500
         ModelLoader.model_name = lambda: "qwen-test.gguf"
         try:
-            # Execute guarded operations and establish recovery boundaries
             thread = LLMThread(
                 system_prompt="system",
                 chat_history=[],
@@ -189,7 +181,6 @@ class TestTechnicalGuards(unittest.TestCase):
 
     def test_orchestrator_rejects_unsafe_task_paths(self):
         """The swarm orchestrator raises ValueError for planned file paths that are absolute or traverse out, and accepts safe relative paths such as pkg/safe.py."""
-        # Step 1: Validate input parameters, operational preconditions, and state
         orchestrator = SwarmOrchestratorThread(
             workspace_path=self.workspace_path,
             objective="unsafe plan",
@@ -226,7 +217,6 @@ class TestTechnicalGuards(unittest.TestCase):
         call_count = 0
         def stateful_mock_llm(prompt, **kwargs):
             """Scripted LLM: architect plan, then broken code (missing colon), then fixed code."""
-            # Step 1: Validate input parameters, operational preconditions, and state
             nonlocal call_count
             call_count += 1
             if "Architect" in prompt or "tasks" in prompt:
@@ -278,7 +268,6 @@ class TestTechnicalGuards(unittest.TestCase):
         import time
         start_time = time.time()
         while orchestrator.isRunning():
-            # Iterate over items, evaluate loop invariant, and update progress
             app.processEvents()
             time.sleep(0.02)
             if time.time() - start_time > 15.0:  # 15s safety timeout
@@ -288,7 +277,6 @@ class TestTechnicalGuards(unittest.TestCase):
 
         # Process any remaining events in the queue after the thread terminates
         for _ in range(10):
-            # Iterate over items, evaluate loop invariant, and update progress
             app.processEvents()
             time.sleep(0.01)
 
@@ -311,7 +299,6 @@ class TestTechnicalGuards(unittest.TestCase):
         Reads /proc/self/maps and asserts that all writable memory segments are private ('p'),
         not shared ('s').
         """
-        # Step 1: Validate input parameters, operational preconditions, and state
         if sys.platform != "linux":
             self.skipTest("Memory page privacy check is only relevant on Linux")
 
@@ -320,7 +307,6 @@ class TestTechnicalGuards(unittest.TestCase):
 
         with open(maps_path, "r", encoding="utf-8") as f:
             for line in f:
-                # Iterate over items, evaluate loop invariant, and update progress
                 parts = line.strip().split()
                 if len(parts) >= 2:
                     perms = parts[1]
@@ -341,7 +327,6 @@ class TestTechnicalGuards(unittest.TestCase):
         """Test Target 2: Keyring Expiry & Revocation Verification.
         Verifies that storing a token, auto-expiry, and explicit revocation behave correctly in the kernel.
         """
-        # Step 1: Validate input parameters, operational preconditions, and state
         if sys.platform != "linux":
             self.skipTest("Linux kernel keyring is only available on Linux")
 
@@ -355,7 +340,6 @@ class TestTechnicalGuards(unittest.TestCase):
         # Define keyctl_read helper using either libkeyutils or raw syscall
         def read_session_token(key_id: int) -> str:
             """Read a key's payload from the Linux session keyring via libkeyutils or the raw keyctl syscall (KEYCTL_READ)."""
-            # Step 1: Validate input parameters, operational preconditions, and state
             if _libkeyutils is not None:
                 _libkeyutils.keyctl_read.argtypes = [ctypes.c_int32, ctypes.c_char_p, ctypes.c_size_t]
                 _libkeyutils.keyctl_read.restype = ctypes.c_int32

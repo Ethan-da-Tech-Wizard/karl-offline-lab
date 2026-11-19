@@ -38,7 +38,6 @@ class TalkieModel(TextModel):
     def set_gguf_parameters(self):
         """Write base parameters and the RMS epsilon matching F.rms_norm's default (float32 eps).
         """
-        # Step 1: Validate input parameters, operational preconditions, and state
         super().set_gguf_parameters()
         # Talkie used F.rms_norm without an explicit eps
         self.gguf_writer.add_layer_norm_rms_eps(torch.finfo(torch.float32).eps)
@@ -46,7 +45,6 @@ class TalkieModel(TextModel):
     def modify_tensors(self, data_torch: Tensor, name: str, bid: int | None) -> Iterable[tuple[str, Tensor]]:
         """Map gain scalars to output scales, absorb inverse RoPE into q/k weights and broadcast head gains.
         """
-        # Step 1: Validate input parameters, operational preconditions, and state
         prefix = f"model.blocks.{bid}." if bid is not None else ""
         suffix = name.removeprefix(prefix)
 

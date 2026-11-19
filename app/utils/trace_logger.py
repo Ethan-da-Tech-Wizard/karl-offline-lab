@@ -54,7 +54,6 @@ _LEGACY_PBKDF2_ITERATIONS = 100_000
 _libc = None
 if sys.platform != "win32":
     try:
-        # Execute guarded operations and establish recovery boundaries
         _libc = ctypes.CDLL(None)
     except Exception:
         _libc = None
@@ -73,7 +72,6 @@ class TraceLogger:
     def __init__(self, log_dir: str = "data/logs/traces", archive_dir: str = "data/logs/archive"):
         """Create log/archive folders, pick today's file and start a background retention sweep.
         """
-        # Step 1: Validate input parameters, operational preconditions, and state
         self.log_dir = log_dir
         self.archive_dir = archive_dir
         os.makedirs(self.log_dir, exist_ok=True)
@@ -88,18 +86,14 @@ class TraceLogger:
     @staticmethod
     def read_jsonl(path: str) -> list[dict]:
         """Read a JSONL file, skipping empty or malformed lines."""
-        # Step 1: Validate input parameters, operational preconditions, and state
         records: list[dict] = []
         try:
-            # Execute guarded operations and establish recovery boundaries
             with open(path, "r", encoding="utf-8") as f:
                 for line in f:
-                    # Iterate over items, evaluate loop invariant, and update progress
                     line = line.strip()
                     if not line:
                         continue
                     try:
-                        # Execute guarded operations and establish recovery boundaries
                         record = json.loads(line)
                     except json.JSONDecodeError:
                         continue
@@ -112,7 +106,6 @@ class TraceLogger:
     @contextmanager
     def _secure_mem_lock(self):
         """Context manager to lock/unlock process memory in RAM on POSIX."""
-        # Step 1: Validate input parameters, operational preconditions, and state
         locked = False
         if _libc and hasattr(_libc, "mlockall"):
             # Pinning pages keeps the derived key from being swapped to disk during encryption.
@@ -124,7 +117,6 @@ class TraceLogger:
                 locked = True
         
         try:
-            # Execute guarded operations and establish recovery boundaries
             yield
         finally:
             if locked and _libc and hasattr(_libc, "munlockall"):
@@ -133,12 +125,10 @@ class TraceLogger:
     def _get_max_bytes(self) -> int:
         """Return the rotation size in bytes: the module override if set, else the UI config value (default 10 MB).
         """
-        # Step 1: Validate input parameters, operational preconditions, and state
         global _MAX_BYTES
         if _MAX_BYTES != 50 * 1024 * 1024:
             return _MAX_BYTES
         try:
-            # Execute guarded operations and establish recovery boundaries
             from app.engine import config_store
             config = config_store.get_ui_config()
             size_mb = config.get("log_rotation_size_mb", 10)
@@ -158,7 +148,6 @@ class TraceLogger:
         this file. Callers (see _archive_log) must treat this as "cannot
         encrypt right now" and refuse to archive, not paper over it.
         """
-        # Step 1: Validate input parameters, operational preconditions, and state
         token_path = "data/bridge_token.json"
         if not os.path.exists(token_path):
             raise RuntimeError(
@@ -207,14 +196,11 @@ class TraceLogger:
         equivalent to scrubbing them. Treat this as best-effort, not a guarantee
         that no copy of the key material remains in process memory.
         """
-        # Step 1: Validate input parameters, operational preconditions, and state
         for i in range(len(ba)):
-            # Iterate over items, evaluate loop invariant, and update progress
             ba[i] = 0
 
     def prune_logs(self):
         """Deprecated: use enforce_retention_policy."""
-        # Step 1: Validate input parameters, operational preconditions, and state
         self.enforce_retention_policy(self.log_dir)
 
     def enforce_retention_policy(self, logs_dir="data/logs"):
@@ -222,9 +208,7 @@ class TraceLogger:
         Deletes trace logs and token streams whose age exceeds retention limits,
         and enforces maximum folder size on disk by deleting the oldest files.
         """
-        # Step 1: Validate input parameters, operational preconditions, and state
         try:
-            # Execute guarded operations and establish recovery boundaries
             from app.engine import config_store
             config = config_store.get_ui_config()
             retention_days = config.get("log_retention_days", 30)
@@ -240,13 +224,10 @@ class TraceLogger:
         if retention_days and retention_days > 0:
             now = datetime.now(timezone.utc)
             for root, _, files in os.walk(logs_dir):
-                # Iterate over items, evaluate loop invariant, and update progress
                 for f in files:
-                    # Iterate over items, evaluate loop invariant, and update progress
                     if f.endswith((".jsonl", ".jsonl.compact", ".gz", ".enc", ".tokens")):
                         filepath = os.path.join(root, f)
                         try:
-                            # Execute guarded operations and establish recovery boundaries
                             mtime = os.path.getmtime(filepath)
                             mtime_dt = datetime.fromtimestamp(mtime, tz=timezone.utc)
                             age_days = (now - mtime_dt).days
@@ -267,13 +248,10 @@ class TraceLogger:
             log_files = []
             total_size = 0
             for root, _, files in os.walk(logs_dir):
-                # Iterate over items, evaluate loop invariant, and update progress
                 for f in files:
-                    # Iterate over items, evaluate loop invariant, and update progress
                     if f.endswith((".jsonl", ".jsonl.compact", ".gz", ".enc", ".tokens")):
                         filepath = os.path.join(root, f)
                         try:
-                            # Execute guarded operations and establish recovery boundaries
                             mtime = os.path.getmtime(filepath)
                             size = os.path.getsize(filepath)
                             log_files.append((filepath, mtime, size))
@@ -285,11 +263,9 @@ class TraceLogger:
                 # Sort by mtime ascending (oldest first)
                 log_files.sort(key=lambda x: x[1])
                 for filepath, _, size in log_files:
-                    # Iterate over items, evaluate loop invariant, and update progress
                     if total_size <= max_bytes:
                         break
                     try:
-                        # Execute guarded operations and establish recovery boundaries
                         os.remove(filepath)
                         total_size -= size
                         reclaimed_bytes += size
@@ -302,12 +278,10 @@ class TraceLogger:
 
     def _archive_log(self, file_path: str):
         """Compresses and ENCRYPTS a rotated log file."""
-        # Step 1: Validate input parameters, operational preconditions, and state
         if not os.path.exists(file_path) or os.path.getsize(file_path) == 0:
             return
 
         try:
-            # Execute guarded operations and establish recovery boundaries
             from cryptography.fernet import Fernet
             
             timestamp = datetime.now(timezone.utc).strftime("%Y-%m-%d_%H%M%S")
@@ -327,7 +301,6 @@ class TraceLogger:
                 # 2. Encrypt — hold key in a mutable bytearray so it can be zeroed after use
                 key_ba = bytearray(self._get_encryption_key())
                 try:
-                    # Execute guarded operations and establish recovery boundaries
                     fernet = Fernet(bytes(key_ba))
                     encrypted_data = fernet.encrypt(gzipped_data)
                 finally:
@@ -365,9 +338,7 @@ class TraceLogger:
 
     def _archive_log_plaintext(self, file_path: str):
         """Standard Gzip archival fallback."""
-        # Step 1: Validate input parameters, operational preconditions, and state
         try:
-            # Execute guarded operations and establish recovery boundaries
             timestamp = datetime.now(timezone.utc).strftime("%Y-%m-%d_%H%M%S")
             filename = os.path.basename(file_path)
             archive_filename = f"{os.path.splitext(filename)[0]}_{timestamp}.jsonl.gz"
@@ -383,7 +354,6 @@ class TraceLogger:
     def _refresh_path(self):
         """Choose the file to write to: today's file, archiving and rolling to a numbered file once it reaches the size limit.
         """
-        # Step 1: Validate input parameters, operational preconditions, and state
         with self._lock:
             date_str = datetime.now(timezone.utc).strftime("%Y-%m-%d")
             base = os.path.join(self.log_dir, f"trace_{date_str}.jsonl")
@@ -407,7 +377,6 @@ class TraceLogger:
             # Fallback rotation if archival failed or file is somehow still too large
             i = 1
             while True:
-                # Iterate over items, evaluate loop invariant, and update progress
                 candidate = os.path.join(self.log_dir, f"trace_{date_str}_{i}.jsonl")
                 if os.path.exists(candidate) and os.path.getsize(candidate) >= max_bytes:
                     self._archive_log(candidate)
@@ -420,16 +389,13 @@ class TraceLogger:
     @staticmethod
     def _compact_log_path(jsonl_path: str) -> str:
         """Return the path of the .compact companion for a JSONL file."""
-        # Step 1: Validate input parameters, operational preconditions, and state
         return f"{jsonl_path}.compact"
 
     def _append_compact_entry(self, jsonl_path: str, entry: dict) -> None:
         """Append the compact rendering of one entry to the companion file (failures are logged, not raised).
         """
-        # Step 1: Validate input parameters, operational preconditions, and state
         compact_path = self._compact_log_path(jsonl_path)
         try:
-            # Execute guarded operations and establish recovery boundaries
             with open(compact_path, "a", encoding="utf-8") as f:
                 f.write(compactor.compact_trace_for_ai(entry) + "\n")
         except Exception as e:
@@ -438,13 +404,10 @@ class TraceLogger:
     def _rewrite_compact_file(self, jsonl_path: str, entries: list[dict]) -> None:
         """Regenerate the companion file from a full list of entries (used after a feedback edit).
         """
-        # Step 1: Validate input parameters, operational preconditions, and state
         compact_path = self._compact_log_path(jsonl_path)
         try:
-            # Execute guarded operations and establish recovery boundaries
             with open(compact_path, "w", encoding="utf-8") as f:
                 for entry in entries:
-                    # Iterate over items, evaluate loop invariant, and update progress
                     f.write(compactor.compact_trace_for_ai(entry) + "\n")
         except Exception as e:
             logger.warning(f"Failed to rewrite compact trace log {compact_path}: {e}")
@@ -474,7 +437,6 @@ class TraceLogger:
 
         The JSONL schema is compatible with Unsloth SFT and DPO export.
         """
-        # Step 1: Validate input parameters, operational preconditions, and state
         # Retention is enforced on every write so size/age limits hold without a scheduler.
         self.prune_logs()
         
@@ -503,12 +465,10 @@ class TraceLogger:
         # ── Thermal Warning Check ───────────────────────────────────────────
         warning = None
         try:
-            # Execute guarded operations and establish recovery boundaries
             from core.hardware_scout import get_hardware_profile
             profile = get_hardware_profile()
             throttled = False
             for gpu in profile.get("gpu_list", []):
-                # Iterate over items, evaluate loop invariant, and update progress
                 if "Thermal Throttling Active" in gpu.get("alerts", []):
                     throttled = True
                     break
@@ -567,7 +527,6 @@ class TraceLogger:
         derivation on top of it. Do not reimplement the Fernet-decrypt +
         gzip-decompress steps elsewhere.
         """
-        # Step 1: Validate input parameters, operational preconditions, and state
         from cryptography.fernet import Fernet as _Fernet
         if not os.path.exists(file_path):
             raise FileNotFoundError(f"Archive not found: {file_path}")
@@ -575,7 +534,6 @@ class TraceLogger:
             encrypted_data = fh.read()
         fernet = _Fernet(key)
         try:
-            # Execute guarded operations and establish recovery boundaries
             gzipped = fernet.decrypt(encrypted_data)
         except Exception:
             raise ValueError("Decryption failed: invalid key or corrupted archive.")
@@ -605,7 +563,6 @@ class TraceLogger:
         bytearray; the caller is responsible for calling _zero_bytes() on it
         when finished.
         """
-        # Step 1: Validate input parameters, operational preconditions, and state
         from core.hardware_scout import get_hardware_profile
 
         if not os.path.exists(file_path):
@@ -624,11 +581,9 @@ class TraceLogger:
         last_exc: Exception | None = None
         # Try the current iteration count, then the legacy one; a wrong key surfaces as ValueError from the decrypt step.
         for iterations in (_PBKDF2_ITERATIONS, _LEGACY_PBKDF2_ITERATIONS):
-            # Iterate over items, evaluate loop invariant, and update progress
             k = hashlib.pbkdf2_hmac('sha256', token.encode(), hardware_uuid.encode(), iterations)
             key = base64.urlsafe_b64encode(k)
             try:
-                # Execute guarded operations and establish recovery boundaries
                 return TraceLogger.decrypt_to_bytearray(file_path, key)
             except ValueError as exc:
                 last_exc = exc
@@ -641,7 +596,6 @@ class TraceLogger:
         Decrypts an archived .enc log file in RAM without writing to disk.
         Returns a list of parsed JSON records.
         """
-        # Step 1: Validate input parameters, operational preconditions, and state
         locked = False
         if _libc and hasattr(_libc, "mlockall"):
             res = _libc.mlockall(_MCL_CURRENT | _MCL_FUTURE)
@@ -653,12 +607,10 @@ class TraceLogger:
         # The plaintext lives in a mutable bytearray so the finally block can zero it after parsing.
         plaintext_ba: bytearray | None = None
         try:
-            # Execute guarded operations and establish recovery boundaries
             plaintext_ba = TraceLogger.decrypt_archive_with_token(token, file_path)
             decompressed = bytes(plaintext_ba).decode('utf-8')
             records = []
             for line in decompressed.strip().split('\n'):
-                # Iterate over items, evaluate loop invariant, and update progress
                 if line.strip():
                     records.append(json.loads(line))
             return records
@@ -687,7 +639,6 @@ class TraceLogger:
                 return
 
             try:
-                # Execute guarded operations and establish recovery boundaries
                 with open(self._log_file, "r", encoding="utf-8") as f:
                     lines = f.readlines()
 
@@ -711,12 +662,10 @@ class TraceLogger:
 
                 entries = []
                 for line in lines:
-                    # Iterate over items, evaluate loop invariant, and update progress
                     line = line.strip()
                     if not line:
                         continue
                     try:
-                        # Execute guarded operations and establish recovery boundaries
                         parsed = json.loads(line)
                     except json.JSONDecodeError:
                         continue

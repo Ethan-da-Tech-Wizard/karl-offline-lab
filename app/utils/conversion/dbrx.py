@@ -25,7 +25,6 @@ class DbrxModel(TextModel):
 
     def set_gguf_parameters(self):
         """Write DBRX hyperparameters, read from the nested ffn_config / attn_config dicts."""
-        # Step 1: Validate input parameters, operational preconditions, and state
         ffn_config = self.hparams["ffn_config"]
         attn_config = self.hparams["attn_config"]
         self.gguf_writer.add_block_count(self.block_count)
@@ -53,12 +52,11 @@ class DbrxModel(TextModel):
 
     def modify_tensors(self, data_torch: Tensor, name: str, bid: int | None) -> Iterable[tuple[str, Tensor]]:
         """Reshape fused expert weights to 3D (permuting w2) and add the missing ".weight" suffix."""
-        # Step 1: Validate input parameters, operational preconditions, and state
         n_expert = self.hparams["ffn_config"]["moe_num_experts"]
         n_ff = self.hparams["ffn_config"]["ffn_hidden_size"]
         n_embd = self.hparams["d_model"]
 
-        # (see note) the dict below maps each fused expert tensor to the permutation needed
+        # the dict below maps each fused expert tensor to the permutation needed
         # for llama.cpp, or None when no permutation is needed.
         # Specific behavior for experts tensors: suffix .weight, view as 3D and transpose
         # original implementation expects (n_expert, n_ff, n_embd) for all experts weights
@@ -72,7 +70,6 @@ class DbrxModel(TextModel):
         experts = False
 
         for exp_tensor_name in exp_tensor_names.keys():
-            # Iterate over items, evaluate loop invariant, and update progress
             # Expert tensors come without a ".weight" suffix and flattened; view them as
             # (n_expert, n_ff, n_embd), then permute if required (down projection only).
             if name.find(exp_tensor_name) != -1 and name.find(".weight") == -1:
@@ -82,7 +79,7 @@ class DbrxModel(TextModel):
                     data_torch = data_torch.permute(*permute_tensor)
                 break
 
-        # (see note) names are mapped with a ".weight" suffix added for experts so
+        # names are mapped with a ".weight" suffix added for experts so
         # they can be quantised.
         # map tensor names
         # In MoE models the ffn tensors are typically most of the model weights,
@@ -100,7 +97,6 @@ class DbrxModel(TextModel):
         DBRX's expert tensors lack the usual ".weight" name, so the default name-based
         rule would not select them for quantisation.
         """
-        # Step 1: Validate input parameters, operational preconditions, and state
         del name, new_name, bid  # unused
 
         return n_dims > 1

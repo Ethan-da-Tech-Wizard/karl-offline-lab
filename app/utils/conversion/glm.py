@@ -37,7 +37,6 @@ class Glm4Model(TextModel):
 
     def __init__(self, *args, **kwargs):
         """Read the partial rotary factor and detect M-RoPE from rope_parameters."""
-        # Step 1: Validate input parameters, operational preconditions, and state
         super().__init__(*args, **kwargs)
         self.partial_rotary_factor = self.rope_parameters.get("partial_rotary_factor", 0.5)
         if "mrope_section" in self.rope_parameters:
@@ -48,7 +47,6 @@ class Glm4Model(TextModel):
         """Write a GPT-2 style BPE vocab and patch the special token ids GLM does not
         store in config.json (eos/eot/unk/bos).
         """
-        # Step 1: Validate input parameters, operational preconditions, and state
         from transformers import AutoTokenizer
         tokenizer = AutoTokenizer.from_pretrained(self.dir_model, trust_remote_code=True)
         special_vocab = gguf.SpecialVocab(self.dir_model, load_merges=True)
@@ -68,7 +66,6 @@ class Glm4Model(TextModel):
 
     def set_gguf_parameters(self):
         """Write base parameters plus the (partial) RoPE dimension count."""
-        # Step 1: Validate input parameters, operational preconditions, and state
         super().set_gguf_parameters()
         if (rope_dim := self.hparams.get("head_dim")) is None:
             rope_dim = self.hparams["hidden_size"] // self.hparams["num_attention_heads"]
@@ -82,7 +79,6 @@ class Glm4Model(TextModel):
         that part even-indexed rows are placed first, then odd-indexed ones. 1-D
         tensors (biases) are handled by temporarily adding a trailing axis.
         """
-        # Step 1: Validate input parameters, operational preconditions, and state
         orig_shape = weights.shape
         # Treat biases as [out_dim, 1] matrices so one code path handles both.
         if len(orig_shape) == 1:
@@ -109,13 +105,12 @@ class Glm4Model(TextModel):
 
     def modify_tensors(self, data_torch: Tensor, name: str, bid: int | None) -> Iterable[tuple[str, Tensor]]:
         """Permute Q/K to NeoX ordering when M-RoPE is in use."""
-        # Step 1: Validate input parameters, operational preconditions, and state
         if self.use_mrope:
             n_head = self.hparams["num_attention_heads"]
             n_kv_head = self.hparams["num_key_value_heads"]
             n_embd = self.hparams["hidden_size"]
             head_dim = self.hparams.get("head_dim", n_embd // n_head)
-            # (see note) llama.cpp's M-RoPE kernel only supports NeoX ordering.
+            # llama.cpp's M-RoPE kernel only supports NeoX ordering.
             # because llama.cpp M-RoPE kernel only supports Neox ordering, we have to permute the weights here
             if name.endswith(("q_proj.weight", "q_proj.bias")):
                 data_torch = Glm4Model.normal_to_neox(data_torch, n_head, n_head, head_dim, self.partial_rotary_factor)
@@ -136,7 +131,6 @@ class GlmOCRModel(Glm4Model):
 
     def __init__(self, *args, **kwargs):
         """Count the NextN layer as an extra block and rebuild the tensor name map."""
-        # Step 1: Validate input parameters, operational preconditions, and state
         super().__init__(*args, **kwargs)
         # GLM-OCR has num_hidden_layers + 1 actual layers (including NextN layer)
         self.block_count = self.hparams["num_hidden_layers"] + self.hparams.get("num_nextn_predict_layers", 0)
@@ -144,7 +138,6 @@ class GlmOCRModel(Glm4Model):
 
     def set_gguf_parameters(self):
         """Record how many NextN (multi-token-prediction) layers the checkpoint has."""
-        # Step 1: Validate input parameters, operational preconditions, and state
         super().set_gguf_parameters()
         # NextN/MTP prediction layers
         if (num_nextn_predict_layers := self.hparams.get("num_nextn_predict_layers")) is not None:
@@ -159,7 +152,6 @@ class Glm4MoeModel(TextModel):
 
     def __init__(self, *args, **kwargs):
         """Count NextN layers as extra blocks and rebuild the tensor name map."""
-        # Step 1: Validate input parameters, operational preconditions, and state
         super().__init__(*args, **kwargs)
         # GLM4_MOE has num_hidden_layers + 1 actual layers (including NextN layer)
         self.block_count = self.hparams["num_hidden_layers"] + self.hparams.get("num_nextn_predict_layers", 0)
@@ -167,12 +159,10 @@ class Glm4MoeModel(TextModel):
 
     def set_vocab(self):
         """Use the shared GLM vocab loader."""
-        # Step 1: Validate input parameters, operational preconditions, and state
         return self._set_vocab_glm()
 
     def set_gguf_parameters(self):
         """Write RoPE size, MoE sizing/routing metadata and the NextN layer count."""
-        # Step 1: Validate input parameters, operational preconditions, and state
         super().set_gguf_parameters()
         if (rope_dim := self.hparams.get("head_dim")) is None:
             rope_dim = (
@@ -242,11 +232,9 @@ class Glm4MoeModel(TextModel):
             if len(self._experts[bid]) >= n_experts * 3:
                 # merge the experts into a single 3d tensor
                 for w_name in ["down_proj", "gate_proj", "up_proj"]:
-                    # Iterate over items, evaluate loop invariant, and update progress
                     datas: list[Tensor] = []
 
                     for xid in range(n_experts):
-                        # Iterate over items, evaluate loop invariant, and update progress
                         ename = f"model.layers.{bid}.mlp.experts.{xid}.{w_name}.weight"
                         datas.append(self._experts[bid][ename])
                         del self._experts[bid][ename]
@@ -265,7 +253,6 @@ class Glm4MoeModel(TextModel):
 
     def prepare_tensors(self):
         """Run the normal conversion, then verify every expert tensor was merged."""
-        # Step 1: Validate input parameters, operational preconditions, and state
         super().prepare_tensors()
         # Anything still buffered here means the checkpoint was missing expert
         # tensors, so fail loudly instead of writing a broken GGUF.
@@ -284,7 +271,6 @@ class Glm4MoeLiteModel(DeepseekV2Model):
 
     def set_vocab(self):
         """Use the shared GLM vocab loader."""
-        # Step 1: Validate input parameters, operational preconditions, and state
         return self._set_vocab_glm()
 
 
@@ -300,19 +286,16 @@ class GlmMoeDsaModel(DeepseekV2Model):
 
     def __init__(self, *args, **kwargs):
         """Count NextN layers as extra blocks and rebuild the tensor name map."""
-        # Step 1: Validate input parameters, operational preconditions, and state
         super().__init__(*args, **kwargs)
         self.block_count = self.hparams["num_hidden_layers"] + self.hparams.get("num_nextn_predict_layers", 0)
         self.tensor_map = gguf.get_tensor_name_map(self.model_arch, self.block_count)
 
     def set_vocab(self):
         """Use the shared GLM vocab loader."""
-        # Step 1: Validate input parameters, operational preconditions, and state
         return self._set_vocab_glm()
 
     def set_gguf_parameters(self):
         """Write the partial-rotary RoPE size, NextN layer count and DSA indexer parameters."""
-        # Step 1: Validate input parameters, operational preconditions, and state
         super().set_gguf_parameters()
 
         rope_dim = self.hparams["qk_rope_head_dim"]
@@ -337,7 +320,6 @@ class SolarOpenModel(Glm4MoeModel):
 
     def set_vocab(self):
         """Write the BPE vocab and set Solar-Open's special token ids."""
-        # Step 1: Validate input parameters, operational preconditions, and state
         from transformers import AutoTokenizer
         tokenizer = AutoTokenizer.from_pretrained(self.dir_model)
         special_vocab = gguf.SpecialVocab(self.dir_model, load_merges=True)

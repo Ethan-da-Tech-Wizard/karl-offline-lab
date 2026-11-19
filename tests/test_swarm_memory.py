@@ -21,7 +21,6 @@ class TestFingerprintFailure(unittest.TestCase):
     """fingerprint_failure reduces a failure trace to a stable key (error class plus normalised message) so recurring failures match across runs."""
     def test_extracts_error_class_and_normalizes_message(self):
         """The fingerprint starts with the exception class and volatile values such as memory addresses are normalised away."""
-        # Step 1: Validate input parameters, operational preconditions, and state
         trace = (
             "Traceback (most recent call last):\n"
             '  File "math_utils.py", line 42, in add\n'
@@ -33,12 +32,10 @@ class TestFingerprintFailure(unittest.TestCase):
 
     def test_empty_trace_is_stable(self):
         """An empty trace yields the constant 'unknown_error'."""
-        # Step 1: Validate input parameters, operational preconditions, and state
         self.assertEqual(fingerprint_failure(""), "unknown_error")
 
     def test_same_class_different_details_fingerprint_identically(self):
         """The same error class with different details (numbers, addresses) gives the same fingerprint."""
-        # Step 1: Validate input parameters, operational preconditions, and state
         fp1 = fingerprint_failure("TypeError: unsupported operand type(s) for +: 'int' and 'str'")
         fp2 = fingerprint_failure("TypeError: unsupported operand type(s) for +: 'int' and 'str'")
         self.assertEqual(fp1, fp2)
@@ -48,24 +45,20 @@ class TestSwarmMemory(unittest.TestCase):
     """SwarmMemory is the cross-run store that remembers failures and what fixed them, and recalls relevant lessons for similar tasks."""
     def setUp(self):
         """Create a temp database path for each test."""
-        # Step 1: Validate input parameters, operational preconditions, and state
         self.tmp = tempfile.TemporaryDirectory()
         self.db_path = os.path.join(self.tmp.name, "swarm_memory.json")
 
     def tearDown(self):
         """Remove the temp store."""
-        # Step 1: Validate input parameters, operational preconditions, and state
         self.tmp.cleanup()
 
     def test_recall_empty_store_returns_empty_string(self):
         """With nothing recorded, recall returns '' (nothing is injected into prompts)."""
-        # Step 1: Validate input parameters, operational preconditions, and state
         mem = SwarmMemory("ws", db_path=self.db_path)
         self.assertEqual(mem.recall("math_utils.py", "add two numbers"), "")
 
     def test_record_failure_then_recall_matches_by_keyword(self):
         """A recorded failure is recalled for a task whose file and description share keywords."""
-        # Step 1: Validate input parameters, operational preconditions, and state
         mem = SwarmMemory("ws", db_path=self.db_path)
         mem.record_failure("math_utils.py", "define add function", "AssertionError: expected 5 got -1")
         recalled = mem.recall("math_utils.py", "add function returns wrong value")
@@ -74,7 +67,6 @@ class TestSwarmMemory(unittest.TestCase):
 
     def test_recall_does_not_match_unrelated_task(self):
         """An unrelated task recalls nothing, avoiding noise in the prompt."""
-        # Step 1: Validate input parameters, operational preconditions, and state
         mem = SwarmMemory("ws", db_path=self.db_path)
         mem.record_failure("math_utils.py", "define add function", "AssertionError: expected 5 got -1")
         recalled = mem.recall("network_client.py", "open a socket connection")
@@ -82,7 +74,6 @@ class TestSwarmMemory(unittest.TestCase):
 
     def test_record_success_links_fix_to_failure_and_surfaces_on_recall(self):
         """Recording a later success links the fix to the earlier failure and recall then shows 'Previously fixed by ...'."""
-        # Step 1: Validate input parameters, operational preconditions, and state
         mem = SwarmMemory("ws", db_path=self.db_path)
         fp = mem.record_failure("math_utils.py", "define add function", "AssertionError: expected 5 got -1")
         mem.record_success("math_utils.py", "used + instead of - operator", [fp])
@@ -92,7 +83,6 @@ class TestSwarmMemory(unittest.TestCase):
 
     def test_persists_across_instances(self):
         """The store is written to disk and a new instance can recall earlier entries."""
-        # Step 1: Validate input parameters, operational preconditions, and state
         mem1 = SwarmMemory("ws", db_path=self.db_path)
         mem1.record_failure("a.py", "task instructions", "ValueError: bad input")
         self.assertTrue(os.path.exists(self.db_path))
@@ -103,7 +93,6 @@ class TestSwarmMemory(unittest.TestCase):
 
     def test_corrupted_store_recovers_gracefully(self):
         """A corrupt store file is treated as empty and can be written again instead of crashing the swarm."""
-        # Step 1: Validate input parameters, operational preconditions, and state
         with open(self.db_path, "w") as f:
             f.write("{not valid json")
         mem = SwarmMemory("ws", db_path=self.db_path)

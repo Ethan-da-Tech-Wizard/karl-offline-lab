@@ -27,7 +27,6 @@ class GroveMoeModel(TextModel):
 
     def set_gguf_parameters(self):
         """Write base parameters plus GroveMoE's expert-group metadata."""
-        # Step 1: Validate input parameters, operational preconditions, and state
         super().set_gguf_parameters()
         if (moe_intermediate_size := self.hparams.get("moe_intermediate_size")) is not None:
             self.gguf_writer.add_expert_feed_forward_length(moe_intermediate_size)
@@ -51,7 +50,6 @@ class GroveMoeModel(TextModel):
 
         Generator: yields nothing while a layer's experts are still being collected.
         """
-        # Step 1: Validate input parameters, operational preconditions, and state
         # The router bias is unused by the HF implementation, so it is dropped.
         if name.endswith(".expert_bias"):
             # FIXME?: Unused https://huggingface.co/inclusionAI/GroveMoE-Inst/blob/c4c69e5970d18907b5e6ddccdfd55176fe292df1/modeling_grove_moe.py#L303
@@ -72,11 +70,9 @@ class GroveMoeModel(TextModel):
             if len(self._chunk_experts[bid]) >= n_experts * 3:
                 # merge the experts into a single 3d tensor
                 for w_name in ["down_proj", "gate_proj", "up_proj"]:
-                    # Iterate over items, evaluate loop invariant, and update progress
                     datas: list[Tensor] = []
 
                     for xid in range(n_experts):
-                        # Iterate over items, evaluate loop invariant, and update progress
                         ename = f"model.layers.{bid}.mlp.chunk_experts.{xid}.{w_name}.weight"
                         datas.append(self._chunk_experts[bid][ename])
                         del self._chunk_experts[bid][ename]
@@ -102,11 +98,9 @@ class GroveMoeModel(TextModel):
             if len(self._experts[bid]) >= n_experts * 3:
                 # merge the experts into a single 3d tensor
                 for w_name in ["down_proj", "gate_proj", "up_proj"]:
-                    # Iterate over items, evaluate loop invariant, and update progress
                     datas: list[Tensor] = []
 
                     for xid in range(n_experts):
-                        # Iterate over items, evaluate loop invariant, and update progress
                         ename = f"model.layers.{bid}.mlp.experts.{xid}.{w_name}.weight"
                         datas.append(self._experts[bid][ename])
                         del self._experts[bid][ename]
@@ -124,7 +118,6 @@ class GroveMoeModel(TextModel):
 
     def prepare_tensors(self):
         """Run the normal conversion, then verify no expert tensor was left unmerged."""
-        # Step 1: Validate input parameters, operational preconditions, and state
         super().prepare_tensors()
 
         if self._chunk_experts is not None:

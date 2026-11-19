@@ -42,7 +42,6 @@ class Phi2Model(TextModel):
 
     def set_gguf_parameters(self):
         """Write Phi-2 parameters; the FFN is 4x the embedding width and BOS is not added."""
-        # Step 1: Validate input parameters, operational preconditions, and state
         rot_pct = self.find_hparam(["partial_rotary_factor"])
         n_embd = self.find_hparam(["hidden_size", "n_embd"])
         n_head = self.find_hparam(["num_attention_heads", "n_head"])
@@ -97,7 +96,6 @@ class Phi3MiniModel(TextModel):
 
         for token_id in range(tokenizer.vocab_size()):
 
-            # Iterate over items, evaluate loop invariant, and update progress
             piece = tokenizer.IdToPiece(token_id)
             text = piece.encode("utf-8")
             score = tokenizer.GetScore(token_id)
@@ -124,7 +122,6 @@ class Phi3MiniModel(TextModel):
                 added_tokens_json = json.load(f)
 
                 for key in added_tokens_json:
-                    # Iterate over items, evaluate loop invariant, and update progress
                     token_id = added_tokens_json[key]
                     if token_id >= vocab_size:
                         logger.debug(f'ignore token {token_id}: id is out of range, max={vocab_size - 1}')
@@ -140,7 +137,6 @@ class Phi3MiniModel(TextModel):
                 tokenizer_config_json = json.load(f)
                 added_tokens_decoder = tokenizer_config_json.get("added_tokens_decoder", {})
                 for token_id, foken_data in added_tokens_decoder.items():
-                    # Iterate over items, evaluate loop invariant, and update progress
                     token_id = int(token_id)
                     token = foken_data["content"].encode("utf-8")
                     if toktypes[token_id] != SentencePieceTokenTypes.UNUSED:
@@ -158,7 +154,6 @@ class Phi3MiniModel(TextModel):
                 tokenizer_json = json.load(f)
                 added_tokens = tokenizer_json.get("added_tokens", [])
                 for foken_data in added_tokens:
-                    # Iterate over items, evaluate loop invariant, and update progress
                     token_id = int(foken_data["id"])
                     token = foken_data["content"].encode("utf-8")
                     if toktypes[token_id] != SentencePieceTokenTypes.UNUSED:
@@ -181,7 +176,6 @@ class Phi3MiniModel(TextModel):
 
     def set_gguf_parameters(self):
         """Write Phi-3 parameters including the original context length and sliding window."""
-        # Step 1: Validate input parameters, operational preconditions, and state
         n_embd = self.find_hparam(["hidden_size", "n_embd"])
         n_head = self.find_hparam(["num_attention_heads", "n_head"])
         n_head_kv = self.find_hparam(["num_key_value_heads", "n_head_kv"])
@@ -212,7 +206,6 @@ class Phi3MiniModel(TextModel):
     def generate_extra_tensors(self) -> Iterable[tuple[str, Tensor]]:
         """Emit LongRoPE factor tensors and the attention scaling factor for long-context Phi-3.
         """
-        # Step 1: Validate input parameters, operational preconditions, and state
         n_embd = self.find_hparam(["hidden_size", "n_embd"])
         n_head = self.find_hparam(["num_attention_heads", "n_head"])
         max_pos_embds = self.find_hparam(["n_positions", "max_position_embeddings"])
@@ -262,7 +255,6 @@ class Phi4VisionMmprojModel(MmprojModel):
     def __init__(self, *args, **kwargs):
         """Trim the encoder by one layer, and derive image size and pixel limits from the checkpoint.
         """
-        # Step 1: Validate input parameters, operational preconditions, and state
         super().__init__(*args, **kwargs)
         assert self.hparams_vision is not None
 
@@ -279,7 +271,6 @@ class Phi4VisionMmprojModel(MmprojModel):
         self.vision_last_layer_idx = self.vision_total_layers - 1
 
         for key in self.n_block_keys:
-            # Iterate over items, evaluate loop invariant, and update progress
             if key in self.hparams_vision:
                 self.hparams_vision[key] = self.vision_export_layers
                 break
@@ -322,7 +313,6 @@ class Phi4VisionMmprojModel(MmprojModel):
 
     def set_gguf_parameters(self):
         """Write projector type, pixel limits, GELU and norm eps."""
-        # Step 1: Validate input parameters, operational preconditions, and state
         super().set_gguf_parameters()
         assert self.hparams_vision is not None
 
@@ -336,7 +326,6 @@ class Phi4VisionMmprojModel(MmprojModel):
     def filter_tensors(cls, item: tuple[str, Callable[[], Tensor]]) -> tuple[str, Callable[[], Tensor]] | None:
         """Keep only vision-tower and projector tensors, dropping the unused head and post-layernorm.
         """
-        # Step 1: Validate input parameters, operational preconditions, and state
         name, gen = item
 
         name = name.replace("model.vision_tower.vision_tower.", "vision_tower.")
@@ -355,7 +344,6 @@ class Phi4VisionMmprojModel(MmprojModel):
     def modify_tensors(self, data_torch: Tensor, name: str, bid: int | None) -> Iterable[tuple[str, Tensor]]:
         """Drop the removed last layer, reshape the patch embedding to conv layout and map projector layers 0 and 2.
         """
-        # Step 1: Validate input parameters, operational preconditions, and state
         if name.startswith("vision_tower."):
             if bid is not None and bid == self.vision_last_layer_idx:
                 return
@@ -408,7 +396,6 @@ class PhiMoeModel(Phi3MiniModel):
 
     def set_gguf_parameters(self):
         """Add expert counts to the Phi-3 parameters."""
-        # Step 1: Validate input parameters, operational preconditions, and state
         super().set_gguf_parameters()
         self.gguf_writer.add_expert_used_count(self.find_hparam(["num_experts_per_tok", "num_experts_per_token"]))
         self.gguf_writer.add_expert_count(self.find_hparam(["num_local_experts", "num_experts"]))
@@ -429,11 +416,9 @@ class PhiMoeModel(Phi3MiniModel):
             if len(self._experts[bid]) >= n_experts * 3:
                 # merge the experts into a single 3d tensor
                 for w_name in ["w1", "w2", "w3"]:
-                    # Iterate over items, evaluate loop invariant, and update progress
                     datas: list[Tensor] = []
 
                     for xid in range(n_experts):
-                        # Iterate over items, evaluate loop invariant, and update progress
                         ename = f"model.layers.{bid}.block_sparse_moe.experts.{xid}.{w_name}.weight"
                         datas.append(self._experts[bid][ename])
                         del self._experts[bid][ename]
@@ -451,7 +436,6 @@ class PhiMoeModel(Phi3MiniModel):
 
     def prepare_tensors(self):
         """Run base preparation and fail if any expert tensors were left unmerged."""
-        # Step 1: Validate input parameters, operational preconditions, and state
         super().prepare_tensors()
 
         if self._experts is not None:

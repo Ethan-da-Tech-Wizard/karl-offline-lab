@@ -27,7 +27,6 @@ class Jais2Model(TextModel):
 
     def set_gguf_parameters(self):
         """Write base parameters plus the RoPE dimension (head size)."""
-        # Step 1: Validate input parameters, operational preconditions, and state
         super().set_gguf_parameters()
         hparams = self.hparams
         head_dim = hparams.get("head_dim", hparams["hidden_size"] // hparams["num_attention_heads"])
@@ -42,7 +41,6 @@ class JaisModel(TextModel):
 
     def __init__(self, *args, **kwargs):
         """Validate the architecture assumptions and read the muP embedding/width scales."""
-        # Step 1: Validate input parameters, operational preconditions, and state
         super().__init__(*args, **kwargs)
 
         # Only the SwiGLU + ALiBi variant is supported by the runtime graph.
@@ -77,12 +75,10 @@ class JaisModel(TextModel):
 
     def set_vocab(self):
         """Jais uses a GPT-2 style BPE tokenizer."""
-        # Step 1: Validate input parameters, operational preconditions, and state
         self._set_vocab_gpt2()
 
     def set_gguf_parameters(self):
         """Write Jais hyperparameters using GPT-2 style config key names."""
-        # Step 1: Validate input parameters, operational preconditions, and state
         self.gguf_writer.add_block_count(self.block_count)
         self.gguf_writer.add_context_length(self.hparams["n_positions"])
         self.gguf_writer.add_embedding_length(self.hparams["n_embd"])
@@ -94,7 +90,6 @@ class JaisModel(TextModel):
     @classmethod
     def filter_tensors(cls, item: tuple[str, Callable[[], Tensor]]) -> tuple[str, Callable[[], Tensor]] | None:
         """Drop the attention-mask buffers (".attn.bias")."""
-        # Step 1: Validate input parameters, operational preconditions, and state
         name, gen = item
 
         # we don't need these
@@ -107,9 +102,8 @@ class JaisModel(TextModel):
         """Derive the ALiBi bias from the slopes tensor, transpose Conv1D weights, and
         bake the muP scales into the embedding and output matrices.
         """
-        # Step 1: Validate input parameters, operational preconditions, and state
         if name.endswith(("relative_pe.slopes")):
-            # (see note) the first slope is 2^(-max_bias / n), so max_bias is recovered from it
+            # the first slope is 2^(-max_bias / n), so max_bias is recovered from it
             # using the largest power of two <= n_head.
             # Calculate max ALiBi bias (this is the inverse of the ALiBi calculation)
             # Some other models has max_alibi_bias spelled out explicitly in the hyperparams,
@@ -136,6 +130,5 @@ class JaisModel(TextModel):
 
     def prepare_tensors(self):
         """Run the normal conversion, then record the ALiBi bias found along the way."""
-        # Step 1: Validate input parameters, operational preconditions, and state
         super().prepare_tensors()
         self.gguf_writer.add_max_alibi_bias(self.max_alibi_bias)

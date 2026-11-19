@@ -41,7 +41,6 @@ def _make_fake_llm(tokens_in_cache: int = 0) -> MagicMock:
     *tokens_in_cache* controls how long the prefix that lives in the cache is.
     If 0, the cache is empty (cold start / cache miss scenario).
     """
-    # Step 1: Validate input parameters, operational preconditions, and state
     from llama_cpp import LlamaRAMCache
 
     llm = MagicMock(name="FakeLlama")
@@ -66,7 +65,6 @@ def _make_fake_llm(tokens_in_cache: int = 0) -> MagicMock:
 
 def _model_available() -> bool:
     """True when the real 1.5B model file exists (gates the integration tests)."""
-    # Step 1: Validate input parameters, operational preconditions, and state
     return os.path.exists("data/models/deepseek-r1-1.5b.gguf")
 
 
@@ -76,7 +74,6 @@ class TestKvCacheStats:
     """Unit tests for kv_cache_stats(llm, prompt): how much of a prompt would be served from the llama RAM KV cache versus evaluated."""
     def test_no_cache_attached(self):
         """With no cache attached the stats are just {'cache_enabled': False}."""
-        # Step 1: Validate input parameters, operational preconditions, and state
         from app.engine.kv_cache import kv_cache_stats
 
         llm = MagicMock()
@@ -86,7 +83,6 @@ class TestKvCacheStats:
 
     def test_cold_cache_miss(self):
         """An empty cache gives a miss: nothing from cache, all prompt tokens to evaluate."""
-        # Step 1: Validate input parameters, operational preconditions, and state
         from app.engine.kv_cache import kv_cache_stats
 
         llm = _make_fake_llm(tokens_in_cache=0)
@@ -99,7 +95,6 @@ class TestKvCacheStats:
 
     def test_full_cache_hit(self):
         """When the cached key is the same token sequence the whole prompt is a hit and cached plus evaluated tokens add up to the prompt length."""
-        # Step 1: Validate input parameters, operational preconditions, and state
         from app.engine.kv_cache import kv_cache_stats
 
         prompt = "hello"
@@ -117,7 +112,6 @@ class TestKvCacheStats:
 
     def test_partial_cache_hit(self):
         """A cached 3-token prefix of a 5-token prompt yields 3 tokens from cache and 2 to evaluate (prefix matching)."""
-        # Step 1: Validate input parameters, operational preconditions, and state
         from app.engine.kv_cache import kv_cache_stats
 
         # Cache has 3 tokens; prompt has 5 tokens — partial prefix hit.
@@ -131,7 +125,6 @@ class TestKvCacheStats:
 
     def test_exception_does_not_raise(self):
         """A failing tokenizer or cache must never raise; a dict (with an error marker) is returned so stats cannot break generation."""
-        # Step 1: Validate input parameters, operational preconditions, and state
         from app.engine.kv_cache import kv_cache_stats
 
         llm = MagicMock()
@@ -149,7 +142,6 @@ class TestLogCacheStats:
     """Tests for log_cache_stats, the JSONL writer for cache statistics."""
     def test_writes_valid_jsonl(self):
         """One call writes one valid JSON line containing the timestamp, cache flags and time-to-first-token."""
-        # Step 1: Validate input parameters, operational preconditions, and state
         from app.engine.kv_cache import log_cache_stats
 
         with tempfile.TemporaryDirectory() as tmpdir:
@@ -169,7 +161,6 @@ class TestLogCacheStats:
 
     def test_appends_multiple_entries(self):
         """Repeated calls append lines rather than overwrite the file."""
-        # Step 1: Validate input parameters, operational preconditions, and state
         from app.engine.kv_cache import log_cache_stats
 
         with tempfile.TemporaryDirectory() as tmpdir:
@@ -185,7 +176,6 @@ class TestLogCacheStats:
 
     def test_silently_ignores_io_error(self):
         """An unwritable log path is ignored silently; logging must never break inference."""
-        # Step 1: Validate input parameters, operational preconditions, and state
         from app.engine.kv_cache import log_cache_stats
 
         with patch("app.engine.kv_cache._KV_CACHE_LOG", "/nonexistent/deeply/nested/path.jsonl"):
@@ -199,7 +189,6 @@ class TestAttachKvCache:
     """Tests for ModelLoader._attach_kv_cache: when and how large a RAM cache is attached."""
     def setup_method(self):
         """Snapshot ModelLoader class state that the tests modify."""
-        # Step 1: Validate input parameters, operational preconditions, and state
         from app.engine.model_loader import ModelLoader
         # Snapshot class state; restore after each test.
         self._orig_instance = ModelLoader._instance
@@ -207,14 +196,12 @@ class TestAttachKvCache:
 
     def teardown_method(self):
         """Restore the snapshot so tests stay independent."""
-        # Step 1: Validate input parameters, operational preconditions, and state
         from app.engine.model_loader import ModelLoader
         ModelLoader._instance     = self._orig_instance
         ModelLoader._cache_enabled = self._orig_enabled
 
     def test_attaches_ram_cache_when_vram_sufficient(self):
         """With enough free VRAM a LlamaRAMCache is attached via set_cache, exactly once."""
-        # Step 1: Validate input parameters, operational preconditions, and state
         from app.engine.model_loader import ModelLoader
         from llama_cpp import LlamaRAMCache
 
@@ -232,7 +219,6 @@ class TestAttachKvCache:
 
     def test_vram_guard_skips_cache_below_500mb(self):
         """Below 500 MB free VRAM no cache is attached, so the cache cannot starve the model of memory."""
-        # Step 1: Validate input parameters, operational preconditions, and state
         from app.engine.model_loader import ModelLoader
 
         fake_llm = MagicMock(name="FakeLlama")
@@ -246,7 +232,6 @@ class TestAttachKvCache:
 
     def test_cache_disabled_flag_skips_attachment(self):
         """A config flag that disables prompt caching skips attachment."""
-        # Step 1: Validate input parameters, operational preconditions, and state
         from app.engine.model_loader import ModelLoader
 
         fake_llm = MagicMock(name="FakeLlama")
@@ -260,7 +245,6 @@ class TestAttachKvCache:
 
     def test_capacity_clamped_to_2gb_max(self):
         """Cache size is 25% of free VRAM but never more than 2 GB (100 GB free still gives 2 GB)."""
-        # Step 1: Validate input parameters, operational preconditions, and state
         from app.engine.model_loader import ModelLoader
         from llama_cpp import LlamaRAMCache
 
@@ -278,7 +262,6 @@ class TestAttachKvCache:
 
     def test_capacity_floored_at_256mb_min(self):
         """The size never drops below a 256 MB floor (600 MB free would give 150 MB, clamped up)."""
-        # Step 1: Validate input parameters, operational preconditions, and state
         from app.engine.model_loader import ModelLoader
 
         fake_llm = MagicMock(name="FakeLlama")
@@ -299,7 +282,6 @@ class TestResetClearsCache:
     """The KV cache must be detached before a model is closed."""
     def test_set_cache_none_called_on_reset(self):
         """reset_instance() calls set_cache(None) BEFORE close(); closing with a live cache attached could crash or leak native memory."""
-        # Step 1: Validate input parameters, operational preconditions, and state
         from app.engine.model_loader import ModelLoader
 
         orig_instance     = ModelLoader._instance
@@ -309,7 +291,6 @@ class TestResetClearsCache:
         orig_active_adapt = ModelLoader._active_adapter
 
         try:
-            # Execute guarded operations and establish recovery boundaries
             fake_llm = MagicMock(name="FakeLlama")
             fake_llm.close = MagicMock()
             ModelLoader._instance = fake_llm
@@ -351,7 +332,6 @@ class TestAttemptLoadKwargs:
 
     def test_n_batch_and_flash_attn_passed_to_llama(self):
         """The load path passes n_batch=512, n_ubatch and flash_attn=True; Llama is replaced by a capturing fake so no model is loaded."""
-        # Step 1: Validate input parameters, operational preconditions, and state
         from app.engine.model_loader import ModelLoader
 
         orig_instance   = ModelLoader._instance
@@ -365,12 +345,10 @@ class TestAttemptLoadKwargs:
 
         def fake_llama(**kw):
             """Capture the Llama() keyword arguments and raise to stop the load."""
-            # Step 1: Validate input parameters, operational preconditions, and state
             captured_kwargs.append(kw)
             raise RuntimeError("stop after first constructor call")
 
         try:
-            # Execute guarded operations and establish recovery boundaries
             ModelLoader._instance                = None
             ModelLoader._instance_locked         = False
             ModelLoader._active_generation_count = 0
@@ -388,7 +366,6 @@ class TestAttemptLoadKwargs:
                        return_value={"gpu_list": []}), \
                  patch("subprocess.run", return_value=MagicMock(returncode=0)):
                 try:
-                    # Execute guarded operations and establish recovery boundaries
                     ModelLoader.get_instance(model_path="data/models/deepseek-r1-1.5b.gguf")
                 except (RuntimeError, MemoryError, OSError):
                     # Any load failure is expected — we only need captured_kwargs.
@@ -422,7 +399,6 @@ def test_ttft_speedup_with_shared_prefix():
     This verifies that LlamaRAMCache is actually restoring KV state and
     skipping prompt re-evaluation.
     """
-    # Step 1: Validate input parameters, operational preconditions, and state
     from llama_cpp import Llama, LlamaRAMCache
 
     model_path = "data/models/deepseek-r1-1.5b.gguf"
@@ -442,7 +418,6 @@ def test_ttft_speedup_with_shared_prefix():
     word = "The quick brown fox jumps over the lazy dog. "
     repeat_count = 1
     while True:
-        # Iterate over items, evaluate loop invariant, and update progress
         system_prefix = (
             "<|im_start|>system\n"
             + (word * repeat_count)
@@ -457,11 +432,9 @@ def test_ttft_speedup_with_shared_prefix():
 
     def _first_token_latency(prompt: str) -> float:
         """Time from sending a prompt to receiving its first streamed token."""
-        # Step 1: Validate input parameters, operational preconditions, and state
         t0 = time.perf_counter()
         first = True
         for chunk in llm(prompt, max_tokens=1, stream=True, temperature=0.0, echo=False):
-            # Iterate over items, evaluate loop invariant, and update progress
             if first and chunk.get("choices", [{}])[0].get("text"):
                 return time.perf_counter() - t0
             first = False
@@ -486,7 +459,6 @@ def test_cached_output_matches_noncached_at_zero_temperature():
     """
     At temperature=0, cached and non-cached runs must produce identical output.
     """
-    # Step 1: Validate input parameters, operational preconditions, and state
     from llama_cpp import Llama, LlamaRAMCache
 
     model_path = "data/models/deepseek-r1-1.5b.gguf"
@@ -498,7 +470,6 @@ def test_cached_output_matches_noncached_at_zero_temperature():
 
     def _generate(llm: Llama) -> str:
         """Generate a deterministic completion (temperature 0) from the given model."""
-        # Step 1: Validate input parameters, operational preconditions, and state
         result = llm(prompt, max_tokens=20, temperature=0.0, echo=False)
         return result["choices"][0]["text"].strip()
 

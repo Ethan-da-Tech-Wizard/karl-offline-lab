@@ -36,7 +36,6 @@ from app.engine.streaming_parser import StreamingThoughtParser
 
 def _make_parser():
     """Build a StreamingThoughtParser that starts inside a thought and collects thought and chat callbacks into lists (events disabled); returns (parser, thoughts, chats)."""
-    # Step 1: Validate input parameters, operational preconditions, and state
     thoughts, chats = [], []
     parser = StreamingThoughtParser(
         in_thought=True,
@@ -49,7 +48,6 @@ def _make_parser():
 
 def test_default_is_off_in_config_store():
     """Machine Speak (compact trace output) defaults to off in the UI config, since small models often produce malformed compact JSON."""
-    # Step 1: Validate input parameters, operational preconditions, and state
     assert config_store.UI_CONFIG_DEFAULTS["enable_machine_speak"] is False
 
 
@@ -85,7 +83,6 @@ def test_malformed_compact_trace_salvages_response_instead_of_leaking_json():
 
 def test_malformed_compact_trace_with_no_salvageable_fields_falls_back():
     """When nothing can be salvaged the emitter returns False without emitting; the caller then passes the raw text through."""
-    # Step 1: Validate input parameters, operational preconditions, and state
     buffer = '{"$":"karl.trace.compact.v1","d":{"p":"broken \\ unterminated'
     parser, thoughts, chats = _make_parser()
     assert llm_emit(buffer, parser) is False
@@ -110,7 +107,6 @@ def test_unrelated_json_output_is_not_treated_as_a_compact_trace():
 
 def test_salvage_helper_handles_escaped_quotes_and_newlines():
     """The salvage helper decodes escaped quotes and newlines in the recovered thought and response."""
-    # Step 1: Validate input parameters, operational preconditions, and state
     thought, response = llm_salvage(
         '{"$":"karl.trace.compact.v1","d":{"tk":"line one\\nline two",'
         '"r":"she said \\"hi\\" back"}}'

@@ -23,7 +23,6 @@ class TestAILabWorkspace(unittest.TestCase):
     """Tests for the AI Lab workspace: a sparse-retrieval pipeline visualiser and an agent composer that publishes custom agents."""
     def setUp(self):
         """Create a temp database path and back up custom_agents.json so publishing tests cannot damage real data."""
-        # Step 1: Validate input parameters, operational preconditions, and state
         self.state = AppState()
         self.temp_dir = tempfile.mkdtemp()
         self.state.rag = RAGPipeline(index_path=self.temp_dir, namespace="test")
@@ -43,7 +42,6 @@ class TestAILabWorkspace(unittest.TestCase):
         # Restore backup or remove custom_agents.json
         if os.path.exists(self.custom_agents_path):
             try:
-                # Execute guarded operations and establish recovery boundaries
                 os.remove(self.custom_agents_path)
             except OSError:
                 pass
@@ -54,7 +52,6 @@ class TestAILabWorkspace(unittest.TestCase):
 
     def test_construction_and_layout(self):
         """The workspace builds two tabs (Pipeline Visualizer, Agent Composer) with all expected input, table and result widgets."""
-        # Step 1: Validate input parameters, operational preconditions, and state
         workspace = AILabWorkspace(self.state)
         self.assertIsNotNone(workspace)
         self.assertTrue(isinstance(workspace._tabs, QTabWidget))
@@ -87,7 +84,6 @@ class TestAILabWorkspace(unittest.TestCase):
 
     def test_sparse_pipeline_math(self):
         """Given sample documents the vocabulary and document-term matrix tables are populated with the right sizes, and a query renders cosine similarity, dot product and norm details."""
-        # Step 1: Validate input parameters, operational preconditions, and state
         workspace = AILabWorkspace(self.state)
         
         # Set text to sandbox docs
@@ -114,7 +110,6 @@ class TestAILabWorkspace(unittest.TestCase):
 
     def test_custom_agent_publishing(self):
         """Publishing an agent emits its id, writes label, description, prompt, system_prompt and RAG settings to custom_agents.json, and resets the form."""
-        # Step 1: Validate input parameters, operational preconditions, and state
         workspace = AILabWorkspace(self.state)
         
         # Mock values
@@ -137,7 +132,6 @@ class TestAILabWorkspace(unittest.TestCase):
         workspace.agent_published.connect(published_agent_id.append)
         
         try:
-            # Execute guarded operations and establish recovery boundaries
             workspace._publish_agent()
         finally:
             QMessageBox.information = original_info

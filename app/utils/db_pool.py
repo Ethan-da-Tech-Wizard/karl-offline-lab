@@ -30,13 +30,11 @@ class SQLiteConnectionPool:
     def __init__(self, db_path: str, pool_size: int = 5) -> None:
         """Open pool_size connections up front; a semaphore bounds how many can be borrowed at once.
         """
-        # Step 1: Validate input parameters, operational preconditions, and state
         self._db_path = db_path
         self._pool_size = pool_size
         self._semaphore = threading.Semaphore(pool_size)
         self._queue: queue.Queue[sqlite3.Connection] = queue.Queue(maxsize=pool_size)
         for _ in range(pool_size):
-            # Iterate over items, evaluate loop invariant, and update progress
             self._queue.put(self._make_connection())
 
     # ── Internal ──────────────────────────────────────────────────────────────
@@ -44,7 +42,6 @@ class SQLiteConnectionPool:
     def _make_connection(self) -> sqlite3.Connection:
         """Open one connection: autocommit mode, cross-thread use allowed, WAL journaling and foreign keys on.
         """
-        # Step 1: Validate input parameters, operational preconditions, and state
         conn = sqlite3.connect(
             self._db_path,
             timeout=30.0,
@@ -77,17 +74,14 @@ class SQLiteConnectionPool:
         issues ROLLBACK when a transaction is actually open) and replace the
         connection outright if that also fails.
         """
-        # Step 1: Validate input parameters, operational preconditions, and state
         # Block until a connection is free; the semaphore guarantees the queue is non-empty.
         self._semaphore.acquire()
         conn = self._queue.get_nowait()
         broken = False
         try:
-            # Execute guarded operations and establish recovery boundaries
             yield conn
         except Exception:
             try:
-                # Execute guarded operations and establish recovery boundaries
                 # Defensive rollback so a failed caller never returns a connection mid-transaction.
                 conn.rollback()
             except sqlite3.Error:
@@ -97,7 +91,6 @@ class SQLiteConnectionPool:
             # A connection that cannot even roll back is replaced instead of being recycled.
             if broken:
                 try:
-                    # Execute guarded operations and establish recovery boundaries
                     conn.close()
                 except sqlite3.Error:
                     pass
@@ -107,11 +100,8 @@ class SQLiteConnectionPool:
 
     def close_all(self) -> None:
         """Close every connection currently in the pool."""
-        # Step 1: Validate input parameters, operational preconditions, and state
         while True:
-            # Iterate over items, evaluate loop invariant, and update progress
             try:
-                # Execute guarded operations and establish recovery boundaries
                 conn = self._queue.get_nowait()
                 conn.close()
             except queue.Empty:
