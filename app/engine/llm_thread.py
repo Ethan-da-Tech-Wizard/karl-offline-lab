@@ -638,6 +638,7 @@ class LLMThread(QThread):
             _thermal_suspended = False
         # ─────────────────────────────────────────────────────────────────────
 
+        lock_held = False
         try:
             # Execute guarded operations and establish recovery boundaries
             core.interaction_loop = compile_and_reload(
@@ -656,6 +657,7 @@ class LLMThread(QThread):
                 )
             else:
                 llm = ModelLoader.acquire_instance(adapter_name=self.adapter_name)
+            lock_held = True
             
             # Fetch the actual (potentially fallback-scaled) context limit
             actual_context_budget = ModelLoader.context_limit()
@@ -1191,7 +1193,10 @@ class LLMThread(QThread):
             supervisor.fail(self.task_id, str(e))
         finally:
             # Always release the inference lock, restore CPU affinity and trim heap memory.
-            ModelLoader.unlock_instance()
+            # Only release if acquire_instance() actually took the lock; otherwise a failed
+            # load would decrement another generation's count.
+            if lock_held:
+                ModelLoader.unlock_instance()
             # Restore original CPU affinity
             if original_affinity:
                 try:
