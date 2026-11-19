@@ -64,15 +64,15 @@ class SafeMultiLangSandbox:
 
     def _run_typescript(self, sandbox_dir: Path, code: str, test: str) -> tuple[bool, str]:
         """Runs TypeScript compiler and execution in sandbox."""
-        # Placeholder: currently reports success without running anything, so
-        # callers must not treat a True result from this class as real verification.
+        # Placeholder: nothing is executed, so report failure rather than letting
+        # unverified code "pass" verification.
         # TODO: Implement package setup, ts-node execution, and capture tracebacks
-        logger.info("Setting up TypeScript sandbox in %s...", sandbox_dir)
-        return True, ""
+        logger.info("TypeScript sandbox not implemented (%s); failing closed.", sandbox_dir)
+        return False, "NOT IMPLEMENTED: TypeScript sandbox execution is not available; code was not verified."
 
     def _run_rust(self, sandbox_dir: Path, code: str, test: str) -> tuple[bool, str]:
         """Compiles and executes Rust cargo packages in sandbox."""
-        # Placeholder: same as the TypeScript runner, reports success without executing.
+        # Placeholder: same as the TypeScript runner, fails closed without executing.
         # TODO: Implement cargo init, src/main.rs code write, cargo test execution, and capture rustc errors
-        logger.info("Setting up Rust sandbox in %s...", sandbox_dir)
-        return True, ""
+        logger.info("Rust sandbox not implemented (%s); failing closed.", sandbox_dir)
+        return False, "NOT IMPLEMENTED: Rust sandbox execution is not available; code was not verified."
