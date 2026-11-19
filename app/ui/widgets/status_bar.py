@@ -237,7 +237,6 @@ class StatusBar(QWidget):
         self._ctx_lbl.style().polish(self._ctx_lbl)
         self._ctx_lbl.setToolTip(f"Context breakdown:\n- System/Prompt: {total-hist-rag:,}\n- History: {hist:,}\n- RAG: {rag:,}")
 
-    # (see docstring for the colour thresholds)
     def set_load_stats(
         self,
         latency_s: float | None,
