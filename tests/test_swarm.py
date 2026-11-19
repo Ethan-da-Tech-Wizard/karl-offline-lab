@@ -161,6 +161,25 @@ class TestSwarmOrchestrator(unittest.TestCase):
         self.assertIn("new_file.py", result["removed"])
         self.assertFalse(os.path.exists(new_path))
 
+    def test_backup_manifest_write_is_atomic(self):
+        """A failed manifest replace leaves the previous complete manifest.json intact (temp + os.replace)."""
+        orchestrator = SwarmOrchestratorThread(
+            workspace_path=self.workspace_path,
+            objective="Atomic manifest.",
+            test_command=""
+        )
+        orchestrator._record_backup_manifest("a.py", "/b/a.py", True)
+        manifest = orchestrator._backup_root / "manifest.json"
+        before = manifest.read_text(encoding="utf-8")
+
+        with patch("app.engine.swarm_orchestrator.os.replace", side_effect=OSError("disk full")):
+            with self.assertRaises(OSError):
+                orchestrator._record_backup_manifest("b.py", "/b/b.py", False)
+
+        # The old manifest must still parse and be unchanged; only a stray .tmp may remain.
+        self.assertEqual(manifest.read_text(encoding="utf-8"), before)
+        self.assertEqual(json.loads(before)["files"][0]["filepath"], "a.py")
+
     @patch("app.engine.model_loader.ModelLoader.get_instance")
     def test_swarm_self_correction_loop(self, mock_get_llm):
         """End-to-end with a stateful mock LLM: Architect plans one task, the Coder first writes buggy code (a - b), the test run fails, the failure trace is fed back, the Coder fixes it (a + b) and the second run passes. Asserts two test runs (False then True), the final code, and a successful finish naming the file."""
