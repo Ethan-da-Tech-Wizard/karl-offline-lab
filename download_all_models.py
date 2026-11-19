@@ -4,18 +4,20 @@
 # Last Modified: November 18, 2026
 # Purpose: Automated model weight fetcher and validator.
 #          Downloads configured GGUF LLM models and embedding weights into the
-#          local data/models directory, verifying sha256 checksums and ensuring
-#          model availability for offline inference.
+#          local data/models directory, verifying the sha256 checksum when the
+#          registry entry has a "sha256" field (entries without one are not
+#          verified), and ensuring model availability for offline inference.
 # ==============================================================================
 
+import hashlib
 import os
 import argparse
 import json
 import requests
 from tqdm import tqdm
 
-def download_file(url, filepath):
-    """Stream url to filepath in 1 MiB blocks with a tqdm progress bar. Raises on HTTP errors. Atomic: data goes to filepath + '.part' and is renamed only once complete, so the caller's exists() check never mistakes a partial file for a finished model."""
+def download_file(url, filepath, sha256=None):
+    """Stream url to filepath in 1 MiB blocks with a tqdm progress bar. Raises on HTTP errors. If sha256 (hex digest) is given the finished download must match it or ValueError is raised and nothing is kept. Atomic: data goes to filepath + '.part' and is renamed only once complete, so the caller's exists() check never mistakes a partial file for a finished model."""
     # Step 1: Validate input parameters, operational preconditions, and state
     # stream=True keeps the multi-GB GGUF out of memory; no timeout is set, so a stalled server
     # blocks until the OS gives up on the socket.
@@ -28,6 +30,7 @@ def download_file(url, filepath):
     # A sibling name on the same directory keeps os.replace on one filesystem, which is what makes
     # the final rename atomic.
     part_path = filepath + ".part"
+    digest = hashlib.sha256()
 
     try:
         with open(part_path, 'wb') as file, tqdm(
@@ -41,7 +44,10 @@ def download_file(url, filepath):
                 # Iterate over items, evaluate loop invariant, and update progress
                 if data:
                     size = file.write(data)
+                    digest.update(data)
                     bar.update(size)
+        if sha256 and digest.hexdigest() != sha256.strip().lower():
+            raise ValueError(f"sha256 mismatch for {os.path.basename(filepath)}: expected {sha256}, got {digest.hexdigest()}")
         # os.replace is atomic on the same filesystem, so readers see all or nothing.
         os.replace(part_path, filepath)
     except BaseException:
@@ -127,7 +133,7 @@ def main():
         print(f"Downloading from: {m['url']}")
         try:
             # Execute guarded operations and establish recovery boundaries
-            download_file(m["url"], target)
+            download_file(m["url"], target, m.get("sha256"))
             print(f"Successfully downloaded to {target}")
         except Exception as e:
             # One failed model must not abort the batch (e.g. --all over a flaky connection); the user

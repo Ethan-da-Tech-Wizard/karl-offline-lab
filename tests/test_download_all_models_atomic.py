@@ -59,3 +59,18 @@ def test_failure_leaves_no_final_file(mod, tmp_path, monkeypatch):
     with pytest.raises(IOError):
         mod.download_file("u", str(tmp_path / "m.gguf"))
     assert list(tmp_path.iterdir()) == []
+
+
+def test_sha256_match_accepts(mod, tmp_path, monkeypatch):
+    import hashlib
+    monkeypatch.setattr(mod.requests, "get", lambda *a, **k: _Resp([b"abc", b"def"]))
+    dest = str(tmp_path / "m.gguf")
+    mod.download_file("u", dest, sha256=hashlib.sha256(b"abcdef").hexdigest())
+    assert (tmp_path / "m.gguf").exists()
+
+
+def test_sha256_mismatch_rejects_and_keeps_nothing(mod, tmp_path, monkeypatch):
+    monkeypatch.setattr(mod.requests, "get", lambda *a, **k: _Resp([b"abc", b"def"]))
+    with pytest.raises(ValueError):
+        mod.download_file("u", str(tmp_path / "m.gguf"), sha256="0" * 64)
+    assert list(tmp_path.iterdir()) == []
