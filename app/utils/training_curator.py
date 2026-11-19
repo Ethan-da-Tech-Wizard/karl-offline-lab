@@ -2,9 +2,10 @@
 # Program: training_curator.py
 # Programmer: Ethan-da-Tech-Wizard
 # Last Modified: November 18, 2026
-# Purpose: Training sample quality filter and verification curator.
-#          Screens fine-tuning data to eliminate degenerate patterns, syntax
-#          errors, and duplicate records.
+# Purpose: Fine-tuning example capture and export.
+#          Appends thumbs-up/corrected generations to a curated JSONL file and
+#          exports it in Unsloth SFT and DPO formats (dropping obviously
+#          degraded records and balancing categories on export).
 # ==============================================================================
 
 """
@@ -112,7 +113,6 @@ def export_unsloth(output_path: str = "data/training/export_unsloth.jsonl"):
     raw = get_all_examples()
     examples = [ex for ex in raw if not _is_degraded(ex)]
     skipped = len(raw) - len(examples)
-    print(f"Curation Curation: Exported {len(examples)} examples. Filtered out {skipped} degraded examples.")
 
     # Group examples by category using the user message (second message of each record).
     # Classify all examples
@@ -126,6 +126,7 @@ def export_unsloth(output_path: str = "data/training/export_unsloth.jsonl"):
         categorized.setdefault(cat, []).append(ex)
         
     if not categorized:
+        print(f"Curation: Exported 0 examples. Filtered out {skipped} degraded examples.")
         return output_path
         
     # Every category is cut to the size of the smallest one so no category dominates fine-tuning.
@@ -143,6 +144,8 @@ def export_unsloth(output_path: str = "data/training/export_unsloth.jsonl"):
         for ex in balanced_examples:
             out = {"messages": ex["messages"]}
             f.write(json.dumps(out, ensure_ascii=False) + "\n")
+    # Reported after balancing so the number matches what was actually written, not the pre-balance count.
+    print(f"Curation: Exported {len(balanced_examples)} examples. Filtered out {skipped} degraded examples.")
     return output_path
 
 
@@ -156,7 +159,6 @@ def export_dpo(output_path: str = "data/training/export_unsloth_dpo.jsonl") -> s
     raw = get_all_examples()
     examples = [ex for ex in raw if not _is_degraded(ex)]
     skipped = len(raw) - len(examples)
-    print(f"Curation Curation: Exported {len(examples)} examples. Filtered out {skipped} degraded examples.")
 
     # Group by (system prompt, user message); chosen and rejected answers for the same prompt end up together.
     # Group examples by prompt key: (system_prompt, user_msg)
@@ -227,7 +229,9 @@ def export_dpo(output_path: str = "data/training/export_unsloth_dpo.jsonl") -> s
     with open(output_path, "w", encoding="utf-8") as f:
         for pair in balanced_pairs:
             f.write(json.dumps(pair, ensure_ascii=False) + "\n")
-            
+    # Reported after balancing so the number matches the pairs actually written.
+    print(f"Curation: Exported {len(balanced_pairs)} DPO pairs. Filtered out {skipped} degraded examples.")
+
     return output_path
 
 
