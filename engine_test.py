@@ -122,5 +122,9 @@ def test_introspection_engine():
     print(f"Trace fully logged to: {log_file}")
 
 
+# Opt out of pytest collection: this loads a real GGUF model. Run it as a script instead.
+test_introspection_engine.__test__ = False
+
+
 if __name__ == "__main__":
     test_introspection_engine()
