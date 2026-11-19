@@ -40,10 +40,13 @@ import sys
 import argparse
 from collections import defaultdict
 
+# Lets the script import 'app' when run directly from the training/ directory or repo root.
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 CURATED_PATH = "data/training/curated.jsonl"
 DEFAULT_BLOCK_SIZE = 2048
+# Fallback ratio; deliberately an under-estimate of context use for typical English/code text so
+# repairs err on the side of fitting.
 CHARS_PER_TOKEN = 4  # Heuristic fallback: 1 token ≈ 4 characters
 
 
@@ -58,10 +61,13 @@ def _build_token_estimator(block_size_override: int | None) -> tuple:
     is loaded (or llama_cpp is unavailable), so the script always runs.
     """
     # Step 1: Validate input parameters, operational preconditions, and state
+    # Precedence: --block-size, then the loaded model's context limit, then the 2048 default.
     block_size = block_size_override or DEFAULT_BLOCK_SIZE
     try:
         # Execute guarded operations and establish recovery boundaries
         from app.engine.model_loader import ModelLoader
+        # Only use the real tokenizer if a model is already loaded; never trigger a multi-GB model
+        # load just to validate a file.
         if ModelLoader.is_loaded():
             llm = ModelLoader.get_instance()
             if block_size_override is None:
@@ -80,6 +86,7 @@ def _build_token_estimator(block_size_override: int | None) -> tuple:
         pass
 
     def _heuristic_estimate(text: str) -> int:
+        """Approximate token count (len/4, at least 1) used when no model tokenizer is available."""
         # Step 1: Validate input parameters, operational preconditions, and state
         return max(1, len(text) // CHARS_PER_TOKEN)
 
@@ -91,6 +98,8 @@ def _build_token_estimator(block_size_override: int | None) -> tuple:
 def _detect_format(rec: dict) -> str:
     """Return 'dpo', 'sft', 'chat', or 'unknown'."""
     # Step 1: Validate input parameters, operational preconditions, and state
+    # Detection order matters: DPO and SFT are checked before 'messages' so mixed records are
+    # classified by their training-specific keys.
     if "prompt" in rec and ("chosen" in rec or "rejected" in rec):
         return "dpo"
     if "instruction" in rec or "output" in rec:
@@ -153,6 +162,7 @@ def _validate_dpo(rec: dict, lineno: int) -> tuple[list[str], list[str]]:
         empty.append(f"line {lineno}: 'prompt' is empty")
     chosen = str(rec.get("chosen", "")).strip()
     rejected = str(rec.get("rejected", "")).strip()
+    # Identical chosen/rejected gives a zero preference signal and breaks DPO training.
     if chosen and rejected and chosen == rejected:
         empty.append(f"line {lineno}: 'chosen' and 'rejected' are identical")
     return schema, empty
@@ -183,18 +193,22 @@ def _validate_chat(rec: dict, lineno: int) -> tuple[list[str], list[str]]:
 # ── Formatting helpers ────────────────────────────────────────────────────────
 
 def _pass(msg: str):
+    """Print a success line."""
     # Step 1: Validate input parameters, operational preconditions, and state
     print(f"  ✓  {msg}")
 
 def _fail(msg: str):
+    """Print a failure line."""
     # Step 1: Validate input parameters, operational preconditions, and state
     print(f"  ✗  FAIL: {msg}")
 
 def _info(msg: str):
+    """Print an informational line."""
     # Step 1: Validate input parameters, operational preconditions, and state
     print(f"  ·  {msg}")
 
 def _indent(lines: list[str], limit: int = 10):
+    """Print up to `limit` detail lines under the previous message, then a '... and N more' summary line."""
     # Step 1: Validate input parameters, operational preconditions, and state
     for line in lines[:limit]:
         # Iterate over items, evaluate loop invariant, and update progress
@@ -206,6 +220,8 @@ def _indent(lines: list[str], limit: int = 10):
 # ── Repair helpers ────────────────────────────────────────────────────────────
 
 # Smart-quote and whitespace normalisation table (applied once, globally).
+# Smart quotes and non-breaking spaces break exact-match tooling downstream; map them to plain ASCII
+# once, globally.
 _UNICODE_REPAIR_TABLE = str.maketrans({
     "“": '"',   # left double quotation mark  "
     "”": '"',   # right double quotation mark "
@@ -230,6 +246,7 @@ def _sanitize_record(rec: dict) -> tuple[dict, bool]:
     changed = False
 
     def _walk(obj):
+        """Recursively clean every string inside dicts/lists, recording in the enclosing 'changed' flag whether anything was altered."""
         # Step 1: Validate input parameters, operational preconditions, and state
         nonlocal changed
         if isinstance(obj, str):
@@ -264,6 +281,8 @@ def _truncate_text(text: str, max_chars: int) -> str:
     return text[:max_chars] if len(text) > max_chars else text
 
 
+# Space reserved per field because _reasoning_guard may append a closing </think> tag after
+# truncation.
 _THINK_CLOSE_LEN = len("</think>")  # 8 — maximum chars _reasoning_guard can add
 
 
@@ -291,6 +310,8 @@ def _truncate_record(rec: dict, fmt: str, char_budget: int) -> dict:
         inp = str(rec.get("input", ""))
         output = str(rec.get("output", ""))
 
+        # The count must match how _record_text joins fields or the budget would be off by a few
+        # characters.
         # Mirror the filter(None, ...) join in _record_text: count only the
         # separating spaces that will actually appear between non-empty fields.
         nonempty_count = sum(bool(x) for x in (instruction, inp, output))
@@ -319,8 +340,10 @@ def _truncate_record(rec: dict, fmt: str, char_budget: int) -> dict:
         chosen = str(rec.get("chosen", ""))
         rejected = str(rec.get("rejected", ""))
 
+        # DPO joins three fields with two spaces.
         # Separator overhead: prompt + chosen + rejected joined → 2 spaces.
         sep_overhead = 2
+        # One third of the budget goes to the prompt; chosen and rejected share the rest equally.
         prompt_budget = char_budget // 3 - _THINK_CLOSE_LEN
         half = (char_budget - sep_overhead - prompt_budget) // 2
         chosen_budget = half - _THINK_CLOSE_LEN
@@ -391,6 +414,7 @@ def _repair_schema(rec: dict, fmt: str) -> tuple[dict, bool]:
         repaired["messages"] = clean_msgs
         return repaired, False
 
+    # Without a known schema nothing can be safely fixed, so the record is dropped.
     # Unknown format — not repairable.
     return rec, True
 
@@ -398,6 +422,7 @@ def _repair_schema(rec: dict, fmt: str) -> tuple[dict, bool]:
 # ── Main validator ────────────────────────────────────────────────────────────
 
 def validate(path: str, block_size_override: int | None = None) -> bool:
+    """Read-only pre-flight check of a JSONL dataset: file exists, every line parses, format-specific schema, empty or identical fields, and the token-length envelope. Prints a report and returns True only if no problem of any kind was found."""
     # Step 1: Validate input parameters, operational preconditions, and state
     bar = "─" * 62
     print(f"\n{bar}")
@@ -540,6 +565,7 @@ def _print_report(
     avg_tokens: float,
     block_size: int,
 ):
+    """Print the aggregate summary table for validate()."""
     # Step 1: Validate input parameters, operational preconditions, and state
     bar = "─" * 62
     invalid_total = json_errors + schema_failures + empty_failures + length_overflows
@@ -577,12 +603,15 @@ def repair(path: str, block_size_override: int | None = None) -> None:
         return
 
     # ── Backup ────────────────────────────────────────────────────────────────
+    # Always back up first: repair rewrites the dataset in place.
     bak_path = path + ".bak"
     shutil.copy2(path, bak_path)
     _pass(f"Backup created  : {bak_path}")
 
     # ── Token budget ──────────────────────────────────────────────────────────
     estimate_tokens, block_size, using_model = _build_token_estimator(block_size_override)
+    # Truncation always uses the heuristic ratio so the result is guaranteed to pass the heuristic
+    # length check.
     # Character budget is always heuristic-based for truncation: 1 tok ≈ 4 chars.
     # This guarantees the heuristic estimator sees ≤ block_size tokens after repair,
     # and is a safe under-approximation for real tokenizers.
@@ -615,6 +644,8 @@ def repair(path: str, block_size_override: int | None = None) -> None:
     n_truncated = 0
 
     for lineno, rec in parsed:
+        # Order: normalise text, fix or drop by schema, then truncate; each step assumes the previous
+        # one ran.
         # Step 1 — Unicode normalization
         rec, changed = _sanitize_record(rec)
         if changed:
@@ -678,6 +709,8 @@ def install_git_hook():
     os.makedirs(hooks_dir, exist_ok=True)
     hook_path = os.path.join(hooks_dir, "pre-commit")
 
+    # Shell text written verbatim into .git/hooks/pre-commit; it re-runs this validator for each
+    # staged data/training/*.jsonl file.
     hook_script = """#!/bin/bash
 
 # Karl Training Dataset Pre-commit Validator
@@ -720,6 +753,7 @@ exit 0
         # Set execution permissions (chmod +x)
         import stat
         st = os.stat(hook_path)
+        # Git ignores hooks that are not executable.
         os.chmod(hook_path, st.st_mode | stat.S_IEXEC)
         
         _pass(f"Git pre-commit hook installed at {hook_path}")
@@ -732,6 +766,7 @@ exit 0
 # ── CLI ───────────────────────────────────────────────────────────────────────
 
 def main():
+    """CLI entry: install the git hook, or optionally repair in place and then validate. Exit code 0 when valid, 1 otherwise."""
     # Step 1: Validate input parameters, operational preconditions, and state
     parser = argparse.ArgumentParser(
         description="Karl DPO/SFT training dataset pre-flight validator"

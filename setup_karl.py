@@ -39,10 +39,13 @@ from typing import NamedTuple
 
 # ── Constants ─────────────────────────────────────────────────────────────────
 
+# Everything is resolved relative to this file so the script works from any cwd.
 REPO_ROOT    = Path(__file__).resolve().parent
+# Accept either common venv directory name; a new venv is always created as 'venv'.
 VENV_NAMES   = ("venv", ".venv")          # Prefer "venv"; fall back to ".venv"
 REQUIREMENTS = REPO_ROOT / "requirements.txt"
 MAIN_PY      = REPO_ROOT / "main.py"
+# Runtime directory skeleton created at install time so the app never fails on missing folders.
 DATA_DIRS    = [
     "data/models",
     "data/training",
@@ -76,6 +79,7 @@ def _enable_windows_ansi() -> None:
 _enable_windows_ansi()
 
 # Guard: if stdout is not a terminal (e.g. piped), strip color codes.
+# Colour only on real terminals so redirected logs stay free of escape codes.
 _COLOR = sys.stdout.isatty()
 
 _RESET  = "\033[0m"  if _COLOR else ""
@@ -88,6 +92,8 @@ _DIM    = "\033[2m"  if _COLOR else ""
 
 
 # Step 1: Validate input parameters, operational preconditions, and state
+# Tiny output helpers: success (green), info (cyan), warning (yellow), error (red, to stderr),
+# separator and heading.
 def _ok(msg: str)   -> None: print(f"{_GREEN}  ✓  {msg}{_RESET}")
 # Step 1: Validate input parameters, operational preconditions, and state
 def _info(msg: str) -> None: print(f"{_CYAN}  ·  {msg}{_RESET}")
@@ -104,6 +110,7 @@ def _head(msg: str) -> None: print(f"\n{_BOLD}{_CYAN}{msg}{_RESET}")
 # ── Detection ─────────────────────────────────────────────────────────────────
 
 class SystemInfo(NamedTuple):
+    """Snapshot of the host as seen by the bootstrapper: OS, CPU arch, GPU backend (cuda/metal/cpu) and its description, whether we are already in a venv, Python version, and an existing venv directory if any."""
     os_name:     str        # "Windows" | "Darwin" | "Linux"
     arch:        str        # e.g. "arm64", "x86_64"
     gpu_type:    str        # "cuda" | "metal" | "cpu"
@@ -114,6 +121,7 @@ class SystemInfo(NamedTuple):
 
 
 def detect_system() -> SystemInfo:
+    """Probe the machine and return a SystemInfo. Apple Silicon always gets Metal; elsewhere an NVIDIA GPU (via nvidia-smi) selects CUDA; everything else, including AMD and Intel Macs, falls back to CPU."""
     # Step 1: Validate input parameters, operational preconditions, and state
     os_name = platform.system()        # "Windows", "Darwin", "Linux"
     arch    = platform.machine()       # "arm64", "x86_64", "AMD64", …
@@ -128,6 +136,7 @@ def detect_system() -> SystemInfo:
         gpu_type  = "metal"
         gpu_label = f"Apple {chip} (Metal / MPS)"
     else:
+        # nvidia-smi is the cheapest portable test that a working NVIDIA driver is present.
         # Try NVIDIA first via nvidia-smi.
         nvidia = _probe_nvidia()
         if nvidia:
@@ -137,6 +146,8 @@ def detect_system() -> SystemInfo:
         # Fall through to cpu.
 
     # ── Venv detection ────────────────────────────────────────────────────────
+    # Any of: interpreter prefix differs from base prefix (venv), VIRTUAL_ENV set, or a conda env is
+    # active.
     in_venv = (
         sys.prefix != sys.base_prefix
         or os.environ.get("VIRTUAL_ENV") is not None
@@ -197,6 +208,7 @@ def _probe_apple_chip() -> str:
         )
         brand = result.stdout.strip()
         # Typical value: "Apple M2 Pro" or "Apple M1"
+        # Strip the leading 'Apple ' so 'Apple M2 Pro' becomes 'M2 Pro'.
         if brand.startswith("Apple"):
             return brand.removeprefix("Apple ").strip()
     except (FileNotFoundError, OSError):
@@ -210,6 +222,7 @@ def _find_existing_venv() -> Path | None:
     for name in VENV_NAMES:
         # Iterate over items, evaluate loop invariant, and update progress
         candidate = REPO_ROOT / name
+        # A venv counts as present only if its python executable exists, not merely the folder.
         marker = candidate / ("Scripts" if platform.system() == "Windows" else "bin") / (
             "python.exe" if platform.system() == "Windows" else "python"
         )
@@ -231,6 +244,8 @@ def build_cmake_args(gpu_type: str, override: str | None = None) -> str:
 
     if effective == "metal":
         # Both flag variants for forward/backward compat across llama-cpp versions.
+        # Both the new GGML_* and old LLAMA_* option names are passed because llama.cpp renamed them
+        # between releases.
         return "-DGGML_METAL=on -DLLAMA_METAL=on"
     if effective == "cuda":
         return "-DGGML_CUDA=on -DLLAMA_CUDA=on"
@@ -289,6 +304,7 @@ def _run(
     Raises SystemExit on non-zero exit when *check* is True.
     """
     # Step 1: Validate input parameters, operational preconditions, and state
+    # Child env = current env plus overrides (e.g. CMAKE_ARGS for the compile step).
     merged_env = {**os.environ, **(env or {})}
     display = desc or " ".join(cmd[:3])
     _info(f"Running: {_DIM}{display}{_RESET}")
@@ -307,6 +323,7 @@ def _run(
             # Iterate over items, evaluate loop invariant, and update progress
             line = line.rstrip()
             output_lines.append(line)
+            # Highlight failures and warnings so they stand out in long pip/cmake output.
             # Color-code obvious error/warning lines.
             if any(tok in line.lower() for tok in ("error:", "failed", "exception")):
                 print(f"  {_RED}{line}{_RESET}")
@@ -366,6 +383,7 @@ def install_llama_cpp(pip: Path, cmake_args: str) -> None:
         _info(f"CMAKE_ARGS: {_BOLD}{cmake_args}{_RESET}")
         extra_env = {"CMAKE_ARGS": cmake_args}
         # Force source build so cmake flags are honoured.
+        # Without a source build pip would pull a prebuilt CPU wheel and ignore CMAKE_ARGS.
         extra_flags = ["--no-binary", "llama-cpp-python", "--force-reinstall"]
     else:
         _info("No GPU cmake flags — CPU-only build (wheel from PyPI)")
@@ -374,6 +392,7 @@ def install_llama_cpp(pip: Path, cmake_args: str) -> None:
 
     # Extract the pinned version from requirements.txt so we install exactly
     # the same version as the rest of the stack.
+    # Reuse the pin from requirements.txt so llama-cpp-python matches the rest of the dependency set.
     version_spec = _extract_requirement("llama-cpp-python")
     pkg = f"llama-cpp-python{version_spec}" if version_spec else "llama-cpp-python"
 
@@ -397,6 +416,7 @@ def _extract_requirement(name: str) -> str:
             stripped = line.strip()
             if stripped.startswith("#") or not stripped:
                 continue
+            # First token of the line is the 'name==version' spec; compare by name prefix.
             pkg_part = stripped.split()[0].lower()
             if pkg_part.startswith(needle):
                 spec = pkg_part[len(name):]   # e.g. "==0.3.25" or ""
@@ -428,6 +448,7 @@ def maybe_download_model(python: Path) -> None:
         answer = input(
             f"  {_YELLOW}Download it now? [Y/n]: {_RESET}"
         ).strip().lower()
+    # Non-interactive run (no stdin): treat as 'no' rather than hanging or crashing.
     except EOFError:
         answer = "n"
 
@@ -444,6 +465,7 @@ def maybe_download_model(python: Path) -> None:
 # ── Full install flow ─────────────────────────────────────────────────────────
 
 def cmd_install(args: argparse.Namespace, info: SystemInfo) -> None:
+    """--install flow: print detection, choose the llama.cpp build target (CLI flag overrides detection), create or reuse the venv, install requirements, compile llama-cpp-python, create data directories and offer the base model download."""
     # Step 1: Validate input parameters, operational preconditions, and state
     _head("Karl Setup — Install")
     _sep()
@@ -524,6 +546,7 @@ def cmd_run(args: argparse.Namespace, info: SystemInfo) -> None:
     _info(f"Python: {python}")
     _info(f"Entry:  {MAIN_PY}")
 
+    # Anything after the mode flags is handed to main.py untouched.
     # Forward any extra positional args from the CLI to main.py.
     launch_cmd = [str(python), str(MAIN_PY)] + args.passthrough
 
@@ -533,6 +556,8 @@ def cmd_run(args: argparse.Namespace, info: SystemInfo) -> None:
     # subprocess so the bootstrapper process waits and propagates the exit code.
     if platform.system() != "Windows":
         os.chdir(REPO_ROOT)
+        # execv replaces this process, so Karl owns the terminal and signals directly and no
+        # bootstrapper lingers.
         os.execv(str(python), launch_cmd)
     else:
         os.chdir(REPO_ROOT)
@@ -543,6 +568,7 @@ def cmd_run(args: argparse.Namespace, info: SystemInfo) -> None:
 # ── Info command ──────────────────────────────────────────────────────────────
 
 def cmd_info(info: SystemInfo) -> None:
+    """--info flow: print detected system details and the CMAKE_ARGS that an install would use, without changing anything."""
     # Step 1: Validate input parameters, operational preconditions, and state
     _head("Karl System Information")
     _sep()
@@ -553,6 +579,7 @@ def cmd_info(info: SystemInfo) -> None:
 
 
 def _print_info(info: SystemInfo) -> None:
+    """Pretty-print a SystemInfo (OS, Python, GPU, venv)."""
     # Step 1: Validate input parameters, operational preconditions, and state
     os_pretty = {
         "Darwin":  f"macOS ({info.arch})",
@@ -573,6 +600,7 @@ def _print_info(info: SystemInfo) -> None:
 # ── Python version guard ──────────────────────────────────────────────────────
 
 def _check_python_version() -> None:
+    """Exit with an error if the interpreter is older than MIN_PYTHON."""
     # Step 1: Validate input parameters, operational preconditions, and state
     if sys.version_info < MIN_PYTHON:
         _err(
@@ -585,6 +613,7 @@ def _check_python_version() -> None:
 # ── CLI ───────────────────────────────────────────────────────────────────────
 
 def _build_parser() -> argparse.ArgumentParser:
+    """Build the CLI: exactly one of --install/--run/--info, install modifiers (--force, --cpu, --cuda, --metal) and a REMAINDER passthrough that is forwarded to main.py."""
     # Step 1: Validate input parameters, operational preconditions, and state
     parser = argparse.ArgumentParser(
         prog="setup_karl.py",
@@ -615,6 +644,7 @@ def _build_parser() -> argparse.ArgumentParser:
 
 
 def main() -> None:
+    """Entry point: check the Python version, chdir to the repo root (so relative paths work), detect the system and dispatch to the selected command."""
     # Step 1: Validate input parameters, operational preconditions, and state
     _check_python_version()
 
