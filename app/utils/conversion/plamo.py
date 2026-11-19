@@ -172,17 +172,17 @@ class Plamo2Model(TextModel):
             assert data_torch.ndim == 2
         # PLaMo2's norms are stored as offsets; the added constants (1, 1/5, 1/5**1.5) bake in the
         # upstream model's scaling so the runtime can use plain RMSNorm weights.
-        # Note: the in-place += mutates the loaded tensor.
+        # Not in-place: `+=` would mutate the loaded tensor that the caller may still hold.
         elif name.endswith(".pre_mixer_norm.weight"):
-            data_torch += 1.0
+            data_torch = data_torch + 1.0
         elif name.endswith(".post_mixer_norm.weight"):
-            data_torch += 1.0 / 5
+            data_torch = data_torch + 1.0 / 5
         elif name.endswith(".pre_mlp_norm.weight"):
-            data_torch += 1.0
+            data_torch = data_torch + 1.0
         elif name.endswith(".post_mlp_norm.weight"):
-            data_torch += 1.0 / (5**1.5)
+            data_torch = data_torch + 1.0 / (5**1.5)
         elif name.endswith(".norm.weight"):
-            data_torch += 1.0
+            data_torch = data_torch + 1.0
 
         yield from super().modify_tensors(data_torch, name, bid)
 
