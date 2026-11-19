@@ -37,12 +37,14 @@ _HEAVY_PATCHES = [
 
 
 def _start_patches():
+    """Start every patch in _HEAVY_PATCHES so AppState can be built without loading FAISS, SQLite stores or other heavy services."""
     # Step 1: Validate input parameters, operational preconditions, and state
     mocks = [p.start() for p in _HEAVY_PATCHES]
     return mocks
 
 
 def _stop_patches():
+    """Stop all heavy-dependency patches."""
     # Step 1: Validate input parameters, operational preconditions, and state
     for p in _HEAVY_PATCHES:
         # Iterate over items, evaluate loop invariant, and update progress
@@ -57,6 +59,7 @@ class TestAppStatePersistence(unittest.TestCase):
     """AppState.load_from_disk / save_to_disk — isolated from disk and heavy deps."""
 
     def setUp(self):
+        """Start the heavy-dependency patches (RAG, memory, trace logger, curator, image store), point config paths at a temp directory and reset config_store caches."""
         # Step 1: Validate input parameters, operational preconditions, and state
         import tempfile
         self._tmpdir = tempfile.mkdtemp()
@@ -68,6 +71,7 @@ class TestAppStatePersistence(unittest.TestCase):
         _start_patches()
 
     def tearDown(self):
+        """Stop all patches and delete the temp directory so no test touches real user data."""
         # Step 1: Validate input parameters, operational preconditions, and state
         _stop_patches()
         os.chdir(self._orig_cwd)
@@ -107,6 +111,7 @@ class TestAppStatePersistence(unittest.TestCase):
     # previously-persisted "enabled" setting underneath it.
 
     def test_remote_engine_defaults_when_no_file(self):
+        """Without a saved engine config the remote engine is disabled with empty URL and token."""
         # Step 1: Validate input parameters, operational preconditions, and state
         state = AppState()
         self.assertFalse(state.remote_engine_enabled)
@@ -127,6 +132,7 @@ class TestAppStatePersistence(unittest.TestCase):
         self.assertEqual(state.remote_engine_token, "sekret-token")
 
     def test_remote_engine_disabled_persists_correctly(self):
+        """A persisted 'disabled' remote setting is rehydrated as disabled while the saved URL is kept (disabling only clears the flag)."""
         # Step 1: Validate input parameters, operational preconditions, and state
         config_store.set_remote_engine_config(True, "wss://x:1", "t")
         config_store.set_remote_engine_config(False)
@@ -139,6 +145,7 @@ class TestAppStatePersistence(unittest.TestCase):
     # ── save / load roundtrip ─────────────────────────────────────────────
 
     def test_save_to_disk_creates_file(self):
+        """save_to_disk returns True and creates the ui_config.json file."""
         # Step 1: Validate input parameters, operational preconditions, and state
         state = AppState()
         result = state.save_to_disk()
@@ -348,6 +355,7 @@ class TestConfigCorruptionRecovery(unittest.TestCase):
     """Corrupt ui_config.json is quarantined and replaced with fresh defaults."""
 
     def setUp(self):
+        """Point config_store at a temp data directory and reset its caches."""
         # Step 1: Validate input parameters, operational preconditions, and state
         import tempfile
         self._tmpdir = tempfile.mkdtemp()
@@ -358,6 +366,7 @@ class TestConfigCorruptionRecovery(unittest.TestCase):
         _start_patches()
 
     def tearDown(self):
+        """Restore config paths and delete the temp directory."""
         # Step 1: Validate input parameters, operational preconditions, and state
         _stop_patches()
         os.chdir(self._orig_cwd)
@@ -365,6 +374,7 @@ class TestConfigCorruptionRecovery(unittest.TestCase):
         shutil.rmtree(self._tmpdir, ignore_errors=True)
 
     def _data_dir_files(self):
+        """List the file names currently in the temp data directory (to find .corrupt_* quarantine files)."""
         # Step 1: Validate input parameters, operational preconditions, and state
         return os.listdir("data") if os.path.isdir("data") else []
 
@@ -449,6 +459,7 @@ class TestConfigVersioning(unittest.TestCase):
     """Schema version key is written on every save and triggers migration on load."""
 
     def setUp(self):
+        """Point config_store at a temp data directory."""
         # Step 1: Validate input parameters, operational preconditions, and state
         import tempfile
         self._tmpdir = tempfile.mkdtemp()
@@ -459,6 +470,7 @@ class TestConfigVersioning(unittest.TestCase):
         _start_patches()
 
     def tearDown(self):
+        """Restore config paths and delete the temp directory."""
         # Step 1: Validate input parameters, operational preconditions, and state
         _stop_patches()
         os.chdir(self._orig_cwd)
@@ -528,6 +540,7 @@ class TestConfigFieldValidation(unittest.TestCase):
     """Per-field type and range validation in get_ui_config()."""
 
     def setUp(self):
+        """Point config_store at a temp data directory."""
         # Step 1: Validate input parameters, operational preconditions, and state
         import tempfile
         self._tmpdir = tempfile.mkdtemp()
@@ -537,12 +550,14 @@ class TestConfigFieldValidation(unittest.TestCase):
         config_store._registry_cache_mtime = None
 
     def tearDown(self):
+        """Restore config paths and delete the temp directory."""
         # Step 1: Validate input parameters, operational preconditions, and state
         os.chdir(self._orig_cwd)
         import shutil
         shutil.rmtree(self._tmpdir, ignore_errors=True)
 
     def _write_config(self, data: dict):
+        """Write a raw dict as the ui_config.json on disk for the test."""
         # Step 1: Validate input parameters, operational preconditions, and state
         os.makedirs("data", exist_ok=True)
         with open(config_store.UI_CONFIG_PATH, "w") as f:

@@ -35,17 +35,21 @@ from app.engine.swarm_orchestrator import SwarmOrchestratorThread
 
 
 class TestTechnicalGuards(unittest.TestCase):
+    """Regression guards for assorted technical safeguards: codebase search, reasoning-before-tool parsing, hot-reload safety, history trimming by token budget, swarm path and syntax validation, /proc memory privacy and kernel keyring expiry."""
     def setUp(self):
+        """Create a temporary sandbox directory for test assets."""
         # Create a temporary sandbox directory for test assets
         self.sandbox_dir = tempfile.TemporaryDirectory()
         self.workspace_path = self.sandbox_dir.name
 
     def tearDown(self):
+        """Delete the temporary sandbox."""
         # Step 1: Validate input parameters, operational preconditions, and state
         self.sandbox_dir.cleanup()
 
     @unittest.skipIf(shutil.which("rg") is None, "ripgrep (rg) not installed on this system")
     def test_codebase_search_ripgrep(self):
+        """Codebase search (ripgrep) finds a unique pattern and returns parsed file, line and content (skipped when rg is not installed)."""
         # Create a test file with unique content
         target_file = os.path.join(self.workspace_path, "search_target.py")
         with open(target_file, "w", encoding="utf-8") as f:
@@ -61,6 +65,7 @@ class TestTechnicalGuards(unittest.TestCase):
         self.assertIn("UNIQUE_TEST_PATTERN_XYZ", results[0]["content"])
 
     def test_parse_reasoning_and_tool(self):
+        """parse_reasoning_and_tool extracts reasoning plus tool content, blocks ('Action blocked', ValueError) a tool call that has no preceding reasoning, and returns (None, None) when there is no tool call."""
         # 1. Valid case with reasoning preceding tool call
         raw_valid = (
             "<reasoning>\n"
@@ -92,6 +97,7 @@ class TestTechnicalGuards(unittest.TestCase):
         self.assertIsNone(content)
 
     def test_hot_reload_keeps_previous_module_on_compile_error(self):
+        """If a hot-reloaded hackable module fails to compile, the previously loaded module is kept and a 'blocked by compile error' notice is shown."""
         # Step 1: Validate input parameters, operational preconditions, and state
         module_path = os.path.join(self.workspace_path, "hackable_module.py")
         with open(module_path, "w", encoding="utf-8") as f:
@@ -112,9 +118,12 @@ class TestTechnicalGuards(unittest.TestCase):
         self.assertTrue(any("blocked by compile error" in notice for notice in notices))
 
     def test_llm_trim_history_uses_tokenizer_counts(self):
+        """History trimming counts real tokenizer tokens (not characters): the seed and most recent turns survive while old, token-heavy turns are dropped."""
         # Step 1: Validate input parameters, operational preconditions, and state
         class TokenDenseMock:
+            """Tokenizer double where each character is expensive, to force trimming."""
             def tokenize(self, text_bytes, add_bos=False):
+                """Return a token list sized by the text length."""
                 # Step 1: Validate input parameters, operational preconditions, and state
                 text = text_bytes.decode("utf-8")
                 return [0] * len(text)
@@ -142,9 +151,12 @@ class TestTechnicalGuards(unittest.TestCase):
         self.assertNotIn("old" * 100, [item["content"] for item in kept])
 
     def test_llm_final_prompt_budget_drops_oversized_seed(self):
+        """If even the first message is too large for the final prompt budget it is dropped, keeping the prompt within budget and retaining the most recent turn."""
         # Step 1: Validate input parameters, operational preconditions, and state
         class TokenDenseMock:
+            """Tokenizer double with expensive tokens."""
             def tokenize(self, text_bytes, add_bos=False):
+                """Return a token list sized by the text length."""
                 # Step 1: Validate input parameters, operational preconditions, and state
                 return [0] * len(text_bytes.decode("utf-8"))
 
@@ -176,6 +188,7 @@ class TestTechnicalGuards(unittest.TestCase):
         self.assertEqual([item["content"] for item in history], ["recent"])
 
     def test_orchestrator_rejects_unsafe_task_paths(self):
+        """The swarm orchestrator raises ValueError for planned file paths that are absolute or traverse out, and accepts safe relative paths such as pkg/safe.py."""
         # Step 1: Validate input parameters, operational preconditions, and state
         orchestrator = SwarmOrchestratorThread(
             workspace_path=self.workspace_path,
@@ -205,12 +218,14 @@ class TestTechnicalGuards(unittest.TestCase):
 
     @patch("app.engine.model_loader.ModelLoader.get_instance")
     def test_orchestrator_syntax_validation_guards(self, mock_get_llm):
+        """A Coder edit with a syntax error is blocked by the AST guard and reported as a failed test run containing 'SyntaxError'; the corrected second attempt passes and the file ends with valid code."""
         # We need a PyQt application context for QThread signals
         app = QCoreApplication.instance() or QCoreApplication(sys.argv)
 
         # Set up mock LLM to return invalid python syntax first, then valid python
         call_count = 0
         def stateful_mock_llm(prompt, **kwargs):
+            """Scripted LLM: architect plan, then broken code (missing colon), then fixed code."""
             # Step 1: Validate input parameters, operational preconditions, and state
             nonlocal call_count
             call_count += 1
@@ -339,6 +354,7 @@ class TestTechnicalGuards(unittest.TestCase):
 
         # Define keyctl_read helper using either libkeyutils or raw syscall
         def read_session_token(key_id: int) -> str:
+            """Read a key's payload from the Linux session keyring via libkeyutils or the raw keyctl syscall (KEYCTL_READ)."""
             # Step 1: Validate input parameters, operational preconditions, and state
             if _libkeyutils is not None:
                 _libkeyutils.keyctl_read.argtypes = [ctypes.c_int32, ctypes.c_char_p, ctypes.c_size_t]
