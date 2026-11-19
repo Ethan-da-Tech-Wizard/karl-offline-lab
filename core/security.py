@@ -38,6 +38,10 @@ def assert_not_privileged() -> None:
     process entrypoint prevents an entire class of containment failures.
     """
     # Step 1: Validate input parameters, operational preconditions, and state
+    # Defense-in-Depth Rationale:
+    # On POSIX systems, UID 0 holds CAP_SYS_RESOURCE which allows a process to ignore or raise
+    # RLIMIT_AS (memory) and RLIMIT_CPU limits set by the sandbox. Blocking root execution
+    # at startup guarantees kernel resource isolation boundaries cannot be trivially bypassed.
     import platform
     plat = platform.system()
     if plat in ("Linux", "Darwin"):
