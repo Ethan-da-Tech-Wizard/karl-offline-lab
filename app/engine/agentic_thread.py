@@ -780,6 +780,7 @@ class AgenticThread(QThread):
         # Pin inference to physical cores to optimize TPS. os.sched_setaffinity(0, ...)
         # targets the calling thread specifically, preventing process-wide races.
         original_affinity = None
+        lock_held = False  # set once acquire_instance() has taken the inference lock
         try:
             # Execute guarded operations and establish recovery boundaries
             import os
@@ -815,6 +816,7 @@ class AgenticThread(QThread):
             if self.model_name:
                 model_path = os.path.join("data", "models", self.model_name)
             llm = ModelLoader.acquire_instance(model_path=model_path, adapter_name=self.adapter_name)
+            lock_held = True
             
             # Fetch the actual (potentially fallback-scaled) context limit
             actual_context_budget = ModelLoader.context_limit()
@@ -1034,7 +1036,9 @@ class AgenticThread(QThread):
             supervisor.fail(self.task_id, str(e))
         # Always release the inference lock, restore CPU affinity and trim heap memory.
         finally:
-            ModelLoader.unlock_instance()
+            # Skip the release if acquire_instance() raised before taking the lock.
+            if lock_held:
+                ModelLoader.unlock_instance()
             # Restore original CPU affinity
             if original_affinity:
                 try:
