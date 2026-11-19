@@ -29,21 +29,26 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 # Project root resolution
+# Repo root (three levels up from data/flywheel/agent3_curator.py).
 _ROOT = Path(__file__).resolve().parent.parent.parent
+# Make "data.flywheel..." and "app..." importable when run directly as a script.
 sys.path.insert(0, str(_ROOT))
 
 from data.flywheel.executor_sandbox import SafePythonSandbox
 
+# Timestamped log lines so a long unattended run can be audited afterwards.
 logging.basicConfig(
     level=logging.INFO,
     format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
 )
 logger = logging.getLogger("karl.agent3_curator")
 
+# Input: execution JSONs from Agent 2. Output: curated.jsonl (DPO pairs) and a stats file.
 EXECUTION_DIR = str(_ROOT / "data" / "flywheel" / "execution")
 CURATED_PATH  = str(_ROOT / "data" / "training" / "curated.jsonl")
 STATS_PATH    = str(_ROOT / "data" / "flywheel" / "agent3_stats.json")
 
+# Create folders at import time so the first poll never fails on a missing directory.
 os.makedirs(EXECUTION_DIR, exist_ok=True)
 os.makedirs(os.path.dirname(CURATED_PATH), exist_ok=True)
 
@@ -54,6 +59,7 @@ os.makedirs(os.path.dirname(CURATED_PATH), exist_ok=True)
 
 def _load_stats() -> dict:
     # Step 1: Validate input parameters, operational preconditions, and state
+    """Load persisted counters, or zeroed defaults if the file is missing or corrupt."""
     if os.path.exists(STATS_PATH):
         try:
             # Execute guarded operations and establish recovery boundaries
@@ -73,7 +79,9 @@ def _load_stats() -> dict:
 
 def _save_stats(stats: dict):
     # Step 1: Validate input parameters, operational preconditions, and state
+    """Write counters atomically (tmp file + os.replace); failures only log a warning."""
     stats["last_updated"] = datetime.now(timezone.utc).isoformat()
+    # os.replace is atomic, so a crash never leaves a truncated stats file.
     tmp = STATS_PATH + ".tmp"
     try:
         # Execute guarded operations and establish recovery boundaries
@@ -95,6 +103,7 @@ def run_verification(exec_record: dict) -> tuple[bool, str]:
     Returns (passed, detail_string).
     """
     # Step 1: Validate input parameters, operational preconditions, and state
+    # Fields come from Agent 2; the defaults keep a malformed record from raising KeyError.
     vtype  = exec_record.get("verification_type", "exact_match")
     script = exec_record.get("verification_script", "")
     resp   = exec_record.get("model_response", "")
@@ -102,8 +111,10 @@ def run_verification(exec_record: dict) -> tuple[bool, str]:
     if not script:
         return False, "no verification_script"
 
+    # Primary check: run the task's own verify() inside the sandbox.
     passed, detail = _verify_subprocess(script, resp)
 
+    # Symbolic answers can be written many ways ("4.0" vs "4"), so give them a numeric second chance.
     # Secondary sympy pass for symbolic problems when subprocess fails
     if not passed and vtype == "symbolic_match":
         sym_passed, sym_detail = _verify_sympy(
@@ -123,6 +134,9 @@ def _verify_subprocess(verification_script: str, model_response: str) -> tuple[b
     sandbox = SafePythonSandbox(cpu_timeout_sec=5.0, memory_limit_mb=256)
     
     # Construct the runner script as the test code
+    # The response is JSON-encoded twice (dumps of dumps) so it is embedded in the
+    # script as a safe string literal and decoded by json.loads at run time. This
+    # keeps quotes/newlines in the model output from breaking out of the string.
     test_code = (
         "import sys as _sys, json as _json\n"
         f"_resp = _json.loads({json.dumps(json.dumps(model_response))})\n"
@@ -149,6 +163,7 @@ def _verify_sympy(ground_truth: str, model_response: str) -> tuple[bool, str]:
         gt_nums = re.findall(r"-?\d+(?:\.\d+)?", ground_truth)
         if not gt_nums:
             return False, "no numeric ground truth for sympy"
+        # The final number in the ground truth is taken as the answer.
         gt_val = sympy.sympify(gt_nums[-1])
 
         resp_nums = re.findall(r"-?\d+(?:\.\d+)?", model_response)
@@ -186,9 +201,11 @@ def generate_correction(exec_record: dict) -> tuple[str, str]:
     # ── LLM-based correction ────────────────────────────────────────────────
     try:
         # Execute guarded operations and establish recovery boundaries
+        # Imported lazily: curation must still work when no model code can be imported.
         from app.engine.model_loader import ModelLoader
         from core.interaction_loop import build_prompt
 
+        # Never trigger a model load here; only use one that is already in memory.
         if ModelLoader.is_loaded():
             llm = ModelLoader.get_instance()
             correction_prompt = (
@@ -207,11 +224,13 @@ def generate_correction(exec_record: dict) -> tuple[str, str]:
             raw = llm(
                 prompt_text,
                 max_tokens=1024,
+                # Low temperature: we want a faithful, deterministic worked solution.
                 temperature=0.1,
                 top_p=0.95,
                 stop=["<|im_end|>"],
             )
             full = raw["choices"][0]["text"].strip()
+            # Split reasoning (<think>...</think>) from the final answer so each can be stored separately.
             if "</think>" in full:
                 head, _, tail = full.partition("</think>")
                 thought   = head.replace("<think>", "").strip()
@@ -223,6 +242,7 @@ def generate_correction(exec_record: dict) -> tuple[str, str]:
     except Exception as e:
         logger.debug("LLM correction unavailable: %s", e)
 
+    # Fallback texts differ by verification type; they are thin but never wrong.
     # ── Ground-truth stub fallback ──────────────────────────────────────────
     if vtype == "unit_test":
         thought = (
@@ -281,6 +301,7 @@ def save_dpo_pair(
     model_response  = exec_record.get("model_response", "")
 
     # Wrap with <think> tags when a thought trace is available
+    # Re-wrap reasoning in <think> tags so the pair matches the model's native output format.
     chosen = (
         f"<think>\n{corrected_thought}\n</think>\n{corrected_response}"
         if corrected_thought
@@ -302,6 +323,7 @@ def save_dpo_pair(
     }
 
     os.makedirs(os.path.dirname(CURATED_PATH), exist_ok=True)
+    # Append mode + one JSON object per line (JSONL) keeps writes simple and resumable.
     with open(CURATED_PATH, "a", encoding="utf-8") as f:
         f.write(json.dumps(record, ensure_ascii=False) + "\n")
 
@@ -312,6 +334,11 @@ def save_dpo_pair(
 
 def process_execution_file(path: str, stats: dict):
     # Step 1: Validate input parameters, operational preconditions, and state
+    """Grade one execution file: verify, save SFT or DPO data, update stats, delete the file.
+
+    Unreadable files are deleted (they can never succeed). Unexpected errors keep
+    the file so the next poll retries it.
+    """
     fname = os.path.basename(path)
     logger.info("Grading: %s", fname)
 
@@ -323,6 +350,7 @@ def process_execution_file(path: str, stats: dict):
         logger.error("Failed to load %s: %s", fname, e)
         try:
             # Execute guarded operations and establish recovery boundaries
+            # The file is removed only after its result was saved, so work is not lost.
             os.remove(path)
         except Exception:
             pass
@@ -352,6 +380,7 @@ def process_execution_file(path: str, stats: dict):
 
     except Exception as e:
         logger.error("Unexpected error processing %s: %s", fname, e, exc_info=True)
+        # Leave it on disk to retry on the next cycle.
         # Do not delete on unexpected error — allow retry on next poll cycle
     finally:
         _save_stats(stats)
@@ -363,6 +392,7 @@ def process_execution_file(path: str, stats: dict):
 
 def main():
     # Step 1: Validate input parameters, operational preconditions, and state
+    """Poll the execution folder and grade each file; --once drains the folder and exits."""
     parser = argparse.ArgumentParser(
         description="Agent 3: Automated Grader & Training Curator"
     )
@@ -383,6 +413,7 @@ def main():
         # Iterate over items, evaluate loop invariant, and update progress
         try:
             # Execute guarded operations and establish recovery boundaries
+            # Ignore .tmp files that Agent 2 may still be writing.
             files = sorted(
                 f for f in os.listdir(EXECUTION_DIR)
                 if f.endswith(".json") and not f.endswith(".tmp")
@@ -407,6 +438,7 @@ def main():
 
         except Exception as e:
             logger.error("Main loop error: %s", e)
+            # Back off after an unexpected error so a persistent fault does not spin the CPU.
             time.sleep(5)
 
     logger.info(

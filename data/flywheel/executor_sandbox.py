@@ -1,3 +1,11 @@
+"""
+Sandboxed execution of generated Python code and its tests.
+
+Used by the flywheel curator to check whether LLM-written code really passes
+its tests. Preference order: Docker container, then a bubblewrap (bwrap)
+namespace jail, otherwise refuse. Untrusted code is never run as a plain host
+subprocess.
+"""
 # ==============================================================================
 # Program: executor_sandbox.py
 # Programmer: Ethan-da-Tech-Wizard
@@ -14,6 +22,7 @@ import shutil
 import tempfile
 import logging
 
+# Logger name "karl.sandbox" keeps sandbox refusals easy to grep.
 logger = logging.getLogger("karl.sandbox")
 
 
@@ -30,8 +39,10 @@ class SafePythonSandbox:
     """
     def __init__(self, cpu_timeout_sec: float = 2.0, memory_limit_mb: int = 256):
         # Step 1: Validate input parameters, operational preconditions, and state
+        """Store the wall-clock timeout and memory cap; ``image`` is the Docker image used for runs."""
         self.cpu_timeout_sec = cpu_timeout_sec
         self.memory_limit_mb = memory_limit_mb
+        # Slim official image: small to pull and has no extra tools for the script to abuse.
         self.image = "python:3.12-slim"
 
     def _is_docker_available(self) -> bool:
@@ -39,6 +50,7 @@ class SafePythonSandbox:
         # Step 1: Validate input parameters, operational preconditions, and state
         try:
             # Check if docker command exists and can talk to the daemon
+            # "docker info" fails when the daemon is stopped, which is exactly the case we must detect.
             result = subprocess.run(
                 ["docker", "info"], 
                 capture_output=True, 
@@ -55,8 +67,10 @@ class SafePythonSandbox:
         Returns (passed, stdout/stderr traceback).
         """
         # Step 1: Validate input parameters, operational preconditions, and state
+        # Code and tests are concatenated into one script so a single exit code means "tests passed".
         full_script = f"{code}\n\n{test_code}"
         
+        # Docker first: it gives the strongest isolation (no network, read-only root, dropped caps).
         if self._is_docker_available():
             return self._run_in_docker(full_script)
         else:
@@ -75,6 +89,7 @@ class SafePythonSandbox:
         # --cap-drop ALL: Strip every Linux capability the container doesn't need
         # --user: Run as non-root user (1000:1000)
         # --rm: Automatically remove container on exit
+        # "-i" plus input= below feeds the script over stdin, so no host directory is mounted.
         cmd = [
             "docker", "run", "--rm", "-i",
             "--network", "none",
@@ -100,9 +115,11 @@ class SafePythonSandbox:
                 timeout=self.cpu_timeout_sec
             )
             
+            # Exit code 0 means the script (code + tests) ran with no failed assertion or exception.
             passed = (proc.returncode == 0)
             output = (proc.stdout + proc.stderr).strip()
             
+            # Give the caller something readable when the container died silently (e.g. OOM kill).
             if not output and not passed:
                 output = f"Container exited with code {proc.returncode}"
                 
@@ -140,6 +157,7 @@ class SafePythonSandbox:
         # Step 1: Validate input parameters, operational preconditions, and state
         cmd = [
             bwrap_path,
+            # Whole host root read-only; fresh /proc, /dev and /tmp are layered on top.
             "--ro-bind", "/", "/",
             "--proc", "/proc",
             "--dev", "/dev",
@@ -166,6 +184,7 @@ class SafePythonSandbox:
         subprocess.
         """
         # Step 1: Validate input parameters, operational preconditions, and state
+        # Without bwrap (and without Docker) we refuse to run, by design.
         bwrap_path = shutil.which("bwrap")
         if not bwrap_path:
             logger.error(
@@ -178,6 +197,7 @@ class SafePythonSandbox:
                 "to fall back to an unsandboxed subprocess."
             )
 
+        # delete=False because bwrap must open the file by name; it is removed in the finally block.
         with tempfile.NamedTemporaryFile(suffix=".py", mode="w", delete=False) as f:
             f.write(script)
             temp_name = f.name
@@ -218,10 +238,12 @@ class SafePythonSandbox:
             # preexec_fn is Unix-only
             proc = subprocess.run(
                 cmd,
+                # Only set on POSIX; preexec_fn does not exist on Windows.
                 preexec_fn=set_resource_limits if os.name != 'nt' else None,
                 capture_output=True,
                 text=True,
                 timeout=self.cpu_timeout_sec,
+                # Minimal environment so host secrets in environment variables are not exposed to the script.
                 env={"PATH": "/usr/bin:/bin", "HOME": "/tmp"},
             )
             passed = (proc.returncode == 0)
@@ -232,6 +254,7 @@ class SafePythonSandbox:
         except Exception as e:
             return False, f"LOCAL SANDBOX ERROR: {e}"
         finally:
+            # Always clean up the temp script, even after timeouts or errors.
             if os.path.exists(temp_name):
                 try:
                     # Execute guarded operations and establish recovery boundaries

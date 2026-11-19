@@ -1,3 +1,14 @@
+"""
+Flywheel Agent 1: generates practice problems with machine-checkable answers.
+
+Each problem is a dict with an id, category, problem statement, ground-truth
+answer and a ``verification_script`` (source text of a ``verify(response)``
+function). Answers are computed up front from random parameters, so no model
+is needed to create or grade them. Tasks are written as task_<id>.json files
+into data/flywheel/queue for Agent 3 (the curator) to consume.
+
+Run as a script: python agent1_generator.py [--limit N] [--infinite] ...
+"""
 # ==============================================================================
 # Program: agent1_generator.py
 # Programmer: Ethan-da-Tech-Wizard
@@ -18,30 +29,41 @@ from collections import deque
 from math import sqrt
 
 # Project root on sys.path so we can import app.utils.topic_graph
+# Put the repo root on sys.path so "app.utils..." and "data.flywheel..." import
+# even when this file is launched directly as a script.
 import pathlib as _pathlib
 _PROJECT_ROOT = str(_pathlib.Path(__file__).resolve().parent.parent.parent)
 if _PROJECT_ROOT not in sys.path:
     sys.path.insert(0, _PROJECT_ROOT)
 
 # Ensure output directories exist
+# Shared hand-off folder between the generator and the curator.
 QUEUE_DIR = os.path.join(_PROJECT_ROOT, "data", "flywheel", "queue")
 os.makedirs(QUEUE_DIR, exist_ok=True)
 
 # ── Semantic deduplication ────────────────────────────────────────────────────
 
+# Rolling window of the last 50 statements produced in this process, so
+# duplicates are caught without re-reading the queue each time.
 _recent_statements: deque = deque(maxlen=50)   # rolling in-session cache
+# Two statements with trigram Jaccard similarity above 0.70 count as duplicates.
 _SIMILARITY_THRESHOLD = 0.70
 _NGRAM_SIZE = 3
 
 
 def _ngrams(text: str, n: int = _NGRAM_SIZE) -> set:
     # Step 1: Validate input parameters, operational preconditions, and state
+    """Return the set of character n-grams of ``text`` (lower-cased); empty if shorter than n."""
     t = text.lower()
     return {t[i:i+n] for i in range(len(t) - n + 1)} if len(t) >= n else set()
 
 
 def _jaccard_ngram(a: str, b: str) -> float:
     # Step 1: Validate input parameters, operational preconditions, and state
+    """Jaccard similarity (|A and B| / |A or B|) of the character n-gram sets of two strings.
+
+    Two empty strings are treated as identical (1.0).
+    """
     sa, sb = _ngrams(a), _ngrams(b)
     if not sa and not sb:
         return 1.0
@@ -51,11 +73,14 @@ def _jaccard_ngram(a: str, b: str) -> float:
 
 def _is_duplicate(candidate: str) -> bool:
     """Return True if candidate is too similar to any recent or queued problem."""
+    # Cheap check first (memory) before touching the disk.
     # In-session cache
     for stmt in _recent_statements:
         # Iterate over items, evaluate loop invariant, and update progress
         if _jaccard_ngram(candidate, stmt) > _SIMILARITY_THRESHOLD:
             return True
+    # Also compare against queued-but-unprocessed tasks, so separate runs of
+    # the generator do not enqueue near-identical problems. Unreadable files are ignored.
     # Existing queue files
     try:
         # Execute guarded operations and establish recovery boundaries
@@ -79,9 +104,15 @@ def _is_duplicate(candidate: str) -> bool:
 def generate_math_problem_3var():
     # Category: Math/Algebra Systems (3 Variables)
     # x: apple, y: banana, z: cherry
+    """Build a 3-equation linear system with distinct integer prices x, y, z.
+
+    The verifier only checks that the three answers appear in the response text
+    (after removing spaces), it does not check the working.
+    """
     x = random.randint(2, 12)
     y = random.randint(2, 12)
     z = random.randint(2, 12)
+    # Re-roll until all three values differ so the answer is unambiguous.
     while x == y or y == z or x == z:
         # Iterate over items, evaluate loop invariant, and update progress
         y = random.randint(2, 12)
@@ -91,6 +122,8 @@ def generate_math_problem_3var():
     # Eq 1: a1*x + b1*y + c1*z = e1
     # Eq 2: a2*x + b2*y + c2*z = e2
     # Eq 3: a3*x + b3*y + c3*z = e3
+    # Base coefficient rows are chosen to be independent; the random bumps below are small
+    # so the system stays solvable (the right-hand sides are computed from the chosen x, y, z).
     coeffs = [
         [2, 1, 3],
         [1, 3, 2],
@@ -101,6 +134,7 @@ def generate_math_problem_3var():
         # Iterate over items, evaluate loop invariant, and update progress
         coeffs[i] = [c + random.randint(0, 2) for c in coeffs[i]]
         
+    # Compute the totals from the known solution, so the ground truth is exact by construction.
     e1 = coeffs[0][0]*x + coeffs[0][1]*y + coeffs[0][2]*z
     e2 = coeffs[1][0]*x + coeffs[1][1]*y + coeffs[1][2]*z
     e3 = coeffs[2][0]*x + coeffs[2][1]*y + coeffs[2][2]*z
@@ -137,6 +171,13 @@ def verify(response):
 
 def generate_coding_problem_extended(challenge_name: str | None = None):
     # Step 1: Validate input parameters, operational preconditions, and state
+    # Each challenge: name, prompt text, (input, expected) test cases and an optional custom checker
+    # (for problems whose valid outputs are not unique, like anagram groups).
+    """Pick one of the coding challenges (by name, else at random) and build a problem for it.
+
+    The verification script extracts the first fenced code block from the reply,
+    execs it, and checks ``solve`` against the test cases or a custom checker.
+    """
     challenges = [
         {
             "name": "is_balanced_parentheses",
@@ -183,6 +224,7 @@ def generate_coding_problem_extended(challenge_name: str | None = None):
         }
     ]
     
+    # Unknown names fall back to a random challenge instead of raising.
     if challenge_name:
         challenge = next((c for c in challenges if c["name"] == challenge_name), None)
         if challenge is None:
@@ -191,6 +233,7 @@ def generate_coding_problem_extended(challenge_name: str | None = None):
         challenge = random.choice(challenges)
     statement = f"{challenge['desc']}\nReturn ONLY the python code for the function, enclosed in a python code block."
     
+    # Two verifier templates: one embeds a custom checker, the other loops over test cases.
     # Custom test checking
     if "custom_checker" in challenge:
         verification_script = f"""
@@ -253,6 +296,7 @@ def verify(response):
 
 def generate_symbolic_problem_extended():
     # Step 1: Validate input parameters, operational preconditions, and state
+    """Build either a 2x2 determinant or an n-choose-r committee problem (not currently in _TOPIC_DISPATCH)."""
     choices = ["matrix_det", "combinations"]
     choice = random.choice(choices)
     
@@ -281,6 +325,7 @@ def verify(response):
 """
     else:
         n = random.randint(5, 12)
+        # r < n so the combination count is never trivially 1.
         r = random.randint(2, n - 1)
         import math
         combinations = math.comb(n, r)
@@ -312,8 +357,10 @@ def verify(response):
 
 def generate_quadratic_problem():
     # Build from integer roots so verification is exact
+    """Build a quadratic with two distinct integer roots, so the answer is exact."""
     r1 = random.randint(-8, 8)
     r2 = random.randint(-8, 8)
+    # Distinct roots, otherwise the "x = r1 or x = r2" answer is degenerate.
     while r1 == r2:
         # Iterate over items, evaluate loop invariant, and update progress
         r2 = random.randint(-8, 8)
@@ -325,6 +372,7 @@ def generate_quadratic_problem():
 
     def _fmt_term(coeff, var=""):
         # Step 1: Validate input parameters, operational preconditions, and state
+        """Format one polynomial term with sign and omit coefficients of 1; zero terms give ""."""
         if coeff == 0:
             return ""
         sign = "+" if coeff > 0 else "-"
@@ -373,6 +421,7 @@ def verify(response):
 
 # ── Topic dispatch table ──────────────────────────────────────────────────────
 
+# Maps a topic name from the topic graph to a generator callable.
 _TOPIC_DISPATCH = {
     "algebra_3var":         generate_math_problem_3var,
     "quadratics":           generate_quadratic_problem,
@@ -384,6 +433,13 @@ _TOPIC_DISPATCH = {
 
 def main():
     # Step 1: Validate input parameters, operational preconditions, and state
+    """CLI loop: keep the queue topped up with unique tasks.
+
+    Each iteration: throttle when the queue is full, ask the topic graph for the
+    least-covered topic, let the ActiveLearner veto topics that are mastered or
+    hopeless, generate, de-duplicate (up to 5 retries per topic) and write the
+    task atomically.
+    """
     parser = argparse.ArgumentParser(description="Agent 1 (Problem Generator) for Karl Self-Improvement Flywheel")
     parser.add_argument("--limit", type=int, default=100, help="Max number of tasks to generate (when infinite mode is off)")
     parser.add_argument("--infinite", action="store_true", help="Run indefinitely in an infinite loop")
@@ -391,6 +447,7 @@ def main():
     parser.add_argument("--buffer", type=int, default=15, help="Maximum number of pending tasks in the queue before throttling")
     args = parser.parse_args()
     
+    # Imported here so importing this module for its helpers does not need the app package.
     from app.utils.topic_graph import DynamicTopicGraph
 
     print(f"Starting Agent 1 (Problem Generator)...")
@@ -413,11 +470,13 @@ def main():
         except Exception:
             queue_files = []
 
+        # Back-pressure: do not outrun the curator.
         if len(queue_files) >= args.buffer:
             time.sleep(2.0)
             continue
 
         # Topic-aware category selection
+        # Choose the topic generated least often so far.
         topic = topic_graph.get_underrepresented_topic()
         
         # Check active learner's recommendation for ZPD throttling
@@ -428,6 +487,7 @@ def main():
             if not active_learner.should_generate(topic):
                 node = next((n for n in topic_graph.leaves if n.name == topic), None)
                 if node:
+                    # Undo the frequency count for a topic we did not actually emit, so it is not starved.
                     node.frequency = max(0, node.frequency - 1)
                 time.sleep(0.1)
                 continue
@@ -439,6 +499,7 @@ def main():
             print(f"Unknown topic '{topic}', skipping.")
             continue
 
+        # NOTE: an unknown topic above does "continue" with no sleep, so a bad topic name could busy-loop.
         task = generator()
         task["topic"] = topic
 
@@ -463,6 +524,7 @@ def main():
         _recent_statements.append(stmt)
 
         task_id = task["id"]
+        # Write to .tmp then rename: the curator only globs *.json, so it never sees partial files.
         temp_path  = os.path.join(QUEUE_DIR, f"task_{task_id}.tmp")
         final_path = os.path.join(QUEUE_DIR, f"task_{task_id}.json")
 
