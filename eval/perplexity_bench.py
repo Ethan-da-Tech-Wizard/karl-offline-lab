@@ -53,6 +53,8 @@ import numpy as np
 # Allow running as a script from any directory.
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
+# Imported at module level (unlike most of the app): this script is useless without llama.cpp,
+# so failing fast at import is clearer than a late error mid-benchmark.
 from llama_cpp import Llama
 from app.engine.model_loader import ModelLoader
 from core.hardware_scout import get_hardware_profile
@@ -64,6 +66,8 @@ MODELS_DIR   = "data/models"
 REPORT_PATH  = "data/quantization_comparison.json"
 # Context window for every model; must exceed eval_tokens so the whole eval text fits in one forward
 # pass.
+# Larger than DEFAULT_EVAL_TOKENS so prefix + generation both fit; raising it increases the
+# KV-cache VRAM that peak_vram_mb reports for every model.
 N_CTX        = 2048   # context window allocated for every benchmark model
 DEFAULT_EVAL_TOKENS = 512
 DEFAULT_GEN_TOKENS  = 200
@@ -73,6 +77,9 @@ DEFAULT_GEN_TOKENS  = 200
 # Fixed ~2 000-word technical text (no external download required).
 # Held constant across all models so perplexity scores are directly comparable.
 
+# The text is technical prose about the same topics Karl is used for; it is far shorter than a
+# standard perplexity corpus, so absolute numbers are NOT comparable with published wikitext
+# perplexities. Only the ranking between quantizations of the same model is meaningful.
 EVAL_TEXT = """\
 The transformer architecture has fundamentally reshaped natural language processing.
 At its core, the self-attention mechanism allows each token in a sequence to attend
@@ -182,6 +189,9 @@ def _query_free_vram_mb() -> float:
     try:
         # Execute guarded operations and establish recovery boundaries
         profile = get_hardware_profile()
+        # Free memory (not "used") is what hardware_scout reports, so footprint is derived as a
+        # difference of free memory before and after loading; unrelated GPU activity during the run
+        # will leak into the number.
         return sum(g.get("memory_free_mb", 0.0) for g in profile.get("gpu_list", []))
     except Exception:
         return 0.0
@@ -191,6 +201,8 @@ def _vram_used_since(free_before: float) -> float:
     """MB consumed relative to a prior free-memory baseline; 0.0 on failure."""
     # Step 1: Validate input parameters, operational preconditions, and state
     free_now = _query_free_vram_mb()
+    # Zero means "no GPU info", not "no memory used"; report 0.0 (unknown) rather than a
+    # misleading difference.
     if free_before <= 0.0 or free_now <= 0.0:
         return 0.0
     return round(max(0.0, free_before - free_now), 1)
@@ -238,6 +250,8 @@ def compute_perplexity(llm: Llama, eval_text: str, max_eval_tokens: int) -> floa
 
     # Teacher forcing: the model sees tokens[0..N-1] and each position is scored on predicting the
     # following token.
+    # One forward pass over the whole prefix is much cheaper than scoring token by token, and with
+    # logits_all=True the logits for every position are available afterwards.
     prefix = tokens[:-1]   # feed these to the model
     targets = tokens[1:]   # predict these at each position
 
@@ -251,6 +265,8 @@ def compute_perplexity(llm: Llama, eval_text: str, max_eval_tokens: int) -> floa
         llm.reset()
         return float("inf")
 
+    # Positions are laid out row-major in the logits buffer, so position i occupies
+    # [i * n_vocab, (i + 1) * n_vocab); the loop below relies on that.
     n_vocab   = llm.n_vocab()
     all_logits = llm.logits  # flat list: len = n_past * n_vocab
 
@@ -269,6 +285,8 @@ def compute_perplexity(llm: Llama, eval_text: str, max_eval_tokens: int) -> floa
     for i, target_id in enumerate(targets):
         # Iterate over items, evaluate loop invariant, and update progress
         start = i * n_vocab
+        # Softmax is recomputed per position in float32; O(N * n_vocab) work, acceptable at the
+        # default 512 tokens but slow for much larger --eval-tokens.
         probs = _softmax(all_logits[start : start + n_vocab])
 
         # Skip out-of-range ids defensively; they have no probability entry.
@@ -285,11 +303,15 @@ def compute_perplexity(llm: Llama, eval_text: str, max_eval_tokens: int) -> floa
     if not nlls:
         return float("inf")
 
+    # Skipped positions shrink the denominator, so a model with many skipped tokens is slightly
+    # flattered; with float32 softmax over normal vocab sizes this is rare.
     return round(math.exp(sum(nlls) / len(nlls)), 4)
 
 
 # ── Throughput measurement ────────────────────────────────────────────────────
 
+# A fixed seed prompt keeps prompt-processing cost identical across models, so differences in
+# tok/s come from the model and quantization.
 _THROUGHPUT_SEED = (
     "The following is a detailed technical explanation of how transformer-based "
     "language models perform autoregressive text generation:"
@@ -312,6 +334,8 @@ def measure_throughput(llm: Llama, gen_tokens: int) -> float:
         repeat_penalty=1.1,
         echo=False,
     )
+    # Elapsed includes prompt evaluation of the seed, so tok/s slightly understates pure decode
+    # speed; the same bias applies to every model, so comparisons stay fair.
     elapsed = time.perf_counter() - t0
 
     # Prefer the usage field; fall back to gen_tokens if unavailable.
@@ -336,6 +360,8 @@ def _release_model(llm: Llama | None) -> None:
             llm.close()
         except Exception:
             pass
+    # llama.cpp frees most GPU memory in close(); the explicit collect/empty_cache makes the
+    # next model's free-VRAM baseline accurate instead of including leftovers.
     gc.collect()
     try:
         # Execute guarded operations and establish recovery boundaries
@@ -361,6 +387,8 @@ def benchmark_model(
     filename = os.path.basename(model_path)
     file_gb  = round(os.path.getsize(model_path) / (1024 ** 3), 3)
     # Leave two cores for the OS and this process.
+    # cpu_count() counts logical cores, so on hyper-threaded CPUs this still oversubscribes
+    # physical cores a little; acceptable for a relative benchmark.
     threads  = max(1, multiprocessing.cpu_count() - 2)
 
     result: dict = {
