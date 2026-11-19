@@ -1684,24 +1684,30 @@ function _initChatInnerTabs() {
 
     // Insert all panels right after the section-head
     // Insert the new panels right under the section header; without one, fall back to prepending them.
+    // after() inserts siblings in order, so the final DOM order is: bar, chat, reasoning, swarm.
     if (sectionHead) {
         sectionHead.after(tabBar, chatPanel, reasoningPanel, swarmPanel);
     } else {
+        // prepend() puts its arguments in the given order, hence the reversed list to get the same final order.
         chatSection.prepend(swarmPanel, reasoningPanel, chatPanel, tabBar);
     }
 
     // ── Tab switching ──────────────────────────────────────────────────────────
+    // One delegated click handler per tab button; _switchChatInnerTab owns the show/hide logic.
     tabBar.querySelectorAll('.chat-inner-tab').forEach(btn => {
         btn.addEventListener('click', () => _switchChatInnerTab(btn.dataset.innerTab));
     });
 
     // ── Thoughts inline visibility toggle ─────────────────────────────────────
     // Button that hides/shows the inline reasoning box in the Chat panel.
+    // Only the inline box is hidden: the same text stays available in the Reasoning panel.
     const toggleBtn = $('thoughtsVisToggle');
     if (toggleBtn) {
         toggleBtn.addEventListener('click', () => {
+            // An empty style.display means "visible by stylesheet", so '' is the visible state and 'none' hidden.
             const hidden = thoughtsBox.style.display === 'none';
             thoughtsBox.style.display = hidden ? '' : 'none';
+            // toggle(name, force): the button looks active when the thoughts are visible.
             toggleBtn.classList.toggle('active', hidden);
         });
     }
@@ -1712,13 +1718,16 @@ function _initChatInnerTabs() {
  * @param {string} panelId
  */
 function _switchChatInnerTab(panelId) {
+    // The ids of the three panels created by _initChatInnerTabs; only one carries .active (CSS shows it).
     const panels = ['chatPanel', 'reasoningPanel', 'swarmPanel'];
     panels.forEach(id => {
         const el = $(id);
+        // classList.toggle with a boolean adds or removes the class in one call, without needing an if/else.
         if (el) el.classList.toggle('active', el.id === panelId);
     });
     const chatSection = $('workspace-chat');
     if (chatSection) {
+        // Keep the tab-button highlight in sync with the visible panel.
         chatSection.querySelectorAll('.chat-inner-tab').forEach(btn => {
             btn.classList.toggle('active', btn.dataset.innerTab === panelId);
         });
@@ -1728,15 +1737,18 @@ function _switchChatInnerTab(panelId) {
 // ── Logs workspace subtabs ────────────────────────────────────────────────────
 // Adds three subtabs (Swarm / Training / Eval) inside #workspace-logs,
 // wrapping the existing #terminal, #trainingLog, #evalLog into panels.
+// Idempotent like _initChatInnerTabs: the data attribute marks the logs area as already restructured.
 // Detail: existing log elements are moved into panels, guarded by a data attribute so it only happens once.
 function _initLogsSubtabs() {
     const logsSection = $('workspace-logs');
     if (!logsSection || logsSection.dataset.logsSubtabsReady) return;
+    // Missing log element means the HTML changed; skip rather than build a partial UI.
     logsSection.dataset.logsSubtabsReady = '1';
 
     const terminal    = $('terminal');
     const trainingLog = $('trainingLog');
     const evalLog     = $('evalLog');
+    // Remember the surrounding rows so the new sub-tabs can be inserted at the right spot.
     const actionRow   = logsSection.querySelector('.action-row');
     const sectionHead = logsSection.querySelector('.section-head');
     if (!terminal || !trainingLog || !evalLog) return;
@@ -1746,6 +1758,8 @@ function _initLogsSubtabs() {
     logsSection.querySelectorAll(':scope > .eyebrow').forEach(el => el.remove());
 
     // ── Subtab bar ────────────────────────────────────────────────────────────
+    // ── Subtab bar ────────────────────────────────────────────────────────────
+    // data-log-panel holds the id of the panel that button reveals (used in the click handler below).
     const subtabBar = document.createElement('div');
     subtabBar.className = 'log-subtabs';
     subtabBar.innerHTML = `
@@ -1754,6 +1768,8 @@ function _initLogsSubtabs() {
         <button class="log-subtab"        data-log-panel="evalLogPanel">Eval</button>
     `;
 
+    // Wrapping the existing <pre>/<div> elements (rather than cloning them) keeps ids and any code
+    // that appends to $('terminal'), $('trainingLog') or $('evalLog') working unchanged.
     // ── Panels ────────────────────────────────────────────────────────────────
     const swarmLogPanel = document.createElement('div');
     swarmLogPanel.id = 'swarmLogPanel';
@@ -1773,11 +1789,13 @@ function _initLogsSubtabs() {
     // Insert after action-row (or section-head as fallback)
     // Place the sub-tabs below the action row, or below the header if there is no action row.
     const insertRef = actionRow || sectionHead;
+    // Without a reference node there is nowhere sensible to place the sub-tabs, so leave the logs as-is.
     if (insertRef) {
         insertRef.after(subtabBar, swarmLogPanel, trainingLogPanel, evalLogPanel);
     }
 
     // ── Tab switching ─────────────────────────────────────────────────────────
+    // Click handler: clear all active tab buttons, activate the clicked one, then show only its panel.
     subtabBar.querySelectorAll('.log-subtab').forEach(btn => {
         btn.addEventListener('click', () => {
             subtabBar.querySelectorAll('.log-subtab').forEach(b => b.classList.remove('active'));
@@ -1791,8 +1809,13 @@ function _initLogsSubtabs() {
 }
 
 // ── Educational Sandbox Workspace ─────────────────────────────────────────────
+// ── Educational Sandbox Workspace ─────────────────────────────────────────────
+// A teaching feature: lets a learner see TF-IDF and a (simulated) Mini-GPT training run without
+// leaving the editor. Real training is requested over RPC; the animation is purely visual.
+// Interval handle for the fake training animation; kept so a second click can cancel the first run.
 // State for the educational Mini-GPT / TF-IDF simulations further below.
 let miniGptSimTimer = null;
+// Step counter used when the trainer prints loss without a step number.
 let currentMiniStep = 0;
 
 /**
@@ -1805,24 +1828,31 @@ let currentMiniStep = 0;
  */
 function fitTfidfVectorizer(documents) {
     // Very small stop-word list; only meant to keep the demo output readable.
+    // Deliberately tiny stop-word list: enough to hide the most common function words in a demo, not a
+    // replacement for scikit-learn's list.
     const stopWords = new Set(["the", "a", "an", "and", "or", "but", "is", "are", "was", "were", "to", "of", "in", "on", "at", "for", "with", "by", "about", "as"]);
     
+    // Tokeniser: lowercase, split on every non-alphanumeric run, drop one-letter words and stop words.
     function tokenize(text) {
         return text.toLowerCase()
             .split(/[^a-z0-9]+/)
             .filter(word => word.length >= 2 && !stopWords.has(word));
     }
     
+    // Tokenise once; the rest of the function works on these arrays.
     const tokenizedDocs = documents.map(doc => tokenize(doc));
+    // termDocCounts[word] = df, the number of documents containing the word (not the total count).
     const termDocCounts = {};
     
     tokenizedDocs.forEach(tokens => {
+        // A Set counts each word once per document, which is exactly the definition of document frequency.
         const uniqueTokens = new Set(tokens);
         uniqueTokens.forEach(word => {
             termDocCounts[word] = (termDocCounts[word] || 0) + 1;
         });
     });
     
+    // N = number of documents; the idf formula below needs it.
     const N = documents.length;
     const vocabulary = [];
     
@@ -1832,14 +1862,18 @@ function fitTfidfVectorizer(documents) {
         vocabulary.push({ word, df, idf });
     }
     
+    // Alphabetical order gives a stable table that does not change between runs.
     vocabulary.sort((a, b) => a.word.localeCompare(b.word));
     
+    // One vector per document, keyed by vocabulary word, so every vector has the same dimensions.
     const vectors = tokenizedDocs.map((tokens, docIdx) => {
+        // tf = raw term counts in this document.
         const tf = {};
         tokens.forEach(word => {
             tf[word] = (tf[word] || 0) + 1;
         });
         
+        // vector holds count * idf before normalisation; normSq accumulates the squared length.
         const vector = {};
         let normSq = 0;
         vocabulary.forEach(v => {
@@ -1851,10 +1885,12 @@ function fitTfidfVectorizer(documents) {
         });
         
         // L2 normalisation so that long documents do not dominate cosine similarity.
+        // L2 normalisation so that long documents do not dominate cosine similarity.
         const norm = Math.sqrt(normSq);
         const normVector = {};
         vocabulary.forEach(v => {
             const word = v.word;
+            // Guard against an all-zero vector (a document made only of stop words), which would divide by zero.
             normVector[word] = norm > 0 ? (vector[word] / norm) : 0;
         });
         
@@ -1871,11 +1907,13 @@ function fitTfidfVectorizer(documents) {
  * @param {string[]} docs
  */
 function renderVectorizerResults(vocabulary, vectors, docs) {
+    // Rebuild the table body from scratch on every fit.
     const vocabBody = $('vocabTable').querySelector('tbody');
     vocabBody.innerHTML = '';
     
     vocabulary.forEach(v => {
         const row = document.createElement('tr');
+        // Cells are right-aligned numbers except the word; the word is escaped because documents are user input.
         row.innerHTML = `
             <td style="text-align: left; padding: 4px; color: var(--karl-text);">${escapeHtml(v.word)}</td>
             <td style="text-align: right; padding: 4px; color: var(--karl-muted);">${v.df}</td>
@@ -1884,6 +1922,8 @@ function renderVectorizerResults(vocabulary, vectors, docs) {
         vocabBody.appendChild(row);
     });
     
+    // Build a plain-text listing: only non-zero terms are shown, since most entries of a sparse TF-IDF
+    // vector are zero and would drown the useful numbers.
     let vectorText = '';
     vectors.forEach((v, idx) => {
         vectorText += `Doc ${idx + 1}: "${escapeHtml(docs[idx])}"\n`;
@@ -1897,7 +1937,9 @@ function renderVectorizerResults(vocabulary, vectors, docs) {
         vectorText += `  Vector: [${nonZeroTerms.join(', ')}]\n\n`;
     });
     
+    // innerText (not innerHTML) is used because the text already contains escaped markup characters.
     $('tfidfVectors').innerText = vectorText;
+    // The output panel is hidden until the first successful fit.
     $('vectorizerOutput').style.display = 'block';
 }
 
@@ -1909,12 +1951,15 @@ function renderVectorizerResults(vocabulary, vectors, docs) {
  * @param {string} msg
  */
 function handleInterceptedTelemetry(msg) {
+    // Telemetry may arrive as non-strings (null params); ignore those.
     if (typeof msg !== 'string') return;
     
+    // The status panel exists only in the educational layout; do nothing when it is absent.
     const statusPanel = $('miniGptTrainingStatus');
     if (!statusPanel) return;
     statusPanel.style.display = 'block';
     
+    // Matches the trainer's log format, e.g. "Step 50 | Val Loss: 2.1234".
     // Matches the trainer's log format, e.g. "Step 50 | Val Loss: 2.1234".
     const stepLossRegex = /Step\s*(\d+)\s*\|\s*(?:Val\s+)?Loss:\s*([0-9.]+)/i;
     const match = msg.match(stepLossRegex);
@@ -1926,15 +1971,18 @@ function handleInterceptedTelemetry(msg) {
     }
     
     // Fallback for metrics printed as a dict/JSON fragment such as {'loss': 1.23}.
+    // Fallback for metrics printed as a dict/JSON fragment such as {'loss': 1.23}.
     const jsonLossRegex = /['"]loss['"]\s*:\s*([0-9.]+)/i;
     const jsonMatch = msg.match(jsonLossRegex);
     if (jsonMatch) {
         const loss = parseFloat(jsonMatch[1]);
+        // No step in the line, so count lines ourselves; currentMiniStep resets only on page reload.
         currentMiniStep++;
         updateMiniGptTelemetryUi(currentMiniStep, loss);
         return;
     }
     
+    // Sample text from the model. HTML tags are stripped and the rest is escaped before display.
     // Sample text from the model. HTML tags are stripped and the rest is escaped before display.
     if (msg.includes('Generation Output') || msg.includes('--- Generation')) {
         const cleanMsg = msg.replace(/<[^>]*>/g, '');
@@ -1942,6 +1990,7 @@ function handleInterceptedTelemetry(msg) {
         return;
     }
     
+    // Keyword filter so unrelated status_update messages (model loaded, etc.) do not flood the loss log.
     if (msg.includes('training') || msg.includes('Trainer') || msg.includes('Loss') || msg.includes('Epoch')) {
         const cleanMsg = msg.replace(/<[^>]*>/g, '');
         const entry = document.createElement('div');
@@ -1963,23 +2012,28 @@ function handleInterceptedTelemetry(msg) {
  * @param {number} lr
  */
 function startMiniGptSimulation(maxIters, lr) {
+    // Cancel a still-running animation before starting a new one, otherwise two timers would race.
     if (miniGptSimTimer) {
         clearInterval(miniGptSimTimer);
     }
     
+    // Make the sandbox panel visible and clear the previous run's log and sample text.
     $('miniGptTrainingStatus').style.display = 'block';
     $('miniLossHistory').innerHTML = '<div style="color: var(--karl-muted);">Local Simulation Active...</div>';
     $('miniTypewriterOutput').innerHTML = '';
     
     let step = 0;
+    // Start loss near 4.5 (about ln(vocab) for a fresh model) plus noise, like a real from-scratch run.
     let currentLoss = 4.5 + Math.random();
     
+    // Words used to compose the fake "generated" sentences; chosen to match Karl's theme.
     const sampleWords = [
         "karl", "agent", "local", "model", "training", "offline", "zero", "network", 
         "vector", "sandbox", "embeddings", "attention", "transformer", "weights", 
         "loss", "gradient", "optimization", "completion", "intelligence", "generation"
     ];
     
+    // 10-24 random words and a full stop: enough to look like a sentence.
     function generateTypewriterTokens() {
         const wordCount = 10 + Math.floor(Math.random() * 15);
         const sentence = [];
@@ -1989,24 +2043,29 @@ function startMiniGptSimulation(maxIters, lr) {
         return sentence.join(' ') + '.';
     }
     
+    // 500 ms tick advancing 5 steps: a 100-iteration demo lasts about 10 seconds.
     miniGptSimTimer = setInterval(() => {
         step += 5;
+        // Past the requested iteration count: stop the timer and print a completion line.
         if (step > maxIters) {
             clearInterval(miniGptSimTimer);
             miniGptSimTimer = null;
             const finalEntry = document.createElement('div');
             finalEntry.style.color = 'var(--karl-good)';
+            // Message is informational only; no file is actually written by the simulation.
             finalEntry.innerText = `[Simulation] Training complete. Saved to data/mini_gpt/weights.pt`;
             $('miniLossHistory').appendChild(finalEntry);
             return;
         }
         
         // Loss drifts down linearly by up to 3.0 over the run; the random term adds +/-0.2 jitter; never below 0.12.
+        // Loss drifts down linearly by up to 3.0 over the run; the random term adds +/-0.2 jitter; never below 0.12.
         const decay = (step / maxIters) * 3.0;
         currentLoss = Math.max(0.12, (4.5 - decay) + (Math.random() * 0.4 - 0.2));
         
         updateMiniGptTelemetryUi(step, currentLoss);
         
+        // Every 20 steps, show a new random "generated" sentence.
         // Every 20 steps, show a new random "generated" sentence.
         if (step % 20 === 0) {
             const text = generateTypewriterTokens();
@@ -2021,15 +2080,18 @@ function startMiniGptSimulation(maxIters, lr) {
  * @param {number} loss
  */
 function updateMiniGptTelemetryUi(step, loss) {
+    // Either element may be missing in a reduced layout; update whichever exists.
     const stepEl = $('miniCurrentStep');
     const lossEl = $('miniCurrentLoss');
     if (stepEl) stepEl.innerText = step;
     if (lossEl) lossEl.innerText = loss.toFixed(4);
     
     const entry = document.createElement('div');
+    // Green once the loss falls below 1.0, a rough "now learning" signal for beginners.
     entry.style.color = loss < 1.0 ? 'var(--karl-good)' : 'var(--karl-text)';
     entry.innerText = `Step ${step} | Loss: ${loss.toFixed(4)}`;
     
+    // Auto-scroll so the newest line is visible without manual scrolling.
     const logContainer = $('miniLossHistory');
     if (logContainer) {
         logContainer.appendChild(entry);
@@ -2044,15 +2106,19 @@ function updateMiniGptTelemetryUi(step, loss) {
  * @param {string} text
  */
 function streamTypewriterTokens(step, maxIters, text) {
+    // Missing container means the educational panel is not in this layout.
     const container = $('miniTypewriterOutput');
     if (!container) return;
     
+    // Heading line resets the area, so each sample replaces the previous one.
     container.innerHTML = `<div style="color: var(--karl-accent); border-bottom: 1px solid rgba(0, 194, 255, 0.1); margin-bottom: 4px; padding-bottom: 2px;">--- Step ${step} / ${maxIters} ---</div>`;
     
+    // Append characters to a span rather than rewriting innerHTML, which would restart the whole layout.
     const textSpan = document.createElement('span');
     container.appendChild(textSpan);
     
     let charIdx = 0;
+    // 20 ms per character (50 chars/s) imitates streaming tokens; the interval stops itself at the end.
     const interval = setInterval(() => {
         if (charIdx >= text.length) {
             clearInterval(interval);
@@ -2071,9 +2137,12 @@ function streamTypewriterTokens(step, maxIters, text) {
  * "Start training" sends ``start_mini_train`` (rpc id 61) and starts the local animation.
  */
 function _initEducationalSandbox() {
+    // Lookup is guarded: the buttons exist only when the sandbox panel is present in the HTML.
     const fitBtn = $('fitVectorizerBtn');
     const trainBtn = $('startMiniGptBtn');
     
+    // Fit button: validate input, tell the server, and also compute locally so the user sees results
+    // instantly even when the bridge is slow or the method is unavailable.
     if (fitBtn) {
         fitBtn.addEventListener('click', () => {
             const text = $('sandboxDocs').value.trim();
@@ -2081,14 +2150,17 @@ function _initEducationalSandbox() {
                 vscode.postMessage({ command: 'show_error', text: 'Please enter at least one document.' });
                 return;
             }
+            // One document per non-empty line.
             const docs = text.split('\n').map(d => d.trim()).filter(d => d.length > 0);
             if (docs.length === 0) {
                 vscode.postMessage({ command: 'show_error', text: 'Please enter valid non-empty documents.' });
                 return;
             }
             
+            // rpc id 60 -> fit_vectorizer (server-side scikit-learn); its reply is shown by karl_socket.js.
             rpc(60, 'fit_vectorizer', { documents: docs });
             
+            // Local computation is wrapped in try/catch so an exception in the demo cannot break the page.
             try {
                 const { vocabulary, vectors } = fitTfidfVectorizer(docs);
                 renderVectorizerResults(vocabulary, vectors, docs);
@@ -2098,22 +2170,27 @@ function _initEducationalSandbox() {
         });
     }
 
+    // Train button: reads hyperparameters with defaults (lr 0.001, 100 iterations, batch 16).
     if (trainBtn) {
         trainBtn.addEventListener('click', () => {
             const lr = parseFloat($('miniLr').value) || 0.001;
             const iters = parseInt($('miniIters').value) || 100;
             const batchSize = parseInt($('miniBatchSize').value) || 16;
             
+            // rpc id 61 -> start_mini_train launches the real trainer on the backend; log lines come back as
+            // auto_train_log / status_update notifications handled by handleInterceptedTelemetry.
             rpc(61, 'start_mini_train', {
                 lr: lr,
                 max_iters: iters,
                 batch_size: batchSize
             });
             
+            // The local animation runs immediately for feedback, even before the server answers.
             startMiniGptSimulation(iters, lr);
         });
     }
 
+    // Only patch if karl_socket.js defined the handler; this keeps karl.js loadable on its own.
     if (typeof handleSocketMessage === 'function') {
         // Wrap handleSocketMessage (monkey-patch): run the original handler, then also feed trainer log lines to the
         // sandbox display. This avoids editing karl_socket.js. It relies on the function being reassignable
@@ -2122,6 +2199,8 @@ function _initEducationalSandbox() {
         handleSocketMessage = function(data) {
             originalHandleSocketMessage(data);
             
+            // auto_train_log carries trainer stdout lines; status_update carries state messages. Both go through
+            // the same parser, which ignores lines it does not recognise.
             if (data && data.method === 'auto_train_log') {
                 const msg = (data.params && data.params.message) || '';
                 handleInterceptedTelemetry(msg);
@@ -2146,13 +2225,17 @@ window.addEventListener('DOMContentLoaded', () => {
  */
 function _renderCompletionDiagnostic(msg) {
     // Pick colours/text per crash type: SIGSEGV (warning, usually a CPU without AVX) or OOM kill (danger).
+    // Pick colours/text per crash type: SIGSEGV (warning, usually a CPU without AVX) or OOM kill (danger).
     const chatEl = $('chatMessages');
     if (!chatEl) return;
 
+    // reason values are produced by the extension host when the completion subprocess dies (exit code 139 or 137).
     const isSegv = msg.reason === 'sigsegv';
     const isOom  = msg.reason === 'oom';
 
+    // CSS custom properties (--karl-warn / --karl-danger) come from the theme, so the card follows light/dark.
     const accentVar   = isSegv ? 'var(--karl-warn)' : 'var(--karl-danger)';
+    // Inline SVG icons (no external assets, because the webview CSP forbids remote content).
     const iconSvg     = isSegv
         ? `<svg width="14" height="14" viewBox="0 0 16 16" fill="currentColor" style="vertical-align:-2px"><path d="M8 1a7 7 0 1 0 0 14A7 7 0 0 0 8 1zm0 3.5a.75.75 0 0 1 .75.75v3.5a.75.75 0 0 1-1.5 0v-3.5A.75.75 0 0 1 8 4.5zm0 7a.875.875 0 1 1 0-1.75.875.875 0 0 1 0 1.75z"/></svg>`
         : `<svg width="14" height="14" viewBox="0 0 16 16" fill="currentColor" style="vertical-align:-2px"><path d="M8 1a7 7 0 1 0 0 14A7 7 0 0 0 8 1zm3.53 4.47a.75.75 0 0 1 0 1.06L9.06 9l2.47 2.47a.75.75 0 0 1-1.06 1.06L8 10.06l-2.47 2.47a.75.75 0 0 1-1.06-1.06L6.94 9 4.47 6.53a.75.75 0 0 1 1.06-1.06L8 7.94l2.47-2.47a.75.75 0 0 1 1.06 0z"/></svg>`;
@@ -2169,6 +2252,7 @@ function _renderCompletionDiagnostic(msg) {
   <pre style="margin:0;padding:.4rem .55rem;background:rgba(0,0,0,.35);border-radius:4px;font-size:.75rem;color:var(--karl-good);overflow-x:auto;white-space:pre-wrap;word-break:break-all">CMAKE_ARGS="-DGGML_AVX=OFF -DGGML_AVX2=OFF" pip install --force-reinstall --no-cache-dir llama-cpp-python</pre>
 </div>` : '';
 
+    // Show raw exit details (code/signal) when known; '—' stands for "unknown".
     const exitMeta = (msg.exitCode != null || msg.exitSignal)
         ? `<div style="margin-top:.45rem;font-size:.7rem;opacity:.45;font-family:monospace">exit&nbsp;${msg.exitCode ?? '—'} &nbsp;·&nbsp; signal&nbsp;${escapeHtml(msg.exitSignal || '—')}</div>`
         : '';
@@ -2177,6 +2261,7 @@ function _renderCompletionDiagnostic(msg) {
     const card = document.createElement('div');
     card.className = 'message assistant';
     card.dataset.diagnosticType = calloutType;
+    // color-mix() tints the card background and border from the accent colour so one template serves both types.
     card.innerHTML = `
 <div style="
   background:color-mix(in srgb,${accentVar} 8%,var(--karl-panel,#1e1e2e) 92%);
@@ -2194,6 +2279,7 @@ function _renderCompletionDiagnostic(msg) {
   ${rebuildBlock}
   ${exitMeta}
 </div>`;
+    // Append and scroll to the bottom so the diagnostic is visible immediately.
     chatEl.appendChild(card);
     chatEl.scrollTop = chatEl.scrollHeight;
 }
