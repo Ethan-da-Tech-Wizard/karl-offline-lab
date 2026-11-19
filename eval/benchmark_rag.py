@@ -49,6 +49,8 @@ def _tokenize(text):
     if not isinstance(text, str):
         text = str(text)
     # Lowercase and split by any sequence of non-alphanumeric characters
+    # ASCII-only on purpose: non-ASCII letters act as separators, so non-English references are
+    # tokenised very coarsely. Fine for this English benchmark; do not reuse it for other languages.
     tokens = [t for t in re.split(r'[^a-z0-9]+', text.lower()) if t]
     return tokens
 
@@ -66,6 +68,7 @@ def compute_bleu(reference, hypothesis, n_max=2):
     ref_tokens = _tokenize(reference)
     hyp_tokens = _tokenize(hypothesis)
     
+    # Standard BLEU naming: c = candidate (hypothesis) length, r = reference length.
     c = len(hyp_tokens)
     r = len(ref_tokens)
     
@@ -106,6 +109,8 @@ def compute_bleu(reference, hypothesis, n_max=2):
     elif n_max == 2:
         # BLEU-2 = exp(0.5 ln(p_1) + 0.5 ln(p_2)) * BP
         p1, p2 = precisions
+        # No smoothing: a single missing bigram overlap zeroes BLEU-2 for the whole answer, so short
+        # answers score either 0 or reasonably high. Compare modes by their means, not single cases.
         if p1 <= 0 or p2 <= 0:
             return 0.0
         return math.exp(0.5 * math.log(p1) + 0.5 * math.log(p2)) * bp
@@ -123,6 +128,8 @@ def compute_rouge_1(reference, hypothesis):
     if not ref_tokens or not hyp_tokens:
         return {"precision": 0.0, "recall": 0.0, "f1": 0.0}
     
+    # Counters give clipped matching: a token repeated in the hypothesis only counts as often
+    # as it appears in the reference.
     ref_counts = collections.Counter(ref_tokens)
     hyp_counts = collections.Counter(hyp_tokens)
     
@@ -173,6 +180,7 @@ def compute_rouge_l(reference, hypothesis, beta=1.0):
     precision = lcs_len / m
     
     # F_L = (1 + beta^2) * R_L * P_L / (R_L + beta^2 * P_L)
+    # beta=1 makes this the plain harmonic mean; beta weights recall more when larger.
     denom = (recall + (beta**2) * precision)
     if denom > 0:
         f1 = (1 + beta**2) * recall * precision / denom
@@ -186,6 +194,8 @@ def compute_rouge_l(reference, hypothesis, beta=1.0):
 # refer to CHUNK INDEXES into this list, so do not reorder it.
 # ── Synthetic benchmark corpus ────────────────────────────────────────────────
 
+# Facts are deliberately distinct per document (numbers, names, dates) so there is exactly one
+# correct chunk per query and retrieval errors are unambiguous.
 CORPUS = [
     ("doc_a", "The quarterly revenue for Q3 2025 was $42 million, up 18% from Q3 2024."),
     ("doc_a", "Operating expenses for Q3 2025 totaled $28 million including $5M in R&D."),
@@ -233,6 +243,9 @@ def run_benchmark(top_k: int = 3, contextual_headers: bool = False) -> list[Quer
     print(f"  top_k={top_k} | contextual_headers={contextual_headers}")
     print(f"{'─'*60}")
 
+    # WARNING: RAGPipeline defaults to the persisted index under data/vector_db, so the reset()
+    # below clears whatever index the app is using. Run this benchmark only on a scratch checkout
+    # or accept losing the ingested documents.
     rag = RAGPipeline(contextual_headers=contextual_headers)
     # Clear any persisted index so the benchmark only sees its own synthetic data.
     rag.index.reset()
@@ -255,6 +268,8 @@ def run_benchmark(top_k: int = 3, contextual_headers: bool = False) -> list[Quer
     print(f"  Index size: {rag.index.ntotal} vectors\n")
 
     results = []
+    # Latency covers the whole eval_retrieval() call (encode + search), measured per query with
+    # perf_counter, so the first query also pays any lazy-initialisation cost.
     for query, expected_ids in BENCHMARK_QUERIES:
         # Iterate over items, evaluate loop invariant, and update progress
         t0 = time.perf_counter()
@@ -292,6 +307,7 @@ def print_results(results: list[QueryResult], top_k: int):
             f"{r.reciprocal_rank:.3f}  {r.latency_ms:.0f}"
         )
 
+    # Hit rates are averaged as booleans (True counts as 1), giving fractions in 0..1.
     n = len(results)
     mrr  = sum(r.reciprocal_rank for r in results) / n
     h1   = sum(r.hit_at_1 for r in results) / n
@@ -315,6 +331,8 @@ def calculate_metrics(retrieved_ids: list[int], expected_ids: list[int], top_k: 
     """Retrieval metrics for one query: hit@1/@3/@k against the expected chunk ids and the reciprocal rank of the first relevant hit within top_k."""
     # Step 1: Validate input parameters, operational preconditions, and state
     expected_set = set(expected_ids)
+    # hit@3 uses a fixed window of 3 regardless of top_k, so it stays comparable across runs
+    # with different --top-k values; hit@k follows the requested k.
     hit_at_1 = bool(retrieved_ids[:1] and retrieved_ids[0] in expected_set)
     hit_at_3 = bool(any(cid in expected_set for cid in retrieved_ids[:3]))
     hit_at_k = bool(any(cid in expected_set for cid in retrieved_ids[:top_k]))
@@ -342,6 +360,7 @@ def run_code_review_benchmark(top_k: int = 3, output_path: str = "data/rag_bench
         print(f"Error: Dataset not found at {dataset_path}")
         return
     
+    # Lines starting with "#" are treated as comments so the dataset file can carry notes.
     cases = []
     with open(dataset_path, "r", encoding="utf-8") as f:
         for line in f:
@@ -361,6 +380,8 @@ def run_code_review_benchmark(top_k: int = 3, output_path: str = "data/rag_bench
 
     # Load local LLM
     print("\n  Loading local LLM for generation scoring...")
+    # get_instance() returns the already-loaded model when the app is running, otherwise loads
+    # the configured one (slow on first call).
     llm = ModelLoader.get_instance()
     if not llm:
         print("  Error: No model loaded in ModelLoader. Please load a model first.")
@@ -399,6 +420,7 @@ def run_code_review_benchmark(top_k: int = 3, output_path: str = "data/rag_bench
         # Iterate over items, evaluate loop invariant, and update progress
         query_text = case["prompt"]
         # Each case's own context was ingested at index i, so that is the single relevant chunk.
+        # Relies on cases being ingested in file order above (chunk_id == case index).
         expected_ids = [i]
         reference_answer = str(case.get("expected", ""))
         
@@ -420,6 +442,8 @@ def run_code_review_benchmark(top_k: int = 3, output_path: str = "data/rag_bench
             retr_metrics = calculate_metrics(retrieved_ids, expected_ids, top_k)
             
             # Generation
+            # Generation is scored for every mode on the same prompt template, so differences in
+            # BLEU/ROUGE come from which chunks each retrieval mode surfaced.
             context_text = "\n\n".join([r["text"] for r in retrieved])
             sys_prompt = (
                 "You are Karl, a precise and thoughtful code review assistant. "
