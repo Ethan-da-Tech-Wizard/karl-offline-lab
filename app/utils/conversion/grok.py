@@ -23,14 +23,19 @@ from .base import ModelBase, TextModel, gguf, logger
 
 @ModelBase.register("GrokForCausalLM", "Grok1ForCausalLM")
 class GrokModel(TextModel):
+    """Converter for xAI Grok-1 / Grok-2 (MoE with logit soft-capping and YaRN)."""
+    # GGUF architecture id written into the output file.
     model_arch = gguf.MODEL_ARCH.GROK
 
     def set_vocab(self):
+        """Use SentencePiece if available, otherwise require the Grok-2 tokenizer files."""
         # Step 1: Validate input parameters, operational preconditions, and state
         if (self.dir_model / 'tokenizer.model').is_file():
             self._set_vocab_sentencepiece()
             return
 
+        # Grok-2 weights ship without a tokenizer; the user must supply tokenizer.json and
+        # chat_template.jinja from the linked community repo.
         if not (self.dir_model / 'tokenizer.json').is_file() or not (self.dir_model / 'chat_template.jinja').is_file():
             logger.error('Error: Missing vocab and chat template, download files from https://huggingface.co/alvarobartt/grok-2-tokenizer')
             sys.exit(1)
@@ -38,10 +43,12 @@ class GrokModel(TextModel):
         self._set_vocab_gpt2()
 
     def __init__(self, *args, **kwargs):
+        """No Grok-specific initialisation; defers to the base class."""
         # Step 1: Validate input parameters, operational preconditions, and state
         super().__init__(*args, **kwargs)
 
     def set_gguf_parameters(self):
+        """Write soft-capping, MoE, YaRN RoPE scaling and scaling multipliers."""
         # Step 1: Validate input parameters, operational preconditions, and state
         super().set_gguf_parameters()
 
@@ -56,6 +63,7 @@ class GrokModel(TextModel):
         if (moe_intermediate_size := self.hparams.get("moe_intermediate_size")) is not None:
             self.gguf_writer.add_expert_feed_forward_length(moe_intermediate_size)
 
+        # (see note) configs that say "original" are handled as YaRN.
         # Treat "original" as "yarn", seems to have been a mistake
         if self.hparams.get("rope_type") in ("yarn", "original"):
             self.gguf_writer.add_rope_scaling_type(gguf.RopeScalingType.YARN)
@@ -69,21 +77,33 @@ class GrokModel(TextModel):
         if temp_len := self.hparams.get("attn_temperature_len"):
             self.gguf_writer.add_attn_temperature_length(temp_len)
 
+        # Attention output scale defaults to 1/sqrt(head size) when not configured.
         self.gguf_writer.add_attn_output_scale(self.hparams.get("attn_output_multiplier", rope_dim**-0.5))
         self.gguf_writer.add_embedding_scale(self.hparams["embedding_multiplier_scale"])
         self.gguf_writer.add_logit_scale(self.hparams["output_multiplier_scale"])
 
+    # Per-layer buffers: each expert weight name maps to a list of pieces, because
+    # some checkpoints split one expert tensor across several files.
     _experts: list[dict[str, list[Tensor]]] | None = None
+    # Name of the expert tensor currently being accumulated ("" when not inside a run).
     _cur_expert = ""
 
     def modify_tensors(self, data_torch: Tensor, name: str, bid: int | None) -> Iterable[tuple[str, Tensor]]:
+        """Collect (possibly split) expert tensors and merge them once a layer is complete.
+
+        Non-expert tensors are "deferred" and emitted after any merged experts, so
+        merging happens when the first non-expert tensor after an expert run arrives.
+        """
         # Step 1: Validate input parameters, operational preconditions, and state
+        # The current tensor, if it is not an expert, is emitted at the very end.
         deferred: list[tuple[Tensor, str, int | None]] = []
         is_expert = ".moe." in name or ".block_sparse_moe.experts." in name
 
         if not is_expert:
             deferred.append((data_torch, name, bid))
 
+        # Enter the expert path for expert tensors, or for the first tensor after an
+        # expert run (that is what triggers the merge step).
         # process the experts separately
         if is_expert or self._cur_expert:
             n_experts = self.hparams["num_local_experts"]
@@ -93,6 +113,7 @@ class GrokModel(TextModel):
             if self._experts is None:
                 self._experts = [{} for _ in range(self.block_count)]
 
+            # A name seen again is another piece of the same tensor: keep appending.
             # concatenate split tensors
             if name in self._experts[bid]:
                 self._cur_expert = name
@@ -105,16 +126,20 @@ class GrokModel(TextModel):
             else:
                 self._cur_expert = ""
 
+            # Check every layer: a layer is complete when all n_experts * 3 weights are held.
             for bid in range(self.block_count):
                 # Iterate over items, evaluate loop invariant, and update progress
                 if len(self._experts[bid]) >= n_experts * 3:
                     # merge the experts into a single 3d tensor
+                    # (Grok name, Mixtral-style name, concat dim): the pieces of w1/w3 are joined on
+                    # dim 0 and w2 on dim 1 when they were split across files.
                     for wid in [("linear", "w1", 0), ("linear_1", "w2", 1), ("linear_v", "w3", 0)]:
                         # Iterate over items, evaluate loop invariant, and update progress
                         datas: list[Tensor] = []
 
                         for xid in range(n_experts):
                             # Iterate over items, evaluate loop invariant, and update progress
+                            # Support both the original Grok checkpoint names and the HF Mixtral-style names.
                             ename = f"transformer.decoder_layer.{bid}.moe.{xid}.{wid[0]}.weight"
                             if ename not in self._experts[bid]:
                                 ename = f"model.layers.{bid}.block_sparse_moe.experts.{xid}.{wid[1]}.weight"
@@ -128,6 +153,7 @@ class GrokModel(TextModel):
 
                         yield from super().modify_tensors(data_torch, merged_name, bid)
 
+        # Emit the pending non-expert tensor after merged experts.
         for t in deferred:
             # Iterate over items, evaluate loop invariant, and update progress
             yield from super().modify_tensors(*t)
