@@ -4,13 +4,15 @@
 #          dataset_merger / keychain / trace_logger fixes. Heavy optional
 #          dependencies (faiss, numpy, pymupdf, docx) are stubbed only when not installed.
 # ==============================================================================
+import importlib.util
 import sys
 from unittest import mock
 
+# find_spec() asks "is this package installed?" WITHOUT importing it. Importing the real
+# `fitz` shim emits a FutureWarning, and pytest.ini turns warnings into errors, so a plain
+# __import__ probe would fail collection on machines where PyMuPDF is installed.
 for _mod in ("faiss", "numpy", "pymupdf", "fitz", "docx"):
-    try:
-        __import__(_mod)
-    except ImportError:  # keep these tests runnable on machines without the ML stack
+    if importlib.util.find_spec(_mod) is None:  # keep these tests runnable without the ML stack
         sys.modules[_mod] = mock.MagicMock()
 
 from app.utils.rag_pipeline import RAGPipeline  # noqa: E402 (must come after the sys.modules mocks above)
