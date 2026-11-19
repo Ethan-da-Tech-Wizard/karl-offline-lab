@@ -7,44 +7,58 @@
 #          and contract compliance under tests.
 # ==============================================================================
 
+# Module under test: the training curator, which collects feedback examples (thumbs up/down,
+# corrections) in data/training/curated.jsonl and exports them for fine-tuning with Unsloth:
+# SFT (chat messages) and DPO (prompt/chosen/rejected). See docs/03_training_curator.md.
 import os
 import sys
 import json
 import shutil
 import tempfile
 
+# Repo root on sys.path so the module also runs standalone (see the __main__ block).
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
+# tc is imported as a module so the tests can redirect its module-level CURATED_PATH to a temp file.
 import app.utils.training_curator as tc
 from app.utils.training_curator import TrainingCurator
 
+# SFT path: save -> stats -> export -> delete. One test covers the whole lifecycle because each step
+# depends on the previous one's data.
 def test_curation_saving_and_sft_export():
     """The curator counts saved examples by source (thumbs_up and corrected), exports them as SFT JSONL containing only the system/user/assistant messages, and delete_example updates the totals."""
     print("Testing curator save & SFT export...")
     temp_dir = tempfile.mkdtemp()
     
+    # CURATED_PATH is a module global; redirecting it keeps the test away from the real dataset. The
+    # finally block restores it so later tests are unaffected.
     old_path = tc.CURATED_PATH
     tc.CURATED_PATH = os.path.join(temp_dir, "curated.jsonl")
     
     try:
         curator = TrainingCurator()
         
+        # Save a couple of examples, from two different feedback sources.
         # Save a couple of examples
         curator.save_example(prompt="User prompt 1", response="Karl response 1", source="thumbs_up", system_prompt="Sys 1")
         curator.save_example(prompt="User prompt 2", response="Karl response 2", source="corrected", system_prompt="Sys 2")
         
+        # Verify stats: totals are counted by source tag.
         # Verify stats
         stats = curator.get_stats()
         assert stats["total"] == 2
         assert stats["thumbs_up"] == 1
         assert stats["corrected"] == 1
         
+        # Export SFT format: the return value is the path that was written.
         # Export SFT format
         export_file = os.path.join(temp_dir, "export_sft.jsonl")
         res_path = curator.export_unsloth(export_file)
         assert res_path == export_file
         assert os.path.exists(export_file)
         
+        # Verify SFT structure (only the 'messages' field): Unsloth's chat trainer expects exactly
+        # [{system}, {user}, {assistant}] per row and no extra keys.
         # Verify SFT structure (only the 'messages' field)
         with open(export_file, "r") as f:
             lines = f.readlines()
@@ -60,6 +74,7 @@ def test_curation_saving_and_sft_export():
         assert ex1["messages"][2]["role"] == "assistant"
         assert ex1["messages"][2]["content"] == "Karl response 1"
         
+        # Test deletion: the index refers to the position in the curated file.
         # Test deletion
         curator.delete_example(0)
         assert curator.get_stats()["total"] == 1
@@ -69,6 +84,8 @@ def test_curation_saving_and_sft_export():
         tc.CURATED_PATH = old_path
         shutil.rmtree(temp_dir)
 
+# DPO needs preference pairs. A pair exists only when a positive example (thumbs_up or corrected)
+# and a thumbs_down share the same system and user prompt; singletons carry no preference signal.
 def test_curator_dpo_pairing():
     """DPO export pairs chosen and rejected answers that share the same system and user prompt (two pairs) and ignores unmatched entries."""
     print("Testing curator DPO pairing...")
@@ -80,38 +97,47 @@ def test_curator_dpo_pairing():
     try:
         curator = TrainingCurator()
         
+        # Add a matching pair (chosen + rejected).
         # Add a matching pair (chosen + rejected)
         curator.save_example(prompt="prompt A", response="chosen A", source="thumbs_up", system_prompt="sys A")
         curator.save_example(prompt="prompt A", response="rejected A", source="thumbs_down", system_prompt="sys A")
         
+        # Add another matching pair; "corrected" counts as a positive source here.
         # Add another matching pair
         curator.save_example(prompt="prompt B", response="chosen B", source="corrected", system_prompt="sys B")
         curator.save_example(prompt="prompt B", response="rejected B", source="thumbs_down", system_prompt="sys B")
         
+        # Add unmatched entries: these must be ignored, otherwise DPO would train on fake preferences.
         # Add unmatched entries
         curator.save_example(prompt="unmatched chosen", response="chosen C", source="thumbs_up", system_prompt="sys C")
         curator.save_example(prompt="unmatched rejected", response="rejected D", source="thumbs_down", system_prompt="sys D")
         
+        # Export DPO.
         # Export DPO
         export_file = os.path.join(temp_dir, "export_dpo.jsonl")
         res_path = curator.export_dpo(export_file)
         assert res_path == export_file
         
+        # Read pairs.
         # Read pairs
         pairs = []
         with open(export_file, "r") as f:
             for line in f:
                 pairs.append(json.loads(line.strip()))
                 
+        # Expect 2 pairs.
         # Expect 2 pairs
         assert len(pairs) == 2, f"Expected 2 pairs, got {len(pairs)}"
         
+        # Validate values of first pair. TRL's conversational DPO format stores prompt as a message list
+        # ([system, user]), and chosen/rejected as a one-message assistant list.
         # Validate values of first pair
         p1 = [p for p in pairs if p["prompt"][1]["content"] == "prompt A"][0]
         assert p1["chosen"][0]["content"] == "chosen A"
         assert p1["rejected"][0]["content"] == "rejected A"
         assert p1["prompt"][0]["content"] == "sys A"
         
+        # Validate values of second pair.
         # Validate values of second pair
         p2 = [p for p in pairs if p["prompt"][1]["content"] == "prompt B"][0]
         assert p2["chosen"][0]["content"] == "chosen B"
@@ -123,12 +149,15 @@ def test_curator_dpo_pairing():
         tc.CURATED_PATH = old_path
         shutil.rmtree(temp_dir)
 
+# Manual runner: python tests/test_training_curator.py
 if __name__ == "__main__":
     test_curation_saving_and_sft_export()
     test_curator_dpo_pairing()
     print("All training curator unit tests PASSED!")
 
 
+# Regression: export_unsloth balances categories (so math does not drown out code) and used to print
+# the count before balancing. The user-facing message must match the file contents.
 def test_export_reports_balanced_count_after_balancing():
     """export_unsloth used to print the pre-balancing count; it must report what was actually written."""
     import contextlib
@@ -139,9 +168,12 @@ def test_export_reports_balanced_count_after_balancing():
     try:
         curator = TrainingCurator()
         # Three arithmetic examples and one coding one: balancing cuts every category to the smallest (1 each).
+        # So 4 saved examples yield 2 exported rows.
+        # Three arithmetic examples and one coding one: balancing cuts every category to the smallest (1 each).
         for i in range(3):
             curator.save_example(prompt=f"What is {i}+{i}?", response=f"The answer is {2 * i}.", source="thumbs_up", system_prompt="S")
         curator.save_example(prompt="Write python code to add two numbers", response="def solve(a, b): return a + b", source="thumbs_up", system_prompt="S")
+        # Capture stdout to read the "Exported N examples" message.
         out = os.path.join(temp_dir, "sft.jsonl")
         buf = io.StringIO()
         with contextlib.redirect_stdout(buf):
