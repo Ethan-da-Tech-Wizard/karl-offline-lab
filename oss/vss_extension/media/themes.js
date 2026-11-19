@@ -19,6 +19,7 @@
  */
 window.KARL_THEMES = [
     {
+        // Default theme: listed first because themeById() falls back to themes[0] for unknown ids.
         id: "obsidian-core",
         name: "Karl Obsidian Core",
         description: "Black-navy command glass with cyan-white tracing, the canonical Karl control-room signal.",
@@ -32,24 +33,31 @@ window.KARL_THEMES = [
         vars: { "--karl-bg": "#020b1d", "--karl-panel": "#06162d", "--karl-panel-hi": "#0a2a4f", "--karl-border": "#145da0", "--karl-accent": "#20d6ff", "--karl-accent-2": "#dff9ff", "--karl-good": "#7cf7bd", "--karl-warn": "#ffd166", "--karl-danger": "#ff6b8b" }
     },
     {
+        // Green-on-black; --karl-good is deliberately close to the accent so "ok" status blends in
+        // rather than competing with it.
         id: "matrix-verdant",
         name: "Matrix Verdant",
         description: "Emerald terminal rain over black glass, built for code archaeology, search, and high-signal debugging.",
         vars: { "--karl-bg": "#020704", "--karl-panel": "#04110a", "--karl-panel-hi": "#062616", "--karl-border": "#0b7a3b", "--karl-accent": "#00ff88", "--karl-accent-2": "#c8ffe1", "--karl-good": "#83ff9f", "--karl-warn": "#d8ff6e", "--karl-danger": "#ff5f6d" }
     },
     {
+        // Near-white accent on a graphite base: the highest-contrast of the cool themes, with the
+        // blue only used on borders and --karl-accent-2.
         id: "white-lightning",
         name: "White Lightning Lab",
         description: "Graphite-black lab surfaces cut by white-blue arcs and surgical active states.",
         vars: { "--karl-bg": "#05070b", "--karl-panel": "#0d1117", "--karl-panel-hi": "#1b2430", "--karl-border": "#6aa8ff", "--karl-accent": "#f4fbff", "--karl-accent-2": "#89d7ff", "--karl-good": "#9ff7d3", "--karl-warn": "#ffe08a", "--karl-danger": "#ff7d8f" }
     },
     {
+        // Magenta lives only in --karl-accent-2 so it stays a secondary highlight and never reads
+        // as an error (errors use the pink-red --karl-danger).
         id: "neon-circuit",
         name: "Neon Circuit",
         description: "Cyan traces and restrained magenta edge-lighting for fast, high-energy implementation work.",
         vars: { "--karl-bg": "#080614", "--karl-panel": "#101125", "--karl-panel-hi": "#1a1f3d", "--karl-border": "#0fb7ff", "--karl-accent": "#00e5ff", "--karl-accent-2": "#ff6bff", "--karl-good": "#72f5a4", "--karl-warn": "#ffd166", "--karl-danger": "#ff5c93" }
     },
     {
+        // Lightest panels of the set; border and accent are pale to cut glare in bright rooms.
         id: "arctic-mainframe",
         name: "Arctic Mainframe",
         description: "Icy blue-gray panels, clean white signals, and low-glare technical calm.",
@@ -68,12 +76,16 @@ window.KARL_THEMES = [
         vars: { "--karl-bg": "#021112", "--karl-panel": "#061c1f", "--karl-panel-hi": "#0b3438", "--karl-border": "#14b8a6", "--karl-accent": "#2dd4bf", "--karl-accent-2": "#ccfbf1", "--karl-good": "#86efac", "--karl-warn": "#facc15", "--karl-danger": "#fb7185" }
     },
     {
+        // Amber accent overlaps with --karl-warn, so warnings here are distinguished by lightness
+        // rather than hue.
         id: "solar-flare",
         name: "Solar Flare Dark",
         description: "Dark reactor housing with amber-gold flare accents for alert-heavy operations.",
         vars: { "--karl-bg": "#100804", "--karl-panel": "#1b1008", "--karl-panel-hi": "#33200c", "--karl-border": "#c47a1b", "--karl-accent": "#ffb703", "--karl-accent-2": "#fff3b0", "--karl-good": "#9ef01a", "--karl-warn": "#ffd166", "--karl-danger": "#ff5a5f" }
     },
     {
+        // Red is the accent, so --karl-danger is pushed to a more saturated red (#ff1744) to stay
+        // distinguishable from ordinary highlights.
         id: "red-team",
         name: "Red Team Ops",
         description: "Black, crimson, and white security-console styling for audits and threat-minded reviews.",
@@ -104,6 +116,8 @@ window.KARL_THEMES = [
         vars: { "--karl-bg": "#0b0615", "--karl-panel": "#130d26", "--karl-panel-hi": "#221445", "--karl-border": "#7c3aed", "--karl-accent": "#22d3ee", "--karl-accent-2": "#f0abfc", "--karl-good": "#86efac", "--karl-warn": "#fde047", "--karl-danger": "#fb7185" }
     },
     {
+        // Only the blue --karl-accent-2 carries hue; status colours are pale tints so text stays the
+        // focus.
         id: "monochrome-signal",
         name: "Monochrome Signal",
         description: "Black, white, and blue minimalism for maximum text clarity and command focus.",
@@ -116,6 +130,8 @@ window.KARL_THEMES = [
         vars: { "--karl-bg": "#03100a", "--karl-panel": "#0a1b12", "--karl-panel-hi": "#12321f", "--karl-border": "#15803d", "--karl-accent": "#34d399", "--karl-accent-2": "#d1fae5", "--karl-good": "#86efac", "--karl-warn": "#bef264", "--karl-danger": "#fb7185" }
     },
     {
+        // Status colours here use the saturated mid-tones (green-500/amber-500/red-500 style) rather
+        // than pastel tints, for strong operational contrast.
         id: "storm-grid",
         name: "Storm Grid",
         description: "Slate storm panels, blue lightning edges, and strong operational contrast.",
@@ -128,12 +144,15 @@ window.KARL_THEMES = [
         vars: { "--karl-bg": "#090b13", "--karl-panel": "#111827", "--karl-panel-hi": "#24223b", "--karl-border": "#06b6d4", "--karl-accent": "#22d3ee", "--karl-accent-2": "#fb923c", "--karl-good": "#4ade80", "--karl-warn": "#facc15", "--karl-danger": "#fb7185" }
     },
     {
+        // Status colours are intentionally dim (low-distraction): check contrast before reusing
+        // them for small text.
         id: "stealth-operator",
         name: "Stealth Operator",
         description: "Charcoal tactical UI with muted blue signals for low-distraction execution.",
         vars: { "--karl-bg": "#05080c", "--karl-panel": "#0d1218", "--karl-panel-hi": "#171f29", "--karl-border": "#334155", "--karl-accent": "#3b82f6", "--karl-accent-2": "#93c5fd", "--karl-good": "#65a30d", "--karl-warn": "#ca8a04", "--karl-danger": "#dc2626" }
     },
     {
+        // Highest-intensity theme: white accent-2 and the brightest cyan border. Last in the list.
         id: "god-mode-cyan",
         name: "God Mode Cyan",
         description: "Maximum Karl intensity: bright cyan tracing, white-hot active states, and command-center contrast.",
@@ -148,6 +167,9 @@ window.KARL_THEMES = [
  * rearrange the panels for that layout.
  * @type {Array<{id: string, name: string, description: string}>}
  */
+// Order matters: layoutById() falls back to the first entry ("cockpit") for unknown ids, and
+// the dropdown lists layouts in this order. Layouts restyle via body[data-layout="<id>"]
+// rules in karl.css, so a layout with no matching rules looks the same as the default.
 window.KARL_LAYOUTS = [
     { id: "cockpit", name: "Cockpit", description: "Balanced command layout for everyday Karl work." },
     { id: "review-bay", name: "Review Bay", description: "Prioritizes pending file changes, previews, and safe apply/reject decisions." },
