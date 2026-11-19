@@ -11,6 +11,7 @@
 # a background thread; the tab also offers quick SFT/DPO export buttons.
 
 import os
+import sys
 import json
 
 from PyQt6.QtWidgets import (
@@ -261,8 +262,13 @@ class FlywheelTab(QWidget):
             # Execute guarded operations and establish recovery boundaries
             path = os.path.abspath("data/training")
             os.makedirs(path, exist_ok=True)
-            # xdg-open exists on Linux desktops only; on other platforms this raises and shows the warning below.
-            subprocess.Popen(["xdg-open", path])
+            # Each OS has a different "open in file manager" entry point.
+            if sys.platform == "win32":
+                os.startfile(path)  # type: ignore[attr-defined]  # Windows-only API
+            elif sys.platform == "darwin":
+                subprocess.Popen(["open", path])
+            else:
+                subprocess.Popen(["xdg-open", path])
         except Exception as e:
             QMessageBox.warning(self, "Error", f"Failed to open folder: {e}")
 

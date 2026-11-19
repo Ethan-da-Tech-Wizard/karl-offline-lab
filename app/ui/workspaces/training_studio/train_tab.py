@@ -560,6 +560,11 @@ class TrainTab(QWidget):
             self._deps_lbl.setObjectName("lbl-green")
             self._train_btn.setEnabled(True)
 
+        # Qt does not re-evaluate id selectors when objectName changes after creation,
+        # so re-polish the label to make the new red/green style take effect.
+        self._deps_lbl.style().unpolish(self._deps_lbl)
+        self._deps_lbl.style().polish(self._deps_lbl)
+
     def _begin_training(self):
         """Validate everything, free the GPU and start the TrainingThread."""
         # Step 1: Validate input parameters, operational preconditions, and state
