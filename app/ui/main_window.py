@@ -41,6 +41,8 @@ from app.ui.workspaces.flywheel_studio import FlywheelStudioWorkspace
 logger = logging.getLogger("karl.main_window")
 
 
+# Worker thread: model loading blocks for seconds (disk/VRAM), so it must never
+# run on the GUI thread or the window would freeze at startup.
 class _ModelInitThread(QThread):
     """Loads the active model off the UI thread at startup."""
 
@@ -48,6 +50,12 @@ class _ModelInitThread(QThread):
     failed = pyqtSignal(str)
 
     def run(self):
+        """Load (or reuse) the singleton model and report the outcome via signals.
+
+        The ModelLoader is a process-wide singleton, so calling get_instance() here
+        warms it for every later consumer. Errors are converted to short status
+        strings because signals cross threads and must not raise.
+        """
         # Step 1: Validate input parameters, operational preconditions, and state
         from app.engine.model_loader import ModelLoader
         try:
@@ -62,6 +70,8 @@ class _ModelInitThread(QThread):
             self.failed.emit(f"model load failed: {exc}")
 
 
+# The top-level window. It owns the single AppState shared by every workspace
+# and wires workspace signals to the status bar, theme engine and sidebar.
 class MainWindow(QMainWindow):
     """Top-level PyQt shell that routes the sidebar to workspace widgets."""
 
@@ -90,12 +100,19 @@ class MainWindow(QMainWindow):
         QTimer.singleShot(0, self._init_websocket_server)
 
     def _setup_shortcuts(self):
+        """Register all global keyboard shortcuts on the main window.
+
+        QShortcut objects are stored on self so they are not garbage collected
+        (a collected QShortcut silently stops firing).
+        """
         # Open Command Palette
         self._palette_shortcut_k = QShortcut(QKeySequence("Ctrl+K"), self)
         self._palette_shortcut_k.activated.connect(self._open_command_palette)
         self._palette_shortcut_p = QShortcut(QKeySequence("Ctrl+P"), self)
         self._palette_shortcut_p.activated.connect(self._open_command_palette)
         
+        # Ctrl+1..9 map to workspaces 0..8 and Ctrl+0 maps to the tenth (index 9),
+        # matching the sidebar order built in _build_ui.
         # Workspace switching (Ctrl+1 to Ctrl+0)
         self._workspace_shortcuts = []
         for idx in range(10):
@@ -135,67 +152,99 @@ class MainWindow(QMainWindow):
         self._hud_context_shortcut.activated.connect(self._workbench.toggle_context_panel)
 
     def _make_workspace_switcher(self, idx):
+        """Return a zero-argument callable that switches to workspace `idx`.
+
+        A factory is used instead of an inline lambda in the loop so each shortcut
+        binds its own idx rather than the loop variable's final value.
+        """
         # Step 1: Validate input parameters, operational preconditions, and state
         return lambda: self.switch_workspace(idx)
 
     def switch_workspace(self, index: int) -> None:
+        """Select workspace `index` through the sidebar.
+
+        Going through the sidebar (not the stack) keeps the highlighted button and
+        the visible page in sync; the sidebar emits workspace_changed.
+        """
         # Step 1: Validate input parameters, operational preconditions, and state
         self._sidebar.select(index)
 
     def start_new_workbench_session(self) -> None:
+        """Jump to the Workbench (index 0) and start a fresh chat session."""
         # Step 1: Validate input parameters, operational preconditions, and state
         self.switch_workspace(0)
         self._workbench.new_session()
 
     def save_workbench_session(self) -> None:
+        """Jump to the Workbench (index 0) and save the current chat session."""
         # Step 1: Validate input parameters, operational preconditions, and state
         self.switch_workspace(0)
         self._workbench.save_current_session()
 
     def toggle_workbench_rag(self) -> None:
+        """Jump to the Workbench and toggle the RAG (retrieval) pipeline."""
         # Step 1: Validate input parameters, operational preconditions, and state
         self.switch_workspace(0)
         self._workbench.toggle_rag_pipeline()
 
     def toggle_workbench_agentic_loop(self) -> None:
+        """Jump to the Workbench and toggle the agentic tool loop."""
         # Step 1: Validate input parameters, operational preconditions, and state
         self.switch_workspace(0)
         self._workbench.toggle_agentic_loop()
 
     def open_knowledge_ingest(self) -> None:
+        """Jump to the Knowledge Base (index 2) and open its ingest dialog."""
         # Step 1: Validate input parameters, operational preconditions, and state
         self.switch_workspace(2)
         self._knowledge_base.open_ingest_dialog()
 
     def rebuild_knowledge_index(self) -> None:
+        """Jump to the Knowledge Base (index 2) and rebuild its search index."""
         # Step 1: Validate input parameters, operational preconditions, and state
         self.switch_workspace(2)
         self._knowledge_base.rebuild_index()
 
     def run_eval_suite(self) -> None:
+        """Jump to the Eval Suite (index 5) and start a run."""
         # Step 1: Validate input parameters, operational preconditions, and state
         self.switch_workspace(5)
         self._eval.run_suite()
 
     def open_system_defaults(self) -> None:
+        """Jump to System Config (index 7) and show its Defaults tab."""
         # Step 1: Validate input parameters, operational preconditions, and state
         self.switch_workspace(7)
         self._system.show_defaults_tab()
 
     def _open_command_palette(self):
+        """Show the modal command palette (Ctrl+K / Ctrl+P).
+
+        Imported lazily so the palette module is only loaded when first used.
+        """
         # Step 1: Validate input parameters, operational preconditions, and state
         from app.ui.widgets.command_palette import CommandPalette
         palette = CommandPalette(self, self)
         palette.exec()
 
     def _focus_active_input(self):
+        """Give keyboard focus to the most relevant text input of the current workspace.
+
+        Strategy, in order: the workspace's own focus_primary_input() hook, a list
+        of well-known input attribute names, then the first editable line/text edit
+        found by a generic widget-tree search.
+        """
         # Step 1: Validate input parameters, operational preconditions, and state
+        # Nothing to focus if the stack is empty.
         current_widget = self._stack.currentWidget()
         if not current_widget:
             return
+        # Workspaces may expose an explicit hook; trust it when it reports success.
         focus_primary = getattr(current_widget, "focus_primary_input", None)
         if callable(focus_primary) and focus_primary():
             return
+        # Known primary-input attribute names used across the different workspaces.
+        # Only a visible, enabled widget may take focus.
         for attr in (
             "_input",
             "_user_edit",
@@ -212,6 +261,7 @@ class MainWindow(QMainWindow):
             if inp is not None and inp.isVisible() and inp.isEnabled():
                 inp.setFocus()
                 return
+        # Fallback: scan the widget tree for any editable text field.
         from PyQt6.QtWidgets import QLineEdit, QTextEdit
         inputs = current_widget.findChildren((QLineEdit, QTextEdit))
         for inp in inputs:
@@ -223,6 +273,9 @@ class MainWindow(QMainWindow):
     # ── build ─────────────────────────────────────────────────────────────────
 
 
+    # Workspace order here is load-bearing: it must match the sidebar item order
+    # and the Ctrl+N shortcuts and the hard-coded indices in switch_workspace
+    # callers (e.g. 0 workbench, 2 knowledge base, 5 eval, 7 system config).
     def _build_ui(self):
         """Instantiate sidebar, status bar, and the ordered workspace stack."""
         # Sidebar + stack row
@@ -237,6 +290,8 @@ class MainWindow(QMainWindow):
         self._stack = QStackedWidget()
         content_layout.addWidget(self._stack, 1)
 
+        # All workspaces share one AppState so they stay consistent without
+        # knowing about each other.
         # Create workspaces
         self._workbench      = WorkbenchWorkspace(self._state)
         self._prompt_lab     = PromptLabWorkspace(self._state)
@@ -278,14 +333,18 @@ class MainWindow(QMainWindow):
         self.setCentralWidget(wrapper)
 
     def resizeEvent(self, event):
+        """Collapse the sidebar to icons when the window is narrower than 850 px."""
         # Step 1: Validate input parameters, operational preconditions, and state
         super().resizeEvent(event)
+        # resizeEvent can fire during construction before the sidebar exists.
         if hasattr(self, "_sidebar"):
             self._sidebar.set_compact(event.size().width() < 850)
 
     def _connect_signals(self):
+        """Connect workspace/state signals to the status bar, sidebar and theme code."""
         # Step 1: Validate input parameters, operational preconditions, and state
         self._sidebar.workspace_changed.connect(self._stack.setCurrentIndex)
+        # Defer focus by one event-loop tick so the new page is actually visible first.
         self._stack.currentChanged.connect(lambda _idx: QTimer.singleShot(0, self._focus_active_input))
         self._workbench.status_changed.connect(self._on_status_changed)
         self._workbench.model_changed.connect(self._status_bar.set_model)
@@ -300,6 +359,7 @@ class MainWindow(QMainWindow):
         self._state.change_workspace_requested.connect(self._sidebar.select)
 
     def _setup_autosave_checkpoint_timer(self):
+        """Start a 60 second timer that checkpoints in-flight work for crash recovery."""
         # Step 1: Validate input parameters, operational preconditions, and state
         self._autosave_checkpoint_timer = QTimer(self)
         self._autosave_checkpoint_timer.setInterval(60_000)
@@ -307,6 +367,11 @@ class MainWindow(QMainWindow):
         self._autosave_checkpoint_timer.start()
 
     def _autosave_active_checkpoint(self):
+        """Persist a recovery checkpoint, but only while something is actually running.
+
+        Idle sessions are skipped so we do not rewrite the file needlessly; failures
+        are logged and swallowed because autosave must never crash the app.
+        """
         # Step 1: Validate input parameters, operational preconditions, and state
         thread = getattr(self._workbench, "_thread", None)
         chat_running = bool(thread and thread.isRunning())
@@ -332,6 +397,10 @@ class MainWindow(QMainWindow):
             logger.warning("Autosave checkpoint failed: %s", exc)
 
     def _check_autosave_recovery(self):
+        """On startup, offer to restore a leftover checkpoint from a crashed session.
+
+        The checkpoint is always cleared afterwards so the prompt is shown once.
+        """
         # Step 1: Validate input parameters, operational preconditions, and state
         try:
             # Execute guarded operations and establish recovery boundaries
@@ -344,6 +413,7 @@ class MainWindow(QMainWindow):
             return
 
         from PyQt6.QtCore import QCoreApplication
+        # Under tests there is no human to answer the dialog, so restore silently.
         if QCoreApplication.instance() and QCoreApplication.instance().property("is_test"):
             try:
                 # Execute guarded operations and establish recovery boundaries
@@ -368,9 +438,15 @@ class MainWindow(QMainWindow):
             self._state.memory.clear_autosave_checkpoint()
 
     def _restore_autosave_checkpoint(self, checkpoint: dict):
+        """Rebuild the Workbench chat, model settings and workspace from a checkpoint.
+
+        Supports both the new format (a serialised SessionTree under "root") and
+        the legacy flat chat_history list of message dicts.
+        """
         # Step 1: Validate input parameters, operational preconditions, and state
         from app.utils.session_tree import SessionTree
 
+        # Prefer the tree format; fall back to the legacy flat history key.
         raw_tree = checkpoint.get("session_tree") or checkpoint.get("chat_history")
         if isinstance(raw_tree, dict) and "root" in raw_tree:
             tree = SessionTree.from_dict(raw_tree)
@@ -384,6 +460,7 @@ class MainWindow(QMainWindow):
                     attachments=msg.get("attachments"),
                 )
 
+        # A restored session is not tied to a saved file, so detach the session ids.
         self._workbench.chat_history = tree
         self._workbench._session_id = None
         self._workbench._current_session_file = None
@@ -400,6 +477,7 @@ class MainWindow(QMainWindow):
             self._state.adapter_name = model_settings.get("adapter_name")
             self._status_bar.set_adapter(model_settings.get("adapter_name"))
 
+        # Re-render the visible conversation from the active branch of the tree.
         active_path = tree.get_active_path()
         if hasattr(self._workbench, "_chat_view"):
             self._workbench._chat_view.clear_display()
@@ -413,11 +491,13 @@ class MainWindow(QMainWindow):
         if hasattr(self._workbench, "_refresh_sessions"):
             self._workbench._refresh_sessions()
 
+        # Return to the workspace the user was on, if the saved index is still valid.
         active_workspace = checkpoint.get("active_workspace")
         if isinstance(active_workspace, int) and 0 <= active_workspace < self._stack.count():
             self._sidebar.select(active_workspace)
 
     def _init_model(self):
+        """Start the background model load unless one is already running."""
         # Step 1: Validate input parameters, operational preconditions, and state
         if self._model_init_thread is not None and self._model_init_thread.isRunning():
             return
@@ -428,6 +508,7 @@ class MainWindow(QMainWindow):
         self._model_init_thread.start()
 
     def _on_startup_model_loaded(self, name: str, adapter: object):
+        """Slot: the model finished loading; sync AppState, status bar and dropdowns."""
         # Step 1: Validate input parameters, operational preconditions, and state
         self._state.model_name = name
         self._status_bar.set_model(name)
@@ -449,12 +530,18 @@ class MainWindow(QMainWindow):
         self._status_bar.set_state("idle", False)
 
     def _on_startup_model_failed(self, message: str):
+        """Slot: show the load failure message in the status bar (not a modal dialog)."""
         # Step 1: Validate input parameters, operational preconditions, and state
         self._status_bar.set_state(message, False)
 
     # ── slots ─────────────────────────────────────────────────────────────────
 
     def _on_status_changed(self, text: str, active: bool):
+        """Slot: mirror workbench status into the status bar and a QSS property.
+
+        The "modelState" property drives stylesheet selectors; unpolish/polish forces
+        Qt to re-evaluate the style because property changes are not auto-applied.
+        """
         # Step 1: Validate input parameters, operational preconditions, and state
         self._status_bar.set_state(text, active)
         state = "idle"
@@ -467,10 +554,16 @@ class MainWindow(QMainWindow):
         self.style().polish(self)
 
     def _on_adapter_changed(self, name: str):
+        """Slot: record the active adapter name (empty string means no adapter)."""
         # Step 1: Validate input parameters, operational preconditions, and state
         self._state.adapter_name = name if name else None
 
     def _on_state_changed(self, name: str, value: object):
+        """Slot: react to AppState field changes.
+
+        Appearance fields re-apply the theme; model/adapter changes refresh the
+        status bar.
+        """
         # Step 1: Validate input parameters, operational preconditions, and state
         if name in (
             "theme_preset", "theme_mode", "custom_accent", "layout_preset",
@@ -488,12 +581,14 @@ class MainWindow(QMainWindow):
             self._status_bar.set_adapter(value)
 
     def _open_appearance_controls(self):
+        """Jump to System Config and show its appearance (theme) tab if it has one."""
         # Step 1: Validate input parameters, operational preconditions, and state
         self.switch_workspace(7)
         if hasattr(self._system, "show_theme_tab"):
             self._system.show_theme_tab()
 
     def _load_theme_config(self):
+        """Copy persisted UI settings from config_store into AppState, then apply the theme."""
         # Step 1: Validate input parameters, operational preconditions, and state
         from app.engine import config_store
 
@@ -515,6 +610,7 @@ class MainWindow(QMainWindow):
         self._apply_theme_from_state()
 
     def _apply_theme_from_state(self):
+        """Compile the stylesheet from AppState and apply it app-wide, then relayout."""
         # Step 1: Validate input parameters, operational preconditions, and state
         from PyQt6.QtWidgets import QApplication
         from app.ui.themes import get_theme_stylesheet
@@ -534,6 +630,11 @@ class MainWindow(QMainWindow):
         self.apply_layout_preset(self._state.layout_preset)
 
     def apply_layout_preset(self, preset_name: str):
+        """Show/hide chrome and Workbench docks according to the named layout preset.
+
+        Unknown preset names fall through to the chat-first default.
+        """
+        # Only "Minimal Distraction" hides the sidebar and status bar.
         # 1. Sidebar and status bar visibilities
         if preset_name == "Minimal Distraction":
             self._sidebar.hide()
@@ -574,6 +675,7 @@ class MainWindow(QMainWindow):
                     wb._reasoning_dock.setMinimumWidth(280)
 
     def _init_websocket_server(self):
+        """Start the local WebSocket bridge (port 8080); failure is non-fatal."""
         # Step 1: Validate input parameters, operational preconditions, and state
         from app.engine.websocket_server import WebSocketServerManager
         try:
@@ -583,6 +685,7 @@ class MainWindow(QMainWindow):
             logger.warning(f"Failed to start WebSocket server on boot: {e}")
 
     def showEvent(self, event):
+        """On first show, release the boot lock and begin polling bridge status."""
         # Step 1: Validate input parameters, operational preconditions, and state
         super().showEvent(event)
         if not hasattr(self, "_bridge_poll_timer"):
@@ -596,6 +699,10 @@ class MainWindow(QMainWindow):
             self._poll_bridge_status()
 
     def _poll_bridge_status(self):
+        """Update the status bar with the WebSocket bridge state every few seconds.
+
+        States: offline (no server), listening (server, no clients), connected (n clients).
+        """
         # Step 1: Validate input parameters, operational preconditions, and state
         try:
             # Execute guarded operations and establish recovery boundaries
@@ -617,6 +724,11 @@ class MainWindow(QMainWindow):
                 pass
 
     def closeEvent(self, event):
+        """Shut down cleanly: stop the workbench, join loader threads, tear down IPC.
+
+        Order matters: threads are joined before Qt objects are destroyed, and each
+        cleanup step is isolated in try/except so one failure cannot block exit.
+        """
         # Step 1: Validate input parameters, operational preconditions, and state
         self._workbench.on_close()
 
