@@ -656,7 +656,6 @@ class KnowledgeBaseWorkspace(QWidget):
         tr.addStretch()
         root.addWidget(title_row)
 
-        # (see note below)
         # Status cluster on its own row: title + 5 status widgets competing
         # for one line overflowed the app's 760px minimum width, clipping
         # whichever widget the layout ran out of room for first (observed:
