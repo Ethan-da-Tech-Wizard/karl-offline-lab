@@ -72,7 +72,9 @@ def _model_available() -> bool:
 # ── kv_cache_stats unit tests ─────────────────────────────────────────────────
 
 class TestKvCacheStats:
+    """Unit tests for kv_cache_stats(llm, prompt): how much of a prompt would be served from the llama RAM KV cache versus evaluated."""
     def test_no_cache_attached(self):
+        """With no cache attached the stats are just {'cache_enabled': False}."""
         # Step 1: Validate input parameters, operational preconditions, and state
         from app.engine.kv_cache import kv_cache_stats
 
@@ -82,6 +84,7 @@ class TestKvCacheStats:
         assert stats == {"cache_enabled": False}
 
     def test_cold_cache_miss(self):
+        """An empty cache gives a miss: nothing from cache, all prompt tokens to evaluate."""
         # Step 1: Validate input parameters, operational preconditions, and state
         from app.engine.kv_cache import kv_cache_stats
 
@@ -94,6 +97,7 @@ class TestKvCacheStats:
         assert stats["tokens_to_eval"] == len(prompt.encode())  # 5 tokens
 
     def test_full_cache_hit(self):
+        """When the cached key is the same token sequence the whole prompt is a hit and cached plus evaluated tokens add up to the prompt length."""
         # Step 1: Validate input parameters, operational preconditions, and state
         from app.engine.kv_cache import kv_cache_stats
 
@@ -111,6 +115,7 @@ class TestKvCacheStats:
         assert stats["tokens_from_cache"] + stats["tokens_to_eval"] == len(prompt_bytes)
 
     def test_partial_cache_hit(self):
+        """A cached 3-token prefix of a 5-token prompt yields 3 tokens from cache and 2 to evaluate (prefix matching)."""
         # Step 1: Validate input parameters, operational preconditions, and state
         from app.engine.kv_cache import kv_cache_stats
 
@@ -124,6 +129,7 @@ class TestKvCacheStats:
         assert stats["tokens_to_eval"] == 2
 
     def test_exception_does_not_raise(self):
+        """A failing tokenizer or cache must never raise; a dict (with an error marker) is returned so stats cannot break generation."""
         # Step 1: Validate input parameters, operational preconditions, and state
         from app.engine.kv_cache import kv_cache_stats
 
@@ -139,7 +145,9 @@ class TestKvCacheStats:
 # ── log_cache_stats unit tests ────────────────────────────────────────────────
 
 class TestLogCacheStats:
+    """Tests for log_cache_stats, the JSONL writer for cache statistics."""
     def test_writes_valid_jsonl(self):
+        """One call writes one valid JSON line containing the timestamp, cache flags and time-to-first-token."""
         # Step 1: Validate input parameters, operational preconditions, and state
         from app.engine.kv_cache import log_cache_stats
 
@@ -159,6 +167,7 @@ class TestLogCacheStats:
             assert entry["ttft_ms"] == 142.0
 
     def test_appends_multiple_entries(self):
+        """Repeated calls append lines rather than overwrite the file."""
         # Step 1: Validate input parameters, operational preconditions, and state
         from app.engine.kv_cache import log_cache_stats
 
@@ -174,6 +183,7 @@ class TestLogCacheStats:
             assert lines[1]["ts"] == "ts2"
 
     def test_silently_ignores_io_error(self):
+        """An unwritable log path is ignored silently; logging must never break inference."""
         # Step 1: Validate input parameters, operational preconditions, and state
         from app.engine.kv_cache import log_cache_stats
 
@@ -185,7 +195,9 @@ class TestLogCacheStats:
 # ── ModelLoader._attach_kv_cache unit tests ───────────────────────────────────
 
 class TestAttachKvCache:
+    """Tests for ModelLoader._attach_kv_cache: when and how large a RAM cache is attached."""
     def setup_method(self):
+        """Snapshot ModelLoader class state that the tests modify."""
         # Step 1: Validate input parameters, operational preconditions, and state
         from app.engine.model_loader import ModelLoader
         # Snapshot class state; restore after each test.
@@ -193,12 +205,14 @@ class TestAttachKvCache:
         self._orig_enabled  = ModelLoader._cache_enabled
 
     def teardown_method(self):
+        """Restore the snapshot so tests stay independent."""
         # Step 1: Validate input parameters, operational preconditions, and state
         from app.engine.model_loader import ModelLoader
         ModelLoader._instance     = self._orig_instance
         ModelLoader._cache_enabled = self._orig_enabled
 
     def test_attaches_ram_cache_when_vram_sufficient(self):
+        """With enough free VRAM a LlamaRAMCache is attached via set_cache, exactly once."""
         # Step 1: Validate input parameters, operational preconditions, and state
         from app.engine.model_loader import ModelLoader
         from llama_cpp import LlamaRAMCache
@@ -216,6 +230,7 @@ class TestAttachKvCache:
         assert isinstance(cache_arg, LlamaRAMCache)
 
     def test_vram_guard_skips_cache_below_500mb(self):
+        """Below 500 MB free VRAM no cache is attached, so the cache cannot starve the model of memory."""
         # Step 1: Validate input parameters, operational preconditions, and state
         from app.engine.model_loader import ModelLoader
 
@@ -229,6 +244,7 @@ class TestAttachKvCache:
         fake_llm.set_cache.assert_not_called()
 
     def test_cache_disabled_flag_skips_attachment(self):
+        """A config flag that disables prompt caching skips attachment."""
         # Step 1: Validate input parameters, operational preconditions, and state
         from app.engine.model_loader import ModelLoader
 
@@ -242,6 +258,7 @@ class TestAttachKvCache:
         fake_llm.set_cache.assert_not_called()
 
     def test_capacity_clamped_to_2gb_max(self):
+        """Cache size is 25% of free VRAM but never more than 2 GB (100 GB free still gives 2 GB)."""
         # Step 1: Validate input parameters, operational preconditions, and state
         from app.engine.model_loader import ModelLoader
         from llama_cpp import LlamaRAMCache
@@ -259,6 +276,7 @@ class TestAttachKvCache:
         assert cache_arg.capacity_bytes == 2 * (1 << 30)
 
     def test_capacity_floored_at_256mb_min(self):
+        """The size never drops below a 256 MB floor (600 MB free would give 150 MB, clamped up)."""
         # Step 1: Validate input parameters, operational preconditions, and state
         from app.engine.model_loader import ModelLoader
 
@@ -277,7 +295,9 @@ class TestAttachKvCache:
 # ── ModelLoader.reset_instance clears cache ───────────────────────────────────
 
 class TestResetClearsCache:
+    """The KV cache must be detached before a model is closed."""
     def test_set_cache_none_called_on_reset(self):
+        """reset_instance() calls set_cache(None) BEFORE close(); closing with a live cache attached could crash or leak native memory."""
         # Step 1: Validate input parameters, operational preconditions, and state
         from app.engine.model_loader import ModelLoader
 
@@ -329,6 +349,7 @@ class TestAttemptLoadKwargs:
     """
 
     def test_n_batch_and_flash_attn_passed_to_llama(self):
+        """The load path passes n_batch=512, n_ubatch and flash_attn=True; Llama is replaced by a capturing fake so no model is loaded."""
         # Step 1: Validate input parameters, operational preconditions, and state
         from app.engine.model_loader import ModelLoader
 

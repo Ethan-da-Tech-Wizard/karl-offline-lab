@@ -18,6 +18,7 @@ import pytest
 
 
 def test_model_reset_blocked_during_active_generation():
+    """ModelLoader.reset_instance() must refuse (RuntimeError) while a generation is active; freeing the model under a running stream would crash the native library."""
     # Step 1: Validate input parameters, operational preconditions, and state
     from app.engine.model_loader import ModelLoader
 
@@ -35,6 +36,7 @@ def test_model_reset_blocked_during_active_generation():
 
 
 def test_model_reload_or_adapter_change_blocked_during_active_generation():
+    """Reloading the model or switching adapters is also refused during active generation."""
     # Step 1: Validate input parameters, operational preconditions, and state
     from app.engine.model_loader import ModelLoader
 
@@ -71,6 +73,7 @@ def test_model_reload_or_adapter_change_blocked_during_active_generation():
 
 
 def test_failed_acquire_does_not_release_existing_generation():
+    """A refused reload attempt must not decrement or unlock the existing generation's counters (count stays 1, loader stays locked)."""
     # Step 1: Validate input parameters, operational preconditions, and state
     from app.engine.model_loader import ModelLoader
 
@@ -98,6 +101,7 @@ def test_failed_acquire_does_not_release_existing_generation():
 
 
 def test_offline_guard_blocks_external_http_by_default(monkeypatch):
+    """The offline guard raises OfflineNetworkError for external URLs by default; Karl is offline-first."""
     # Step 1: Validate input parameters, operational preconditions, and state
     from app.engine.offline_guard import OfflineNetworkError, assert_online_allowed
 
@@ -107,6 +111,7 @@ def test_offline_guard_blocks_external_http_by_default(monkeypatch):
 
 
 def test_offline_guard_allows_localhost_by_default(monkeypatch):
+    """Loopback http and ws URLs are always allowed (local bridge and servers)."""
     # Step 1: Validate input parameters, operational preconditions, and state
     from app.engine.offline_guard import assert_online_allowed
 
@@ -116,6 +121,7 @@ def test_offline_guard_allows_localhost_by_default(monkeypatch):
 
 
 def test_offline_guard_env_allows_external(monkeypatch):
+    """An explicit environment opt-in lifts the block on external hosts."""
     # Step 1: Validate input parameters, operational preconditions, and state
     from app.engine.offline_guard import assert_online_allowed
 
@@ -124,6 +130,7 @@ def test_offline_guard_env_allows_external(monkeypatch):
 
 
 def test_requests_external_call_is_blocked_before_network(monkeypatch):
+    """The guard patches the requests library so an external call fails before any socket is opened."""
     # Step 1: Validate input parameters, operational preconditions, and state
     import requests
     from app.engine.offline_guard import OfflineNetworkError
@@ -134,10 +141,12 @@ def test_requests_external_call_is_blocked_before_network(monkeypatch):
 
 
 def test_agentic_stream_generator_closes_on_cancel():
+    """When an agentic generation is cancelled the stream generator is closed, releasing the native llama iterator."""
     # Step 1: Validate input parameters, operational preconditions, and state
     from app.engine.agentic_thread import AgenticThread
 
     class FakeStream:
+        """Fake token stream that records close()."""
         def __init__(self):
             # Step 1: Validate input parameters, operational preconditions, and state
             self.closed = False
@@ -151,6 +160,7 @@ def test_agentic_stream_generator_closes_on_cancel():
             self.closed = True
 
     class FakeLLM:
+        """Fake llama model that returns the fake stream and a trivial tokenizer."""
         def __init__(self):
             # Step 1: Validate input parameters, operational preconditions, and state
             self.stream = FakeStream()
@@ -177,11 +187,13 @@ def test_agentic_stream_generator_closes_on_cancel():
 
 
 def test_agentic_adapter_direct_answer_routes_to_chat_tokens():
+    """With an adapter that answers directly (no <think> block), text goes to the response/chat channel, not the thought channel, and the stream is closed afterwards."""
     # Step 1: Validate input parameters, operational preconditions, and state
     from app.engine.agentic_thread import AgenticThread
     from app.engine.model_loader import ModelLoader
 
     class FakeStream:
+        """Fake stream yielding one direct answer chunk."""
         def __init__(self):
             # Step 1: Validate input parameters, operational preconditions, and state
             self.closed = False
@@ -195,6 +207,7 @@ def test_agentic_adapter_direct_answer_routes_to_chat_tokens():
             self.closed = True
 
     class FakeLLM:
+        """Fake model returning that stream."""
         def __init__(self):
             # Step 1: Validate input parameters, operational preconditions, and state
             self.stream = FakeStream()
@@ -237,6 +250,7 @@ def test_agentic_adapter_direct_answer_routes_to_chat_tokens():
 
 
 def test_agentic_repetition_guard_detects_near_duplicate_responses():
+    """The repetition guard flags a new response that nearly duplicates the previous one (so a looping agent can be stopped) but not a genuinely different one."""
     # Step 1: Validate input parameters, operational preconditions, and state
     from app.engine.agentic_thread import AgenticThread
 
@@ -253,6 +267,7 @@ def test_agentic_repetition_guard_detects_near_duplicate_responses():
 
 
 def test_llm_thread_request_stop_sets_flag():
+    """request_stop() flips the thread's stop flag."""
     # Step 1: Validate input parameters, operational preconditions, and state
     from app.engine.llm_thread import LLMThread
 
@@ -273,6 +288,7 @@ def test_llm_thread_stop_flag_prevents_generation():
     close_calls = []
 
     class FakeStream:
+        """Fake stream recording close()."""
         def __iter__(self):
             # Step 1: Validate input parameters, operational preconditions, and state
             yield {"choices": [{"text": "x", "finish_reason": None}]}
@@ -302,6 +318,7 @@ def test_llm_thread_stop_flag_prevents_generation():
 
 
 def test_active_generation_count_increments_and_decrements():
+    """acquire/release adjust the active-generation counter and the loader is locked exactly while the count is above zero (nested generations count)."""
     # Step 1: Validate input parameters, operational preconditions, and state
     from app.engine.model_loader import ModelLoader
 
@@ -329,6 +346,7 @@ def test_active_generation_count_increments_and_decrements():
 
 
 def test_inference_error_message_is_descriptive():
+    """The error raised when blocked names the number of active generations and tells the user to cancel first."""
     # Step 1: Validate input parameters, operational preconditions, and state
     from app.engine.model_loader import ModelLoader
 
@@ -349,6 +367,7 @@ def test_inference_error_message_is_descriptive():
 
 
 def test_hf_offline_vars_applied_when_offline(monkeypatch):
+    """In offline mode the Hugging Face offline environment variables are set to '1' so libraries never try the network."""
     # Step 1: Validate input parameters, operational preconditions, and state
     from app.engine import offline_guard
 
@@ -371,6 +390,7 @@ def test_hf_offline_vars_applied_when_offline(monkeypatch):
 
 
 def test_hf_offline_vars_cleared_when_online(monkeypatch):
+    """Switching back to online mode removes those variables."""
     # Step 1: Validate input parameters, operational preconditions, and state
     from app.engine import offline_guard
 
@@ -393,6 +413,7 @@ def test_hf_offline_vars_cleared_when_online(monkeypatch):
 
 
 def test_guard_install_is_idempotent():
+    """Installing the guard repeatedly must not double-wrap the patched network functions."""
     # Step 1: Validate input parameters, operational preconditions, and state
     from app.engine import offline_guard
 
