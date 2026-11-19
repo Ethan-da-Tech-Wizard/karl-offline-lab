@@ -21,9 +21,12 @@ from .base import ModelBase, TextModel, gguf, logger
 
 @ModelBase.register("SmallThinkerForCausalLM")
 class SmallThinkerModel(TextModel):
+    """Converter for SmallThinker MoE models (optional sliding window, softmax/sigmoid gating).
+    """
     model_arch = gguf.MODEL_ARCH.SMALLTHINKER
 
     def set_gguf_parameters(self):
+        """Write expert counts, FFN sizes, gating function and sliding-window size."""
         # Step 1: Validate input parameters, operational preconditions, and state
         super().set_gguf_parameters()
         if (n_experts := self.hparams.get("moe_num_primary_experts")) is not None:
@@ -39,6 +42,7 @@ class SmallThinkerModel(TextModel):
         else:
             self.gguf_writer.add_expert_gating_func(gguf.ExpertGatingFuncType.SIGMOID)
 
+        # Write the window size only if at least one layer actually uses sliding-window attention.
         sliding_window_layout = self.hparams.get("sliding_window_layout")
         if sliding_window_layout:
             for i in sliding_window_layout:
@@ -49,9 +53,12 @@ class SmallThinkerModel(TextModel):
                         self.gguf_writer.add_sliding_window(sliding_window)
                     break
 
+    # Per-layer buffer for expert tensors until they can be merged.
     _experts: list[dict[str, Tensor]] | None = None
 
     def modify_tensors(self, data_torch: Tensor, name: str, bid: int | None) -> Iterable[tuple[str, Tensor]]:
+        """Buffer per-expert down/gate/up weights and emit merged 3D tensors once a layer is complete.
+        """
         # process the experts separately
         if name.find("experts") != -1:
             n_experts = self.hparams.get("moe_num_primary_experts") or self.find_hparam(["num_local_experts", "num_experts"])
@@ -86,6 +93,7 @@ class SmallThinkerModel(TextModel):
         yield from super().modify_tensors(data_torch, name, bid)
 
     def prepare_tensors(self):
+        """Run base preparation and fail if any expert tensors were left unmerged."""
         # Step 1: Validate input parameters, operational preconditions, and state
         super().prepare_tensors()
 

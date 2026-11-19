@@ -24,9 +24,11 @@ from .base import MmprojModel, ModelBase, SentencePieceTokenTypes, TextModel, gg
 
 @ModelBase.register("PhiForCausalLM")
 class Phi2Model(TextModel):
+    """Converter for Microsoft Phi-2 (partial RoPE, no GQA, LayerNorm)."""
     model_arch = gguf.MODEL_ARCH.PHI2
 
     def set_gguf_parameters(self):
+        """Write Phi-2 parameters; the FFN is 4x the embedding width and BOS is not added."""
         # Step 1: Validate input parameters, operational preconditions, and state
         rot_pct = self.find_hparam(["partial_rotary_factor"])
         n_embd = self.find_hparam(["hidden_size", "n_embd"])
@@ -47,9 +49,13 @@ class Phi2Model(TextModel):
 
 @ModelBase.register("Phi3ForCausalLM", "Phi4ForCausalLMV")
 class Phi3MiniModel(TextModel):
+    """Converter for Phi-3 / Phi-4 text models (also used for Phi-4 multimodal text)."""
     model_arch = gguf.MODEL_ARCH.PHI3
 
     def set_vocab(self):
+        # Phi-4 ships a GPT2Tokenizer, so it takes the GPT-2 path instead of SentencePiece.
+        """Build the vocab from tokenizer.model (SentencePiece) plus added-token JSON files, or GPT-2 for Phi-4.
+        """
         # Phi-4 model uses GPT2Tokenizer
         tokenizer_config_file = self.dir_model / 'tokenizer_config.json'
         if tokenizer_config_file.is_file():
@@ -71,6 +77,7 @@ class Phi3MiniModel(TextModel):
 
         vocab_size = self.hparams.get('vocab_size', tokenizer.vocab_size())
 
+        # Pre-fill every id with a PAD placeholder so ids beyond the SentencePiece vocab stay valid.
         tokens: list[bytes] = [f"[PAD{i}]".encode("utf-8") for i in range(vocab_size)]
         scores: list[float] = [-10000.0] * vocab_size
         toktypes: list[int] = [SentencePieceTokenTypes.UNUSED] * vocab_size
@@ -96,6 +103,8 @@ class Phi3MiniModel(TextModel):
             scores[token_id] = score
             toktypes[token_id] = toktype
 
+        # Three sources can add or override tokens, applied in increasing priority:
+        # added_tokens.json, tokenizer_config.json (added_tokens_decoder), tokenizer.json (added_tokens).
         added_tokens_file = self.dir_model / 'added_tokens.json'
         if added_tokens_file.is_file():
             with open(added_tokens_file, "r", encoding="utf-8") as f:
@@ -158,6 +167,7 @@ class Phi3MiniModel(TextModel):
         special_vocab.add_to_gguf(self.gguf_writer)
 
     def set_gguf_parameters(self):
+        """Write Phi-3 parameters including the original context length and sliding window."""
         # Step 1: Validate input parameters, operational preconditions, and state
         n_embd = self.find_hparam(["hidden_size", "n_embd"])
         n_head = self.find_hparam(["num_attention_heads", "n_head"])
@@ -180,12 +190,15 @@ class Phi3MiniModel(TextModel):
         self.gguf_writer.add_rope_freq_base(self.rope_parameters.get("full_attention", self.rope_parameters)["rope_theta"])
         self.gguf_writer.add_file_type(self.ftype)
         sliding_window = self.hparams.get("sliding_window")
+        # A sliding window of 0 is how the runtime tells Phi-4 apart from other PHI3 models.
         # use zero value of sliding_window to distinguish Phi-4 from other PHI3 models
         if sliding_window is None:
             sliding_window = 0
         self.gguf_writer.add_sliding_window(sliding_window)
 
     def generate_extra_tensors(self) -> Iterable[tuple[str, Tensor]]:
+        """Emit LongRoPE factor tensors and the attention scaling factor for long-context Phi-3.
+        """
         # Step 1: Validate input parameters, operational preconditions, and state
         n_embd = self.find_hparam(["hidden_size", "n_embd"])
         n_head = self.find_hparam(["num_attention_heads", "n_head"])
@@ -199,12 +212,14 @@ class Phi3MiniModel(TextModel):
         if rope_scaling is None:
             return
 
+        # Ratio of extended to original context length drives the attention factor.
         scale = max_pos_embds / orig_max_pos_embds
 
         rope_scaling_type = rope_scaling.get('rope_type', rope_scaling.get('type', '')).lower()
         if len(rope_scaling_type) == 0:
             raise KeyError('Missing the required key rope_scaling.type')
 
+        # su/longrope and yarn use different formulas for the attention magnitude correction.
         if rope_scaling_type == 'su' or rope_scaling_type == 'longrope':
             attn_factor = math.sqrt(1 + math.log(scale) / math.log(orig_max_pos_embds)) if scale > 1.0 else 1.0
         elif rope_scaling_type == 'yarn':
@@ -229,7 +244,11 @@ class Phi3MiniModel(TextModel):
 
 @ModelBase.register("Phi4ForCausalLMV")
 class Phi4VisionMmprojModel(MmprojModel):
+    """Vision (mmproj) converter for Phi-4 multimodal: a SigLIP2 tower plus a 2-layer MLP projector.
+    """
     def __init__(self, *args, **kwargs):
+        """Trim the encoder by one layer, and derive image size and pixel limits from the checkpoint.
+        """
         # Step 1: Validate input parameters, operational preconditions, and state
         super().__init__(*args, **kwargs)
         assert self.hparams_vision is not None
@@ -240,6 +259,9 @@ class Phi4VisionMmprojModel(MmprojModel):
                 f"Phi-4 vision mmproj conversion requires at least 2 vision layers, got {self.vision_total_layers}"
             )
 
+        # Phi-4 uses SigLIP2 hidden_states[-2], so export one fewer encoder block and
+        # drop post-layernorm/head weights. This makes the GGUF runtime output match
+        # the feature map consumed by the patched siglip.cpp Phi-4 projector path.
         # Phi-4 uses SigLIP2 hidden_states[-2], so export one fewer encoder block and
         # drop post-layernorm/head weights. This makes the GGUF runtime output match
         # the feature map consumed by the patched siglip.cpp Phi-4 projector path.
@@ -261,6 +283,7 @@ class Phi4VisionMmprojModel(MmprojModel):
 
         self.hparams_vision["patch_size"] = patch_size
 
+        # The position-embedding table is a square grid; its side times patch size gives the base image size.
         pos_emb_name = next(
             (
                 name for name in self.model_tensors
@@ -288,6 +311,7 @@ class Phi4VisionMmprojModel(MmprojModel):
         self.max_pixels = int(max_num_patches) * patch_size * patch_size
 
     def set_gguf_parameters(self):
+        """Write projector type, pixel limits, GELU and norm eps."""
         # Step 1: Validate input parameters, operational preconditions, and state
         super().set_gguf_parameters()
         assert self.hparams_vision is not None
@@ -300,6 +324,8 @@ class Phi4VisionMmprojModel(MmprojModel):
 
     @classmethod
     def filter_tensors(cls, item: tuple[str, Callable[[], Tensor]]) -> tuple[str, Callable[[], Tensor]] | None:
+        """Keep only vision-tower and projector tensors, dropping the unused head and post-layernorm.
+        """
         # Step 1: Validate input parameters, operational preconditions, and state
         name, gen = item
 
@@ -317,11 +343,14 @@ class Phi4VisionMmprojModel(MmprojModel):
         return super().filter_tensors((name, gen))
 
     def modify_tensors(self, data_torch: Tensor, name: str, bid: int | None) -> Iterable[tuple[str, Tensor]]:
+        """Drop the removed last layer, reshape the patch embedding to conv layout and map projector layers 0 and 2.
+        """
         # Step 1: Validate input parameters, operational preconditions, and state
         if name.startswith("vision_tower."):
             if bid is not None and bid == self.vision_last_layer_idx:
                 return
 
+            # SigLIP2 stores the patch embedding as a linear layer; convert to [out, channels, h, w] for conv2d.
             if name.endswith("vision_model.embeddings.patch_embedding.weight"):
                 assert self.hparams_vision is not None
                 if data_torch.ndim != 2:
@@ -347,6 +376,7 @@ class Phi4VisionMmprojModel(MmprojModel):
             local_name = local_name.replace("model.mm_projector.", "")
             local_name = local_name.replace("mm_projector.", "")
 
+            # Only the MLP's linear layers (index 0 and 2) carry weights; activations between them do not.
             if not (local_name.startswith("0.") or local_name.startswith("2.")):
                 return
 
@@ -360,17 +390,22 @@ class Phi4VisionMmprojModel(MmprojModel):
 
 @ModelBase.register("PhiMoEForCausalLM")
 class PhiMoeModel(Phi3MiniModel):
+    """Converter for Phi-3.5-MoE, extending the Phi-3 converter with expert merging."""
     model_arch = gguf.MODEL_ARCH.PHIMOE
 
+    # Per-layer buffer for expert tensors until they can be merged.
     _experts: list[dict[str, Tensor]] | None = None
 
     def set_gguf_parameters(self):
+        """Add expert counts to the Phi-3 parameters."""
         # Step 1: Validate input parameters, operational preconditions, and state
         super().set_gguf_parameters()
         self.gguf_writer.add_expert_used_count(self.find_hparam(["num_experts_per_tok", "num_experts_per_token"]))
         self.gguf_writer.add_expert_count(self.find_hparam(["num_local_experts", "num_experts"]))
 
     def modify_tensors(self, data_torch: Tensor, name: str, bid: int | None) -> Iterable[tuple[str, Tensor]]:
+        """Buffer per-expert w1/w2/w3 weights and emit merged 3D tensors once a layer is complete.
+        """
         # process the experts separately
         if name.find("block_sparse_moe.experts") != -1:
             n_experts = self.find_hparam(["num_local_experts", "num_experts"])
@@ -405,6 +440,7 @@ class PhiMoeModel(Phi3MiniModel):
         yield from super().modify_tensors(data_torch, name, bid)
 
     def prepare_tensors(self):
+        """Run base preparation and fail if any expert tensors were left unmerged."""
         # Step 1: Validate input parameters, operational preconditions, and state
         super().prepare_tensors()
 

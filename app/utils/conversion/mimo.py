@@ -23,6 +23,13 @@ from .base import MmprojModel, ModelBase, TextModel, gguf
 
 @ModelBase.register("MiMoV2FlashForCausalLM", "MiMoV2ForCausalLM")
 class MimoV2Model(TextModel):
+    """Converter for the MiMo-V2 text model (Flash, V2.5, V2.5-Pro) to GGUF.
+
+    Handles three MiMo-specific wrinkles: tensor-parallel (TP) sharded FP8 qkv
+    weights, extra multi-token-prediction (MTP/NextN) layers appended after the
+    normal layers, and per-layer sliding-window attention with MoE experts that
+    must be merged into 3D tensors.
+    """
     model_arch = gguf.MODEL_ARCH.MIMO2
 
     # MiMo V2-Flash, V2.5 and V2.5-Pro all ship 3 trained MTP layers under model.mtp.layers.{0,1,2}.
@@ -30,7 +37,10 @@ class MimoV2Model(TextModel):
     _n_nextn = 3
 
     def __init__(self, *args, **kwargs):
+        """Extend block_count with the MTP layers so tensor-name mapping covers them."""
         # Step 1: Validate input parameters, operational preconditions, and state
+        # The HF config only counts the regular layers; the MTP layers live in
+        # extra slots after them, so the tensor map must be rebuilt for the larger count.
         super().__init__(*args, **kwargs)
 
         self.block_count = self.hparams["num_hidden_layers"] + self._n_nextn
@@ -40,6 +50,17 @@ class MimoV2Model(TextModel):
     def _tp_aware_qkv_dequant(weight: Tensor, scale_inv: Tensor,
                               n_q: int, n_kv: int, hd: int, vhd: int,
                               bs: int = 128) -> Tensor:
+        """Dequantize a TP-sharded FP8 qkv_proj weight and return a fused [Q|K|V] tensor.
+
+        Args:
+            weight: FP8 weight, rows stacked per TP rank as [Q_per|K_per|V_per].
+            scale_inv: block-wise inverse scales (one row per bs-row block per rank).
+            n_q, n_kv: query / key-value head counts.
+            hd, vhd: key and value head dimensions.
+            bs: quantization block size (rows and columns).
+
+        Raises ValueError if row counts do not match or the TP degree cannot be inferred.
+        """
         # MiMo-V2.5 (TP=4) and V2.5-Pro (TP=8) ship qkv_proj sharded across TP
         # ranks; per rank, rows are stacked as [Q_per | K_per | V_per].
         # weight_scale_inv has ceil(rows_per_rank/bs) block-rows per rank (last
@@ -48,6 +69,7 @@ class MimoV2Model(TextModel):
         # later ranks once rows_per_rank isn't a multiple of bs.
         # Re-group the per-rank [Q_per|K_per|V_per] rows into a single fused
         # [Q | K | V] tensor matching the un-sharded original layout.
+        # Sizes of each projection in the un-sharded fused layout.
         q_size = n_q * hd
         k_size = n_kv * hd
         v_size = n_kv * vhd
@@ -56,6 +78,8 @@ class MimoV2Model(TextModel):
             raise ValueError(f"qkv_proj weight rows {weight.shape[0]} != q+k+v {total_rows}")
 
         # detect TP from scale_inv block count, descending order so larger matches first
+        # Infer the TP degree: the scale_inv row count only equals cand * blocks_per_rank
+        # for the true degree, so test the larger candidate first.
         tp = None
         for cand in (8, 4):
             # Iterate over items, evaluate loop invariant, and update progress
@@ -71,6 +95,7 @@ class MimoV2Model(TextModel):
                 f"qkv_proj: cannot detect TP - scale_inv rows {scale_inv.shape[0]}, "
                 f"q+k+v {total_rows}")
 
+        # Per-rank slice sizes; each rank holds an equal share of Q, K and V.
         q_per = q_size // tp
         k_per = k_size // tp
         v_per = v_size // tp
@@ -79,6 +104,8 @@ class MimoV2Model(TextModel):
 
         scale_inv = scale_inv.float()
         # per-row scale-row index: rank * blocks_per_rank + (rr_in_rank // bs)
+        # Map every weight row to its own scale row. Scales are indexed per rank, so
+        # a plain repeat_interleave would only be right for rank 0.
         row_idx = torch.arange(total_rows)
         rr = row_idx % rows_per_rank
         rank = row_idx // rows_per_rank
@@ -91,10 +118,12 @@ class MimoV2Model(TextModel):
         scale_full = scale_full[:, : weight.shape[1]]
         dequant = weight.float() * scale_full
 
+        # Without sharding the layout is already [Q|K|V].
         if tp == 1:
             return dequant
 
         # Re-group per-rank [Q_per|K_per|V_per] rows into unified [Q | K | V]
+        # Gather each rank's Q, K and V slices, then concatenate by type to undo sharding.
         qs, ks, vs = [], [], []
         for r in range(tp):
             # Iterate over items, evaluate loop invariant, and update progress
@@ -105,9 +134,12 @@ class MimoV2Model(TextModel):
         return torch.cat(qs + ks + vs, dim=0)
 
     def dequant_model(self):
+        """Run the base FP8 dequantization, then swap in a TP-aware path for qkv_proj weights.
+        """
         # Capture raw FP8 (weight, scale_inv) lambdas for qkv_proj BEFORE super
         # rewrites them with the existing dequant. Replace super's lambda after
         # it runs so scale_inv removal still happens via the standard path.
+        # Remember the raw (weight, scale_inv) loaders before the base class replaces them.
         qkv_overrides: dict[str, tuple[Callable, Callable, int]] = {}
         qc = self.hparams.get("quantization_config")
         if isinstance(qc, dict) and qc.get("quant_method") == "fp8":
@@ -126,6 +158,7 @@ class MimoV2Model(TextModel):
                     int(m.group(1)),
                 )
 
+        # Base class dequantizes everything with the naive scheme and drops scale_inv tensors.
         super().dequant_model()
 
         if not qkv_overrides:
@@ -134,21 +167,29 @@ class MimoV2Model(TextModel):
         n_q = self.hparams["num_attention_heads"]
         hd = self.hparams["head_dim"]
         vhd = self.hparams["v_head_dim"]
+        # hybrid_layer_pattern marks which layers use sliding-window attention (1) or full (0).
         hybrid = self.hparams["hybrid_layer_pattern"]
         n_layer_text = self.hparams["num_hidden_layers"]
         for weight_name, (w_fn, s_fn, bid) in qkv_overrides.items():
             # MTP layers (bid >= n_layer_text) use SWA-style attention dims
+            # MTP layers always use the SWA head layout.
             is_swa = True if bid >= n_layer_text else hybrid[bid] == 1
             n_kv = self.hparams["swa_num_key_value_heads" if is_swa else "num_key_value_heads"]
+            # Replace the base-class lambda with a lazy TP-aware one; defaults bind loop
+            # variables at definition time so each closure keeps its own values.
             self.model_tensors[weight_name] = (
                 lambda w_fn=w_fn, s_fn=s_fn, n_q=n_q, n_kv=n_kv, hd=hd, vhd=vhd:
                     MimoV2Model._tp_aware_qkv_dequant(w_fn(), s_fn(), n_q, n_kv, hd, vhd)
             )
 
     def set_gguf_parameters(self):
+        """Write MiMo-V2 hyperparameters: per-layer KV heads, SWA pattern, MoE sizes, RoPE and MTP count.
+        """
         # Step 1: Validate input parameters, operational preconditions, and state
         super().set_gguf_parameters()
 
+        # The runtime shares one head layout between SWA and full layers except KV heads;
+        # fail loudly if a checkpoint ever differs.
         assert self.hparams["swa_head_dim"] == self.hparams["head_dim"]
         assert self.hparams["swa_num_attention_heads"] == self.hparams["num_attention_heads"]
         assert self.hparams["swa_v_head_dim"] == self.hparams["v_head_dim"]
@@ -156,6 +197,8 @@ class MimoV2Model(TextModel):
 
         n_head_kv = self.hparams["num_key_value_heads"]
         n_head_kv_swa = self.hparams["swa_num_key_value_heads"]
+        # Extend the per-layer pattern with SWA entries for the MTP blocks so the
+        # runtime arrays (sized to extended block_count) are fully populated.
         # Extend the per-layer pattern with SWA entries for the MTP blocks so the
         # runtime arrays (sized to extended block_count) are fully populated.
         hybrid = list(self.hparams["hybrid_layer_pattern"]) + [1] * self._n_nextn
@@ -168,6 +211,7 @@ class MimoV2Model(TextModel):
         self.gguf_writer.add_expert_count(self.hparams["n_routed_experts"])
         self.gguf_writer.add_expert_feed_forward_length(self.hparams["moe_intermediate_size"])
 
+        # Only part of each head is rotated (partial rotary).
         rope_dim = int(self.hparams["head_dim"] * self.hparams["partial_rotary_factor"])
         self.gguf_writer.add_rope_dimension_count(rope_dim)
 
@@ -179,10 +223,13 @@ class MimoV2Model(TextModel):
 
         self.gguf_writer.add_nextn_predict_layers(self._n_nextn)
 
+    # Buffer for expert tensors per layer until all of a layer's experts have arrived.
     _experts: list[dict[str, Tensor]] | None = None
 
     @classmethod
     def filter_tensors(cls, item: tuple[str, Callable[[], Tensor]]) -> tuple[str, Callable[[], Tensor]] | None:
+        """Normalize attention-sink tensor names (add the missing .weight) then defer to the base filter.
+        """
         # Step 1: Validate input parameters, operational preconditions, and state
         name, gen = item
 
@@ -192,6 +239,11 @@ class MimoV2Model(TextModel):
         return super().filter_tensors((name, gen))
 
     def modify_tensors(self, data_torch, name, bid):
+        """Remap MTP tensors to extra layer slots and merge per-expert weights into 3D tensors.
+
+        Expert weights are buffered per layer; once all gate/up/down tensors of a
+        layer are present they are stacked and yielded together.
+        """
         # Remap MTP/NextN tensors to additional layer slots so the standard tensor map handles them.
         # HF: model.mtp.layers.{i}.foo  ->  model.layers.{n_layer_text + i}.foo
         m = re.match(r"^model\.mtp\.layers\.(\d+)\.(.*)$", name)
@@ -205,6 +257,7 @@ class MimoV2Model(TextModel):
             bid = new_bid
 
         # process the experts separately
+        # Experts arrive one tensor at a time; collect them until the layer is complete.
         if name.find("mlp.experts") != -1:
             n_experts = self.hparams["n_routed_experts"]
             assert bid is not None
@@ -214,6 +267,7 @@ class MimoV2Model(TextModel):
 
             self._experts[bid][name] = data_torch
 
+            # 3 tensors (gate, up, down) per expert: when all are buffered, stack per type.
             if len(self._experts[bid]) >= n_experts * 3:
                 # merge the experts into a single 3d tensor
                 for w_name in ["gate_proj", "up_proj", "down_proj"]:
@@ -236,6 +290,7 @@ class MimoV2Model(TextModel):
         yield from super().modify_tensors(data_torch, name, bid)
 
     def prepare_tensors(self):
+        """Run base preparation and make sure no expert tensors were left unmerged."""
         # Step 1: Validate input parameters, operational preconditions, and state
         super().prepare_tensors()
 
@@ -248,12 +303,15 @@ class MimoV2Model(TextModel):
 
 @ModelBase.register("MiMoV2ForCausalLM")
 class MiMoV2VisionModel(MmprojModel):
+    """Converter for the MiMo-V2 vision tower (mmproj) to GGUF."""
     def __init__(self, *args, **kwargs):
+        """Fill vision hyperparameter defaults and cache window-attention settings."""
         # Step 1: Validate input parameters, operational preconditions, and state
         super().__init__(*args, **kwargs)
         assert self.hparams_vision is not None
         hp = self.hparams_vision
 
+        # Default values used when the vision_config omits them.
         hp["image_size"] = hp.get("image_size", 560)
         hp["num_attention_heads"] = hp.get("num_heads", 32)
         hp["num_hidden_layers"] = hp.get("depth", 28)
@@ -267,12 +325,15 @@ class MiMoV2VisionModel(MmprojModel):
         self.rms_norm_eps = float(hp.get("rms_norm_eps", 1e-6))
 
         # fullatt_block_indexes are also reflected in vit_window_attn_types as -1
+        # fullatt_block_indexes are also reflected in vit_window_attn_types as -1.
         self.fullatt_block_indexes = list(hp.get("fullatt_block_indexes") or [])
         self.vit_window_attn_types = list(hp.get("vit_window_attn_types") or [])
         self.visual_token_window_size = int(hp.get("visual_token_window_size", -1))
         self.use_sink = bool(hp.get("use_sink", False))
 
     def set_gguf_parameters(self):
+        """Write vision projector metadata (projector type, KV heads, window attention, pixel limits).
+        """
         # Step 1: Validate input parameters, operational preconditions, and state
         super().set_gguf_parameters()
 
@@ -287,6 +348,8 @@ class MiMoV2VisionModel(MmprojModel):
         self.gguf_writer.add_vision_max_pixels(int(self.preprocessor_config["max_pixels"]))
 
     def tensor_force_quant(self, name, new_name, bid, n_dims):
+        """Force attention sinks to F32; everything else follows the base quantization policy.
+        """
         # Sinks must be F32: any sink-style softmax/mask add in ggml requires
         # F32, and we fold sinks into a host-built F32 mask at encode time.
         if new_name.endswith(".attn_sinks"):
@@ -295,6 +358,7 @@ class MiMoV2VisionModel(MmprojModel):
 
     @classmethod
     def filter_tensors(cls, item: tuple[str, Callable[[], Tensor]]) -> tuple[str, Callable[[], Tensor]] | None:
+        """Keep only vision tensors (prefix 'visual.')."""
         # Step 1: Validate input parameters, operational preconditions, and state
         name, _ = item
         if not name.startswith("visual."):
@@ -302,6 +366,7 @@ class MiMoV2VisionModel(MmprojModel):
         return super().filter_tensors(item)
 
     def modify_tensors(self, data_torch, name, bid):
+        """Split the 3D patch-embed conv into two 2D convs; pass other tensors through."""
         # Conv3D patch embed: split along the temporal axis (kt=2) into two Conv2D
         # weights that the existing qwen2vl-style two-Conv2D path consumes.
         if name == "visual.patch_embed.proj.weight":

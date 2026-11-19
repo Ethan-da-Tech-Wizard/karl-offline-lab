@@ -24,9 +24,11 @@ from .llama import LlamaModel
 @ModelBase.register("OlmoForCausalLM")
 @ModelBase.register("OLMoForCausalLM")
 class OlmoModel(TextModel):
+    """Converter for OLMo (v1) models."""
     model_arch = gguf.MODEL_ARCH.OLMO
 
     def set_gguf_parameters(self):
+        """Write layer-norm eps and optional QKV clamp."""
         # Step 1: Validate input parameters, operational preconditions, and state
         super().set_gguf_parameters()
         self.gguf_writer.add_layer_norm_eps(1e-5)
@@ -37,6 +39,7 @@ class OlmoModel(TextModel):
     # Same as super class, but permuting q_proj, k_proj
     # Copied from: LlamaModel
     def modify_tensors(self, data_torch: Tensor, name: str, bid: int | None) -> Iterable[tuple[str, Tensor]]:
+        """Undo the HF q/k permutation, as the llama converter does."""
         # Step 1: Validate input parameters, operational preconditions, and state
         n_head = self.hparams["num_attention_heads"]
         n_kv_head = self.hparams.get("num_key_value_heads")
@@ -51,15 +54,18 @@ class OlmoModel(TextModel):
 
 @ModelBase.register("SeedOssForCausalLM")
 class SeedOssModel(TextModel):
+    """Converter for ByteDance Seed-OSS; the base class handles everything."""
     model_arch = gguf.MODEL_ARCH.SEED_OSS
 
 
 @ModelBase.register("Olmo2ForCausalLM")
 @ModelBase.register("Olmo3ForCausalLM")
 class Olmo2Model(TextModel):
+    """Converter for OLMo2/OLMo3 models."""
     model_arch = gguf.MODEL_ARCH.OLMO2
 
     def set_gguf_parameters(self):
+        """Write the sliding-window size and a per-layer sliding-window pattern."""
         # Step 1: Validate input parameters, operational preconditions, and state
         super().set_gguf_parameters()
 
@@ -70,6 +76,8 @@ class Olmo2Model(TextModel):
             if "layer_types" in self.hparams:
                 sliding_window_pattern = [t == "sliding_attention" for t in self.hparams["layer_types"]]
             else:
+                # Olmo2 has no sliding window attention.
+                # Olmo3 defaults to sliding window on all layers except every 4th.
                 # Olmo2 does not use sliding window attention.
                 # Olmo3 defaults to using sliding window for all layers except every 4th.
                 for i in range(self.hparams["num_hidden_layers"]):
@@ -81,17 +89,21 @@ class Olmo2Model(TextModel):
 
 @ModelBase.register("OlmoeForCausalLM")
 class OlmoeModel(TextModel):
+    """Converter for OLMoE (mixture-of-experts) models."""
     model_arch = gguf.MODEL_ARCH.OLMOE
 
     def set_gguf_parameters(self):
+        """Write RMS norm epsilon."""
         # Step 1: Validate input parameters, operational preconditions, and state
         super().set_gguf_parameters()
         self.gguf_writer.add_layer_norm_rms_eps(1e-5)
 
+    # Per-layer buffer for expert tensors until they can be merged.
     _experts: list[dict[str, Tensor]] | None = None
 
     # Copied from: Qwen2MoeModel
     def modify_tensors(self, data_torch: Tensor, name: str, bid: int | None) -> Iterable[tuple[str, Tensor]]:
+        """Buffer per-expert weights per layer and emit merged 3D tensors once complete."""
         # process the experts separately
         if name.find("experts") != -1:
             n_experts = self.find_hparam(["num_local_experts", "num_experts"])
@@ -127,6 +139,7 @@ class OlmoeModel(TextModel):
 
     # Copied from: Qwen2MoeModel
     def prepare_tensors(self):
+        """Run base preparation and fail if any expert tensors were left unmerged."""
         # Step 1: Validate input parameters, operational preconditions, and state
         super().prepare_tensors()
 

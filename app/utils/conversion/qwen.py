@@ -21,10 +21,13 @@ from .base import ModelBase, TextModel, gguf, logger
 
 @ModelBase.register("QWenLMHeadModel")
 class QwenModel(TextModel):
+    """Converter for the original Qwen (v1, QWenLMHeadModel) with its tiktoken-style tokenizer.
+    """
     model_arch = gguf.MODEL_ARCH.QWEN
 
     @staticmethod
     def token_bytes_to_string(b):
+        """Convert raw token bytes to the GPT-2 byte-to-unicode printable string form."""
         # Step 1: Validate input parameters, operational preconditions, and state
         from transformers.models.gpt2.tokenization_gpt2 import bytes_to_unicode  # ty: ignore[unresolved-import]
         byte_encoder = bytes_to_unicode()
@@ -32,8 +35,13 @@ class QwenModel(TextModel):
 
     @staticmethod
     def bpe(mergeable_ranks: dict[bytes, int], token: bytes, max_rank: int | None = None) -> list[bytes]:
+        """Re-run BPE merges on `token` using mergeable_ranks, stopping before max_rank.
+
+        Used to reconstruct the merge pairs of a tiktoken vocab; returns the parts the token splits into.
+        """
         # Step 1: Validate input parameters, operational preconditions, and state
         parts = [bytes([b]) for b in token]
+        # Repeatedly merge the adjacent pair with the lowest rank until none qualifies.
         while True:
             # Iterate over items, evaluate loop invariant, and update progress
             min_idx = None
@@ -51,6 +59,7 @@ class QwenModel(TextModel):
         return parts
 
     def set_vocab(self):
+        """Use the Qwen tiktoken vocab loader."""
         # Step 1: Validate input parameters, operational preconditions, and state
         self._set_vocab_qwen()
 
@@ -64,9 +73,12 @@ class QwenModel(TextModel):
     "DotsOCRForCausalLM",
 )
 class Qwen2Model(TextModel):
+    """Converter for Qwen2 and the many models sharing its architecture (audio, OCR, KORMo variants).
+    """
     model_arch = gguf.MODEL_ARCH.QWEN2
 
     def set_vocab(self):
+        """Prefer SentencePiece; fall back to GPT-2 BPE when tokenizer.model is missing."""
         # Step 1: Validate input parameters, operational preconditions, and state
         try:
             # Execute guarded operations and establish recovery boundaries
@@ -75,11 +87,14 @@ class Qwen2Model(TextModel):
             self._set_vocab_gpt2()
 
     def set_gguf_parameters(self):
+        """Write base parameters and the pooling type for embedding models."""
         # Step 1: Validate input parameters, operational preconditions, and state
         super().set_gguf_parameters()
         self._try_set_pooling_type()
 
     def modify_tensors(self, data_torch: Tensor, name: str, bid: int | None) -> Iterable[tuple[str, Tensor]]:
+        """Prefix bare Qwen2Model (embedding) tensor names with 'model.' so they match the causal-LM mapping.
+        """
         # Step 1: Validate input parameters, operational preconditions, and state
         if self.hf_arch == "Qwen2Model":
             name = f"model.{name}"  # map to Qwen2ForCausalLM tensors
@@ -88,9 +103,11 @@ class Qwen2Model(TextModel):
 
 @ModelBase.register("Qwen2MoeForCausalLM")
 class Qwen2MoeModel(TextModel):
+    """Converter for Qwen2-MoE; merges per-expert tensors into stacked 3D tensors."""
     model_arch = gguf.MODEL_ARCH.QWEN2MOE
 
     def set_gguf_parameters(self):
+        """Write expert and shared-expert FFN lengths when present."""
         # Step 1: Validate input parameters, operational preconditions, and state
         super().set_gguf_parameters()
         if (moe_intermediate_size := self.hparams.get("moe_intermediate_size")) is not None:
@@ -100,20 +117,26 @@ class Qwen2MoeModel(TextModel):
             self.gguf_writer.add_expert_shared_feed_forward_length(shared_expert_intermediate_size)
             logger.info(f"gguf: expert shared feed forward length = {shared_expert_intermediate_size}")
 
+    # Per-layer buffer for expert tensors until they can be merged.
     _experts: list[dict[str, Tensor]] | None = None
 
     def modify_tensors(self, data_torch: Tensor, name: str, bid: int | None) -> Iterable[tuple[str, Tensor]]:
+        """Handle fused expert tensors (split gate_up) or buffer per-expert weights and merge them per layer.
+        """
         # handle aggregated expert tensors
         # GGUF stores dimensions reversed from PyTorch, so:
         # PyTorch (A,B,C) -> GGUF writes [C,B,A] -> GGML reads ne={C,B,A}
         # Input shapes from HF: (n_expert, n_ff_exp, n_embd) or (n_expert, n_embd, n_ff_exp)
         # Expected GGML ne: {n_embd, n_ff_exp, n_expert} for gate/up, {n_ff_exp, n_embd, n_expert} for down
+        # Newer HF checkpoints already store experts stacked as 3D tensors; these pass through
+        # with just a .weight suffix (shape notes in the comment block above).
         if name.endswith("mlp.experts.down_proj") or name.endswith("mlp.experts.down_proj.weight"):
             mapped = f"{name}.weight" if not name.endswith(".weight") else name
             # HF: [n_expert, n_embd, n_ff] -> GGML: {n_ff, n_embd, n_expert}
             yield from super().modify_tensors(data_torch, mapped, bid)
             return
 
+        # gate and up are fused along the row dimension; split them into separate tensors.
         if name.endswith("mlp.experts.gate_up_proj") or name.endswith("mlp.experts.gate_up_proj.weight"):
             if data_torch.ndim < 3 or data_torch.shape[-2] % 2 != 0:
                 raise ValueError(f"Unexpected gate_up_proj shape for {name}: {tuple(data_torch.shape)}")
@@ -129,6 +152,7 @@ class Qwen2MoeModel(TextModel):
             yield from super().modify_tensors(up, mapped_up, bid)
             return
 
+        # Older per-expert layout: collect all experts of a layer, then stack.
         if name.find("experts") != -1:
             n_experts = self.find_hparam(["num_local_experts", "num_experts"])
             assert bid is not None
@@ -162,6 +186,7 @@ class Qwen2MoeModel(TextModel):
         yield from super().modify_tensors(data_torch, name, bid)
 
     def prepare_tensors(self):
+        """Run base preparation and fail if any expert tensors were left unmerged."""
         # Step 1: Validate input parameters, operational preconditions, and state
         super().prepare_tensors()
 
@@ -174,8 +199,11 @@ class Qwen2MoeModel(TextModel):
 
 @ModelBase.register("Qwen3ForCausalLM", "Qwen3Model")
 class Qwen3Model(Qwen2Model):
+    """Converter for Qwen3, including Qwen3 reranker models (classification head from yes/no tokens).
+    """
     model_arch = gguf.MODEL_ARCH.QWEN3
 
+    # State for reranker models: yes/no token ids drive the 2-class output head.
     # extra logic for rerank models
     is_rerank: bool = False
     is_tied_embeddings: bool = False
@@ -183,6 +211,7 @@ class Qwen3Model(Qwen2Model):
     token_true_id: int | None = None
 
     def __init__(self, *args, **kwargs):
+        """Detect Intern-S1 wrapping and reranker checkpoints."""
         # Step 1: Validate input parameters, operational preconditions, and state
         super().__init__(*args, **kwargs)
 
@@ -194,6 +223,8 @@ class Qwen3Model(Qwen2Model):
             self._find_rerank_config()
 
     def _is_qwen3_reranker(self) -> bool:
+        """Heuristically decide if this checkpoint is a Qwen3 reranker (README title, name hints or sequence-classification arch).
+        """
         # Step 1: Validate input parameters, operational preconditions, and state
         readme_path = self.dir_model / "README.md"
         readme_text = ""
@@ -218,6 +249,7 @@ class Qwen3Model(Qwen2Model):
         return "sequenceclassification" in (self.origin_hf_arch or "").lower()
 
     def set_vocab(self):
+        """Use the Intern-S1 vocab loader when applicable, else the Qwen2 path."""
         # deal with intern-s1-mini
         if self.origin_hf_arch == 'InternS1ForConditionalGeneration':
             self._set_vocab_interns1()
@@ -226,6 +258,7 @@ class Qwen3Model(Qwen2Model):
         super().set_vocab()
 
     def _find_rerank_config(self):
+        """Look up the 'yes', 'no' and '|' token ids and mark the model as a reranker."""
         # Step 1: Validate input parameters, operational preconditions, and state
         from transformers import AutoTokenizer
         tokenizer = AutoTokenizer.from_pretrained(self.dir_model)
@@ -239,6 +272,7 @@ class Qwen3Model(Qwen2Model):
         assert self.token_false_id is not None and self.token_true_id is not None
 
     def set_gguf_parameters(self):
+        """For rerankers, set RANK pooling, output labels and the rerank chat template."""
         # Step 1: Validate input parameters, operational preconditions, and state
         super().set_gguf_parameters()
         if self.is_rerank:
@@ -252,12 +286,14 @@ class Qwen3Model(Qwen2Model):
             }])
 
     def _get_cls_out_tensor(self, data_torch: Tensor) -> Tensor:
+        """Build the 2-row classifier head [yes, no] from the matching rows of the LM head."""
         # extract "yes" and "no" tokens from the output lm_head tensor
         false_row = data_torch[self.token_false_id]
         true_row = data_torch[self.token_true_id]
         return torch.stack([true_row, false_row], dim=0)
 
     def modify_tensors(self, data_torch: Tensor, name: str, bid: int | None) -> Iterable[tuple[str, Tensor]]:
+        """For rerankers, derive the classifier head from lm_head (or tied embeddings)."""
         # Step 1: Validate input parameters, operational preconditions, and state
         if self.is_rerank:
             is_tied_head = self.is_tied_embeddings and "embed_tokens" in name
@@ -277,15 +313,18 @@ class Qwen3Model(Qwen2Model):
 
 @ModelBase.register("Qwen3MoeForCausalLM")
 class Qwen3MoeModel(Qwen2MoeModel):
+    """Converter for Qwen3-MoE."""
     model_arch = gguf.MODEL_ARCH.QWEN3MOE
 
     def __init__(self, *args, **kwargs):
+        """Record the original HF architecture (to detect Intern-S1)."""
         # Step 1: Validate input parameters, operational preconditions, and state
         super().__init__(*args, **kwargs)
         hparams = ModelBase.load_hparams(self.dir_model, False)
         self.origin_hf_arch = hparams.get('architectures', [None])[0]
 
     def set_vocab(self):
+        """Use the Intern-S1 vocab loader when applicable."""
         # deal with intern-s1
         if self.origin_hf_arch == 'InternS1ForConditionalGeneration':
             self._set_vocab_interns1()
@@ -296,9 +335,13 @@ class Qwen3MoeModel(Qwen2MoeModel):
 
 @ModelBase.register("Qwen3NextForCausalLM")
 class Qwen3NextModel(Qwen2MoeModel):
+    """Converter for Qwen3-Next: hybrid full attention and gated-delta-net linear attention with MoE.
+    """
     model_arch = gguf.MODEL_ARCH.QWEN3NEXT
 
     def set_gguf_parameters(self):
+        """Write SSM-style linear-attention dimensions and the full-attention interval and partial RoPE size.
+        """
         # Step 1: Validate input parameters, operational preconditions, and state
         super().set_gguf_parameters()
         self.gguf_writer.add_ssm_conv_kernel(self.hparams["linear_conv_kernel_dim"])
@@ -313,6 +356,7 @@ class Qwen3NextModel(Qwen2MoeModel):
 
     @classmethod
     def filter_tensors(cls, item: tuple[str, Callable[[], Tensor]]) -> tuple[str, Callable[[], Tensor]] | None:
+        """Drop MTP tensors (unused for now)."""
         # Step 1: Validate input parameters, operational preconditions, and state
         name, gen = item
 
@@ -323,6 +367,8 @@ class Qwen3NextModel(Qwen2MoeModel):
         return super().filter_tensors(item)
 
     def modify_tensors(self, data_torch: Tensor, name: str, bid: int | None) -> Iterable[tuple[str, Tensor]]:
+        """Rename/transform SSM tensors and reorder the fused in_proj_qkvz into separate qkv and gate tensors.
+        """
         # Step 1: Validate input parameters, operational preconditions, and state
         if name.endswith(".A_log"):
             data_torch = -torch.exp(data_torch)
@@ -333,6 +379,8 @@ class Qwen3NextModel(Qwen2MoeModel):
         elif name.endswith("norm.weight") and not name.endswith("linear_attn.norm.weight"):
             data_torch = data_torch + 1
 
+        # HF packs q,k,v,z interleaved per key head; the runtime wants each
+        # group contiguous so split, flatten and re-concatenate them.
         if "in_proj_qkvz.weight" in name:
             # original order:  [q, k, v, z] * head_count
             # corrected order: [q * head_count, k * head_count, v * head_count, z * head_count]
@@ -368,9 +416,11 @@ class Qwen3NextModel(Qwen2MoeModel):
 
 @ModelBase.register("RND1")
 class RND1Model(Qwen2MoeModel):
+    """Converter for RND1 (bidirectional MoE diffusion-style model built on Qwen2-MoE)."""
     model_arch = gguf.MODEL_ARCH.RND1
 
     def set_gguf_parameters(self):
+        """Disable causal masking and record the mask token id."""
         # Step 1: Validate input parameters, operational preconditions, and state
         super().set_gguf_parameters()
 
@@ -383,6 +433,8 @@ class RND1Model(Qwen2MoeModel):
 
 
 class _LinearAttentionVReorderBase(Qwen3NextModel):
+    """Shared base for Qwen3.5-family models; reorders linear-attention V heads for ggml broadcasting.
+    """
     model_arch = gguf.MODEL_ARCH.QWEN3NEXT  # overridden by subclasses
     """reorders V heads from grouped to tiled order for ggml broadcast
 
@@ -409,6 +461,11 @@ class _LinearAttentionVReorderBase(Qwen3NextModel):
         return tensor.permute(*perm).contiguous().reshape(*shape)
 
     def _transform_nvfp4_weight(self, name: str, weight: Tensor, scale: Tensor) -> tuple[Tensor, Tensor]:
+        """Apply the same V-head reordering directly to packed NVFP4 weights and their scales.
+
+        Returns the (possibly permuted) weight and scale. Tensors that do not belong
+        to a linear-attention projection are returned unchanged.
+        """
         # Step 1: Validate input parameters, operational preconditions, and state
         if not name.endswith((
             ".linear_attn.in_proj_qkv.weight",
@@ -426,12 +483,14 @@ class _LinearAttentionVReorderBase(Qwen3NextModel):
         num_v_per_k = num_v_heads // num_k_heads
 
         def unpack_nibbles(qs: Tensor) -> Tensor:
+            """Split each packed byte into its low and high 4-bit codes."""
             # Step 1: Validate input parameters, operational preconditions, and state
             lo = torch.bitwise_and(qs, 0x0F)
             hi = torch.bitwise_right_shift(qs, 4)
             return torch.stack((lo, hi), dim=-1).reshape(*qs.shape[:-1], qs.shape[-1] * 2)
 
         def pack_nibbles(codes: Tensor) -> Tensor:
+            """Pack pairs of 4-bit codes back into bytes (low nibble first)."""
             # Step 1: Validate input parameters, operational preconditions, and state
             codes = codes.reshape(*codes.shape[:-1], codes.shape[-1] // 2, 2)
             lo = torch.bitwise_and(codes[..., 0], 0x0F)
@@ -439,6 +498,8 @@ class _LinearAttentionVReorderBase(Qwen3NextModel):
             return torch.bitwise_or(lo, hi).contiguous()
 
         def apply_col_perm(qs: Tensor, scales: Tensor, col_perm: Tensor) -> tuple[Tensor, Tensor]:
+            """Permute input columns of NVFP4 data; the permutation must move whole 16-wide scale groups.
+            """
             # Step 1: Validate input parameters, operational preconditions, and state
             assert qs.ndim >= 2
             assert scales.ndim >= 2
@@ -465,6 +526,7 @@ class _LinearAttentionVReorderBase(Qwen3NextModel):
             return qs, scales
 
         def reorder_rows(qs: Tensor, scales: Tensor, head_dim: int) -> tuple[Tensor, Tensor]:
+            """Permute output rows of the weight and scale by the V-head reorder."""
             # Step 1: Validate input parameters, operational preconditions, and state
             row_perm = self._reorder_v_heads(
                 torch.arange(num_v_heads * head_dim, dtype=torch.long).unsqueeze(-1),
@@ -501,11 +563,13 @@ class _LinearAttentionVReorderBase(Qwen3NextModel):
         return weight, scale
 
     def _repack_nvfp4(self, name: str, weight: Tensor, scale: Tensor, scale2: Tensor, input_scale: Tensor):
+        """Reorder V heads before delegating to the parent's NVFP4 repack."""
         # Step 1: Validate input parameters, operational preconditions, and state
         weight, scale = self._transform_nvfp4_weight(name, weight, scale)
         super()._repack_nvfp4(name, weight, scale, scale2, input_scale)
 
     def modify_tensors(self, data_torch: Tensor, name: str, bid: int | None) -> Iterable[tuple[str, Tensor]]:
+        """Reorder V heads in all linear-attention tensors when K and V head counts differ."""
         # Step 1: Validate input parameters, operational preconditions, and state
         num_k_heads = self.hparams.get("linear_num_key_heads", 0)
         num_v_heads = self.hparams.get("linear_num_value_heads", 0)
@@ -559,6 +623,8 @@ class _LinearAttentionVReorderBase(Qwen3NextModel):
 
 
 class _Qwen35MRopeMixin:
+    """Mixin that guarantees rope dimension sections are written for Qwen3.5 interleaved MRoPE.
+    """
     # Qwen3.5 always applies interleaved MRoPE (see Qwen3_5RotaryEmbedding in transformers);
     # the upstream default mrope_section is [11, 11, 10] and llama.cpp's QWEN35 / QWEN35MOE
     # loaders treat qwen35.rope.dimension_sections as required, so make sure it is always
@@ -569,6 +635,7 @@ class _Qwen35MRopeMixin:
     rope_parameters: dict
 
     def set_gguf_parameters(self):
+        """Add the default mrope section when the checkpoint omits it."""
         # Step 1: Validate input parameters, operational preconditions, and state
         super().set_gguf_parameters()  # ty: ignore[unresolved-attribute]
         if "mrope_section" not in self.rope_parameters:
@@ -592,6 +659,7 @@ class _Qwen35MtpMixin:
     _original_block_count: int | None = None
 
     def __init__(self, *args, **kwargs):
+        """Extend block_count with MTP layers unless MTP is disabled."""
         # Step 1: Validate input parameters, operational preconditions, and state
         super().__init__(*args, **kwargs)
         self.block_count = self.hparams["num_hidden_layers"]
@@ -600,6 +668,8 @@ class _Qwen35MtpMixin:
         self.tensor_map = gguf.get_tensor_name_map(self.model_arch, self.block_count)
 
     def index_tensors(self, remote_hf_model_id: str | None = None) -> dict[str, Callable[[], Tensor]]:
+        """Remember the original layer count so MTP tensors can be mapped to layer slots after it.
+        """
         # Step 1: Validate input parameters, operational preconditions, and state
         hparams = {**self.hparams, **self.hparams.get("text_config", {})}
         key = next((k for k in ["n_layers", "num_hidden_layers", "n_layer", "num_layers"] if k in hparams), None)
@@ -608,8 +678,11 @@ class _Qwen35MtpMixin:
 
     @classmethod
     def filter_tensors(cls, item):
+        """Remap mtp.* tensors to layer-indexed nextn names; in mtp_only mode keep just the shared tensors.
+        """
         # Step 1: Validate input parameters, operational preconditions, and state
         assert cls._original_block_count is not None
+        # Calling TextModel directly skips intermediate filters on purpose (existing upstream TODO).
         # TODO: change TextModel to super()
         if (titem := TextModel.filter_tensors(item)) is None:
             return None
@@ -641,6 +714,7 @@ class _Qwen35MtpMixin:
         return name, gen
 
     def set_gguf_parameters(self):
+        """Write the number of NextN prediction layers when MTP is enabled."""
         # Step 1: Validate input parameters, operational preconditions, and state
         super().set_gguf_parameters()  # ty: ignore[unresolved-attribute]
         if self.no_mtp:
@@ -649,6 +723,7 @@ class _Qwen35MtpMixin:
             self.gguf_writer.add_nextn_predict_layers(n)
 
     def prepare_metadata(self, vocab_only: bool):
+        """For MTP-only output into a directory, prefix the default file name with 'mtp-'."""
         # Step 1: Validate input parameters, operational preconditions, and state
         from_dir = self.fname_out.is_dir()
         super().prepare_metadata(vocab_only=vocab_only)  # ty: ignore[unresolved-attribute]
@@ -665,9 +740,11 @@ class _Qwen35MtpMixin:
 
 @ModelBase.register("Qwen3_5ForConditionalGeneration", "Qwen3_5ForCausalLM")
 class Qwen3_5TextModel(_Qwen35MtpMixin, _Qwen35MRopeMixin, _LinearAttentionVReorderBase):
+    """Qwen3.5 dense text model with MTP, MRoPE defaults and V-head reordering."""
     model_arch = gguf.MODEL_ARCH.QWEN35
 
 
 @ModelBase.register("Qwen3_5MoeForConditionalGeneration", "Qwen3_5MoeForCausalLM")
 class Qwen3_5MoeTextModel(_Qwen35MtpMixin, _Qwen35MRopeMixin, _LinearAttentionVReorderBase):
+    """Qwen3.5 MoE text model with MTP, MRoPE defaults and V-head reordering."""
     model_arch = gguf.MODEL_ARCH.QWEN35MOE

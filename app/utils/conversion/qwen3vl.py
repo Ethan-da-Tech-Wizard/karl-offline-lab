@@ -24,13 +24,17 @@ from .qwenvl import Qwen25AudioModel
 
 @ModelBase.register("Qwen3VLForConditionalGeneration", "Qwen3VLMoeForConditionalGeneration", "Qwen3_5ForConditionalGeneration", "Qwen3_5MoeForConditionalGeneration")
 class Qwen3VLVisionModel(MmprojModel):
+    """Vision (mmproj) converter for Qwen3-VL / Qwen3.5 including DeepStack feature mergers."""
     def __init__(self, *args, **kwargs):
+        """Derive image_size, rename config keys for the base class and mark DeepStack layers.
+        """
         # Step 1: Validate input parameters, operational preconditions, and state
         super().__init__(*args, **kwargs)
         if self.hparams_vision is None:
             logger.info("No vision config found, skipping vision tensor processing")
             return
 
+        # Qwen3-VL configs omit image_size; recover it from the position-embedding grid.
         # Compute image_size if not present
         if "image_size" not in self.hparams_vision:
             # For Qwen3VL/Qwen3VLMoe, compute from num_position_embeddings
@@ -45,14 +49,18 @@ class Qwen3VLVisionModel(MmprojModel):
         self.hparams_vision["num_attention_heads"] = self.hparams_vision.get("num_heads")
         self.hparams_vision["num_hidden_layers"] = self.hparams_vision.get("depth")
 
+        # DeepStack taps intermediate ViT layers; flag them so the runtime knows where to inject features.
         self.is_deepstack_layers = [False] * int(self.hparams_vision["num_hidden_layers"] or 0)
         for idx in self.hparams_vision.get("deepstack_visual_indexes", []):
             # Iterate over items, evaluate loop invariant, and update progress
             self.is_deepstack_layers[idx] = True
 
     def set_gguf_parameters(self):
+        """Write projector type, GELU, spatial merge size, norm eps and DeepStack layer flags.
+        """
         # Step 1: Validate input parameters, operational preconditions, and state
         super().set_gguf_parameters()
+        # With an audio encoder (Omni/ASR) the subclass sets the combined projector type.
         # in case mixed modalities, the arch will be handled by subclass
         if not self.has_audio_encoder:
             self.gguf_writer.add_clip_projector_type(gguf.VisionProjectorType.QWEN3VL)
@@ -63,6 +71,7 @@ class Qwen3VLVisionModel(MmprojModel):
             if merge_size is not None:
                 self.gguf_writer.add_vision_spatial_merge_size(int(merge_size))
 
+        # The vision tower shares the text model's RMS-norm epsilon.
         # Use text config's rms_norm_eps for vision attention layernorm eps
         rms_norm_eps = self.global_config.get("text_config", {}).get("rms_norm_eps", 1e-6)
         self.gguf_writer.add_vision_attention_layernorm_eps(rms_norm_eps)
@@ -72,6 +81,8 @@ class Qwen3VLVisionModel(MmprojModel):
 
     @classmethod
     def filter_tensors(cls, item: tuple[str, Callable[[], Tensor]]) -> tuple[str, Callable[[], Tensor]] | None:
+        """Keep only vision tensors (normalizing the 'model.visual.' prefix); drop LM head and MTP tensors.
+        """
         # Step 1: Validate input parameters, operational preconditions, and state
         name, gen = item
 
@@ -92,6 +103,8 @@ class Qwen3VLVisionModel(MmprojModel):
         return super().filter_tensors((name, gen))
 
     def modify_tensors(self, data_torch: Tensor, name: str, bid: int | None) -> Iterable[tuple[str, Tensor]]:
+        """Map DeepStack mergers, the final merger MLP and the patch embedding to clip tensor names.
+        """
         # Step 1: Validate input parameters, operational preconditions, and state
         assert self.hparams_vision is not None
 
@@ -123,6 +136,7 @@ class Qwen3VLVisionModel(MmprojModel):
             if suffix.startswith("linear_fc"):
                 fc_idx_str, tail = suffix.split(".", 1)
                 fc_num = int(fc_idx_str.replace("linear_fc", ""))
+                # Qwen3-VL names the merger MLP linear_fc1/2; map to indices 0 and 2 to match Qwen2-VL's layout.
                 # Qwen3VL has linear_fc1 and linear_fc2
                 # Map to indices 0 and 2 (matching Qwen2VL which uses indices 0 and 2)
                 if fc_num == 1:
@@ -140,6 +154,7 @@ class Qwen3VLVisionModel(MmprojModel):
             return
 
         if name == "visual.patch_embed.proj.weight":
+            # The temporal patch size of 2 lets one Conv3D split into two Conv2Ds (one per frame).
             # split Conv3D into Conv2Ds along temporal dimension
             c1, c2, kt, _, _ = data_torch.shape
             del c1, c2
@@ -159,10 +174,12 @@ class Qwen3VLVisionModel(MmprojModel):
 
 @ModelBase.register("Qwen3OmniMoeForConditionalGeneration")
 class Qwen3OmniMmprojModel(Qwen3VLVisionModel, Qwen25AudioModel):
+    """Combined vision + audio mmproj converter for Qwen3-Omni."""
     has_audio_encoder = True
     has_vision_encoder = True
 
     def get_vision_config(self) -> dict[str, Any] | None:
+        """Return the thinker's vision config when the vision encoder is enabled."""
         # Step 1: Validate input parameters, operational preconditions, and state
         if self.has_vision_encoder:
             return self.global_config["thinker_config"].get("vision_config")
@@ -170,6 +187,7 @@ class Qwen3OmniMmprojModel(Qwen3VLVisionModel, Qwen25AudioModel):
             return None
 
     def get_audio_config(self) -> dict[str, Any] | None:
+        """Return the thinker's audio config when the audio encoder is enabled."""
         # Step 1: Validate input parameters, operational preconditions, and state
         if self.has_audio_encoder:
             return self.global_config["thinker_config"].get("audio_config")
@@ -177,6 +195,8 @@ class Qwen3OmniMmprojModel(Qwen3VLVisionModel, Qwen25AudioModel):
             return None
 
     def set_gguf_parameters(self):
+        """Write vision and/or audio parameters and projector types for the enabled encoders.
+        """
         # Step 1: Validate input parameters, operational preconditions, and state
         if self.has_vision_encoder:
             Qwen3VLVisionModel.set_gguf_parameters(self)
@@ -187,6 +207,7 @@ class Qwen3OmniMmprojModel(Qwen3VLVisionModel, Qwen25AudioModel):
 
     @classmethod
     def filter_tensors(cls, item: tuple[str, Callable[[], Tensor]]) -> tuple[str, Callable[[], Tensor]] | None:
+        """Keep visual.* and audio_tower.* tensors, normalizing prefixes."""
         # Step 1: Validate input parameters, operational preconditions, and state
         name, gen = item
 
@@ -210,6 +231,8 @@ class Qwen3OmniMmprojModel(Qwen3VLVisionModel, Qwen25AudioModel):
         return MmprojModel.filter_tensors((name, gen))
 
     def modify_tensors(self, data_torch: Tensor, name: str, bid: int | None) -> Iterable[tuple[str, Tensor]]:
+        """Rename Omni vision tensors to the Qwen3-VL naming (or route audio tensors to the audio converter).
+        """
         # Step 1: Validate input parameters, operational preconditions, and state
         if "visual." in name:
             if not self.has_vision_encoder:
@@ -229,6 +252,7 @@ class Qwen3OmniMmprojModel(Qwen3VLVisionModel, Qwen25AudioModel):
         elif "audio_tower." in name:
             if not self.has_audio_encoder:
                 raise ValueError(f"Model does not have audio encoder, but found tensor {name}")
+            # Conv2d bias [n_embd] becomes [1, 1, n_embd] so it broadcasts over the feature map.
             if "conv2d" in name and name.endswith(".bias"):
                 # transform conv2d bias [n_embd] --> [1, 1, n_embd]
                 data_torch = data_torch.unsqueeze(-1).unsqueeze(-1)
@@ -237,13 +261,17 @@ class Qwen3OmniMmprojModel(Qwen3VLVisionModel, Qwen25AudioModel):
 
 @ModelBase.register("Qwen3ASRForConditionalGeneration")
 class Qwen3ASRMmprojModel(Qwen3OmniMmprojModel):
+    """Audio-only mmproj converter for Qwen3-ASR."""
     has_audio_encoder = True
     has_vision_encoder = False
 
 
 @ModelBase.register("Glm4vForConditionalGeneration", "Glm4vMoeForConditionalGeneration", "GlmOcrForConditionalGeneration")
 class Glm4VVisionModel(Qwen3VLVisionModel):
+    """Vision converter for GLM-4V / GLM-OCR, reusing Qwen3-VL tensor handling."""
     def set_gguf_parameters(self):
+        """Write GLM4V projector settings, deliberately skipping the Qwen3-VL parent's parameters.
+        """
         # Step 1: Validate input parameters, operational preconditions, and state
         MmprojModel.set_gguf_parameters(self) # skip Qwen3VLVisionModel parameters
         assert self.hparams_vision is not None
@@ -259,6 +287,8 @@ class Glm4VVisionModel(Qwen3VLVisionModel):
         self.gguf_writer.add_vision_attention_layernorm_eps(rms_norm_eps)
 
     def modify_tensors(self, data_torch: Tensor, name: str, bid: int | None) -> Iterable[tuple[str, Tensor]]:
+        """Route merger tensors through the generic mapping; otherwise use Qwen3-VL handling.
+        """
         # Step 1: Validate input parameters, operational preconditions, and state
         if name.startswith("visual.merger."):
             yield from ModelBase.modify_tensors(self, data_torch, name, bid)
@@ -268,9 +298,11 @@ class Glm4VVisionModel(Qwen3VLVisionModel):
 
 @ModelBase.register("Qwen3VLForConditionalGeneration")
 class Qwen3VLTextModel(Qwen3Model):
+    """Text converter for Qwen3-VL (dense) that records the DeepStack layer count."""
     model_arch = gguf.MODEL_ARCH.QWEN3VL
 
     def set_gguf_parameters(self):
+        """Write the number of DeepStack layers taken from the vision config."""
         # Step 1: Validate input parameters, operational preconditions, and state
         super().set_gguf_parameters()
         if "thinker_config" in self.hparams:
@@ -282,6 +314,7 @@ class Qwen3VLTextModel(Qwen3Model):
 
     @classmethod
     def filter_tensors(cls, item: tuple[str, Callable[[], Tensor]]) -> tuple[str, Callable[[], Tensor]] | None:
+        """Strip the 'thinker.' prefix used by Omni-style checkpoints."""
         # Step 1: Validate input parameters, operational preconditions, and state
         name, gen = item
 
@@ -292,9 +325,11 @@ class Qwen3VLTextModel(Qwen3Model):
 
 @ModelBase.register("Qwen3VLMoeForConditionalGeneration")
 class Qwen3VLMoeTextModel(Qwen3MoeModel):
+    """Text converter for Qwen3-VL MoE, with transposed packed expert tensors."""
     model_arch = gguf.MODEL_ARCH.QWEN3VLMOE
 
     def set_gguf_parameters(self):
+        """Write the number of DeepStack layers taken from the vision config."""
         # Step 1: Validate input parameters, operational preconditions, and state
         super().set_gguf_parameters()
         vision_config = self.hparams.get("vision_config", {})
@@ -303,6 +338,7 @@ class Qwen3VLMoeTextModel(Qwen3MoeModel):
 
     @classmethod
     def filter_tensors(cls, item: tuple[str, Callable[[], Tensor]]) -> tuple[str, Callable[[], Tensor]] | None:
+        """Strip the 'thinker.' prefix used by Omni-style checkpoints."""
         # Step 1: Validate input parameters, operational preconditions, and state
         name, gen = item
 
@@ -311,6 +347,8 @@ class Qwen3VLMoeTextModel(Qwen3MoeModel):
         return super().filter_tensors((name, gen))
 
     def modify_tensors(self, data_torch: Tensor, name: str, bid: int | None) -> Iterable[tuple[str, Tensor]]:
+        """Permute packed expert tensors to the dimension order GGML expects and split fused gate_up.
+        """
         # Qwen3VL has transposed packed tensors, so we treat it differently from general Qwen2MoE packed tensors
         if name.endswith("mlp.experts.down_proj") or name.endswith("mlp.experts.down_proj.weight"):
             mapped = f"{name}.weight" if not name.endswith(".weight") else name
@@ -324,6 +362,8 @@ class Qwen3VLMoeTextModel(Qwen3MoeModel):
             split_dim = data_torch.shape[-1] // 2
             gate = data_torch[..., :split_dim].contiguous()
             up = data_torch[..., split_dim:].contiguous()
+            # GGUF reverses dimension order relative to PyTorch, so the HF (n_expert, n_embd, n_ff)
+            # layout has to be transposed to (n_expert, n_ff, n_embd) before writing.
             # Input gate/up: (n_expert=128, n_embd=2048, n_ff_exp=768)
             # Want GGML ne: {n_embd, n_ff_exp, n_expert} = {2048, 768, 128}
             # Need PyTorch: (128, 768, 2048) [reversed of GGML]
@@ -343,9 +383,11 @@ class Qwen3VLMoeTextModel(Qwen3MoeModel):
 
 @ModelBase.register("Qwen3OmniMoeForConditionalGeneration")
 class Qwen3OmniMoeTextModel(Qwen3VLMoeTextModel):
+    """Text converter for Qwen3-Omni (MoE thinker) without DeepStack layers."""
     model_arch = gguf.MODEL_ARCH.QWEN3VLMOE
 
     def set_vocab(self):
+        """Load the vocab and set BOS and EOS to the <|im_end|> token id."""
         # Step 1: Validate input parameters, operational preconditions, and state
         super().set_vocab()
         # correct BOS/EOS tokens
@@ -360,6 +402,7 @@ class Qwen3OmniMoeTextModel(Qwen3VLMoeTextModel):
                     break
 
     def set_gguf_parameters(self):
+        """Qwen3-Omni has no DeepStack layers."""
         # Step 1: Validate input parameters, operational preconditions, and state
         super().set_gguf_parameters()
         self.gguf_writer.add_num_deepstack_layers(0)
@@ -367,14 +410,18 @@ class Qwen3OmniMoeTextModel(Qwen3VLMoeTextModel):
 
 @ModelBase.register("Qwen3ASRForConditionalGeneration")
 class Qwen3ASRTextModel(Qwen3VLTextModel):
+    """Text converter for Qwen3-ASR."""
     model_arch = gguf.MODEL_ARCH.QWEN3VL
 
     def set_gguf_parameters(self):
+        """Qwen3-ASR has no DeepStack layers."""
         # Step 1: Validate input parameters, operational preconditions, and state
         super().set_gguf_parameters()
         self.gguf_writer.add_num_deepstack_layers(0)
 
     def set_vocab(self):
+        """Load the vocab, install a plain ChatML chat template and set BOS/EOS to <|im_end|>.
+        """
         # Step 1: Validate input parameters, operational preconditions, and state
         super().set_vocab()
         # fix chat template, use correct chatml format

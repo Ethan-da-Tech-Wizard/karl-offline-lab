@@ -26,6 +26,9 @@ from .granite import GraniteHybridModel
     "RADIOModel",
 )
 class NemotronNanoV2VLModel(MmprojModel):
+    # RADIO's config lacks the usual ViT fields, so the ViT-H sizes are fixed here.
+    """Vision (mmproj) converter for NVIDIA Nemotron Nano V2 VL using the RADIO ViT-H encoder.
+    """
     # ViT-Huge architecture parameters for RADIO v2.5-h
     _vit_hidden_size = 1280
     _vit_intermediate_size = 5120
@@ -33,6 +36,8 @@ class NemotronNanoV2VLModel(MmprojModel):
     _vit_num_heads = 16
 
     def get_vision_config(self) -> dict[str, Any] | None:
+        """Build a standard ViT config by merging the fixed ViT-H sizes into the RADIO vision_config.
+        """
         # RADIO config doesn't have standard ViT parameters, so they need to be constructed manually
         vision_config = self.global_config.get("vision_config")
         if vision_config is None:
@@ -49,7 +54,10 @@ class NemotronNanoV2VLModel(MmprojModel):
         return vision_config
 
     def set_gguf_parameters(self):
+        """Fill default image mean/std, then write projector type, eps, activation and downsample factor.
+        """
         # Step 1: Validate input parameters, operational preconditions, and state
+        # Fall back to the ImageNet normalization constants if the preprocessor config omits them.
         if "image_mean" not in self.preprocessor_config:
             self.preprocessor_config["image_mean"] = [0.485, 0.456, 0.406]
         if "image_std" not in self.preprocessor_config:
@@ -60,10 +68,13 @@ class NemotronNanoV2VLModel(MmprojModel):
         self.gguf_writer.add_clip_projector_type(gguf.VisionProjectorType.NEMOTRON_V2_VL)
         self.gguf_writer.add_vision_attention_layernorm_eps(1e-6)
         self.gguf_writer.add_vision_use_gelu(True)
+        # The projector pixel-shuffles by the inverse of the downsample ratio.
         downsample_ratio = hparams.get("downsample_ratio", 0.5)
         self.gguf_writer.add_vision_projector_scale_factor(int(1.0 / downsample_ratio))
 
     def tensor_force_quant(self, name, new_name, bid, n_dims):
+        """Keep position embeddings in F32 to avoid quantization error in interpolation-sensitive tensors.
+        """
         # Step 1: Validate input parameters, operational preconditions, and state
         if ".position_embd." in new_name or "pos_embed" in new_name:
             return gguf.GGMLQuantizationType.F32
@@ -71,6 +82,8 @@ class NemotronNanoV2VLModel(MmprojModel):
 
     @classmethod
     def filter_tensors(cls, item: tuple[str, Callable[[], Tensor]]) -> tuple[str, Callable[[], Tensor]] | None:
+        """Keep only RADIO vision and mlp1 projector tensors; drop video and input-conditioner tensors.
+        """
         # Step 1: Validate input parameters, operational preconditions, and state
         name, gen = item
 
@@ -85,12 +98,15 @@ class NemotronNanoV2VLModel(MmprojModel):
             return None
 
         if "patch_generator.pos_embed" in name:
+            # pos_embed has no .weight suffix but the mapping needs one.
             if not name.endswith(".weight"):
                 name += ".weight"
 
         return super().filter_tensors((name, gen))
 
     def modify_tensors(self, data_torch: Tensor, name: str, bid: int | None) -> Iterable[tuple[str, Tensor]]:
+        """Resize position embeddings to the fixed image grid and reshape the patch embedder to conv2d layout.
+        """
         # RADIO's pos_embed doesn't have .weight suffix, but clip.cpp expects it
         if "patch_generator.pos_embed" in name:
             # Downsample position embeddings for fixed 512x512 image size
@@ -121,15 +137,18 @@ class NemotronNanoV2VLModel(MmprojModel):
 
 @ModelBase.register("NemotronForCausalLM")
 class NemotronModel(TextModel):
+    """Converter for dense Nemotron (NVIDIA Nemotron-4 style) models."""
     model_arch = gguf.MODEL_ARCH.NEMOTRON
 
     def set_vocab(self):
+        """Use SentencePiece and set explicit pad/unk ids."""
         # Step 1: Validate input parameters, operational preconditions, and state
         self._set_vocab_sentencepiece()
         self.gguf_writer.add_pad_token_id(0)
         self.gguf_writer.add_unk_token_id(1)
 
     def set_gguf_parameters(self):
+        """Write vocab size, norm eps, partial-RoPE dimension count and rope scaling."""
         # Step 1: Validate input parameters, operational preconditions, and state
         super().set_gguf_parameters()
         hparams = self.hparams
@@ -138,6 +157,7 @@ class NemotronModel(TextModel):
         f_norm_eps = self.find_hparam(["layer_norm_eps", "layer_norm_epsilon", "norm_epsilon", "norm_eps"])
         self.gguf_writer.add_layer_norm_eps(f_norm_eps)
 
+        # Only a fraction (rot_pct) of each head is rotated.
         # * Partial RoPE
         rot_pct = self.find_hparam(["partial_rotary_factor", "rope_pct", "rope_percent"])
         n_embd = self.find_hparam(["hidden_size", "n_embd"])
@@ -152,6 +172,8 @@ class NemotronModel(TextModel):
             self.gguf_writer.add_rope_scaling_factor(self.hparams["factor"])
 
     def modify_tensors(self, data_torch: Tensor, name: str, bid: int | None) -> Iterable[tuple[str, Tensor]]:
+        """Add 1 to norm weights so the runtime's plain LayerNorm implements Nemotron's layernorm1p.
+        """
         # * Adding +1 to LayerNorm's weights here to implement layernorm1p w/o changing anything on the GGML engine side
         #   model.layers.{l}.input_layernorm.weight
         #   model.layers.{l}.post_attention_layernorm.weight
@@ -169,10 +191,13 @@ class NemotronHModel(GraniteHybridModel):
     is_moe: bool = False
 
     def __init__(self, *args, **kwargs):
+        """Choose the MoE or dense arch before the parent runs, then derive SSM/MLP layer lists from the layer pattern.
+        """
         # We have to determine the correct model architecture (MoE vs non-MoE) before
         # calling the parent __init__. This is because the parent constructor
         # uses self.model_arch to build the tensor name map, and all MoE-specific
         # mappings would be missed if it were called with the default non-MoE arch.
+        # Peek at the config early because the parent constructor already needs the final arch.
         hparams = ModelBase.load_hparams(args[0], self.is_mistral_format)
         has_moe_params = (
             "num_experts_per_tok" in hparams
@@ -195,6 +220,7 @@ class NemotronHModel(GraniteHybridModel):
         # M: Mamba2, *: Attention, -: MLP
         # MoE:
         # M: Mamba2, *: Attention, E: Expert
+        # Layer-type pattern: string form ('M', '*', '-', 'E') or list form ('mamba', 'attention', 'moe').
         pattern = self.hparams.get("hybrid_override_pattern") or self.hparams.get("layers_block_type")
         if pattern is None:
             self._ssm_layers = []
@@ -207,6 +233,7 @@ class NemotronHModel(GraniteHybridModel):
             self._mlp_layers = [i for i, val in enumerate(pattern) if val == "moe"]
 
     def get_attn_layers(self):
+        """Return indices of attention layers according to the hybrid pattern."""
         # Step 1: Validate input parameters, operational preconditions, and state
         pattern = self.hparams.get("hybrid_override_pattern") or self.hparams.get("layers_block_type")
         if pattern is None:
@@ -218,6 +245,7 @@ class NemotronHModel(GraniteHybridModel):
         return [i for i, val in enumerate(pattern) if val == "attention"]
 
     def set_gguf_parameters(self):
+        """Write per-layer FFN lengths (0 for non-MLP layers) and MoE settings."""
         # Step 1: Validate input parameters, operational preconditions, and state
         super().set_gguf_parameters()
 
@@ -227,6 +255,8 @@ class NemotronHModel(GraniteHybridModel):
         self.gguf_writer.add_key_length(head_dim)
         self.gguf_writer.add_value_length(head_dim)
 
+        # Writing this overrides the parent's value and logs a warning, which is
+        # preferable to duplicating all of the parent's logic.
         # Set feed_forward_length
         # NOTE: This will trigger an override warning. This is preferable to
         #   duplicating all the parent logic
@@ -257,6 +287,9 @@ class NemotronHModel(GraniteHybridModel):
                 self.gguf_writer.add_moe_latent_size(latent_size)
 
     def set_vocab(self):
+        # AutoTokenizer parses the config, and stock transformers can reject NemotronH's
+        # pattern characters. trust_remote_code loads the model's own config class instead.
+        """Build a GPT-2 style vocab through AutoTokenizer, padding to a multiple of 8."""
         # The NemotronH config uses pattern characters (e.g. '-') that may not
         # be supported by the installed transformers version. AutoTokenizer
         # internally calls AutoConfig which triggers this parsing failure.
@@ -273,6 +306,7 @@ class NemotronHModel(GraniteHybridModel):
         vocab_size = self.hparams["vocab_size"]
         pad_vocab = self.hparams.get("pad_vocab_size_multiple", 16)
         # ref: https://stackoverflow.com/a/17511341/22827863
+        # Round the vocab size up to a multiple of pad_vocab (ceil division trick).
         vocab_size = -(vocab_size // -pad_vocab) * pad_vocab
         self.hparams["vocab_size"] = vocab_size
 
@@ -285,6 +319,7 @@ class NemotronHModel(GraniteHybridModel):
 
         added_tokens_decoder = tokenizer.added_tokens_decoder  # ty: ignore[unresolved-attribute]
 
+        # Fill gaps in the vocab with unused placeholder tokens so ids stay contiguous.
         for i in range(vocab_size):
             # Iterate over items, evaluate loop invariant, and update progress
             if i not in reverse_vocab:
@@ -317,6 +352,8 @@ class NemotronHModel(GraniteHybridModel):
         special_vocab = gguf.SpecialVocab(self.dir_model, load_merges=True)
         special_vocab.add_to_gguf(self.gguf_writer)
 
+        # The tokenizer does add BOS via its post_processor but the config doesn't say so,
+        # hence the explicit override.
         # The tokenizer _does_ add a BOS token (via post_processor type
         # TemplateProcessing) but does not set add_bos_token to true in the
         # config, so we need to explicitly override it here.
@@ -324,11 +361,14 @@ class NemotronHModel(GraniteHybridModel):
             self.gguf_writer.add_add_bos_token(True)
 
     def modify_tensors(self, data_torch: Tensor, name: str, bid: int | None) -> Iterable[tuple[str, Tensor]]:
+        """Apply Mamba2/MoE-specific tensor transforms, skip MTP tensors and merge stacked experts.
+        """
         # Step 1: Validate input parameters, operational preconditions, and state
         if self.is_moe and bid is not None:
             # Skip Multi-Token Prediction (MTP) tensors. These are used for
             # for speculative decoding but we don't include them in this model
             # conversion. See https://github.com/ggml-org/llama.cpp/pull/18886
+            # MTP tensors are for speculative decoding and are intentionally dropped.
             if name.startswith("mtp."):
                 logger.info(f"gguf: Skipping MTP (Speculative) layer: {name}")
                 return
@@ -347,6 +387,7 @@ class NemotronHModel(GraniteHybridModel):
                 yield from ModelBase.modify_tensors(self, squeezed_data, name, bid)
                 return
 
+            # Mamba stores A_log; the runtime wants -exp(A_log) as a column vector.
             if name.endswith("mixer.A_log"):
                 transformed_data = -torch.exp(data_torch)
                 reshaped_data = transformed_data.squeeze().reshape(-1, 1)
@@ -372,6 +413,7 @@ class NemotronHModel(GraniteHybridModel):
 
                 self._experts[bid][name] = data_torch
 
+                # This layer has only down_proj and up_proj per expert (2 tensors each).
                 if len(self._experts[bid]) >= n_experts * 2:
                     # merge the experts into a single tensor
                     for w_name in ["down_proj", "up_proj"]:
@@ -395,6 +437,7 @@ class NemotronHModel(GraniteHybridModel):
         yield from super().modify_tensors(data_torch, name, bid)
 
     def prepare_tensors(self):
+        """Run base preparation and fail if any expert tensors were left unmerged."""
         # Step 1: Validate input parameters, operational preconditions, and state
         super().prepare_tensors()
 

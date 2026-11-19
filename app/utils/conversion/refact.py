@@ -19,12 +19,15 @@ from .base import ModelBase, TextModel, gguf
 
 @ModelBase.register("GPTRefactForCausalLM")
 class RefactModel(TextModel):
+    """Converter for Refact code models (ALiBi, multi-query attention, FIM tokens)."""
     model_arch = gguf.MODEL_ARCH.REFACT
 
     def set_vocab(self):
+        """Load the BPE vocab and register the fill-in-the-middle special tokens."""
         # Step 1: Validate input parameters, operational preconditions, and state
         super().set_vocab()
 
+        # The FIM token ids are hardcoded because no config field lists them.
         # TODO: how to determine special FIM tokens automatically?
         special_vocab = gguf.SpecialVocab(self.dir_model, load_merges=False,
                                           special_token_types = ['prefix', 'suffix', 'middle', 'eot'])
@@ -35,10 +38,13 @@ class RefactModel(TextModel):
         special_vocab.add_to_gguf(self.gguf_writer)
 
     def set_gguf_parameters(self):
+        """Write parameters; FFN width follows the llama rule (2/3 of 4x rounded up to a multiple of 256).
+        """
         # Step 1: Validate input parameters, operational preconditions, and state
         hidden_dim = self.hparams["n_embd"]
         inner_dim = 4 * hidden_dim
         hidden_dim = int(2 * inner_dim / 3)
+        # Round the FFN width up to a multiple of 256, matching the model's own sizing rule.
         multiple_of = 256
         ff_dim = multiple_of * ((hidden_dim + multiple_of - 1) // multiple_of)
 
@@ -54,6 +60,7 @@ class RefactModel(TextModel):
         self.gguf_writer.add_file_type(self.ftype)
 
     def modify_tensors(self, data_torch: Tensor, name: str, bid: int | None) -> Iterable[tuple[str, Tensor]]:
+        """Split the fused kv and gate_up projections into separate K/V and gate/up tensors."""
         # Step 1: Validate input parameters, operational preconditions, and state
         hidden_dim = self.hparams["n_embd"]
         inner_dim = 4 * hidden_dim

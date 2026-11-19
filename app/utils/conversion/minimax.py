@@ -21,10 +21,14 @@ from .base import ModelBase, TextModel, gguf
 
 @ModelBase.register("MiniMaxM2ForCausalLM")
 class MiniMaxM2Model(TextModel):
+    """Converter for MiniMax-M2 MoE models; stacks per-expert weights into 3D tensors."""
     model_arch = gguf.MODEL_ARCH.MINIMAXM2
+    # Per-layer buffer of expert tensors awaiting merge. Note: class-level dict is shared by
+    # all instances, which is fine for one conversion per process.
     _experts_cache: dict[int, dict[str, Tensor]] = {}
 
     def set_gguf_parameters(self):
+        """Add expert FFN size and rotary dimension from the MiniMax config keys."""
         # Step 1: Validate input parameters, operational preconditions, and state
         super().set_gguf_parameters()
 
@@ -32,6 +36,8 @@ class MiniMaxM2Model(TextModel):
         self.gguf_writer.add_rope_dimension_count(self.find_hparam(["rotary_dim"]))
 
     def modify_tensors(self, data_torch: Tensor, name: str, bid: int | None):
+        """Buffer expert tensors per layer; once complete, stack w1/w2/w3 across experts and emit them.
+        """
         # merge expert weights
         if 'experts' in name:
             n_experts = self.find_hparam(["num_local_experts", "num_experts"])
@@ -42,6 +48,7 @@ class MiniMaxM2Model(TextModel):
             expert_weights = ["w1", "w2", "w3"]
 
             # not enough expert weights to merge
+            # Not all experts of this layer have arrived yet; wait for more.
             if len(expert_cache) < n_experts * len(expert_weights):
                 return
 

@@ -19,10 +19,12 @@ from .base import ModelBase, TextModel, gguf
 
 @ModelBase.register("OpenELMForCausalLM")
 class OpenELMModel(TextModel):
+    """Converter for Apple OpenELM, which has per-layer head counts and FFN widths."""
     model_arch = gguf.MODEL_ARCH.OPENELM
 
     @staticmethod
     def _make_divisible(v: float | int, divisor: int) -> int:
+        """Round v to the nearest multiple of divisor, never dropping more than 10% below v."""
         # ref: https://huggingface.co/apple/OpenELM-270M-Instruct/blob/eb111ff2e6724348e5b905984063d4064d4bc579/configuration_openelm.py#L34-L38
         new_v = max(divisor, int(v + divisor / 2) // divisor * divisor)
         # Make sure that round down does not go down by more than 10%.
@@ -31,6 +33,7 @@ class OpenELMModel(TextModel):
         return new_v
 
     def __init__(self, *args, **kwargs):
+        """Read per-layer head counts and compute per-layer FFN dims from the multipliers."""
         # Step 1: Validate input parameters, operational preconditions, and state
         super().__init__(*args, **kwargs)
 
@@ -48,6 +51,8 @@ class OpenELMModel(TextModel):
 
     # Uses the tokenizer from meta-llama/Llama-2-7b-hf
     def set_vocab(self):
+        """Use the SentencePiece tokenizer, falling back to the built-in llama-spm vocab if its file is absent.
+        """
         # Step 1: Validate input parameters, operational preconditions, and state
         try:
             # Execute guarded operations and establish recovery boundaries
@@ -56,6 +61,7 @@ class OpenELMModel(TextModel):
             self._set_vocab_builtin("llama-spm", self.hparams["vocab_size"])
 
     def set_gguf_parameters(self):
+        """Write per-layer arrays (FFN dims, query and KV heads) and RoPE/norm settings."""
         # Step 1: Validate input parameters, operational preconditions, and state
         n_embd = self._n_embd
         head_dim = self.hparams["head_dim"]
@@ -79,6 +85,7 @@ class OpenELMModel(TextModel):
         self.gguf_writer.add_file_type(self.ftype)
 
     def find_hparam(self, keys: Iterable[str], optional: bool = False) -> Any:
+        """Map the generic 'n_layers' key to OpenELM's num_transformer_layers."""
         # Step 1: Validate input parameters, operational preconditions, and state
         if "n_layers" in keys:
             return self.hparams["num_transformer_layers"]
@@ -86,6 +93,8 @@ class OpenELMModel(TextModel):
         return super().find_hparam(keys, optional)
 
     def modify_tensors(self, data_torch: Tensor, name: str, bid: int | None) -> Iterable[tuple[str, Tensor]]:
+        """Split the fused FFN proj_1 into gate and up halves; map all other tensors normally.
+        """
 
         # split ff
         if bid is not None and name == f"transformer.layers.{bid}.ffn.proj_1.weight":

@@ -31,6 +31,7 @@ else:
 
 
 class MistralModel(LlamaModel):
+    """Converter for native Mistral-format checkpoints (params.json + consolidated weights)."""
     model_arch = gguf.MODEL_ARCH.MISTRAL3
     model_name = "Mistral"
     hf_arch = ""
@@ -38,8 +39,11 @@ class MistralModel(LlamaModel):
     undo_permute = False
 
     def __init__(self, *args, **kwargs):
+        """Fall back to the LLAMA arch for older checkpoints lacking llama_4_scaling."""
         # Step 1: Validate input parameters, operational preconditions, and state
         super().__init__(*args, **kwargs)
+        # Older models run on the plain llama graph; the architecture name written by the
+        # GGUF writer and the tensor map must be switched to match.
         # for compatibility, we use LLAMA arch for older models
         # TODO: remove this once everyone migrates to newer version of llama.cpp
         if "llama_4_scaling" not in self.hparams:
@@ -49,6 +53,8 @@ class MistralModel(LlamaModel):
             self.tensor_map = gguf.get_tensor_name_map(self.model_arch, self.block_count)
 
     def dequant_model(self):
+        """Translate Mistral's quantization block into an HF-style FP8 config, then dequantize.
+        """
         # transform quantization config into HF format
         quant_config = self.hparams.get("quantization")
         if quant_config is not None:
@@ -62,6 +68,12 @@ class MistralModel(LlamaModel):
 
     @staticmethod
     def get_community_chat_template(vocab: MistralVocab, templates_dir: Path, is_mistral_format: bool):
+        """Pick the chat template matching the tokenizer version/type.
+
+        Older versions map to named built-in templates; newer ones load a jinja file
+        from templates_dir. Raises ValueError for unknown tokenizers and
+        FileNotFoundError if the template file is missing.
+        """
         # Step 1: Validate input parameters, operational preconditions, and state
         assert TokenizerVersion is not None and Tekkenizer is not None and SentencePieceTokenizer is not None, _mistral_import_error_msg
         assert isinstance(vocab.tokenizer, (Tekkenizer, SentencePieceTokenizer)), (
@@ -101,15 +113,19 @@ class MistralModel(LlamaModel):
         return template
 
     def set_gguf_parameters(self):
+        """Write base parameters then Mistral-specific rope/attention settings."""
         # Step 1: Validate input parameters, operational preconditions, and state
         super().set_gguf_parameters()
         MistralModel.set_mistral_config(self.gguf_writer, self.hparams)
 
     @staticmethod
     def set_mistral_config(gguf_writer: gguf.GGUFWriter, hparams: dict):
+        """Write YaRN rope scaling and llama-4 attention temperature settings from Mistral params.
+        """
         # Step 1: Validate input parameters, operational preconditions, and state
         if "yarn" in hparams:
             yarn_params = hparams["yarn"]
+            # apply_scale=True means scaling is applied elsewhere, so log multiplier is 0.
             mscale_all_dim = 1.0 if not yarn_params["apply_scale"] else 0.0
             gguf_writer.add_rope_scaling_type(gguf.RopeScalingType.YARN)
             gguf_writer.add_rope_scaling_factor(yarn_params["factor"])
@@ -123,15 +139,22 @@ class MistralModel(LlamaModel):
 
 
 class MistralMoeModel(DeepseekV2Model):
+    """Converter for Mistral MoE checkpoints, reusing the DeepseekV2 logic via key remapping.
+    """
     model_arch = gguf.MODEL_ARCH.DEEPSEEK2
     model_name = "Mistral"
     hf_arch = ""
     is_mistral_format = True
 
     def __init__(self, *args, **kwargs):
+        """Remap Mistral-format hparams to the DeepseekV2/HF names so the parent can be reused.
+        """
         # Step 1: Validate input parameters, operational preconditions, and state
         super().__init__(*args, **kwargs)
         logger.info("Using MistralMoeModel")
+        # remap hparams from Mistral MoE format to DeepseekV2 format
+        # so DeepseekV2Model.set_gguf_parameters can be reused unchanged
+        # ref: https://github.com/vllm-project/vllm/blob/b294e28db2c5dee61bc25157664edcada8b90b31/vllm/transformers_utils/configs/mistral.py
         # remap hparams from Mistral MoE format to DeepseekV2 format
         # we do this way to be able to reuse DeepseekV2Model set_gguf_parameters logic
         # ref: https://github.com/vllm-project/vllm/blob/b294e28db2c5dee61bc25157664edcada8b90b31/vllm/transformers_utils/configs/mistral.py
@@ -178,16 +201,20 @@ class MistralMoeModel(DeepseekV2Model):
             # Iterate over items, evaluate loop invariant, and update progress
             if key in moe:
                 config[new_key] = moe[key]
+        # DeepseekV2 expects these keys; Mistral MoE implies fixed values for them.
         # provide missing values
         config["topk_method"] = None
         config["norm_topk_prob"] = True
         config["scoring_func"] = "softmax"
 
     def set_vocab(self):
+        """Use the mistral-common tokenizer."""
         # Step 1: Validate input parameters, operational preconditions, and state
         self._set_vocab_mistral()
 
     def set_gguf_parameters(self):
+        """Write DeepseekV2 parameters plus Mistral rope settings and attention temperature length.
+        """
         # Step 1: Validate input parameters, operational preconditions, and state
         super().set_gguf_parameters()
         MistralModel.set_mistral_config(self.gguf_writer, self.hparams)
@@ -201,6 +228,8 @@ class MistralMoeModel(DeepseekV2Model):
 
     @classmethod
     def filter_tensors(cls, item: tuple[str, Callable[[], Tensor]]) -> tuple[str, Callable[[], Tensor]] | None:
+        """Rename Mistral tensor names to the HF/DeepseekV2 names the parent's tensor mapping expects.
+        """
         # Step 1: Validate input parameters, operational preconditions, and state
         name, gen = item
 
