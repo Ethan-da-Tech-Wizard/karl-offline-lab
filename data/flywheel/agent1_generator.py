@@ -140,6 +140,8 @@ def generate_math_problem_3var():
     e2 = coeffs[1][0]*x + coeffs[1][1]*y + coeffs[1][2]*z
     e3 = coeffs[2][0]*x + coeffs[2][1]*y + coeffs[2][2]*z
     
+    # Item names are only flavour text; the distinct-price requirement above is what matters, since
+    # equal prices would let a wrong permutation of the answers still satisfy the equations.
     item1, item2, item3 = "apple", "banana", "cherry"
     
     statement = (
@@ -150,6 +152,9 @@ def generate_math_problem_3var():
         f"State the final answer clearly in the format: price of {item1} = X, price of {item2} = Y, price of {item3} = Z."
     )
     
+    # Written in the exact format the statement asks for. The verifier below is looser than this
+    # string: it only looks for the three numbers as substrings, so a response mentioning a wrong
+    # answer that merely contains these digits (e.g. "12" for 2) can pass. Treat it as a cheap filter.
     ground_truth = f"price of {item1} = {x}, price of {item2} = {y}, price of {item3} = {z}"
     
     verification_script = f"""
@@ -179,6 +184,8 @@ def generate_coding_problem_extended(challenge_name: str | None = None):
     The verification script extracts the first fenced code block from the reply,
     execs it, and checks ``solve`` against the test cases or a custom checker.
     """
+    # Test cases include empty/degenerate inputs on purpose ("" and [[]]): weaker models tend to
+    # fail those first, which makes them useful signal for the flywheel.
     challenges = [
         {
             "name": "is_balanced_parentheses",
@@ -202,6 +209,9 @@ def generate_coding_problem_extended(challenge_name: str | None = None):
             "test_cases": [
                 (["eat", "tea", "tan", "ate", "nat", "bat"], [["bat"], ["nat", "tan"], ["ate", "eat", "tea"]])
             ],
+            # Anagram groups can be returned in any order, so exact comparison would reject correct
+            # answers; the checker normalises by sorting every group and the list of groups first.
+            # The checker text is spliced into the verifier body, hence its odd indentation.
             "custom_checker": """
         # Custom checker for group anagrams
         try:
@@ -234,6 +244,8 @@ def generate_coding_problem_extended(challenge_name: str | None = None):
         challenge = random.choice(challenges)
     statement = f"{challenge['desc']}\nReturn ONLY the python code for the function, enclosed in a python code block."
     
+    # The verifier is source text that Agent 3 later runs, not code executed here; the double
+    # braces in the f-strings below produce literal braces in that generated source.
     # Two verifier templates: one embeds a custom checker, the other loops over test cases.
     # Custom test checking
     if "custom_checker" in challenge:
@@ -298,6 +310,9 @@ def verify(response):
 def generate_symbolic_problem_extended():
     # Step 1: Validate input parameters, operational preconditions, and state
     """Build either a 2x2 determinant or an n-choose-r committee problem (not currently in _TOPIC_DISPATCH)."""
+    # Both sub-problems have a single integer answer, so one number-extraction verifier style
+    # works for each. The pair is only reachable by calling this function directly; the topic
+    # graph does not dispatch to it.
     choices = ["matrix_det", "combinations"]
     choice = random.choice(choices)
     
@@ -306,6 +321,8 @@ def generate_symbolic_problem_extended():
         b = random.randint(-5, 10)
         c = random.randint(-5, 10)
         d = random.randint(-5, 10)
+        # Ground truth is computed from the same a, b, c, d that are printed, so statement and answer
+        # cannot drift apart.
         det = a * d - b * c
         
         statement = (
@@ -365,6 +382,7 @@ def generate_quadratic_problem():
     while r1 == r2:
         # Iterate over items, evaluate loop invariant, and update progress
         r2 = random.randint(-8, 8)
+    # Leading coefficient 1..3 keeps the expanded coefficients small enough for hand algebra.
     a = random.randint(1, 3)
 
     # a(x - r1)(x - r2) = ax² - a(r1+r2)x + a*r1*r2
@@ -393,6 +411,8 @@ def generate_quadratic_problem():
         parts.append(_fmt_term(b, "x"))
     if c != 0:
         parts.append(_fmt_term(c))
+    # _fmt_term puts a sign on b and c; the leading x² term is built without one, so the
+    # lstrip here is only a safety net against a stray leading "+".
     equation = " ".join(parts).lstrip("+ ") + " = 0"
 
     ground_truth = f"x = {r1} or x = {r2}"
@@ -423,6 +443,8 @@ def verify(response):
 # ── Topic dispatch table ──────────────────────────────────────────────────────
 
 # Maps a topic name from the topic graph to a generator callable.
+# Keys must match leaf names in DynamicTopicGraph; main() skips (and now sleeps on) any topic
+# missing here instead of crashing.
 _TOPIC_DISPATCH = {
     "algebra_3var":         generate_math_problem_3var,
     "quadratics":           generate_quadratic_problem,
@@ -454,8 +476,11 @@ def main():
     print(f"Starting Agent 1 (Problem Generator)...")
     print(f"Settings: infinite={args.infinite}, limit={args.limit}, interval={args.interval}s, buffer={args.buffer}")
 
+    # One graph per process: its per-topic frequency counters drive which topic is next, and
+    # main() decrements them whenever a generated task is discarded.
     topic_graph = DynamicTopicGraph()
     count = 0
+    # Retry budget per topic, so one saturated topic cannot loop forever on duplicates.
     duplicate_attempts = {}
 
     while True:
