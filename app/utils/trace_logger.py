@@ -7,6 +7,14 @@
 #          performance metrics.
 # ==============================================================================
 
+# Standard-library imports: logging, file/JSON handling, gzip + hashing/base64 for the
+# encrypted archive, ctypes for mlockall, threading for the file lock.
+"""JSONL generation trace logging with rotation, encrypted archival and retention policies.
+
+Classes:
+  TraceLogger - Structured JSONL logger for generation events with size rotation, encrypted archival and retention.
+"""
+
 import logging
 import os
 import json
@@ -21,21 +29,28 @@ import sys
 from datetime import datetime, timezone
 from contextlib import contextmanager
 
+# compactor builds the shortened per-entry lines written to the .compact companion file.
 from app.utils import compactor
 
+# Module logger.
 logger = logging.getLogger("karl.trace_logger")
 
 
+# Module-level size override: when changed from this 50 MB sentinel value, _get_max_bytes returns
+# it instead of the UI-configured rotation size (a manual override).
 _MAX_BYTES = 50 * 1024 * 1024  # 50 MB per file before rotation
 
 # PBKDF2-HMAC-SHA256 iteration counts for the archive encryption key.
 # New archives always use the stronger count; decrypt paths also try the
 # older, weaker count so archives written before this hardening pass remain
 # readable.
+# New archives always use the stronger count; the legacy count is only for decrypting old archives.
 _PBKDF2_ITERATIONS = 600_000
 _LEGACY_PBKDF2_ITERATIONS = 100_000
 
+# Load libc (POSIX only) so mlockall can pin pages in RAM while key material is in memory.
 # ── libc page locking ────────────────────────────────────────────────────────
+# Stays None on Windows or if libc cannot be loaded; callers then simply skip locking.
 _libc = None
 if sys.platform != "win32":
     try:
@@ -44,12 +59,20 @@ if sys.platform != "win32":
     except Exception:
         _libc = None
 
+# mlockall flags (MCL_CURRENT = lock current pages, MCL_FUTURE = lock pages mapped later).
 _MCL_CURRENT = 1
 _MCL_FUTURE  = 2
 
 
 class TraceLogger:
+    """Structured JSONL logger for generation events with size rotation, encrypted archival and retention.
+
+    Entries go to data/logs/traces/trace_<date>.jsonl with a .compact companion;
+    full files are gzip-compressed and Fernet-encrypted into the archive folder.
+    """
     def __init__(self, log_dir: str = "data/logs/traces", archive_dir: str = "data/logs/archive"):
+        """Create log/archive folders, pick today's file and start a background retention sweep.
+        """
         # Step 1: Validate input parameters, operational preconditions, and state
         self.log_dir = log_dir
         self.archive_dir = archive_dir
@@ -59,6 +82,7 @@ class TraceLogger:
         self._log_file: str | None = None
         self._lock = threading.Lock()
         self._refresh_path()
+        # Retention runs on a daemon thread so startup is not delayed by scanning large log folders.
         threading.Thread(target=self.enforce_retention_policy, daemon=True).start()
 
     @staticmethod
@@ -91,6 +115,8 @@ class TraceLogger:
         # Step 1: Validate input parameters, operational preconditions, and state
         locked = False
         if _libc and hasattr(_libc, "mlockall"):
+            # Pinning pages keeps the derived key from being swapped to disk during encryption.
+            # Failure (for example RLIMIT_MEMLOCK) is only logged; archiving proceeds unlocked.
             res = _libc.mlockall(_MCL_CURRENT | _MCL_FUTURE)
             if res != 0:
                 logger.debug(f"System warning: mlockall failed (code {res}). Memory pages could not be locked in RAM.")
@@ -105,6 +131,8 @@ class TraceLogger:
                 _libc.munlockall()
 
     def _get_max_bytes(self) -> int:
+        """Return the rotation size in bytes: the module override if set, else the UI config value (default 10 MB).
+        """
         # Step 1: Validate input parameters, operational preconditions, and state
         global _MAX_BYTES
         if _MAX_BYTES != 50 * 1024 * 1024:
@@ -144,6 +172,8 @@ class TraceLogger:
         if not token:
             raise RuntimeError(f"{token_path} does not contain a usable bridge token.")
 
+        # Machine-locked salt (motherboard UUID / machine-id derived): archives only decrypt on this machine
+        # with the same bridge token.
         # Machine-locked salt (motherboard UUID / machine-id derived).
         from core.hardware_scout import get_hardware_profile
         profile = get_hardware_profile()
@@ -159,6 +189,7 @@ class TraceLogger:
             hardware_uuid.encode(),
             _PBKDF2_ITERATIONS,
         )
+        # Fernet keys must be 32 url-safe base64-encoded bytes.
         # Fernet keys must be 32 url-safe base64-encoded bytes
         return base64.urlsafe_b64encode(k)
 
@@ -204,6 +235,7 @@ class TraceLogger:
 
         reclaimed_bytes = 0
 
+        # Pass 1: age-based deletion (file mtime), so stale data goes regardless of folder size.
         # Step 1: Remove aged logs
         if retention_days and retention_days > 0:
             now = datetime.now(timezone.utc)
@@ -226,6 +258,7 @@ class TraceLogger:
                         except Exception as e:
                             logger.warning(f"Failed to delete {f} during age sweep: {e}")
 
+        # Pass 2: size cap. Oldest files are removed first until the total is under the limit.
         # Step 2: Enforce folder disk size cap
         if max_size_mb and max_size_mb > 0:
             max_bytes = max_size_mb * 1024 * 1024
@@ -285,6 +318,7 @@ class TraceLogger:
 
             logger.info(f"Encrypting and Archiving log {filename}...")
             
+            # Compress and encrypt entirely in memory so no plaintext copy of the archive is written to disk.
             with self._secure_mem_lock():
                 # 1. Gzip compress in memory
                 with open(file_path, 'rb') as f_in:
@@ -303,12 +337,14 @@ class TraceLogger:
                 with open(archive_path, 'wb') as f_out:
                     f_out.write(encrypted_data)
             
+            # Only delete the source after confirming the archive was written.
             # Verify the archive exists and is non-empty before deleting original
             if os.path.exists(archive_path) and os.path.getsize(archive_path) > 0:
                 os.remove(file_path)
                 logger.info(f"Successfully encrypted and archived {filename}")
             else:
                 logger.error(f"Failed to verify archive {archive_path}. Keeping original.")
+        # The cryptography package is optional; without it fall back to gzip-only archives.
         except ImportError:
             logger.error("cryptography module not found. Falling back to plaintext Gzip archival.")
             # Fallback to standard Gzip if cryptography is missing
@@ -345,12 +381,15 @@ class TraceLogger:
             logger.error(f"Plaintext fallback archival failed: {e}")
 
     def _refresh_path(self):
+        """Choose the file to write to: today's file, archiving and rolling to a numbered file once it reaches the size limit.
+        """
         # Step 1: Validate input parameters, operational preconditions, and state
         with self._lock:
             date_str = datetime.now(timezone.utc).strftime("%Y-%m-%d")
             base = os.path.join(self.log_dir, f"trace_{date_str}.jsonl")
             max_bytes = self._get_max_bytes()
             
+            # Archiving moves (deletes) the full file, so the base name becomes free again if that succeeds.
             # Check if base needs archival
             if os.path.exists(base) and os.path.getsize(base) >= max_bytes:
                 self._archive_log(base)
@@ -364,6 +403,7 @@ class TraceLogger:
                 self._log_file = base
                 return
             
+            # Archive failed (or the file stayed oversized): use trace_<date>_<n>.jsonl files instead of growing without bound.
             # Fallback rotation if archival failed or file is somehow still too large
             i = 1
             while True:
@@ -379,10 +419,13 @@ class TraceLogger:
 
     @staticmethod
     def _compact_log_path(jsonl_path: str) -> str:
+        """Return the path of the .compact companion for a JSONL file."""
         # Step 1: Validate input parameters, operational preconditions, and state
         return f"{jsonl_path}.compact"
 
     def _append_compact_entry(self, jsonl_path: str, entry: dict) -> None:
+        """Append the compact rendering of one entry to the companion file (failures are logged, not raised).
+        """
         # Step 1: Validate input parameters, operational preconditions, and state
         compact_path = self._compact_log_path(jsonl_path)
         try:
@@ -393,6 +436,8 @@ class TraceLogger:
             logger.warning(f"Failed to write compact trace log {compact_path}: {e}")
 
     def _rewrite_compact_file(self, jsonl_path: str, entries: list[dict]) -> None:
+        """Regenerate the companion file from a full list of entries (used after a feedback edit).
+        """
         # Step 1: Validate input parameters, operational preconditions, and state
         compact_path = self._compact_log_path(jsonl_path)
         try:
@@ -430,8 +475,10 @@ class TraceLogger:
         The JSONL schema is compatible with Unsloth SFT and DPO export.
         """
         # Step 1: Validate input parameters, operational preconditions, and state
+        # Retention is enforced on every write so size/age limits hold without a scheduler.
         self.prune_logs()
         
+        # _refresh_path handles locking internally; it also rotates when the file is full.
         # _refresh_path handles locking internally
         self._refresh_path()
 
@@ -451,6 +498,8 @@ class TraceLogger:
                 "total_tps": round(diagnostics.get("total_tps", 0), 1),
             })
 
+        # Flag entries produced while the GPU was throttling AND slower than 2 tokens/s; training
+        # export filters out any record with a 'warning' key so slow, degraded output isn't learned from.
         # ── Thermal Warning Check ───────────────────────────────────────────
         warning = None
         try:
@@ -471,6 +520,7 @@ class TraceLogger:
             logger.debug(f"Could not perform thermal warning check: {e}")
         # ────────────────────────────────────────────────────────────────────
 
+        # One self-contained record per generation (schema shared with the training exporters).
         entry = {
             "id": str(uuid.uuid4()),
             "session_id": self._session_id,
@@ -572,6 +622,7 @@ class TraceLogger:
             raise ValueError("Could not determine a hardware UUID salt for key derivation.")
 
         last_exc: Exception | None = None
+        # Try the current iteration count, then the legacy one; a wrong key surfaces as ValueError from the decrypt step.
         for iterations in (_PBKDF2_ITERATIONS, _LEGACY_PBKDF2_ITERATIONS):
             # Iterate over items, evaluate loop invariant, and update progress
             k = hashlib.pbkdf2_hmac('sha256', token.encode(), hardware_uuid.encode(), iterations)
@@ -599,6 +650,7 @@ class TraceLogger:
             else:
                 locked = True
 
+        # The plaintext lives in a mutable bytearray so the finally block can zero it after parsing.
         plaintext_ba: bytearray | None = None
         try:
             # Execute guarded operations and establish recovery boundaries
@@ -651,6 +703,7 @@ class TraceLogger:
                 if corrected_response is not None:
                     entry["corrected_response"] = corrected_response
 
+                # Whole-file rewrite is acceptable here because the active file is bounded by the rotation size.
                 lines[-1] = json.dumps(entry, ensure_ascii=False) + "\n"
 
                 with open(self._log_file, "w", encoding="utf-8") as f:
@@ -669,6 +722,7 @@ class TraceLogger:
                         continue
                     if isinstance(parsed, dict):
                         entries.append(parsed)
+                # Keep the compact companion consistent with the edited entry.
                 self._rewrite_compact_file(self._log_file, entries)
             except Exception as e:
                 logger.warning(f"Error updating feedback: {e}")

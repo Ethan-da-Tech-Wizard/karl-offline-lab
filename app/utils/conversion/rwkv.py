@@ -7,6 +7,19 @@
 #          and writes compliant GGUF data structures for llama.cpp.
 # ==============================================================================
 
+"""HuggingFace-to-GGUF conversion support for the 'rwkv' model family.
+
+Converter classes here are generally registered with ModelBase under HF architecture names;
+they write GGUF metadata (set_gguf_parameters), the vocabulary (set_vocab)
+and remap or reshape tensors (modify_tensors) for llama.cpp.
+
+Classes:
+  Rwkv6Model - Converter for RWKV6 (recurrent, attention-free) models.
+  RWKV6Qwen2Model - Converter for RWKV6-Qwen2 hybrids (RWKV6 time-mix with Qwen2-style GQA).
+  Rwkv7Model - Converter for RWKV7 models, which use more LoRA-parameterised time-mix tensors.
+  ARwkv7Model - Converter for ARWKV7 hybrid models (RWKV7 time-mix in a Qwen-like body).
+"""
+
 from __future__ import annotations
 
 from typing import Callable, Iterable, TYPE_CHECKING

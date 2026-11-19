@@ -7,6 +7,19 @@
 #          and writes compliant GGUF data structures for llama.cpp.
 # ==============================================================================
 
+"""HuggingFace-to-GGUF conversion support for the 'phi' model family.
+
+Converter classes here are generally registered with ModelBase under HF architecture names;
+they write GGUF metadata (set_gguf_parameters), the vocabulary (set_vocab)
+and remap or reshape tensors (modify_tensors) for llama.cpp.
+
+Classes:
+  Phi2Model - Converter for Microsoft Phi-2 (partial RoPE, no GQA, LayerNorm).
+  Phi3MiniModel - Converter for Phi-3 / Phi-4 text models (also used for Phi-4 multimodal text).
+  Phi4VisionMmprojModel - Vision (mmproj) converter for Phi-4 multimodal: a SigLIP2 tower plus a 2-layer MLP projector.
+  PhiMoeModel - Converter for Phi-3.5-MoE, extending the Phi-3 converter with expert merging.
+"""
+
 from __future__ import annotations
 
 import json
@@ -259,9 +272,6 @@ class Phi4VisionMmprojModel(MmprojModel):
                 f"Phi-4 vision mmproj conversion requires at least 2 vision layers, got {self.vision_total_layers}"
             )
 
-        # Phi-4 uses SigLIP2 hidden_states[-2], so export one fewer encoder block and
-        # drop post-layernorm/head weights. This makes the GGUF runtime output match
-        # the feature map consumed by the patched siglip.cpp Phi-4 projector path.
         # Phi-4 uses SigLIP2 hidden_states[-2], so export one fewer encoder block and
         # drop post-layernorm/head weights. This makes the GGUF runtime output match
         # the feature map consumed by the patched siglip.cpp Phi-4 projector path.

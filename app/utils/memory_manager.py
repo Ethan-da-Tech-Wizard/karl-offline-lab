@@ -7,6 +7,12 @@
 #          prevent out-of-memory crashes.
 # ==============================================================================
 
+"""Crash-recovery checkpointing of the active chat workspace and swarm history.
+
+Classes:
+  MemoryManager - Persists the active chat workspace (autosave checkpoint) and swarm history through a SessionRepository.
+"""
+
 import os
 import re
 from datetime import datetime

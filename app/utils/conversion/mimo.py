@@ -7,6 +7,17 @@
 #          and writes compliant GGUF data structures for llama.cpp.
 # ==============================================================================
 
+"""HuggingFace-to-GGUF conversion support for the 'mimo' model family.
+
+Converter classes here are generally registered with ModelBase under HF architecture names;
+they write GGUF metadata (set_gguf_parameters), the vocabulary (set_vocab)
+and remap or reshape tensors (modify_tensors) for llama.cpp.
+
+Classes:
+  MimoV2Model - Converter for the MiMo-V2 text model (Flash, V2.5, V2.5-Pro) to GGUF.
+  MiMoV2VisionModel - Converter for the MiMo-V2 vision tower (mmproj) to GGUF.
+"""
+
 from __future__ import annotations
 
 import re
@@ -197,8 +208,6 @@ class MimoV2Model(TextModel):
 
         n_head_kv = self.hparams["num_key_value_heads"]
         n_head_kv_swa = self.hparams["swa_num_key_value_heads"]
-        # Extend the per-layer pattern with SWA entries for the MTP blocks so the
-        # runtime arrays (sized to extended block_count) are fully populated.
         # Extend the per-layer pattern with SWA entries for the MTP blocks so the
         # runtime arrays (sized to extended block_count) are fully populated.
         hybrid = list(self.hparams["hybrid_layer_pattern"]) + [1] * self._n_nextn

@@ -7,6 +7,22 @@
 #          and writes compliant GGUF data structures for llama.cpp.
 # ==============================================================================
 
+"""HuggingFace-to-GGUF conversion support for the 'ultravox' model family.
+
+Converter classes here are generally registered with ModelBase under HF architecture names;
+they write GGUF metadata (set_gguf_parameters), the vocabulary (set_vocab)
+and remap or reshape tensors (modify_tensors) for llama.cpp.
+
+Classes:
+  UltravoxModel - Placeholder text-model class for Ultravox: it always raises, directing users to --mmproj.
+  GlmASRWhisperEncoderModel - Audio (mmproj) converter for GLM-ASR: Whisper-style encoder plus an adapter MLP.
+  WhisperEncoderModel - Base audio (mmproj) converter for Whisper-style encoders used by audio LLMs (Qwen2-Audio and friends).
+  UltravoxWhisperEncoderModel - Ultravox audio encoder: adds the Ultravox projector type and stack factor.
+  MERaLiONWhisperEncoderModel - MERaLiON audio encoder with its own speech_config and gated adapter MLP.
+  VoxtralWhisperEncoderModel - Voxtral audio encoder.
+  AudioFlamingo3WhisperEncoderModel - Audio encoder for AudioFlamingo3 / Music Flamingo.
+"""
+
 from __future__ import annotations
 
 from typing import Any, Callable, Iterable, TYPE_CHECKING

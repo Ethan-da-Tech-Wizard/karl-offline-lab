@@ -7,12 +7,21 @@
 #          alternative prompt paths.
 # ==============================================================================
 
+"""Branching conversation tree (SessionTree/SessionNode) with JSON session persistence.
+
+Classes:
+  SessionTreeStats - Immutable summary counts for a tree (nodes, message nodes, leaves, deepest message depth).
+  SessionNode - One chat message in the conversation tree; siblings are alternative branches.
+  SessionTree - Branching conversation: a tree of messages with a cursor (current_id) selecting the active branch.
+"""
+
 from __future__ import annotations
 
 import re
 import uuid
 from dataclasses import dataclass
 
+# Matches <think>...</think> reasoning blocks across lines, ignoring case.
 _THINK_RE = re.compile(r"<think>.*?</think>", re.DOTALL | re.IGNORECASE)
 
 
@@ -35,12 +44,15 @@ def _strip_thoughts(node_dict: dict) -> dict:
 
 @dataclass(frozen=True)
 class SessionTreeStats:
+    """Immutable summary counts for a tree (nodes, message nodes, leaves, deepest message depth).
+    """
     total_nodes: int
     message_nodes: int
     leaf_count: int
     max_depth: int
 
 class SessionNode:
+    """One chat message in the conversation tree; siblings are alternative branches."""
     def __init__(
         self,
         role: str,
@@ -51,6 +63,7 @@ class SessionNode:
         thought: str = None,
         attachments: list | None = None,
     ):
+        """Create a node; a UUID is generated if no id is given."""
         # Step 1: Validate input parameters, operational preconditions, and state
         self.role = role
         self.content = content
@@ -68,12 +81,14 @@ class SessionNode:
         attachments: list | None = None,
         thought: str = None,
     ) -> 'SessionNode':
+        """Create a child node under this one, append it and return it."""
         # Step 1: Validate input parameters, operational preconditions, and state
         child = SessionNode(role, content, node_id=node_id, parent=self, attachments=attachments, thought=thought)
         self.children.append(child)
         return child
 
     def to_dict(self) -> dict:
+        """Serialize this node and its subtree (attachments only when present)."""
         # Step 1: Validate input parameters, operational preconditions, and state
         data = {
             "id": self.id,
@@ -88,6 +103,7 @@ class SessionNode:
 
     @classmethod
     def from_dict(cls, data: dict, parent: 'SessionNode' = None) -> 'SessionNode':
+        """Rebuild a node subtree from serialized data, wiring parent pointers."""
         # Step 1: Validate input parameters, operational preconditions, and state
         node = cls(
             role=data.get("role", ""),
@@ -102,7 +118,13 @@ class SessionNode:
 
 
 class SessionTree:
+    """Branching conversation: a tree of messages with a cursor (current_id) selecting the active branch.
+
+    It also behaves like a read-mostly list of the active path (len, iteration,
+    indexing, append) so list-based code can use it unchanged.
+    """
     def __init__(self, root: SessionNode = None, current_node_id: str = None):
+        """Wrap an existing root or create an empty tree with a dummy system root."""
         # Step 1: Validate input parameters, operational preconditions, and state
         if root is None:
             self.root = SessionNode(role="system", content="Root", node_id="root")
@@ -115,6 +137,7 @@ class SessionTree:
         self._rebuild_maps()
 
     def _rebuild_maps(self):
+        """Rebuild the id->node index and re-link parent pointers by walking from the root."""
         # Step 1: Validate input parameters, operational preconditions, and state
         self.nodes_map = {}
         def _walk(node):
@@ -127,18 +150,22 @@ class SessionTree:
         _walk(self.root)
 
     def get_node(self, node_id: str) -> SessionNode | None:
+        """Look up a node by id (None if unknown)."""
         # Step 1: Validate input parameters, operational preconditions, and state
         return self.nodes_map.get(node_id)
 
     @property
     def current_node(self) -> SessionNode:
+        """The node the cursor points at; falls back to the root if the id is stale."""
         # Step 1: Validate input parameters, operational preconditions, and state
         if self.current_id not in self.nodes_map:
+            # The index may be stale if nodes were attached directly; rebuild once.
             # Fallback if map out of sync
             self._rebuild_maps()
         return self.nodes_map.get(self.current_id, self.root)
 
     def add_message(self, role: str, content: str, attachments: list | None = None, thought: str = None) -> SessionNode:
+        """Append a message as a child of the current node and move the cursor to it."""
         # Step 1: Validate input parameters, operational preconditions, and state
         parent = self.current_node
         child = parent.add_child(role, content, attachments=attachments, thought=thought)
@@ -163,6 +190,8 @@ class SessionTree:
         return self.add_message(role, content, attachments=attachments, thought=thought)
 
     def get_active_path(self) -> list[SessionNode]:
+        """Return nodes from the first message down to the current node (the dummy root is excluded).
+        """
         # Step 1: Validate input parameters, operational preconditions, and state
         path = []
         curr = self.current_node
@@ -175,6 +204,8 @@ class SessionTree:
         return path
 
     def get_active_path_dicts(self) -> list[dict]:
+        """Return the active path as plain role/content/id dicts (with attachments when present).
+        """
         # Step 1: Validate input parameters, operational preconditions, and state
         items = []
         for n in self.get_active_path():
@@ -186,6 +217,7 @@ class SessionTree:
         return items
 
     def set_current_node(self, node_id: str) -> bool:
+        """Move the cursor to node_id; returns False if the node does not exist."""
         # Make sure node_id exists, rebuilding maps if needed
         if node_id not in self.nodes_map:
             self._rebuild_maps()
@@ -195,10 +227,12 @@ class SessionTree:
         return False
 
     def update_current_node_content(self, text: str):
+        """Replace the text of the current node (used while streaming a reply)."""
         # Step 1: Validate input parameters, operational preconditions, and state
         self.current_node.content = text
 
     def update_node_content(self, node_id: str, text: str) -> bool:
+        """Replace a node's text by id; returns False if the node does not exist."""
         # Step 1: Validate input parameters, operational preconditions, and state
         node = self.get_node(node_id)
         if node is None:
@@ -207,6 +241,7 @@ class SessionTree:
         return True
 
     def node_depth(self, node_id: str | None = None) -> int:
+        """Number of messages between the root and the node (default: current node)."""
         # Step 1: Validate input parameters, operational preconditions, and state
         node = self.get_node(node_id or self.current_id)
         depth = 0
@@ -217,6 +252,7 @@ class SessionTree:
         return depth
 
     def leaf_nodes(self) -> list[SessionNode]:
+        """Return all message nodes with no message children (the tips of every branch)."""
         # Step 1: Validate input parameters, operational preconditions, and state
         leaves: list[SessionNode] = []
 
@@ -233,6 +269,7 @@ class SessionTree:
         return leaves
 
     def stats(self) -> SessionTreeStats:
+        """Compute total, message, leaf and max-depth counts for the tree."""
         # Step 1: Validate input parameters, operational preconditions, and state
         total = 0
         message_nodes = 0
@@ -258,6 +295,7 @@ class SessionTree:
         )
 
     def active_branch_label(self) -> str:
+        """Short label like 'assistant:1a2b3c4d' for the active leaf, or 'root' when empty."""
         # Step 1: Validate input parameters, operational preconditions, and state
         path = self.get_active_path()
         if not path:
@@ -266,6 +304,7 @@ class SessionTree:
         return f"{leaf.role}:{leaf.id[:8]}"
 
     def to_dict(self) -> dict:
+        """Serialize the tree and cursor position."""
         # Step 1: Validate input parameters, operational preconditions, and state
         return {
             "root": self.root.to_dict(),
@@ -274,6 +313,7 @@ class SessionTree:
 
     @classmethod
     def from_dict(cls, data: dict) -> 'SessionTree':
+        """Rebuild a tree from serialized data; empty or malformed data yields a fresh tree."""
         # Step 1: Validate input parameters, operational preconditions, and state
         if not data or "root" not in data:
             return cls()
@@ -281,39 +321,48 @@ class SessionTree:
         return cls(root, data.get("current_id"))
 
     def clear(self):
+        """Reset to a fresh empty tree."""
         # Step 1: Validate input parameters, operational preconditions, and state
         self.root = SessionNode(role="system", content="Root", node_id="root")
         self.current_id = self.root.id
         self.nodes_map = {self.root.id: self.root}
 
     def copy(self) -> 'SessionTree':
+        """Deep copy via a serialize/deserialize round trip."""
         # Step 1: Validate input parameters, operational preconditions, and state
         return SessionTree.from_dict(self.to_dict())
 
+    # The methods below make the tree usable wherever code expects a list of message dicts (the active branch).
     # List interface duck-typing helpers
     def __len__(self):
+        """Number of messages on the active path."""
         # Step 1: Validate input parameters, operational preconditions, and state
         return len(self.get_active_path())
 
     def __getitem__(self, index):
+        """Index or slice into the active path's message dicts."""
         # Step 1: Validate input parameters, operational preconditions, and state
         active = self.get_active_path_dicts()
         return active[index]
 
     def __iter__(self):
+        """Iterate over the active path's message dicts."""
         # Step 1: Validate input parameters, operational preconditions, and state
         return iter(self.get_active_path_dicts())
 
     def __bool__(self):
+        """True when the active path contains at least one message."""
         # Step 1: Validate input parameters, operational preconditions, and state
         return len(self.get_active_path()) > 0
 
     def append(self, msg: dict):
+        """Add a message dict (needs 'role' and 'content') after the current node."""
         # Step 1: Validate input parameters, operational preconditions, and state
         if not isinstance(msg, dict) or "role" not in msg or "content" not in msg:
             raise TypeError("Appended message must be a dict containing 'role' and 'content'")
         self.add_message(msg["role"], msg["content"], attachments=msg.get("attachments"))
 
+    # Default folder for saved sessions (relative to the working directory).
     SESSIONS_DIR = "data/sessions"
 
     def save(self, session_id: str | None = None) -> str:
@@ -327,8 +376,10 @@ class SessionTree:
             session_id = str(uuid.uuid4())[:8]
         path = os.path.join(self.SESSIONS_DIR, f"{session_id}.json")
         payload = self.to_dict()
+        # Reasoning traces are removed from the saved copy only; the in-memory tree keeps them.
         _strip_thoughts(payload["root"])
         payload["session_id"] = session_id
+        # The first 80 characters of the first user message become the preview shown in session lists.
         # Store first user message as preview
         for node_data in payload.get("root", {}).get("children", []):
             # Iterate over items, evaluate loop invariant, and update progress
@@ -336,6 +387,7 @@ class SessionTree:
                 payload["preview"] = node_data.get("content", "")[:80]
                 break
         import os as _os
+        # Write-then-rename so an interrupted save cannot corrupt an existing session file.
         tmp = path + ".tmp"
         with open(tmp, "w", encoding="utf-8") as f:
             json.dump(payload, f, ensure_ascii=False, indent=2)
@@ -377,12 +429,14 @@ class SessionTree:
                     "preview": data.get("preview", "(empty)"),
                     "mtime": os.path.getmtime(path),
                 })
+            # Unreadable or non-session JSON files are skipped silently.
             except Exception:
                 pass
         sessions.sort(key=lambda x: x["mtime"], reverse=True)
         return sessions
 
     def delete_session_file(self, path: str):
+        """Delete a session file if it exists."""
         # Step 1: Validate input parameters, operational preconditions, and state
         import os
         if os.path.exists(path):

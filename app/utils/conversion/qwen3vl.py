@@ -7,6 +7,23 @@
 #          and writes compliant GGUF data structures for llama.cpp.
 # ==============================================================================
 
+"""HuggingFace-to-GGUF conversion support for the 'qwen3vl' model family.
+
+Converter classes here are generally registered with ModelBase under HF architecture names;
+they write GGUF metadata (set_gguf_parameters), the vocabulary (set_vocab)
+and remap or reshape tensors (modify_tensors) for llama.cpp.
+
+Classes:
+  Qwen3VLVisionModel - Vision (mmproj) converter for Qwen3-VL / Qwen3.5 including DeepStack feature mergers.
+  Qwen3OmniMmprojModel - Combined vision + audio mmproj converter for Qwen3-Omni.
+  Qwen3ASRMmprojModel - Audio-only mmproj converter for Qwen3-ASR.
+  Glm4VVisionModel - Vision converter for GLM-4V / GLM-OCR, reusing Qwen3-VL tensor handling.
+  Qwen3VLTextModel - Text converter for Qwen3-VL (dense) that records the DeepStack layer count.
+  Qwen3VLMoeTextModel - Text converter for Qwen3-VL MoE, with transposed packed expert tensors.
+  Qwen3OmniMoeTextModel - Text converter for Qwen3-Omni (MoE thinker) without DeepStack layers.
+  Qwen3ASRTextModel - Text converter for Qwen3-ASR.
+"""
+
 from __future__ import annotations
 
 import json

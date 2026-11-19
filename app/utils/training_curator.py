@@ -20,11 +20,13 @@ import os
 import json
 from datetime import datetime, timezone
 
+# Append-only store of captured examples (one JSON object per line), and the folder for saved evaluation reports.
 CURATED_PATH = "data/training/curated.jsonl"
 EVAL_RESULTS_DIR = "data/eval_results"
 
 
 def _ensure_dir():
+    """Create the folder that holds the curated dataset if it does not exist."""
     # Step 1: Validate input parameters, operational preconditions, and state
     os.makedirs(os.path.dirname(CURATED_PATH), exist_ok=True)
 
@@ -50,6 +52,7 @@ def save_example(system_prompt: str, user_msg: str, good_response: str, source: 
             {"role": "assistant", "content": good_response}
         ]
     }
+    # Append mode: existing examples are never rewritten when saving.
     with open(CURATED_PATH, "a", encoding="utf-8") as f:
         f.write(json.dumps(record, ensure_ascii=False) + "\n")
 
@@ -93,6 +96,10 @@ def _is_degraded(record: dict) -> bool:
 
 
 def _classify_example(prompt: str) -> str:
+    """Bucket a prompt into 'coding', 'symbolic' or 'arithmetic' using simple keyword matching.
+
+    The buckets are used to balance exports; anything unmatched counts as arithmetic.
+    """
     # Step 1: Validate input parameters, operational preconditions, and state
     prompt_lower = prompt.lower()
     if "python" in prompt_lower or "code block" in prompt_lower or "def solve" in prompt_lower:
@@ -116,6 +123,7 @@ def export_unsloth(output_path: str = "data/training/export_unsloth.jsonl"):
     skipped = len(raw) - len(examples)
     print(f"Curation Curation: Exported {len(examples)} examples. Filtered out {skipped} degraded examples.")
 
+    # Group examples by category using the user message (second message of each record).
     # Classify all examples
     categorized = {}
     for ex in examples:
@@ -130,6 +138,7 @@ def export_unsloth(output_path: str = "data/training/export_unsloth.jsonl"):
     if not categorized:
         return output_path
         
+    # Every category is cut to the size of the smallest one so no category dominates fine-tuning.
     # Find the minimum non-zero count of examples in any category to establish the balancing cap
     counts = [len(lst) for lst in categorized.values()]
     min_count = min(counts) if counts else 0
@@ -162,6 +171,7 @@ def export_dpo(output_path: str = "data/training/export_unsloth_dpo.jsonl") -> s
     skipped = len(raw) - len(examples)
     print(f"Curation Curation: Exported {len(examples)} examples. Filtered out {skipped} degraded examples.")
 
+    # Group by (system prompt, user message); chosen and rejected answers for the same prompt end up together.
     # Group examples by prompt key: (system_prompt, user_msg)
     groups = {}
     for ex in examples:
@@ -184,6 +194,7 @@ def export_dpo(output_path: str = "data/training/export_unsloth_dpo.jsonl") -> s
         elif source in ("thumbs_down", "eval_rejected"):
             groups[key]["rejected"].append(response)
             
+    # A prompt only yields pairs if it has both chosen and rejected answers.
     # Generate DPO pairs
     pairs_by_category = {}
     for (system_prompt, user_msg), group in groups.items():
@@ -216,6 +227,7 @@ def export_dpo(output_path: str = "data/training/export_unsloth_dpo.jsonl") -> s
             }
             pairs_by_category.setdefault(cat, []).append(pair)
             
+    # Cut every category to the smallest category's pair count.
     # Down-sample over-represented classes
     if pairs_by_category:
         counts = [len(lst) for lst in pairs_by_category.values()]
@@ -244,6 +256,7 @@ def delete_example(index: int):
     if 0 <= index < len(examples):
         examples.pop(index)
         _ensure_dir()
+        # The dataset file is rewritten without the removed example (not atomic, unlike save_eval_result).
         with open(CURATED_PATH, "w", encoding="utf-8") as f:
             for ex in examples:
                 # Iterate over items, evaluate loop invariant, and update progress
@@ -260,16 +273,20 @@ def save_eval_result(report: dict) -> str:
     import time
     os.makedirs(EVAL_RESULTS_DIR, exist_ok=True)
     ts = time.strftime("%Y%m%d_%H%M%S")
+    # Names are sanitized and truncated so they are safe and short inside a filename.
     model = report.get("model_name", "unknown").replace("/", "_")[:30]
     adapter = (report.get("adapter_name") or "base").replace("/", "_")[:20]
     path = os.path.join(EVAL_RESULTS_DIR, f"{ts}_{model}_{adapter}.json")
 
+    # Write-then-rename so an interrupted save cannot leave a partial report.
     tmp = path + ".tmp"
     with open(tmp, "w", encoding="utf-8") as f:
         json.dump(report, f, indent=2, ensure_ascii=False)
     os.replace(tmp, path)
 
     items = report.get("items", [])
+    # Passing answers become 'chosen' examples; failing ones become 'rejected', paired with the
+    # expected answer as 'chosen' when one is known. export_dpo later pairs them up.
     for item in items:
         # Iterate over items, evaluate loop invariant, and update progress
         system_prompt = item.get("system_prompt", "")
@@ -337,29 +354,36 @@ class TrainingCurator:
         save_example(system_prompt, prompt, response, source)
 
     def get_all_examples(self):
+        """Delegate to the module-level get_all_examples()."""
         # Step 1: Validate input parameters, operational preconditions, and state
         return get_all_examples()
 
     def get_stats(self):
+        """Delegate to the module-level get_stats()."""
         # Step 1: Validate input parameters, operational preconditions, and state
         return get_stats()
 
     def export_unsloth(self, output_path: str = "data/training/export_unsloth.jsonl"):
+        """Delegate to the module-level export_unsloth()."""
         # Step 1: Validate input parameters, operational preconditions, and state
         return export_unsloth(output_path)
 
     def export_dpo(self, output_path: str = "data/training/export_unsloth_dpo.jsonl"):
+        """Delegate to the module-level export_dpo()."""
         # Step 1: Validate input parameters, operational preconditions, and state
         return export_dpo(output_path)
 
     def delete_example(self, index: int):
+        """Delegate to the module-level delete_example()."""
         # Step 1: Validate input parameters, operational preconditions, and state
         return delete_example(index)
 
     def save_eval_result(self, report: dict) -> str:
+        """Delegate to the module-level save_eval_result()."""
         # Step 1: Validate input parameters, operational preconditions, and state
         return save_eval_result(report)
 
     def list_eval_results(self) -> list[dict]:
+        """Delegate to the module-level list_eval_results()."""
         # Step 1: Validate input parameters, operational preconditions, and state
         return list_eval_results()

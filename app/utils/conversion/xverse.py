@@ -7,6 +7,16 @@
 #          and writes compliant GGUF data structures for llama.cpp.
 # ==============================================================================
 
+"""HuggingFace-to-GGUF conversion support for the 'xverse' model family.
+
+Converter classes here are generally registered with ModelBase under HF architecture names;
+they write GGUF metadata (set_gguf_parameters), the vocabulary (set_vocab)
+and remap or reshape tensors (modify_tensors) for llama.cpp.
+
+Classes:
+  XverseModel - Converter for Xverse models (llama-like with a custom tokenizer).
+"""
+
 from __future__ import annotations
 
 import re
@@ -38,8 +48,6 @@ class XverseModel(TextModel):
         from transformers import AutoTokenizer
         tokenizer = AutoTokenizer.from_pretrained(dir_model)
         vocab_size = hparams.get("vocab_size", len(tokenizer.vocab))  # ty: ignore[unresolved-attribute]
-        # Since we are checking the maximum index, we need to ensure it's strictly less than vocab_size,
-        # because vocab_size is the count of items, and indexes start at 0.
         # Since we are checking the maximum index, we need to ensure it's strictly less than vocab_size,
         # because vocab_size is the count of items, and indexes start at 0.
         max_vocab_index = max(tokenizer.get_vocab().values())  # ty: ignore[unresolved-attribute]

@@ -6,6 +6,10 @@
 #          Protects bridge authorization tokens and configuration secrets.
 # ==============================================================================
 
+"""Storage and validation of bridge auth tokens (Linux kernel keyring, OS keychain, scoped token file).
+
+"""
+
 import logging
 import json
 import os
@@ -13,10 +17,14 @@ import time
 import ctypes
 import sys
 
+# Module logger for keychain events (token values are never logged).
 logger = logging.getLogger("karl.keychain")
 
 try:
     # Execute guarded operations and establish recovery boundaries
+    # Decide up front whether the OS keychain (python-keyring) may be used:
+    # disabled by KARL_NO_KEYRING=1, and on Linux without a D-Bus session (headless/SSH) because
+    # the SecretService backend would just hang or fail there. Otherwise import it if installed.
     if os.environ.get("KARL_NO_KEYRING") == "1":
         keyring = None
     elif sys.platform == "linux" and not os.environ.get("DBUS_SESSION_BUS_ADDRESS"):
@@ -27,8 +35,10 @@ try:
 except ImportError:
     keyring = None
 
+# Optional libkeyutils binding used for the Linux kernel session keyring; stays None elsewhere.
 # ── Linux Kernel Keyring (keyutils) ──────────────────────────────────────────
 _libkeyutils = None
+# -3 is the kernel's KEY_SPEC_SESSION_KEYRING special id (keys live for the login session).
 _KEY_SPEC_SESSION_KEYRING = -3
 
 if sys.platform == "linux":
@@ -43,6 +53,8 @@ if sys.platform == "linux":
         except Exception:
             _libkeyutils = None
 
+# Raw syscall numbers (x86_64 only) used when libkeyutils is not installed. These numbers differ on
+# other CPU architectures, so the fallback is only valid on x86_64 Linux.
 # ── x86_64 syscall numbers & keyctl subcommand constants ─────────────────────
 _SYS_ADD_KEY        = 248          # add_key(2)      — x86_64 Linux ABI
 _SYS_REQUEST_KEY    = 249          # request_key(2)  — x86_64 Linux ABI
@@ -53,9 +65,11 @@ _KEYCTL_SET_TIMEOUT = ctypes.c_long(15)  # keyctl subcommand: set expiry
 
 # ─────────────────────────────────────────────────────────────────────────────
 
+# Identifiers for the OS keychain entry, the on-disk token store and token lifetime.
 SERVICE_NAME = "KarlBridge"
 USER_NAME = "BridgeToken"
 TOKEN_PATH = "data/bridge_token.json"
+# 12 hours in seconds; applied from the store's created_at timestamp.
 TOKEN_LIFETIME = 43200  # 12 hours
 
 
@@ -94,6 +108,7 @@ def _os_keychain_locked() -> bool:
     except Exception:
         return False  # inconclusive -- let the normal timeout-guarded call decide
 
+# Scope names follow the 'action:resource' pattern. The list order is least to most privileged.
 # Canonical scope set — ordered from least to most privileged.
 FULL_SCOPES: list[str] = [
     "read:telemetry",
@@ -102,6 +117,7 @@ FULL_SCOPES: list[str] = [
     "admin:execute",
 ]
 
+# Each role includes every lower scope, so higher roles are supersets.
 # Predefined role bundles for --generate-key --scope <role>
 ROLE_SCOPES: dict[str, list[str]] = {
     "read:telemetry": ["read:telemetry"],
@@ -128,6 +144,7 @@ def save_cached_token(token: str):
             )
             if key_id >= 0:
                 logger.info("Bridge token cached in Linux Kernel Keyring.")
+                # The kernel session keyring may be volatile, so the OS keychain write below still runs as the persistent copy.
                 # We still save to user-space keyring as a persistent fallback
                 # if the session keyring is volatile (depends on PAM config)
         except Exception as e:
@@ -208,6 +225,8 @@ def _call_keyring_with_timeout(fn, *args, timeout: float = 3.0):
     """
     # Step 1: Validate input parameters, operational preconditions, and state
     import concurrent.futures
+    # A throwaway single-thread pool: a blocked backend call can be abandoned (shutdown wait=False)
+    # because Python cannot kill a thread, and the worker is left to finish harmlessly on its own.
     executor = concurrent.futures.ThreadPoolExecutor(max_workers=1)
     future = executor.submit(fn, *args)
     try:
@@ -274,11 +293,13 @@ def get_token_scopes(token: str, token_path: str = TOKEN_PATH) -> list[str] | No
             scopes = data["tokens"].get(token)
             created_at = float(data.get("created_at", 0))
         else:
+            # Legacy single-token files grant every scope (FULL_SCOPES) for backward compatibility.
             # Legacy single-token format
             scopes = FULL_SCOPES if token == data.get("token") else None
             created_at = float(data.get("created_at", 0))
         if scopes is None:
             return None
+        # Expiry is measured from the store's single created_at, so all tokens in a file expire together.
         if time.time() - created_at > TOKEN_LIFETIME:
             logger.info("Cached token expired.")
             return None
@@ -304,6 +325,7 @@ def add_scoped_token(token: str, scopes: list[str], token_path: str = TOKEN_PATH
                 data = json.load(f)
         except Exception:
             pass
+    # Upgrade a legacy single-token file to the multi-token layout in memory before saving.
     # Migrate old single-token format on the fly
     if "tokens" not in data:
         old_tok = data.get("token")
@@ -316,6 +338,8 @@ def add_scoped_token(token: str, scopes: list[str], token_path: str = TOKEN_PATH
     # plaintext, so restrict the file to the owner before any content is
     # written — os.open with an explicit mode avoids a window where a
     # default-umask file briefly exists before a later chmod() would apply.
+    # Create with mode 0600 from the start so the plaintext tokens are never briefly world-readable.
+    # Note the file is truncated and rewritten in place (not via a temp file).
     fd = os.open(token_path, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
     with os.fdopen(fd, "w", encoding="utf-8") as f:
         json.dump(data, f, indent=2)
@@ -350,6 +374,7 @@ def _clear_keyring():
         pass
 
 
+# Low-level kernel keyring wrappers. Each prefers libkeyutils and falls back to a raw syscall.
 # ── Low-level kernel-keyring helpers ─────────────────────────────────────────
 # Each helper explicitly sets argtypes and restype before every call so that
 # ctypes never has to guess the C types on a 64-bit platform.
@@ -452,6 +477,7 @@ def _keyctl_read_kernel(key_id: int) -> bytes | None:
         fn = _libkeyutils.keyctl_read
         fn.argtypes = [ctypes.c_int32, ctypes.c_char_p, ctypes.c_size_t]
         fn.restype = ctypes.c_long
+        # Two-step read: a NULL buffer returns the payload size, then a buffer of that size is filled.
         needed = int(fn(kid, None, 0))
         if needed <= 0:
             return None
@@ -569,6 +595,7 @@ def _keyctl_revoke_key(key_id: int) -> None:
         )
 
 
+# Session-token helpers below are Linux-only and raise RuntimeError elsewhere.
 # ── Public API ────────────────────────────────────────────────────────────────
 
 def store_session_token(token: str, timeout_seconds: int = 43200) -> int:

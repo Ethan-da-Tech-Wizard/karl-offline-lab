@@ -7,6 +7,19 @@
 #          and writes compliant GGUF data structures for llama.cpp.
 # ==============================================================================
 
+"""HuggingFace-to-GGUF conversion support for the 'olmo' model family.
+
+Converter classes here are generally registered with ModelBase under HF architecture names;
+they write GGUF metadata (set_gguf_parameters), the vocabulary (set_vocab)
+and remap or reshape tensors (modify_tensors) for llama.cpp.
+
+Classes:
+  OlmoModel - Converter for OLMo (v1) models.
+  SeedOssModel - Converter for ByteDance Seed-OSS; the base class handles everything.
+  Olmo2Model - Converter for OLMo2/OLMo3 models.
+  OlmoeModel - Converter for OLMoE (mixture-of-experts) models.
+"""
+
 from __future__ import annotations
 
 from typing import Iterable, TYPE_CHECKING
