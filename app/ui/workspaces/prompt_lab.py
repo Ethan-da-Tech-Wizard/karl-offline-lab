@@ -38,10 +38,12 @@ from app.ui.themes import MONO
 from app.ui.widgets.model_combo import ModelComboBox
 
 
+# Module logger for prompt-lab diagnostics.
 logger = logging.getLogger("karl.prompt_lab")
 
 
 def _section(text: str) -> QLabel:
+    """Create a section-header label (QSS object name 'section-header')."""
     # Step 1: Validate input parameters, operational preconditions, and state
     lbl = QLabel(text)
     lbl.setObjectName("section-header")
@@ -49,12 +51,14 @@ def _section(text: str) -> QLabel:
 
 
 def _hline() -> QFrame:
+    """Create a horizontal divider line."""
     # Step 1: Validate input parameters, operational preconditions, and state
     f = QFrame()
     f.setFrameShape(QFrame.Shape.HLine)
     return f
 
 
+# Models are looked up relative to the working directory (data/models).
 def _scan_model_files() -> list[str]:
     """Return sorted list of .gguf filenames found in data/models/."""
     # Step 1: Validate input parameters, operational preconditions, and state
@@ -64,6 +68,9 @@ def _scan_model_files() -> list[str]:
     return sorted(f for f in os.listdir(models_dir) if f.endswith(".gguf"))
 
 
+# Uses difflib.ndiff on lists of characters, then merges consecutive characters
+# with the same operation into a single span so the HTML stays small. Lines
+# starting with '?' are ndiff hint lines and are skipped.
 def generate_char_diff_html(a: str, b: str) -> str:
     """
     Computes character-level diff and returns HTML with highlighted additions/deletions.
@@ -79,6 +86,9 @@ def generate_char_diff_html(a: str, b: str) -> str:
     current_chunk = []
     
     def flush():
+        """Emit the buffered run of characters as one span (red strike-through for
+        deletions, green for additions, plain for unchanged) and clear the buffer.
+        """
         # Step 1: Validate input parameters, operational preconditions, and state
         nonlocal current_op, current_chunk
         if not current_chunk:
@@ -102,6 +112,7 @@ def generate_char_diff_html(a: str, b: str) -> str:
             html_parts.append(escaped)
         current_chunk = []
         
+    # ndiff lines look like '- x', '+ x', '  x'; code[0] is the op, code[2:] the char.
     for code in diff:
         # Iterate over items, evaluate loop invariant, and update progress
         op = code[0]
@@ -122,6 +133,8 @@ def generate_char_diff_html(a: str, b: str) -> str:
 
 # ── single-shot run thread (thin wrapper around ModelLoader) ─────────────────
 
+# One generation, streamed token by token. Signals: token(text), live_stats(count,
+# tokens/sec), done(response, diagnostics), error(message).
 class _RunThread(QThread):
     token = pyqtSignal(str)
     done  = pyqtSignal(str, dict)
@@ -131,6 +144,7 @@ class _RunThread(QThread):
     def __init__(self, system_prompt: str, user_prompt: str, hyperparams: dict,
                  model_name: str | None = None, adapter_name: str | None = None,
                  retrieved_chunks: list[str] | None = None):
+        """Store prompts, sampling hyperparameters and the optional model/adapter and RAG chunks."""
         # Step 1: Validate input parameters, operational preconditions, and state
         super().__init__()
         self.system_prompt = system_prompt
@@ -141,6 +155,11 @@ class _RunThread(QThread):
         self.retrieved_chunks = retrieved_chunks or []
 
     def run(self):
+        """Load the model, build the chat prompt, stream tokens, and emit timing diagnostics.
+
+        Diagnostics: prompt tokens/prefill speed, generated tokens/speed, totals. The
+        <think> block is stripped from the final response but streamed live.
+        """
         # Step 1: Validate input parameters, operational preconditions, and state
         try:
             # Execute guarded operations and establish recovery boundaries
@@ -148,16 +167,21 @@ class _RunThread(QThread):
             import core.interaction_loop
             import importlib
             import time
+            # Reloaded on every run so edits to the prompt-building code take effect
+            # without restarting the app (a development convenience).
             importlib.reload(core.interaction_loop)
 
             model_path = None
             if self.model_name:
                 model_path = os.path.join("data", "models", self.model_name)
 
+            # Returns the singleton model, loading the chosen model/adapter if needed.
             llm = ModelLoader.get_instance(model_path=model_path, adapter_name=self.adapter_name)
             history = [{"role": "user", "content": self.user_prompt}]
             
             system_prompt = self.system_prompt
+            # Insert RAG context at the {rag_context} placeholder if the system prompt has
+            # one; otherwise append it as a 'Retrieved Context' section.
             if self.retrieved_chunks:
                 context_str = "\n".join(self.retrieved_chunks)
                 if "{rag_context}" in system_prompt:
@@ -168,6 +192,7 @@ class _RunThread(QThread):
             prompt  = core.interaction_loop.build_prompt(system_prompt, history)
             logger.debug(f"system_prompt={repr(self.system_prompt)} model={repr(ModelLoader.model_name())} active_adapter={repr(getattr(ModelLoader, '_active_adapter', None))} prompt={repr(prompt)}")
 
+            # Prompt token count is needed for the prefill speed metric.
             # Tokenize prompt to get accurate prompt token count
             prompt_tokens = len(llm.tokenize(prompt.encode('utf-8')))
 
@@ -175,6 +200,7 @@ class _RunThread(QThread):
             first_token_time = None
             full = ""
             gen_token_count = 0
+            # Streaming completion; the stop tokens are ChatML/end-of-text markers.
             for chunk in llm(
                 prompt,
                 max_tokens=self.hyperparams.get("max_tokens", 1024),
@@ -201,6 +227,8 @@ class _RunThread(QThread):
                     full += text
                     self.token.emit(text)
 
+            # Prefill time = time to first token; generation time = first token to end.
+            # Zero durations are replaced with 0.001s to avoid dividing by zero.
             end_time = time.time()
             prefill_time = (first_token_time - start_time) if first_token_time is not None else (end_time - start_time)
             if prefill_time <= 0:
@@ -229,6 +257,7 @@ class _RunThread(QThread):
                 "total_tps": total_tps,
             }
 
+            # If the prompt ended with an open <think> tag the model starts inside the thought.
             # strip think block from shown output
             from core.cognitive_parser import parse_thought_stream
             _, response = parse_thought_stream(full, start_in_thought=prompt.rstrip().endswith("<think>"))
@@ -240,12 +269,18 @@ class _RunThread(QThread):
 
 # ── single prompt column ──────────────────────────────────────────────────────
 
+# One column (A or B) of the A/B playground: model picker, RAG/loop toggles,
+# system and user prompt boxes, streaming output and a run button. It owns its
+# own generation thread and reports completion via signals.
 class _PromptColumn(QWidget):
+    # Signals: run_requested(label, user text), generation_done(response, diagnostics),
+    # generation_failed().
     run_requested = pyqtSignal(str, str)   # (label, user_text)
     generation_done = pyqtSignal(str, dict)      # response text, diagnostics
     generation_failed = pyqtSignal()
 
     def __init__(self, label: str, state=None, parent=None):
+        """Build the column UI for `label` ('A' or 'B'). `state` may be None at construction."""
         # Step 1: Validate input parameters, operational preconditions, and state
         super().__init__(parent)
         self.label = label
@@ -260,6 +295,7 @@ class _PromptColumn(QWidget):
         self._model_combo.setToolTip(f"Select model/adapter combination for Column {self.label}")
         layout.addWidget(self._model_combo)
 
+        # 'Use RAG' prepends retrieved chunks; 'Enable Loop' uses the multi-turn agentic thread.
         # RAG and Loop configurations
         cb_row = QWidget()
         cb_layout = QHBoxLayout(cb_row)
@@ -316,47 +352,62 @@ class _PromptColumn(QWidget):
         self._active_threads = set()
         self._last_agentic_response = ""
         self._last_agentic_diagnostics = {}
+        # (Original note retained below.)
         # ModelComboBox already scans+populates itself in its own __init__;
         # this second pass matters when `state` was None at construction
         # (see the PromptLabWorkspace call site) and gets set afterward.
         self._refresh_model_combo()
 
     def _refresh_model_combo(self):
+        """Rescan models/adapters in this column's dropdown."""
         # Step 1: Validate input parameters, operational preconditions, and state
         self._model_combo.refresh_models()
 
     def select_model_and_adapter(self, model_name: str, adapter_name: str | None):
+        """Select a (model, adapter) pair in this column's dropdown if it exists."""
         # Step 1: Validate input parameters, operational preconditions, and state
         self._model_combo.select_model(model_name, adapter_name)
 
     def _emit_run(self):
+        """Request a run unless this column is already generating."""
         # Step 1: Validate input parameters, operational preconditions, and state
         if self._thread is not None and self._thread.isRunning():
             return
         self.run_requested.emit(self.label, self._user_edit.toPlainText().strip())
 
     def system_text(self) -> str:
+        """Return the trimmed system prompt text."""
         # Step 1: Validate input parameters, operational preconditions, and state
         return self._system_edit.toPlainText().strip()
 
     def user_text(self) -> str:
+        """Return the trimmed user prompt text."""
         # Step 1: Validate input parameters, operational preconditions, and state
         return self._user_edit.toPlainText().strip()
 
     def set_system_text(self, text: str):
+        """Replace the system prompt text."""
         # Step 1: Validate input parameters, operational preconditions, and state
         self._system_edit.setPlainText(text)
 
     def set_user_text(self, text: str):
+        """Replace the user prompt text."""
         # Step 1: Validate input parameters, operational preconditions, and state
         self._user_edit.setPlainText(text)
 
     def clear_output(self):
+        """Clear the output pane and the live stats label."""
         # Step 1: Validate input parameters, operational preconditions, and state
         self._output.clear()
         self._stats_lbl.setText("")
 
     def start_run(self, hyperparams: dict):
+        """Start generation for this column using the current widgets.
+
+        Order: validate the prompt, read the selected model/adapter, optionally
+        retrieve RAG chunks, then start either an AgenticThread (loop enabled) or a
+        single _RunThread. Threads are tracked in a set until finished.
+        """
         # Step 1: Validate input parameters, operational preconditions, and state
         user = self.user_text()
         if not user:
@@ -371,6 +422,7 @@ class _PromptColumn(QWidget):
         self._last_agentic_response = ""
         self._last_agentic_diagnostics = {}
         
+        # Combo item data is {model, adapter, meta}; None means the app default.
         # Get selected model and adapter
         model_data = self._model_combo.itemData(self._model_combo.currentIndex())
         if model_data:
@@ -380,6 +432,8 @@ class _PromptColumn(QWidget):
             model_name = None
             adapter_name = None
 
+        # Only if the box is ticked and the index has chunks. Source names and distances
+        # are echoed above the output so the user can see what was injected.
         # RAG retrieval
         chunks = []
         if self._rag_check.isChecked() and hasattr(self, "state") and self.state.rag.total_chunks > 0:
@@ -404,6 +458,8 @@ class _PromptColumn(QWidget):
                 sources_text += "]\n\n"
                 self._output.setPlainText("generating...\n" + sources_text)
 
+        # Agentic loop: streams thought and chat tokens into the same pane and finishes
+        # with loop_finished; _RunThread is the plain single-shot path.
         if self._loop_check.isChecked():
             from app.engine.agentic_thread import AgenticThread
             initial_history = [{"role": "user", "content": user}]
@@ -435,6 +491,7 @@ class _PromptColumn(QWidget):
             self._thread.done.connect(self._on_done)
             self._thread.error.connect(self._on_error)
 
+        # Bookkeeping when the thread finishes: drop strong ref, re-enable Run, delete.
         thread = self._thread
         self._active_threads.add(thread)
         thread.finished.connect(lambda t=thread: self._active_threads.discard(t))
@@ -443,12 +500,14 @@ class _PromptColumn(QWidget):
         self._thread.start()
 
     def _on_thread_finished(self, thread):
+        """Slot: clear the thread reference and re-enable the Run button."""
         # Step 1: Validate input parameters, operational preconditions, and state
         if self._thread is thread:
             self._thread = None
         self._run_btn.setEnabled(True)
 
     def _on_token(self, token: str):
+        """Append a streamed token to the output, removing the 'generating...' placeholder first."""
         # Step 1: Validate input parameters, operational preconditions, and state
         from PyQt6.QtGui import QTextCursor
         curr_text = self._output.toPlainText()
@@ -463,19 +522,23 @@ class _PromptColumn(QWidget):
         self._output.ensureCursorVisible()
 
     def _on_agentic_iteration(self, index: int, thought: str, response: str, diagnostics: dict):
+        """Remember the latest iteration's response/diagnostics until the loop finishes."""
         # Step 1: Validate input parameters, operational preconditions, and state
         self._last_agentic_response = response
         self._last_agentic_diagnostics = diagnostics
 
     def _on_agentic_loop_finished(self, total_iterations: int):
+        """Treat loop completion like a normal 'done' using the last iteration's result."""
         # Step 1: Validate input parameters, operational preconditions, and state
         self._on_done(self._last_agentic_response, self._last_agentic_diagnostics)
 
     def _on_live_stats(self, count: int, speed: float):
+        """Show '(n tokens, x t/s)' next to the output title while generating."""
         # Step 1: Validate input parameters, operational preconditions, and state
         self._stats_lbl.setText(f"({count} tokens · {speed:.1f} t/s)")
 
     def _on_done(self, response: str, diagnostics: dict):
+        """Append prefill/generation timing lines and notify listeners."""
         # Step 1: Validate input parameters, operational preconditions, and state
         self._stats_lbl.setText("")
         self._output.append(
@@ -485,6 +548,7 @@ class _PromptColumn(QWidget):
         self.generation_done.emit(response, diagnostics)
 
     def _on_error(self, msg: str):
+        """Show the error inside the output and notify listeners."""
         # Step 1: Validate input parameters, operational preconditions, and state
         self._stats_lbl.setText("")
         self._output.append(f"\n[error: {msg}]")
@@ -493,10 +557,12 @@ class _PromptColumn(QWidget):
 
 # ── telemetry card ────────────────────────────────────────────────────────────
 
+# Read-only metrics (model file, size, speed, thinking time, context use).
 class _TelemetryCard(QFrame):
     """Compact metrics display shown below each model's output panel."""
 
     def __init__(self, label: str, parent=None):
+        """Create the card with placeholder values."""
         # Step 1: Validate input parameters, operational preconditions, and state
         super().__init__(parent)
         self.setObjectName("panel")
@@ -524,6 +590,7 @@ class _TelemetryCard(QFrame):
 
     @staticmethod
     def _muted_label(text: str) -> QLabel:
+        """Create a small muted label."""
         # Step 1: Validate input parameters, operational preconditions, and state
         lbl = QLabel(text)
         lbl.setObjectName("lbl-muted")
@@ -531,6 +598,7 @@ class _TelemetryCard(QFrame):
         return lbl
 
     def reset(self):
+        """Restore every metric to its '—' placeholder."""
         # Step 1: Validate input parameters, operational preconditions, and state
         self._file_lbl.setText("Model: —")
         self._size_lbl.setText("File size: —")
@@ -539,6 +607,11 @@ class _TelemetryCard(QFrame):
         self._ctx_lbl.setText("Context: —")
 
     def update_from(self, telemetry: dict):
+        """Fill the card from a telemetry dict (see _ModelCompareThread.run for its keys).
+
+        Long file names are shortened with a leading ellipsis; sizes are shown in GB,
+        MB or bytes; context use is (prompt+generated tokens)/n_ctx.
+        """
         # Step 1: Validate input parameters, operational preconditions, and state
         model_file = telemetry.get("model_file", "—")
         display_name = model_file if len(model_file) <= 34 else "…" + model_file[-31:]
@@ -573,6 +646,8 @@ class _TelemetryCard(QFrame):
 
 # ── multi-model sequential inference thread ───────────────────────────────────
 
+# Sequential on purpose: two large models rarely fit in VRAM together, so the
+# thread loads A, runs it, frees the loader, then loads B.
 class _ModelCompareThread(QThread):
     """
     Runs Model A then Model B sequentially on the same prompt.
@@ -582,6 +657,7 @@ class _ModelCompareThread(QThread):
     After both runs it restores the previously active default model.
     """
 
+    # Signals report phases and streaming tokens for each model.
     status      = pyqtSignal(str)   # status-bar text update
     token_a     = pyqtSignal(str)   # streaming token for Model A
     model_a_done = pyqtSignal(dict) # telemetry dict for Model A
@@ -593,6 +669,7 @@ class _ModelCompareThread(QThread):
 
     def __init__(self, model_a_filename: str, model_b_filename: str,
                  system_prompt: str, user_prompt: str, hyperparams: dict):
+        """Store both model file names, the shared prompts and sampling hyperparameters."""
         # Step 1: Validate input parameters, operational preconditions, and state
         super().__init__()
         self.model_a_filename = model_a_filename
@@ -603,6 +680,8 @@ class _ModelCompareThread(QThread):
 
     # ── helpers ───────────────────────────────────────────────────────────────
 
+    # NOTE: the annotation and docstring promise four values but the function returns
+    # three (gen_count, gen_tps, think_sec); the caller unpacks three.
     def _stream(self, llm, prompt: str, token_signal: pyqtSignal) -> tuple[int, float, float, int]:
         """
         Run one streaming inference pass.
@@ -657,6 +736,11 @@ class _ModelCompareThread(QThread):
         return gen_count, gen_tps, think_sec
 
     def run(self):
+        """Run model A, flush VRAM, run model B, then restore the default model.
+
+        Telemetry for each model is emitted as soon as its pass finishes. Failure to
+        restore the default model is only logged.
+        """
         # Step 1: Validate input parameters, operational preconditions, and state
         import os
         from app.engine.model_loader import ModelLoader
@@ -671,6 +755,7 @@ class _ModelCompareThread(QThread):
         history = [{"role": "user", "content": self.user_prompt}]
 
         try:
+            # Load, measure, generate and emit telemetry for model A.
             # ── Pass 1: Model A ───────────────────────────────────────────────
             self.status.emit(f"Loading {self.model_a_filename}…")
             llm_a = ModelLoader.get_instance(model_path=model_a_path)
@@ -694,6 +779,7 @@ class _ModelCompareThread(QThread):
             }
             self.model_a_done.emit(telemetry_a)
 
+            # Releases model A completely before loading B to avoid out-of-memory errors.
             # ── VRAM Flush ────────────────────────────────────────────────────
             self.vram_flushing.emit()
             ModelLoader.reset_instance()
@@ -721,6 +807,7 @@ class _ModelCompareThread(QThread):
             }
             self.model_b_done.emit(telemetry_b)
 
+            # Leave the app in the same state it started in (the configured active model).
             # ── Restore default model ─────────────────────────────────────────
             self.status.emit("Restoring default model…")
             ModelLoader.reset_instance()
@@ -739,6 +826,8 @@ class _ModelCompareThread(QThread):
             self.error.emit(str(exc))
 
 
+# Cooperative cancellation: request_stop() sets a flag that the optimizer polls
+# via stop_check between iterations.
 class PromptOptimizeThread(QThread):
     """Runs PromptOptimizer.optimize_loop() off the UI thread, relaying
     per-iteration progress and the final optimized prompt."""
@@ -748,6 +837,7 @@ class PromptOptimizeThread(QThread):
     error = pyqtSignal(str)
 
     def __init__(self, prompt_key: str, dataset_path: str, iterations: int, model_name: str | None = None):
+        """`prompt_key` names the registry prompt to evolve; the dataset is a JSONL eval file."""
         # Step 1: Validate input parameters, operational preconditions, and state
         super().__init__()
         self.prompt_key = prompt_key
@@ -757,10 +847,12 @@ class PromptOptimizeThread(QThread):
         self._stop_requested = False
 
     def request_stop(self):
+        """Ask the optimizer to stop after the current iteration."""
         # Step 1: Validate input parameters, operational preconditions, and state
         self._stop_requested = True
 
     def run(self):
+        """Run PromptOptimizer.optimize_loop, relaying progress, then emit the best prompt."""
         # Step 1: Validate input parameters, operational preconditions, and state
         from core.prompt_optimizer import PromptOptimizer
         try:
@@ -781,6 +873,9 @@ class PromptOptimizeThread(QThread):
 
 # ── workspace ─────────────────────────────────────────────────────────────────
 
+# Tabs: A/B Playground, Difference View, Tokenizer Visualizer, Multi-Model
+# Comparison and Optimize. Saved A/B setups ('pairs') are JSON files in
+# data/prompt_pairs, listed in a side panel.
 class PromptLabWorkspace(QWidget):
     """Side-by-side prompt lab with saved pairs, diffing, and token visualization."""
 
@@ -790,6 +885,7 @@ class PromptLabWorkspace(QWidget):
         super().__init__(parent)
         self.state = state
         self.setObjectName("workspace-root")
+        # Sampling settings shared by all runs (the Workbench exposes the editable ones).
         self._hyperparams = {"temperature": 0.7, "top_p": 0.95, "max_tokens": 1024}
         self._output_a = ""
         self._output_b = ""
@@ -864,6 +960,7 @@ class PromptLabWorkspace(QWidget):
         self._main_tabs = QTabWidget()
         self._main_tabs.setObjectName("main-tabs")
 
+        # Two _PromptColumn widgets; 'Run both' runs A then B sequentially.
         # 1. Side-by-side playground
         playground_tab = QWidget()
         pt_layout = QVBoxLayout(playground_tab)
@@ -894,6 +991,7 @@ class PromptLabWorkspace(QWidget):
 
         self._main_tabs.addTab(playground_tab, "A/B Playground")
 
+        # Character-level diff of the two outputs, refreshed after each run.
         # 2. Diff tab
         diff_tab = QWidget()
         dt_layout = QVBoxLayout(diff_tab)
@@ -907,6 +1005,7 @@ class PromptLabWorkspace(QWidget):
         dt_layout.addWidget(self._diff_view, 1)
         self._main_tabs.addTab(diff_tab, "Difference View")
 
+        # Live token view of any text using the loaded model's tokenizer.
         # 3. Tokenizer tab
         tokenizer_tab = QWidget()
         tok_layout = QVBoxLayout(tokenizer_tab)
@@ -946,6 +1045,7 @@ class PromptLabWorkspace(QWidget):
 
         self._main_tabs.addTab(tokenizer_tab, "Tokenizer Visualizer")
 
+        # Runs the same prompt through two chosen model files, one after the other.
         # 4. Multi-Model Comparison tab ───────────────────────────────────────
         cmp_tab = QWidget()
         ct_layout = QVBoxLayout(cmp_tab)
@@ -1053,6 +1153,7 @@ class PromptLabWorkspace(QWidget):
 
         self._main_tabs.addTab(cmp_tab, "Multi-Model Comparison")
 
+        # Evolve a registry system prompt against a JSONL eval dataset.
         # 5. Optimize tab ────────────────────────────────────────────────────────
         optimize_tab = QWidget()
         opt_layout = QVBoxLayout(optimize_tab)
@@ -1163,6 +1264,7 @@ class PromptLabWorkspace(QWidget):
         root.addWidget(right_widget, 1)
 
     def _build_left_panel(self) -> QWidget:
+        """Build the saved-pairs side panel (search, list, name box, save/delete)."""
         # Step 1: Validate input parameters, operational preconditions, and state
         w = QWidget()
         w.setObjectName("panel")
@@ -1217,6 +1319,7 @@ class PromptLabWorkspace(QWidget):
 
 
     def _refresh_pairs(self):
+        """Reload the list of saved pair names from data/prompt_pairs/*.json."""
         # Step 1: Validate input parameters, operational preconditions, and state
         self._pairs_list.clear()
         if not os.path.exists(self._pairs_dir):
@@ -1228,6 +1331,7 @@ class PromptLabWorkspace(QWidget):
             self._pairs_list.addItem(name)
 
     def _on_pair_selected(self, name: str):
+        """Load a saved pair file into both columns (prompts, toggles, models, outputs)."""
         # Step 1: Validate input parameters, operational preconditions, and state
         if not name:
             return
@@ -1271,6 +1375,10 @@ class PromptLabWorkspace(QWidget):
                 logger.warning(f"Error loading pair '{name}': {e}")
 
     def _save_pair(self):
+        """Save both columns' prompts, settings and outputs as <name>.json.
+
+        Names are sanitised to letters, digits, '_' and '-' so they are safe file names.
+        """
         # Step 1: Validate input parameters, operational preconditions, and state
         name = self._pair_name_input.text().strip()
         if not name:
@@ -1323,6 +1431,7 @@ class PromptLabWorkspace(QWidget):
             QMessageBox.critical(self, "Save Error", f"Could not save pair: {e}")
 
     def _delete_pair(self):
+        """Delete the selected pair file after confirmation."""
         # Step 1: Validate input parameters, operational preconditions, and state
         item = self._pairs_list.currentItem()
         if not item:
@@ -1348,12 +1457,16 @@ class PromptLabWorkspace(QWidget):
             self._refresh_pairs()
 
     def showEvent(self, event):
+        """Refresh every model dropdown when the workspace is shown (models may have changed)."""
         # Step 1: Validate input parameters, operational preconditions, and state
         super().showEvent(event)
         self._col_a._refresh_model_combo()
         self._col_b._refresh_model_combo()
         self._refresh_compare_model_combos()
 
+    # NOTE: the tab indices used here look shifted by one relative to the tab order
+    # (0 playground, 1 diff, 2 tokenizer, 3 comparison, 4 optimize): index 1 focuses the
+    # tokenizer input and index 2 the comparison prompt.
     def focus_primary_input(self) -> bool:
         # Step 1: Validate input parameters, operational preconditions, and state
         if self._main_tabs.currentIndex() == 0:
@@ -1369,6 +1482,7 @@ class PromptLabWorkspace(QWidget):
         return True
 
     def _run_column(self, label: str, _user_text: str):
+        """Slot: run one column on its own (cancels any 'run both' sequence)."""
         # Step 1: Validate input parameters, operational preconditions, and state
         self._running_both = False
         if label == "A":
@@ -1381,6 +1495,7 @@ class PromptLabWorkspace(QWidget):
             self._col_b.start_run(self._hyperparams)
 
     def _run_both(self):
+        """Run A, then B once A finishes (see _on_col_a_done)."""
         # Step 1: Validate input parameters, operational preconditions, and state
         self._output_a = ""
         self._output_b = ""
@@ -1389,6 +1504,7 @@ class PromptLabWorkspace(QWidget):
         self._col_a.start_run(self._hyperparams)
 
     def _on_col_a_done(self, text: str, diagnostics: dict | None = None):
+        """Store output A, refresh the diff, and start B if this was a 'run both'."""
         # Step 1: Validate input parameters, operational preconditions, and state
         self._output_a = text
         self._update_diff()
@@ -1396,22 +1512,26 @@ class PromptLabWorkspace(QWidget):
             self._col_b.start_run(self._hyperparams)
 
     def _on_col_b_done(self, text: str, diagnostics: dict | None = None):
+        """Store output B, refresh the diff and end any 'run both' sequence."""
         # Step 1: Validate input parameters, operational preconditions, and state
         self._output_b = text
         self._update_diff()
         self._running_both = False
 
     def _on_col_a_failed(self):
+        """Abort a 'run both' sequence and show a failure message for column A."""
         # Step 1: Validate input parameters, operational preconditions, and state
         self._running_both = False
         self._diff_view.setHtml("<span style='color:#FF4A5A;'>Generation failed in Column A. Stopped comparison.</span>")
 
     def _on_col_b_failed(self):
+        """Abort a 'run both' sequence and show a failure message for column B."""
         # Step 1: Validate input parameters, operational preconditions, and state
         self._running_both = False
         self._diff_view.setHtml("<span style='color:#FF4A5A;'>Generation failed in Column B. Stopped comparison.</span>")
 
     def _update_diff(self):
+        """Render the diff once both outputs exist; otherwise show a waiting message."""
         # Step 1: Validate input parameters, operational preconditions, and state
         if not self._output_a or not self._output_b:
             self._diff_view.setHtml(
@@ -1426,9 +1546,14 @@ class PromptLabWorkspace(QWidget):
         except Exception as e:
             self._diff_view.setHtml(f"<span style='color:#F05050;'>Error generating diff: {html.escape(str(e))}</span>")
 
+    # Token colours: special=red, punctuation=cyan, word-start=purple, continuation=amber.
     # ── tokenizer tab logic ───────────────────────────────────────────────────
 
     def _on_tokenize_text_changed(self):
+        """Tokenize the text with the loaded model and show colour-coded tokens.
+
+        If no model is loaded it tries to load the default one; failures are shown inline.
+        """
         # Step 1: Validate input parameters, operational preconditions, and state
         text = self._tok_input.toPlainText()
         if not text:
@@ -1473,6 +1598,10 @@ class PromptLabWorkspace(QWidget):
             self._tok_output.setHtml(f"<span style='color:#FF4A5A;'>Error tokenizing: {html.escape(str(e))}</span>")
 
     def _format_token_html(self, token_id: int, token_bytes: bytes) -> str:
+        """Render one token as a small coloured chip; whitespace is made visible
+        (middle dot for space, return symbol for newline, arrow for tab) and the
+        tooltip shows its id and type.
+        """
         # Step 1: Validate input parameters, operational preconditions, and state
         text = token_bytes.decode('utf-8', errors='replace')
         
@@ -1502,6 +1631,11 @@ class PromptLabWorkspace(QWidget):
         )
 
     def _classify_token(self, token_id: int, token_bytes: bytes) -> str:
+        """Heuristically classify a token as special, punctuation, word-start or continuation.
+
+        Ids >= 100000 are treated as special (tokenizer-specific heuristic); a leading
+        space/newline/tab marks the start of a new word.
+        """
         # Step 1: Validate input parameters, operational preconditions, and state
         text = token_bytes.decode('utf-8', errors='replace')
         if not token_bytes or token_id >= 100000 or text in ("<|im_start|>", "<|im_end|>", "<think>", "</think>"):
@@ -1518,6 +1652,7 @@ class PromptLabWorkspace(QWidget):
         return "continuation"
 
     def _load_output_a_to_tokenizer(self):
+        """Copy output A into the tokenizer input (or tell the user it is empty)."""
         # Step 1: Validate input parameters, operational preconditions, and state
         if self._output_a:
             self._tok_input.setPlainText(self._output_a)
@@ -1525,15 +1660,18 @@ class PromptLabWorkspace(QWidget):
             QMessageBox.information(self, "No Output", "Output A is empty. Run prompt A first.")
 
     def _load_output_b_to_tokenizer(self):
+        """Copy output B into the tokenizer input (or tell the user it is empty)."""
         # Step 1: Validate input parameters, operational preconditions, and state
         if self._output_b:
             self._tok_input.setPlainText(self._output_b)
         else:
             QMessageBox.information(self, "No Output", "Output B is empty. Run prompt B first.")
 
+    # Convenience features added later: pair filter, clone A<->B, locked prompt sync.
     # ── Upgraded Prompt Lab Features ──────────────────────────────────────────
 
     def _filter_pairs(self, text):
+        """Hide pairs whose name does not contain the search text."""
         # Step 1: Validate input parameters, operational preconditions, and state
         query = text.strip().lower()
         for idx in range(self._pairs_list.count()):
@@ -1542,6 +1680,7 @@ class PromptLabWorkspace(QWidget):
             item.setHidden(query not in item.text().lower())
 
     def _clone_a_to_b(self):
+        """Copy column A's prompts, toggles and model selection into column B."""
         # Step 1: Validate input parameters, operational preconditions, and state
         self._col_b.set_system_text(self._col_a.system_text())
         self._col_b.set_user_text(self._col_a.user_text())
@@ -1551,6 +1690,7 @@ class PromptLabWorkspace(QWidget):
         self._col_b._model_combo.setCurrentIndex(idx)
 
     def _clone_b_to_a(self):
+        """Copy column B's prompts, toggles and model selection into column A."""
         # Step 1: Validate input parameters, operational preconditions, and state
         self._col_a.set_system_text(self._col_b.system_text())
         self._col_a.set_user_text(self._col_b.user_text())
@@ -1560,6 +1700,10 @@ class PromptLabWorkspace(QWidget):
         self._col_a._model_combo.setCurrentIndex(idx)
 
     def _on_lock_sync_toggled(self, checked):
+        """Enable/disable two-way mirroring of the system and user prompts between columns.
+
+        The sync handlers block signals while writing so A->B does not bounce back to A.
+        """
         # Step 1: Validate input parameters, operational preconditions, and state
         if checked:
             self._col_b.set_user_text(self._col_a.user_text())
@@ -1579,29 +1723,34 @@ class PromptLabWorkspace(QWidget):
                 pass
 
     def _sync_user_a_to_b(self):
+        """Mirror A's user prompt into B without re-triggering the B->A handler."""
         # Step 1: Validate input parameters, operational preconditions, and state
         self._col_b._user_edit.blockSignals(True)
         self._col_b.set_user_text(self._col_a.user_text())
         self._col_b._user_edit.blockSignals(False)
 
     def _sync_user_b_to_a(self):
+        """Mirror B's user prompt into A without re-triggering the A->B handler."""
         # Step 1: Validate input parameters, operational preconditions, and state
         self._col_a._user_edit.blockSignals(True)
         self._col_a.set_user_text(self._col_b.user_text())
         self._col_a._user_edit.blockSignals(False)
 
     def _sync_system_a_to_b(self):
+        """Mirror A's system prompt into B without re-triggering the B->A handler."""
         # Step 1: Validate input parameters, operational preconditions, and state
         self._col_b._system_edit.blockSignals(True)
         self._col_b.set_system_text(self._col_a.system_text())
         self._col_b._system_edit.blockSignals(False)
 
     def _sync_system_b_to_a(self):
+        """Mirror B's system prompt into A without re-triggering the A->B handler."""
         # Step 1: Validate input parameters, operational preconditions, and state
         self._col_a._system_edit.blockSignals(True)
         self._col_a.set_system_text(self._col_b.system_text())
         self._col_a._system_edit.blockSignals(False)
 
+    # Comparison tab logic.
     # ── Multi-Model Comparison ────────────────────────────────────────────────
 
     def _refresh_compare_model_combos(self):
@@ -1622,6 +1771,10 @@ class PromptLabWorkspace(QWidget):
             combo.blockSignals(False)
 
     def _run_comparative_lab(self):
+        """Validate inputs, reset the panels and start the two-model comparison thread.
+
+        Lambdas forward streamed tokens to the matching output pane.
+        """
         # Step 1: Validate input parameters, operational preconditions, and state
         model_a = self._cmp_model_a.currentText()
         model_b = self._cmp_model_b.currentText()
@@ -1672,33 +1825,40 @@ class PromptLabWorkspace(QWidget):
         browser.ensureCursorVisible()
 
     def _on_cmp_model_a_done(self, telemetry: dict):
+        """Show model A's telemetry card."""
         # Step 1: Validate input parameters, operational preconditions, and state
         self._cmp_card_a.update_from(telemetry)
 
     def _on_cmp_vram_flushing(self):
+        """Tell the user that model A is being released before B loads."""
         # Step 1: Validate input parameters, operational preconditions, and state
         self._cmp_status.setText(
             "VRAM flush — releasing Model A from memory before loading Model B…"
         )
 
     def _on_cmp_model_b_done(self, telemetry: dict):
+        """Show model B's telemetry card."""
         # Step 1: Validate input parameters, operational preconditions, and state
         self._cmp_card_b.update_from(telemetry)
 
     def _on_cmp_finished(self):
+        """Re-enable the Run button after both passes and the default-model restore."""
         # Step 1: Validate input parameters, operational preconditions, and state
         self._cmp_run_btn.setEnabled(True)
         self._cmp_status.setText("Comparison complete. Default model restored.")
 
     def _on_cmp_error(self, msg: str):
+        """Re-enable the Run button and show/log the error."""
         # Step 1: Validate input parameters, operational preconditions, and state
         self._cmp_run_btn.setEnabled(True)
         self._cmp_status.setText(f"Error: {msg}")
         logger.error("[MultiModelComparison] %s", msg)
 
+    # Optimizer tab logic.
     # ── Optimize tab ─────────────────────────────────────────────────────────
 
     def _populate_optimize_prompt_combo(self):
+        """List registry prompt presets; the combo stores the registry key as item data."""
         # Step 1: Validate input parameters, operational preconditions, and state
         from core.default_prompts import load_prompt_presets
         self._opt_prompt_combo.clear()
@@ -1707,6 +1867,7 @@ class PromptLabWorkspace(QWidget):
             self._opt_prompt_combo.addItem(f"{entry.get('label', key)} ({key})", key)
 
     def _browse_optimize_dataset(self):
+        """Choose the JSONL eval dataset (starts in eval/datasets)."""
         # Step 1: Validate input parameters, operational preconditions, and state
         path, _ = QFileDialog.getOpenFileName(
             self, "Select Eval Dataset", "eval/datasets", "JSONL Files (*.jsonl);;All Files (*)"
@@ -1715,6 +1876,7 @@ class PromptLabWorkspace(QWidget):
             self._opt_dataset_path.setText(path)
 
     def _start_prompt_optimization(self):
+        """Validate the choices and start the background optimizer (UI locked, Stop enabled)."""
         # Step 1: Validate input parameters, operational preconditions, and state
         prompt_key = self._opt_prompt_combo.currentData()
         dataset_path = self._opt_dataset_path.text().strip()
@@ -1742,12 +1904,14 @@ class PromptLabWorkspace(QWidget):
         t.start()
 
     def _stop_prompt_optimization(self):
+        """Request a cooperative stop; it takes effect after the current iteration."""
         # Step 1: Validate input parameters, operational preconditions, and state
         if self._opt_thread:
             self._opt_thread.request_stop()
             self._opt_status.setText("Stopping after the current iteration…")
 
     def _on_opt_iteration_progress(self, current_iter: int, total_iters: int, score: float, prompt: str):
+        """Update the progress bar, current best prompt and log (iteration 0 is the baseline)."""
         # Step 1: Validate input parameters, operational preconditions, and state
         self._opt_progress.setValue(current_iter)
         self._opt_prompt_text.setPlainText(prompt)
@@ -1756,6 +1920,7 @@ class PromptLabWorkspace(QWidget):
         self._opt_status.setText(f"{label} — best score {score:.3f}")
 
     def _on_opt_finished(self, final_prompt: str):
+        """Show the final best prompt and unlock the controls."""
         # Step 1: Validate input parameters, operational preconditions, and state
         self._opt_start_btn.setEnabled(True)
         self._opt_stop_btn.setEnabled(False)
@@ -1764,6 +1929,7 @@ class PromptLabWorkspace(QWidget):
         self._opt_log.append("Optimization finished.")
 
     def _on_opt_error(self, msg: str):
+        """Unlock the controls and show/log the error."""
         # Step 1: Validate input parameters, operational preconditions, and state
         self._opt_start_btn.setEnabled(True)
         self._opt_stop_btn.setEnabled(False)
@@ -1772,6 +1938,10 @@ class PromptLabWorkspace(QWidget):
         logger.error("[PromptOptimizeThread] %s", msg)
 
     def _save_optimized_prompt(self):
+        """Save the optimized prompt into the user preset registry under the chosen key.
+
+        Keys starting with '_' are rejected (reserved).
+        """
         # Step 1: Validate input parameters, operational preconditions, and state
         key = self._opt_save_key.text().strip()
         prompt_text = self._opt_prompt_text.toPlainText().strip()
