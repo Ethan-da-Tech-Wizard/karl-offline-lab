@@ -15,6 +15,7 @@ from PyQt6.QtWidgets import QApplication, QWidget
 
 
 def test_llm_watchdog_terminates_slow_stream(monkeypatch):
+    """If the token stream stalls longer than watchdog_timeout_seconds (0.1s here, stream sleeps 0.4s per token), LLMThread.run() must return promptly (<2s), close the stream, reset the model, unlock the loader, set its watchdog-error flag and emit an 'Inference Watchdog Timeout' error. This is what stops a frozen GPU/llama call from hanging the UI forever."""
     # Step 1: Validate input parameters, operational preconditions, and state
     app = QApplication.instance() or QApplication([])
     from app.engine.llm_thread import LLMThread
@@ -22,6 +23,7 @@ def test_llm_watchdog_terminates_slow_stream(monkeypatch):
     import app.engine.llm_thread as llm_thread
 
     class SlowStream:
+        """Fake token stream that blocks 0.4s per item until closed, simulating a stalled generation."""
         def __init__(self):
             # Step 1: Validate input parameters, operational preconditions, and state
             self.closed = False
@@ -38,10 +40,12 @@ def test_llm_watchdog_terminates_slow_stream(monkeypatch):
             return {"choices": [{"text": "late-token", "finish_reason": None}]}
 
         def close(self):
+            """Mark the stream closed so the next __next__ ends iteration."""
             # Step 1: Validate input parameters, operational preconditions, and state
             self.closed = True
 
     class FakeLLM:
+        """Fake llama model returning the slow stream and recording whether reset() was called."""
         def __init__(self):
             # Step 1: Validate input parameters, operational preconditions, and state
             self.stream = SlowStream()
@@ -102,10 +106,12 @@ def test_llm_watchdog_terminates_slow_stream(monkeypatch):
 
 
 def test_agentic_watchdog_cleanup_emits_exact_timeout():
+    """AgenticThread._cleanup_after_watchdog_timeout must set the stop and timed-out flags, close the active stream, reset the model and emit the exact documented timeout message (the UI and logs match on that text)."""
     # Step 1: Validate input parameters, operational preconditions, and state
     from app.engine.agentic_thread import AgenticThread
 
     class FakeLLM:
+        """Fake model that only records reset()."""
         def __init__(self):
             # Step 1: Validate input parameters, operational preconditions, and state
             self.reset_called = False
@@ -115,6 +121,7 @@ def test_agentic_watchdog_cleanup_emits_exact_timeout():
             self.reset_called = True
 
     class FakeStream:
+        """Fake response generator that only records close()."""
         def __init__(self):
             # Step 1: Validate input parameters, operational preconditions, and state
             self.closed = False
@@ -147,6 +154,7 @@ def test_agentic_watchdog_cleanup_emits_exact_timeout():
 
 
 def test_main_window_restores_and_clears_autosave_checkpoint(tmp_path, monkeypatch):
+    """On startup MainWindow restores an autosave checkpoint (selected tab, chat history, hyperparameters, model and adapter, rendered messages) and then deletes the checkpoint file so a stale recovery is not applied twice. All heavy widgets are replaced by light fakes."""
     # Step 1: Validate input parameters, operational preconditions, and state
     os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
     app = QApplication.instance() or QApplication([])
@@ -156,6 +164,7 @@ def test_main_window_restores_and_clears_autosave_checkpoint(tmp_path, monkeypat
     import app.ui.main_window as main_window
 
     class FakeState(QObject):
+        """Minimal AppState replacement exposing the signals and fields MainWindow reads."""
         state_changed = pyqtSignal(str, object)
         change_workspace_requested = pyqtSignal(int)
         append_to_workbench_input = pyqtSignal(str)
@@ -174,6 +183,7 @@ def test_main_window_restores_and_clears_autosave_checkpoint(tmp_path, monkeypat
             self.swarm_running = False
 
     class FakeSidebar(QWidget):
+        """Sidebar fake that records which page was selected."""
         workspace_changed = pyqtSignal(int)
 
         def __init__(self):
@@ -187,6 +197,7 @@ def test_main_window_restores_and_clears_autosave_checkpoint(tmp_path, monkeypat
             self.workspace_changed.emit(idx)
 
     class FakeStatusBar(QWidget):
+        """Status bar fake whose setters ignore their input."""
         def set_model(self, value):
             # Step 1: Validate input parameters, operational preconditions, and state
             self.model = value
@@ -212,6 +223,7 @@ def test_main_window_restores_and_clears_autosave_checkpoint(tmp_path, monkeypat
             pass
 
     class FakeChatView:
+        """Chat view fake that records the messages restored into it."""
         def __init__(self):
             # Step 1: Validate input parameters, operational preconditions, and state
             self._messages = []
@@ -225,6 +237,7 @@ def test_main_window_restores_and_clears_autosave_checkpoint(tmp_path, monkeypat
             pass
 
     class FakeWorkbench(QWidget):
+        """Workbench fake holding chat history and hyperparameters restored from the checkpoint."""
         status_changed = pyqtSignal(str, bool)
         model_changed = pyqtSignal(str)
         adapter_changed = pyqtSignal(str)
@@ -287,6 +300,7 @@ def test_main_window_restores_and_clears_autosave_checkpoint(tmp_path, monkeypat
             pass
 
     class FakeWorkspace(QWidget):
+        """Generic stand-in for the other workspaces so MainWindow can construct without real UI code."""
         adapter_changed = pyqtSignal(str)
         appearance_changed = pyqtSignal()
 
@@ -328,6 +342,8 @@ def test_main_window_restores_and_clears_autosave_checkpoint(tmp_path, monkeypat
     ):
         # Iterate over items, evaluate loop invariant, and update progress
         monkeypatch.setattr(main_window, name, FakeWorkspace)
+    # Neutralise window setup steps that need a real display, network sockets or a model; this test
+    # only cares about checkpoint restore.
     monkeypatch.setattr(main_window.MainWindow, "_setup_shortcuts", lambda self: None)
     monkeypatch.setattr(main_window.MainWindow, "_load_theme_config", lambda self: None)
     monkeypatch.setattr(main_window.MainWindow, "_init_websocket_server", lambda self: None)
