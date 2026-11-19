@@ -52,7 +52,6 @@ def test_prometheus_metrics_exposition_contains_expected_headers():
 
     assert "# HELP karl_active_connections Number of active WebSocket clients" in body
     # Prometheus text format declares each metric with a '# HELP' line (for humans) and a '# TYPE' line (gauge/counter) before its samples.
-    # Prometheus text format declares each metric with a '# HELP' line (for humans) and a '# TYPE' line (gauge/counter) before its samples.
     assert "# TYPE karl_active_connections gauge" in body
     assert "karl_active_connections 1" in body
     assert "# HELP karl_system_memory_usage_bytes" in body

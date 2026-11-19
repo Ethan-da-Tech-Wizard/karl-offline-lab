@@ -19,7 +19,6 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from app.utils.session_tree import SessionNode, SessionTree
 
 
-# ---------------------------------------------------------------------------
 # SessionNode tests
 # ---------------------------------------------------------------------------
 
@@ -79,7 +78,6 @@ def test_node_attachments_round_trip():
     assert restored.attachments[0]["id"] == "abc"
 
 
-# ---------------------------------------------------------------------------
 # SessionTree tests
 # ---------------------------------------------------------------------------
 
@@ -317,7 +315,6 @@ def test_branch_from_missing_returns_none():
     assert len(tree) == 0
 
 
-# ---------------------------------------------------------------------------
 # save() / load() / list_sessions() -- the real disk-persistence path
 # WorkbenchWorkspace actually uses (MemoryManager.save_session/load_session/
 # list_sessions are dead code, superseded by these; see AGENTS.md).

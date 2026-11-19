@@ -134,7 +134,6 @@ def test_model_loader_remote_fallback_persists_disabled(monkeypatch):
 
 
 # ── ModelLoader.get_instance() remote-mode wiring ────────────────────────────
-#
 # These tests exercise the branch that get_instance() takes when remote engine
 # mode is enabled: it must construct/reuse a RemoteRPCModel and return it
 # *without* touching the local llama-cpp load path, and must fall through to

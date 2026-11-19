@@ -8,7 +8,6 @@ def test_missing_file_returns_copy(tmp_path, monkeypatch):
     # Mutating the returned config is the trigger of the bug: if get_mcp_config handed out the module-level default object itself, this write would corrupt the default for everyone.
     cfg["mcpServers"]["x"] = {"command": "y"}
     # The default must remain pristine after the caller mutated its copy.
-    # The default must remain pristine after the caller mutated its copy.
     assert config_store.MCP_CONFIG_DEFAULT == {"mcpServers": {}}
     assert config_store.get_mcp_config() == {"mcpServers": {}}
 

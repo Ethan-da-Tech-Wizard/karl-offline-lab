@@ -931,7 +931,6 @@ class RAGPipeline:
             save=False,
         )
         # No save_index() here - transient ingest for eval use
-        # No save_index() here — transient ingest for eval use
         return len(chunks)
 
     def _is_toc_chunk(self, doc: dict) -> bool:
@@ -1190,7 +1189,6 @@ class RAGPipeline:
         import re
 
         # Alphanumeric ID matching: tokens that mix letters and digits (e.g. 'AB12') are treated as codes.
-        # Alphanumeric ID matching
         # 3-10 upper-case alphanumerics: matches product codes or course ids such as "AB12" typed by the user.
         id_tokens = re.findall(r"\b[A-Z0-9]{3,10}\b", query)
         for token in id_tokens:
@@ -1208,7 +1206,6 @@ class RAGPipeline:
                             })
 
         # Section matching, e.g., "19.3", "19.5" (table-of-contents chunks are skipped so the real section wins).
-        # Section matching, e.g., "19.3", "19.5"
         # Section numbers like 19.3 are matched literally because embeddings treat numbers poorly.
         section_tokens = re.findall(r"\b\d{1,2}\.\d{1,2}(?:\.\d{1,2})?\b", query)
         for token in section_tokens:
@@ -1245,7 +1242,6 @@ class RAGPipeline:
                         })
 
         # Run vector search. With a source filter, over-fetch 5x because filtered-out hits would otherwise leave too few.
-        # Run vector search
         # FAISS requires float32; encode returns a (1, dimension) array for one query.
         query_vector = self.encoder.encode([query]).astype("float32")
         fetch_k = min(top_k * 5 if source_filter else top_k, self.index.ntotal)

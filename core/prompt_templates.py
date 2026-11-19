@@ -10,7 +10,6 @@
 # THE HACKABLE PROMPT TEMPLATE LAYER
 # This file is hot-reloaded by interaction_loop.py on every generation.
 # Add or edit templates here without restarting Karl.
-#
 # Templates define the *shape* of the prompt — the system message body.
 # interaction_loop.py wraps the chosen template in ChatML formatting.
 # The {placeholders} are filled by the caller before the template is used.

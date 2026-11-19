@@ -185,7 +185,6 @@ class TraceLogger:
             _PBKDF2_ITERATIONS,
         )
         # Fernet keys must be 32 url-safe base64-encoded bytes.
-        # Fernet keys must be 32 url-safe base64-encoded bytes
         return base64.urlsafe_b64encode(k)
 
     @staticmethod
@@ -451,7 +450,6 @@ class TraceLogger:
             self.prune_logs()
         
         # _refresh_path handles locking internally; it also rotates when the file is full.
-        # _refresh_path handles locking internally
         self._refresh_path()
 
         timing = {

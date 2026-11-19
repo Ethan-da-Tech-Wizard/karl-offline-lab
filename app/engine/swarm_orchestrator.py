@@ -301,7 +301,6 @@ class SwarmOrchestratorThread(QThread):
         self.coder.allowed_tools = self._tool_permissions_to_names(coder.get("tools", {}))
 
         # Tester is programmatic today; keep profile metadata ready for future
-        # Tester is programmatic today; keep profile metadata ready for future
         # LLM-backed testers while honoring execute_sandbox at verification time.
         self.tester_profile = tester
         self.tester_execute_sandbox = bool(tester.get("tools", {}).get("execute_sandbox", True))
@@ -884,7 +883,6 @@ class SwarmOrchestratorThread(QThread):
             zero_in = [fp for fp in remaining if in_degree[fp] == 0]
             if not zero_in:
                 # Cycle detected. Break cycle by taking the first remaining node
-                # Cycle detected. Break cycle by taking the first remaining node
                 self.status_update.emit("[Graph] Cycle detected in task dependencies. Falling back to sequential grouping.")
                 cycle_node = list(remaining)[0]
                 zero_in = [cycle_node]
@@ -912,7 +910,6 @@ class SwarmOrchestratorThread(QThread):
         workspace_ctx = self.scan_workspace()
         max_workers, worker_reason = self._compute_max_workers(len(layer_tasks))
         if self.pause_on_step:
-            # Serialize execution so pause/step semantics are unambiguous —
             # Serialize execution so pause/step semantics are unambiguous —
             # exactly one task waits on pause_event at a time.
             max_workers, worker_reason = 1, "serialized: pause_on_step debugging mode active"
@@ -1118,7 +1115,6 @@ class SwarmOrchestratorThread(QThread):
 
         self._process_events_if_main_thread()
 
-        # Fail fast if any coder produced an invalid result
         # Fail fast if any coder produced an invalid result
         all_ok = all(ok for ok, _ in results.values())
         if not all_ok:

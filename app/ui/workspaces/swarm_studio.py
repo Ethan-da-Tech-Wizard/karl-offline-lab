@@ -12,20 +12,17 @@
 #                           settings, centre: task graph/table/log, right: code
 #                           stream, debugger, steering, cherry-pick, preview), an
 #                           "Agent Profiles" editor tab, and a "Replay" tab.
-#
 # Data flow: the workspace never runs the swarm itself. _launch() builds a
 # SwarmOrchestratorThread (a QThread in app/engine/swarm_orchestrator.py),
 # connects every one of its Qt signals to an _on_* slot below, and starts it.
 # The thread emits signals; these slots only update widgets. Slots run on the GUI
 # thread (Qt queues cross-thread signals), so no locking is needed here.
-#
 # State kept on the workspace (all reset by _reset_run_ui between runs):
 #   _task_rows       filepath -> row index in the task table
 #   _task_nodes      filepath -> rectangle item in the dependency graph
 #   _file_contents   filepath -> latest content the swarm wrote (for previews)
 #   _tracebacks      key (filepath or "Layer N dry-run") -> traceback text
 #   _active_filepaths  files currently in progress (drives the steering target)
-#
 # Style notes: colours are hard-coded hex strings (dark theme) rather than theme
 # tokens; object names such as "section-header" and "btn-primary" are QSS hooks
 # defined in app/ui/themes.py.

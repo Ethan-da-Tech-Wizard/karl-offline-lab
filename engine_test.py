@@ -35,7 +35,6 @@ from core.cognitive_parser import parse_thought_stream
 
 def test_introspection_engine():
     """Headless end-to-end smoke test: load the active GGUF, run one ChatML prompt with a pre-seeded <think>, split thought from answer with parse_thought_stream and write a trace log. Needs a real model on disk; exits 1 with a hint if none is found. Because of its test_ name pytest would collect it from the repo root, so it is meant to be run as a script."""
-    # ------------------------------------------------------------------
     # 1. Model loading — honours data/active_model.json, falls back to
     #    the 1.5b GGUF if absent.  Uses the registry-aware n_ctx.
     # ------------------------------------------------------------------
@@ -50,7 +49,6 @@ def test_introspection_engine():
     print(f"Model : {ModelLoader.model_name()}")
     print(f"n_ctx : {ModelLoader.n_ctx()}")
 
-    # ------------------------------------------------------------------
     # 2. Build a minimal ChatML prompt that pre-seeds the <think> block
     # ------------------------------------------------------------------
     system_prompt = (
@@ -74,7 +72,6 @@ def test_introspection_engine():
         "top_p": 0.95,
     }
 
-    # ------------------------------------------------------------------
     # 3. Inference (non-streaming for this headless test)
     # ------------------------------------------------------------------
     print("\n--- Sending prompt to LLM ---")
@@ -93,7 +90,6 @@ def test_introspection_engine():
     raw_output = "<think>\n" + response["choices"][0]["text"]
     execution_time = time.time() - start_time
 
-    # ------------------------------------------------------------------
     # 4. Parse thinking vs. response
     # ------------------------------------------------------------------
     thought, final_response = parse_thought_stream(raw_output)
@@ -103,7 +99,6 @@ def test_introspection_engine():
     print("\n--- FINAL MODEL RESPONSE ---")
     print(final_response)
 
-    # ------------------------------------------------------------------
     # 5. Write trace log
     # ------------------------------------------------------------------
     logger = TraceLogger()
