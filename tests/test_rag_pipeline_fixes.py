@@ -50,3 +50,17 @@ def test_sparse_model_refits_only_when_corpus_changes():
         pipe.documents.append({"text": "delta"})
         assert pipe._sparse_model() is not first
         assert len(fits) == 2
+
+
+def test_sparse_and_hybrid_modes_honour_threshold():
+    """The distance threshold used to be applied to dense search only."""
+    pipe = object.__new__(RAGPipeline)
+    pipe.index = mock.MagicMock(ntotal=2)
+    rows = [{"distance": 0.2, "text": "near"}, {"distance": 0.9, "text": "far"}]
+    pipe.retrieve_sparse = lambda *a, **k: [dict(r) for r in rows]
+    pipe.retrieve_hybrid = lambda *a, **k: [dict(r) for r in rows]
+    for mode in ("sparse", "hybrid"):
+        got = pipe.retrieve_with_metadata("q", top_k=5, threshold=0.5, mode=mode)
+        assert [r["text"] for r in got] == ["near"]
+        # threshold 0 means "no cut-off", matching the dense path
+        assert len(pipe.retrieve_with_metadata("q", top_k=5, threshold=0.0, mode=mode)) == 2
