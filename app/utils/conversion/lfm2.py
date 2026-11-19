@@ -139,7 +139,13 @@ class LFM2MoeModel(TextModel):
 
     # keyed by layer (block id); a layer's entry is deleted once merged.
     # cache for experts weights for merging
-    _experts_cache: dict[int, dict[str, Tensor]] = {}
+    # Per-instance (set in __init__) so converting two models never mixes their expert weights.
+    _experts_cache: dict[int, dict[str, Tensor]]
+
+    def __init__(self, *args, **kwargs):
+        """Create this converter's private expert-weight cache."""
+        super().__init__(*args, **kwargs)
+        self._experts_cache = {}
 
     @classmethod
     def filter_tensors(cls, item: tuple[str, Callable[[], Tensor]]) -> tuple[str, Callable[[], Tensor]] | None:
