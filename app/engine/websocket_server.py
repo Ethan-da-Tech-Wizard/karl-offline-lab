@@ -67,6 +67,38 @@ logger = logging.getLogger("karl.websocket")
 _SAFE_ADAPTER_NAME_RE = re.compile(r"^[A-Za-z0-9_\-]{1,64}$")
 
 
+def _is_plain_filename(value) -> bool:
+    """True when value is a bare file/dir name (no separators or traversal), safe for os.path.join."""
+    return (
+        isinstance(value, str)
+        and value not in ("", ".", "..")
+        and os.path.basename(value) == value
+        and "\\" not in value
+        and "\x00" not in value
+    )
+
+
+def _coerce_auto_train_numbers(count, epochs, lr):
+    """Validate/clamp auto-train numeric params before they reach a subprocess argv.
+
+    Returns (count, epochs, lr) or None when any value is not a finite number.
+    """
+    import math
+    try:
+        if isinstance(count, bool) or isinstance(epochs, bool) or isinstance(lr, bool):
+            return None
+        count_i, epochs_i, lr_f = int(count), int(epochs), float(lr)
+    except (TypeError, ValueError, OverflowError):
+        return None
+    if not math.isfinite(lr_f):
+        return None
+    return (
+        max(1, min(count_i, 1000)),
+        max(1, min(epochs_i, 100)),
+        max(1e-8, min(lr_f, 1.0)),
+    )
+
+
 # Rate limiter used to throttle per-client request rates (classic token bucket:
 # a bucket of `capacity` tokens refilled continuously at `fill_rate` tokens/s).
 class TokenBucket:
@@ -2482,6 +2514,18 @@ class WebSocketServerManager:
                         # Validate optional model/adapter paths
                         base_model = params.get("base_model") or None
                         adapter = params.get("adapter") or None
+                        for _label, _val in (("base_model", base_model), ("adapter", adapter)):
+                            # Reject separators/traversal so the join below stays inside data/.
+                            if _val is not None and not _is_plain_filename(_val):
+                                await websocket.send(json.dumps(self._rpc_error_response(
+                                    -32602, req_id,
+                                    message=f"Invalid params: {_label} must be a plain file name."
+                                )))
+                                break
+                        else:
+                            _val = None
+                        if _val is not None:
+                            continue
                         if base_model:
                             model_path = os.path.join("data", "models", base_model)
                             if not os.path.isfile(model_path):
@@ -2631,6 +2675,15 @@ class WebSocketServerManager:
                                 }
                             }))
                             continue
+
+                        _nums = _coerce_auto_train_numbers(count, epochs, lr)
+                        if _nums is None or not isinstance(topic, str):
+                            await websocket.send(json.dumps(self._rpc_error_response(
+                                -32602, req_id,
+                                message="Invalid params: topic must be a string; count, epochs and lr must be numbers."
+                            )))
+                            continue
+                        count, epochs, lr = _nums
 
                         import subprocess
                         import sys
