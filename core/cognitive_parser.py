@@ -45,7 +45,6 @@ def parse_thought_stream(raw_text: str, start_in_thought: bool = False) -> tuple
         A ``(thought_text, response_text)`` tuple. Both parts are stripped of
         leading/trailing whitespace. Either may be an empty string.
     """
-    # Step 1: Validate input parameters, operational preconditions, and state
     thought_parts: list[str] = []
     response_parts: list[str] = []
     in_thought = start_in_thought
@@ -62,7 +61,6 @@ def parse_thought_stream(raw_text: str, start_in_thought: bool = False) -> tuple
 
     pos = 0
     while pos < len(raw_text):
-        # Iterate over items, evaluate loop invariant, and update progress
         if not in_thought:
             open_idx = text_lower.find(_OPEN, pos)
             if open_idx == -1:

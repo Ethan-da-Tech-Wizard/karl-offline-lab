@@ -45,7 +45,6 @@ class MiniTrainThread(QThread):
         (batch_size, block_size, n_embd, n_heads, n_layers, dropout, lr, max_iters, ...),
         ``save_dir`` where weights/config/tokenizer are written.
         """
-        # Step 1: Validate input parameters, operational preconditions, and state
         super().__init__()
         self.dataset_text = dataset_text
         self.config = config
@@ -54,14 +53,11 @@ class MiniTrainThread(QThread):
 
     def stop(self):
         """Ask the training loop to stop at the next step (cooperative; the partial model is still saved)."""
-        # Step 1: Validate input parameters, operational preconditions, and state
         self._stop_requested = True
 
     def run(self):
         """Thread body: tokenize, build the model, train with AdamW, log/sample periodically, then save."""
-        # Step 1: Validate input parameters, operational preconditions, and state
         try:
-            # Execute guarded operations and establish recovery boundaries
             self.log.emit("Initializing MiniGPT Trainer...")
             
             # Every setting has a default, so an empty config still trains a tiny model.
@@ -126,7 +122,6 @@ class MiniTrainThread(QThread):
             # Batch helper
             # Random windows: y is x shifted by one character, so the model learns next-character prediction.
             def get_batch(split):
-                # Step 1: Validate input parameters, operational preconditions, and state
                 split_data = train_data if split == 'train' else val_data
                 ix = torch.randint(len(split_data) - block_size, (batch_size,))
                 x = torch.stack([split_data[i:i+block_size] for i in ix])
@@ -138,15 +133,12 @@ class MiniTrainThread(QThread):
             # No gradients needed for evaluation; this makes it faster and saves memory.
             @torch.no_grad()
             def estimate_loss():
-                # Step 1: Validate input parameters, operational preconditions, and state
                 out = {}
                 model.eval()
                 for split in ['train', 'val']:
-                    # Iterate over items, evaluate loop invariant, and update progress
                     # Average 10 random batches per split to smooth out noise.
                     losses = torch.zeros(10)
                     for k in range(10):
-                        # Iterate over items, evaluate loop invariant, and update progress
                         X, Y = get_batch(split)
                         _, loss = model(X, Y)
                         losses[k] = loss.item()
@@ -158,7 +150,6 @@ class MiniTrainThread(QThread):
             
             # Runs max_iters + 1 steps so the final step also triggers the periodic evaluation/sample.
             for step in range(max_iters + 1):
-                # Iterate over items, evaluate loop invariant, and update progress
                 if self._stop_requested:
                     self.log.emit("Training interrupted by user.")
                     break

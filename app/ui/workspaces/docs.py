@@ -26,14 +26,12 @@ logger = logging.getLogger("karl.codex")
 
 def _section(text: str) -> QLabel:
     """Create a small section-header label (styled by the 'section-header' QSS id)."""
-    # Step 1: Validate input parameters, operational preconditions, and state
     lbl = QLabel(text)
     lbl.setObjectName("section-header")
     return lbl
 
 def _hline() -> QFrame:
     """Create a horizontal divider line."""
-    # Step 1: Validate input parameters, operational preconditions, and state
     f = QFrame()
     f.setFrameShape(QFrame.Shape.HLine)
     return f
@@ -45,7 +43,6 @@ def _hline() -> QFrame:
 class DocsWorkspace(QWidget):
     def __init__(self, state, parent=None):
         """Seed/scan the on-disk library, then build the UI. `state` is the shared AppState."""
-        # Step 1: Validate input parameters, operational preconditions, and state
         super().__init__(parent)
         self.state = state
         self.setObjectName("workspace-root")
@@ -59,7 +56,6 @@ class DocsWorkspace(QWidget):
         .version marker file, (2) write them, (3) scan the directory into
         self._cache, (4) ingest into the codex RAG index if that index is empty.
         """
-        # Step 1: Validate input parameters, operational preconditions, and state
         self._library_dir = "data/codex_library"
         os.makedirs(self._library_dir, exist_ok=True)
         
@@ -74,7 +70,6 @@ class DocsWorkspace(QWidget):
         needs_upgrade = True
         if os.path.exists(version_filepath):
             try:
-                # Execute guarded operations and establish recovery boundaries
                 with open(version_filepath, "r", encoding="utf-8") as vf:
                     installed_version = vf.read().strip()
                 if installed_version == current_version:
@@ -92,11 +87,9 @@ class DocsWorkspace(QWidget):
             # safe_name strips characters unsafe for filenames from the topic title.
             # Seed or overwrite default files in DEFAULT_LIBRARY
             for topic, content in DEFAULT_LIBRARY.items():
-                # Iterate over items, evaluate loop invariant, and update progress
                 safe_name = "".join(c for c in topic if c.isalnum() or c in (" ", "_", "-")).strip()
                 filepath = os.path.join(self._library_dir, f"{safe_name}.html")
                 try:
-                    # Execute guarded operations and establish recovery boundaries
                     with open(filepath, "w", encoding="utf-8") as f:
                         f.write(content)
                 except Exception as e:
@@ -105,7 +98,6 @@ class DocsWorkspace(QWidget):
             # Written last so a failed seed is retried on the next launch.
             # Write new version file
             try:
-                # Execute guarded operations and establish recovery boundaries
                 with open(version_filepath, "w", encoding="utf-8") as vf:
                     vf.write(current_version)
             except Exception as e:
@@ -116,12 +108,10 @@ class DocsWorkspace(QWidget):
         # Re-scan to build cache
         self._cache = {}
         for f in sorted(os.listdir(self._library_dir)):
-            # Iterate over items, evaluate loop invariant, and update progress
             if f.endswith((".html", ".md")):
                 filepath = os.path.join(self._library_dir, f)
                 topic_name = os.path.splitext(f)[0]
                 try:
-                    # Execute guarded operations and establish recovery boundaries
                     with open(filepath, "r", encoding="utf-8") as file:
                         content = file.read()
                     self._cache[topic_name] = {
@@ -136,9 +126,7 @@ class DocsWorkspace(QWidget):
         # Auto-ingest Codex files into codex_rag index if it is empty.
         if hasattr(self.state, "codex_rag") and self.state.codex_rag.total_chunks == 0:
             for topic_name, item in self._cache.items():
-                # Iterate over items, evaluate loop invariant, and update progress
                 try:
-                    # Execute guarded operations and establish recovery boundaries
                     self.state.codex_rag.ingest_file(item["filepath"])
                 except Exception as e:
                     logger.warning(f"Could not ingest {topic_name} into codex RAG index: {e}")
@@ -146,7 +134,6 @@ class DocsWorkspace(QWidget):
 
     def _build_ui(self):
         """Create the splitter layout: topic list + outline on the left, reader on the right."""
-        # Step 1: Validate input parameters, operational preconditions, and state
         root = QVBoxLayout(self)
         root.setContentsMargins(12, 12, 12, 12)
         root.setSpacing(10)
@@ -182,7 +169,6 @@ class DocsWorkspace(QWidget):
         # Items are added in cache (alphabetical file) order.
         # Populate topics list from scanned cache keys
         for k in self._cache.keys():
-            # Iterate over items, evaluate loop invariant, and update progress
             self._topics_list.addItem(k)
 
         lp_layout.addWidget(self._topics_list, 1)
@@ -247,12 +233,10 @@ class DocsWorkspace(QWidget):
         hidden). Falls back to plain substring matching on title/content when the
         index is unavailable or returns nothing.
         """
-        # Step 1: Validate input parameters, operational preconditions, and state
         query = text.strip()
         if not query:
             # Show all topics and restore default order
             for idx in range(self._topics_list.count()):
-                # Iterate over items, evaluate loop invariant, and update progress
                 item = self._topics_list.item(idx)
                 item.setHidden(False)
             return
@@ -263,7 +247,6 @@ class DocsWorkspace(QWidget):
         if hasattr(self.state, "codex_rag") and self.state.codex_rag.total_chunks > 0:
             results = self.state.codex_rag.retrieve_with_metadata(query, top_k=10)
             for r in results:
-                # Iterate over items, evaluate loop invariant, and update progress
                 sf = r.get("source_file", "")
                 if sf:
                     topic = os.path.splitext(sf)[0]
@@ -275,7 +258,6 @@ class DocsWorkspace(QWidget):
         if not matched_topics:
             query_lower = query.lower()
             for idx in range(self._topics_list.count()):
-                # Iterate over items, evaluate loop invariant, and update progress
                 item = self._topics_list.item(idx)
                 topic_name = item.text()
                 item_data = self._cache.get(topic_name, {})
@@ -291,18 +273,14 @@ class DocsWorkspace(QWidget):
         self._topics_list.currentTextChanged.disconnect(self._on_topic_selected)
         items = []
         for idx in range(self._topics_list.count()):
-            # Iterate over items, evaluate loop invariant, and update progress
             items.append(self._topics_list.item(idx))
             
         for item in items:
-            # Iterate over items, evaluate loop invariant, and update progress
             item.setHidden(True)
             
         first_visible = None
         for topic in matched_topics:
-            # Iterate over items, evaluate loop invariant, and update progress
             for item in items:
-                # Iterate over items, evaluate loop invariant, and update progress
                 if item.text() == topic:
                     item.setHidden(False)
                     if first_visible is None:
@@ -326,7 +304,6 @@ class DocsWorkspace(QWidget):
 
         The file is re-read from disk (not the cache) so external edits show up.
         """
-        # Step 1: Validate input parameters, operational preconditions, and state
         if not text:
             self._browser.clear()
             self._toc_list.clear()
@@ -346,7 +323,6 @@ class DocsWorkspace(QWidget):
             
         filepath = item_data["filepath"]
         try:
-            # Execute guarded operations and establish recovery boundaries
             with open(filepath, "r", encoding="utf-8") as f:
                 doc_content = f.read()
         except Exception as e:
@@ -372,7 +348,6 @@ class DocsWorkspace(QWidget):
 
     def _generate_toc(self, content: str):
         """Fill the outline list from the guide's <h2>/<h4> headings (h4 entries are indented)."""
-        # Step 1: Validate input parameters, operational preconditions, and state
         self._toc_list.clear()
         # Find all h2 and h4 headers
         headers = re.findall(r"<(h[24])[^>]*>(.*?)</\1>", content, re.IGNORECASE)
@@ -386,7 +361,6 @@ class DocsWorkspace(QWidget):
         """Return the HTML with an id added to every <h2>/<h4> so the outline can scroll to it."""
         # Replace headers with anchored versions
         def replacer(match):
-            # Step 1: Validate input parameters, operational preconditions, and state
             h_tag = match.group(1)
             h_attrs = match.group(2)
             h_text = match.group(3)
@@ -400,7 +374,6 @@ class DocsWorkspace(QWidget):
 
     def _jump_to_anchor(self, text: str):
         """Scroll the reader to the heading named by the clicked outline entry."""
-        # Step 1: Validate input parameters, operational preconditions, and state
         if not text:
             return
         anchor_id = text.strip().replace(" ", "_").lower()
@@ -411,7 +384,6 @@ class DocsWorkspace(QWidget):
         Goes through an AppState signal so the Docs view needs no direct reference
         to the Workbench widget.
         """
-        # Step 1: Validate input parameters, operational preconditions, and state
         current_item = self._topics_list.currentItem()
         if not current_item:
             return
@@ -422,7 +394,6 @@ class DocsWorkspace(QWidget):
             
         filepath = item_data["filepath"]
         try:
-            # Execute guarded operations and establish recovery boundaries
             with open(filepath, "r", encoding="utf-8") as f:
                 doc_content = f.read()
         except Exception as e:

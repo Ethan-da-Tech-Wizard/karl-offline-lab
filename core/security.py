@@ -37,7 +37,6 @@ def assert_not_privileged() -> None:
     simply raise its own limits back up. Blocking root/admin at every
     process entrypoint prevents an entire class of containment failures.
     """
-    # Step 1: Validate input parameters, operational preconditions, and state
     # Defense-in-Depth Rationale:
     # On POSIX systems, UID 0 holds CAP_SYS_RESOURCE which allows a process to ignore or raise
     # RLIMIT_AS (memory) and RLIMIT_CPU limits set by the sandbox. Blocking root execution
@@ -50,7 +49,6 @@ def assert_not_privileged() -> None:
             sys.exit(1)
     elif plat == "Windows":
         try:
-            # Execute guarded operations and establish recovery boundaries
             import ctypes
             if ctypes.windll.shell32.IsUserAnAdmin():
                 logging.getLogger("karl").critical(PRIV_MSG)

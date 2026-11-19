@@ -35,7 +35,6 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 _libc = None
 if sys.platform != "win32":
     try:
-        # Execute guarded operations and establish recovery boundaries
         _libc = ctypes.CDLL(None)
     except Exception:
         _libc = None
@@ -46,7 +45,6 @@ _MCL_FUTURE  = 2
 # ─────────────────────────────────────────────────────────────────────────────
 
 try:
-    # Execute guarded operations and establish recovery boundaries
     # Dependencies are optional at import time of the module; a missing one produces a friendly
     # message instead of a traceback.
     import psutil
@@ -59,7 +57,6 @@ except ImportError as e:
 
 def main():
     """CLI entry: obtain the bridge token (flag, KARL_BRIDGE_TOKEN, OS keychain, then prompt), decrypt one archived .enc trace log with TraceLogger and write the plaintext JSONL. Exits 0 on success and 1 on any failure."""
-    # Step 1: Validate input parameters, operational preconditions, and state
     parser = argparse.ArgumentParser(description="Decrypt Karl encrypted trace logs.")
     parser.add_argument("--input", "-i", required=True, help="Path to the .enc log file.")
     parser.add_argument("--output", "-o", required=True, help="Path to save the decrypted .jsonl file.")
@@ -100,7 +97,6 @@ def main():
     # bytearray (mutable) so it can be zeroed in the finally block after use.
     plaintext_ba = None
     try:
-        # Execute guarded operations and establish recovery boundaries
         print(f"Decrypting {args.input}...")
 
         # Derive the key and decrypt via TraceLogger's canonical decrypt-side
@@ -111,7 +107,6 @@ def main():
         # how this codebase previously ended up with permanently
         # undecryptable archives.
         try:
-            # Execute guarded operations and establish recovery boundaries
             plaintext_ba = TraceLogger.decrypt_archive_with_token(token, args.input)
         except ValueError:
             # Likely invalid token or salt mismatch

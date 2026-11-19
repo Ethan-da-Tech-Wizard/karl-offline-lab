@@ -53,14 +53,12 @@ class _NullFD:
     """Context manager: redirects fd 2 (stderr) to os.devnull at C level."""
     # dup the real stderr so it can be restored, then point fd 2 at /dev/null.
     def __enter__(self):
-        # Step 1: Validate input parameters, operational preconditions, and state
         self._orig_fd2 = os.dup(2)          # save real stderr fd
         self._devnull  = os.open(os.devnull, os.O_WRONLY)
         os.dup2(self._devnull, 2)            # point fd 2 at /dev/null
         return self
 
     def __exit__(self, *_):
-        # Step 1: Validate input parameters, operational preconditions, and state
         # Restore the original stderr and close both temporary descriptors.
         os.dup2(self._orig_fd2, 2)           # restore real stderr
         os.close(self._orig_fd2)
@@ -87,7 +85,6 @@ for _name in [
     "huggingface_hub", "huggingface_hub.utils",
     "filelock", "faiss", "urllib3", "requests",
 ]:
-    # Iterate over items, evaluate loop invariant, and update progress
     _log = logging.getLogger(_name)
     _log.setLevel(logging.CRITICAL)
     _log.propagate = False
@@ -96,7 +93,6 @@ for _name in [
 # (absl is optional, hence the try/except.)
 # Silence absl (used by torch internally for the "W0523..." lines)
 try:
-    # Execute guarded operations and establish recovery boundaries
     import absl.logging as _absl_log
     _absl_log.set_verbosity(_absl_log.FATAL)
     logging.getLogger("absl").setLevel(logging.CRITICAL)
@@ -141,7 +137,6 @@ def _run_headless() -> int:
     This mode is intended for containerized editor integrations where the VS Code
     extension talks to Karl through WSS and no desktop UI should be spawned.
     """
-    # Step 1: Validate input parameters, operational preconditions, and state
     # Headless mode: signal handlers set an Event so SIGINT/SIGTERM shut the bridge
     # down cleanly (used by Docker/Kubernetes, which send SIGTERM).
     import signal
@@ -154,7 +149,6 @@ def _run_headless() -> int:
     stop_event = threading.Event()
 
     def stop(_signum=None, _frame=None):
-        # Step 1: Validate input parameters, operational preconditions, and state
         stop_event.set()
 
     signal.signal(signal.SIGINT, stop)
@@ -172,7 +166,6 @@ def _run_headless() -> int:
 
     log.info("Karl headless bridge listening on port %d.", manager.port)
     try:
-        # Execute guarded operations and establish recovery boundaries
         stop_event.wait()
     finally:
         WebSocketServerManager.reset_instance()
@@ -180,7 +173,6 @@ def _run_headless() -> int:
 
 
 def main():
-    # Step 1: Validate input parameters, operational preconditions, and state
     # Refuse to run as root/admin (see core/security.py) before doing anything else.
     _assert_not_privileged()
 
@@ -206,7 +198,6 @@ def main():
 
         scope_val: str = ""
         try:
-            # Execute guarded operations and establish recovery boundaries
             scope_val = sys.argv[sys.argv.index("--scope") + 1]
         except (ValueError, IndexError):
             pass
@@ -235,7 +226,6 @@ def main():
         else:
             print(f"[Karl --revoke] {token_path} not present — nothing to wipe")
         try:
-            # Execute guarded operations and establish recovery boundaries
             from app.utils.keychain_manager import revoke_tokens
             revoke_tokens()
             print("[Karl --revoke] Bridge token revoked from OS keychain.")
@@ -243,7 +233,6 @@ def main():
             print(f"[Karl --revoke] Keychain revocation failed: {exc}")
         # Force-close connections if this process owns a running server instance.
         try:
-            # Execute guarded operations and establish recovery boundaries
             from app.engine.websocket_server import WebSocketServerManager
             inst = WebSocketServerManager._instance
             if inst is not None:
@@ -259,7 +248,6 @@ def main():
 
     if "--enable-flag" in sys.argv:
         try:
-            # Execute guarded operations and establish recovery boundaries
             _flag_name = sys.argv[sys.argv.index("--enable-flag") + 1]
             _flags.set_flag(_flag_name, True)
             print(f"[Karl --enable-flag] Enabled feature flag: {_flag_name}")
@@ -300,7 +288,6 @@ def main():
     code = app.exec()
     
     try:
-        # Execute guarded operations and establish recovery boundaries
         from app.utils.keychain_manager import revoke_tokens
         revoke_tokens()
     except Exception:

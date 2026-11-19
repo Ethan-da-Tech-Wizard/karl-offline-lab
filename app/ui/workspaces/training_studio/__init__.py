@@ -31,7 +31,6 @@ class TrainingStudioWorkspace(QWidget):
 
     def __init__(self, state, parent=None):
         """Create training tabs and bind dataset refresh signals."""
-        # Step 1: Validate input parameters, operational preconditions, and state
         super().__init__(parent)
         self.state = state
         self.setObjectName("workspace-root")
@@ -39,7 +38,6 @@ class TrainingStudioWorkspace(QWidget):
 
     def _build_ui(self):
         """Build the AI Lab title, stats row, and tab controller."""
-        # Step 1: Validate input parameters, operational preconditions, and state
         root = QVBoxLayout(self)
         root.setContentsMargins(12, 12, 12, 12)
         root.setSpacing(10)
@@ -92,19 +90,16 @@ class TrainingStudioWorkspace(QWidget):
 
     def _on_tab_changed(self, idx: int):
         """Reload Flywheel statistics when its tab (index 0) is selected, since they change in the background."""
-        # Step 1: Validate input parameters, operational preconditions, and state
         if idx == 0:  # Flywheel tab
             self.flywheel_tab.load_stats()
 
     def showEvent(self, event):
         """Refresh dataset stats and tabs every time the workspace becomes visible."""
-        # Step 1: Validate input parameters, operational preconditions, and state
         super().showEvent(event)
         self._refresh()
 
     def _refresh(self):
         """Update the header summary (total, good, corrected) and refresh the Dataset and Train tabs."""
-        # Step 1: Validate input parameters, operational preconditions, and state
         stats = self.state.curator.get_stats()
         self._stats_lbl.setText(
             f"<b>{stats['total']}</b> examples  &middot;  "

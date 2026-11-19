@@ -29,7 +29,6 @@ from core.hardware_scout import get_hardware_profile
 
 def _section(text: str) -> QLabel:
     """Return a QLabel styled as a section heading."""
-    # Step 1: Validate input parameters, operational preconditions, and state
     lbl = QLabel(text)
     lbl.setObjectName("section-header")
     return lbl
@@ -37,7 +36,6 @@ def _section(text: str) -> QLabel:
 
 def _hline() -> QFrame:
     """Return a horizontal rule used to separate groups of controls."""
-    # Step 1: Validate input parameters, operational preconditions, and state
     f = QFrame()
     f.setFrameShape(QFrame.Shape.HLine)
     return f
@@ -47,7 +45,6 @@ class TrainTab(QWidget):
     """Tab widget that fine-tunes a LoRA adapter from curated examples."""
     def __init__(self, state, parent=None):
         """Store state and build the tab; the thread is created only when training starts."""
-        # Step 1: Validate input parameters, operational preconditions, and state
         super().__init__(parent)
         self.state = state
         # Strong references to running training threads, released on finished.
@@ -57,7 +54,6 @@ class TrainTab(QWidget):
 
     def _build_ui(self):
         """Build the LoRA hyperparameter form (left) and the dependency status, hardware guide and log (right)."""
-        # Step 1: Validate input parameters, operational preconditions, and state
         layout = QHBoxLayout(self)
         layout.setContentsMargins(8, 8, 8, 8)
         layout.setSpacing(12)
@@ -247,16 +243,13 @@ class TrainTab(QWidget):
 
     def refresh(self):
         """Refresh the base model list (called by the workspace whenever it is shown)."""
-        # Step 1: Validate input parameters, operational preconditions, and state
         self._refresh_base_models()
 
     def _load_custom_models(self) -> list[dict]:
         """Return the user's saved custom base models from data/custom_train_models.json (empty on error)."""
-        # Step 1: Validate input parameters, operational preconditions, and state
         path = "data/custom_train_models.json"
         if os.path.exists(path):
             try:
-                # Execute guarded operations and establish recovery boundaries
                 with open(path, "r") as f:
                     return json.load(f)
             except Exception:
@@ -265,7 +258,6 @@ class TrainTab(QWidget):
 
     def _save_custom_model(self, display_name: str, item_data: str, is_path: bool):
         """Append a custom base model entry to the JSON file, ignoring duplicates and write failures."""
-        # Step 1: Validate input parameters, operational preconditions, and state
         custom_models = self._load_custom_models()
         # Avoid duplicates
         if any(item.get("data") == item_data for item in custom_models):
@@ -276,7 +268,6 @@ class TrainTab(QWidget):
             "is_path": is_path
         })
         try:
-            # Execute guarded operations and establish recovery boundaries
             os.makedirs("data", exist_ok=True)
             with open("data/custom_train_models.json", "w") as f:
                 json.dump(custom_models, f, indent=4)
@@ -285,7 +276,6 @@ class TrainTab(QWidget):
 
     def _browse_hf_model(self):
         """Let the user choose a local HuggingFace weights folder, warn if no weights are inside, and select it."""
-        # Step 1: Validate input parameters, operational preconditions, and state
         path = QFileDialog.getExistingDirectory(
             self, "Select local HuggingFace model directory", "data/hf_models"
         )
@@ -295,7 +285,6 @@ class TrainTab(QWidget):
         # A usable folder has .safetensors or .bin weight files.
         # Check if there are safetensors or bin files in the selected directory
         try:
-            # Execute guarded operations and establish recovery boundaries
             files = os.listdir(path)
             has_weights = any(f.endswith(".safetensors") or f.endswith(".bin") for f in files)
             if not has_weights:
@@ -313,14 +302,12 @@ class TrainTab(QWidget):
         
         # Select the newly added path
         for idx in range(self._base_model_combo.count()):
-            # Iterate over items, evaluate loop invariant, and update progress
             if self._base_model_combo.itemData(idx) == path:
                 self._base_model_combo.setCurrentIndex(idx)
                 break
 
     def _add_hf_repo(self):
         """Ask for a HuggingFace repo ID, save it as a custom model and select it."""
-        # Step 1: Validate input parameters, operational preconditions, and state
         repo_id, ok = QInputDialog.getText(
             self, "Add HuggingFace Repository ID",
             "Enter HuggingFace Repository ID (e.g. Qwen/Qwen2.5-Coder-1.5B):"
@@ -334,14 +321,12 @@ class TrainTab(QWidget):
         
         # Select the newly added repo
         for idx in range(self._base_model_combo.count()):
-            # Iterate over items, evaluate loop invariant, and update progress
             if self._base_model_combo.itemData(idx) == repo_id:
                 self._base_model_combo.setCurrentIndex(idx)
                 break
 
     def _refresh_base_models(self):
         """Rebuild the base model combo: standard tiers, scanned local folders, then saved custom entries."""
-        # Step 1: Validate input parameters, operational preconditions, and state
         # Signals are blocked so rebuilding does not trigger _check_deps for every item.
         self._base_model_combo.blockSignals(True)
         self._base_model_combo.clear()
@@ -361,9 +346,7 @@ class TrainTab(QWidget):
         scanned_folders = []
         if os.path.exists(hf_dir):
             try:
-                # Execute guarded operations and establish recovery boundaries
                 for name in os.listdir(hf_dir):
-                    # Iterate over items, evaluate loop invariant, and update progress
                     path = os.path.join(hf_dir, name)
                     if os.path.isdir(path) and name not in standard_models:
                         files = os.listdir(path)
@@ -375,12 +358,10 @@ class TrainTab(QWidget):
         all_options = standard_models + sorted(scanned_folders)
         
         for opt in all_options:
-            # Iterate over items, evaluate loop invariant, and update progress
             local_path = os.path.join("data", "hf_models", opt)
             exists = False
             if os.path.exists(local_path):
                 try:
-                    # Execute guarded operations and establish recovery boundaries
                     files = os.listdir(local_path)
                     if any(f.endswith(".safetensors") or f.endswith(".bin") for f in files):
                         exists = True
@@ -392,14 +373,12 @@ class TrainTab(QWidget):
         # Custom entries are added only if the same value is not already present.
         # Append persisted custom models
         for custom in self._load_custom_models():
-            # Iterate over items, evaluate loop invariant, and update progress
             opt = custom.get("data")
             is_path = custom.get("is_path", False)
             
             # Skip if already exists in standard/scanned
             already_exists = False
             for idx in range(self._base_model_combo.count()):
-                # Iterate over items, evaluate loop invariant, and update progress
                 if self._base_model_combo.itemData(idx) == opt:
                     already_exists = True
                     break
@@ -410,7 +389,6 @@ class TrainTab(QWidget):
             if is_path:
                 if os.path.exists(opt):
                     try:
-                        # Execute guarded operations and establish recovery boundaries
                         files = os.listdir(opt)
                         if any(f.endswith(".safetensors") or f.endswith(".bin") for f in files):
                             exists = True
@@ -422,7 +400,6 @@ class TrainTab(QWidget):
                 local_path = os.path.join("data", "hf_models", basename)
                 if os.path.exists(local_path):
                     try:
-                        # Execute guarded operations and establish recovery boundaries
                         files = os.listdir(local_path)
                         if any(f.endswith(".safetensors") or f.endswith(".bin") for f in files):
                             exists = True
@@ -437,7 +414,6 @@ class TrainTab(QWidget):
         # Try to select the one matching the active gguf model
         active_gguf = ModelLoader.model_name()
         for idx in range(self._base_model_combo.count()):
-            # Iterate over items, evaluate loop invariant, and update progress
             opt = self._base_model_combo.itemData(idx)
             if opt and (
                 ("1.5b" in opt.lower() and "1.5b" in active_gguf.lower()) or
@@ -454,7 +430,6 @@ class TrainTab(QWidget):
 
     def _get_hf_model_path(self) -> tuple[str | None, str]:
         """Resolve the selected entry to (local weights folder or None, repo ID or label)."""
-        # Step 1: Validate input parameters, operational preconditions, and state
         idx = self._base_model_combo.currentIndex()
         if idx < 0:
             return None, "unknown"
@@ -467,7 +442,6 @@ class TrainTab(QWidget):
         if os.path.isabs(selected_folder):
             if os.path.exists(selected_folder):
                 try:
-                    # Execute guarded operations and establish recovery boundaries
                     files = os.listdir(selected_folder)
                     if any(f.endswith(".safetensors") or f.endswith(".bin") for f in files):
                         return selected_folder, os.path.basename(selected_folder)
@@ -500,7 +474,6 @@ class TrainTab(QWidget):
         local_dir = os.path.join("data", "hf_models", basename)
         if os.path.exists(local_dir):
             try:
-                # Execute guarded operations and establish recovery boundaries
                 files = os.listdir(local_dir)
                 if any(f.endswith(".safetensors") or f.endswith(".bin") for f in files):
                     return local_dir, repo_id
@@ -511,13 +484,10 @@ class TrainTab(QWidget):
 
     def _check_deps(self):
         """Check training libraries and base weights; show guidance and enable Train only if all is ready."""
-        # Step 1: Validate input parameters, operational preconditions, and state
         missing = []
         # Probe each required package with __import__ rather than importing at module level, so the app starts without them.
         for pkg in ("peft", "trl", "transformers", "datasets", "gguf"):
-            # Iterate over items, evaluate loop invariant, and update progress
             try:
-                # Execute guarded operations and establish recovery boundaries
                 __import__(pkg)
             except ImportError:
                 missing.append(pkg)
@@ -567,7 +537,6 @@ class TrainTab(QWidget):
 
     def _begin_training(self):
         """Validate everything, free the GPU and start the TrainingThread."""
-        # Step 1: Validate input parameters, operational preconditions, and state
         adapter_name = self._adapter_name_input.text().strip()
         if not adapter_name:
             self._train_log.append("set an adapter name first.")
@@ -587,10 +556,8 @@ class TrainTab(QWidget):
             return
             
         try:
-            # Execute guarded operations and establish recovery boundaries
             with open(curated_file, "r") as f:
                 for line_idx, line in enumerate(f):
-                    # Iterate over items, evaluate loop invariant, and update progress
                     if not line.strip():
                         continue
                     obj = json.loads(line)
@@ -676,24 +643,20 @@ class TrainTab(QWidget):
 
     def _on_train_log(self, text: str):
         """Append a status line from the trainer to the log."""
-        # Step 1: Validate input parameters, operational preconditions, and state
         self._train_log.append(text)
         
     def _on_train_loss(self, step: int, value: float, epoch: float):
         """Append a loss metric line (step, epoch, loss) to the log."""
-        # Step 1: Validate input parameters, operational preconditions, and state
         self._train_log.append(f"[METRIC] Step {step} | Epoch {epoch:.2f} | Loss: {value:.4f}")
 
     def _on_train_progress(self, current: int, total: int, epoch: float):
         """Convert step/total into a percentage for the progress bar."""
-        # Step 1: Validate input parameters, operational preconditions, and state
         if total > 0:
             percentage = int((current / total) * 100)
             self._train_progress.setValue(percentage)
             
     def _on_train_done(self, adapter_path: str):
         """Re-enable training, announce the adapter path and recheck dependencies."""
-        # Step 1: Validate input parameters, operational preconditions, and state
         self._train_btn.setEnabled(True)
         self._train_progress.setVisible(False)
         QMessageBox.information(
@@ -705,7 +668,6 @@ class TrainTab(QWidget):
         
     def _on_train_error(self, msg: str):
         """Re-enable training and show the failure in the log and a dialog."""
-        # Step 1: Validate input parameters, operational preconditions, and state
         self._train_btn.setEnabled(True)
         self._train_progress.setVisible(False)
         self._train_log.append(f"\n[ERROR] Training failed:\n{msg}")
@@ -714,7 +676,6 @@ class TrainTab(QWidget):
 
     def _update_export_path_preview(self, name):
         """Show the sanitised destination folder for the typed adapter name."""
-        # Step 1: Validate input parameters, operational preconditions, and state
         name = name.strip()
         if not name:
             self._export_path_lbl.setText("Export Path: data/adapters/")

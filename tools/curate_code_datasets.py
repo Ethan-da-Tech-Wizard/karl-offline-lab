@@ -51,31 +51,24 @@ DEFAULT_MAX_TOKENS = 3500
 
 def iter_trace_records(trace_dir: Path) -> Iterable[dict]:
     """Yield each unique trace record from trace_*.jsonl and then trace_*.jsonl.compact files in trace_dir. Plain files are read first so a record present in both forms is taken from the uncompressed copy; duplicates are dropped by record id."""
-    # Step 1: Validate input parameters, operational preconditions, and state
     # Shared across both passes so a record that exists as plain and as compacted is read once;
     # plain files win because they are read first and are cheaper to decode.
     seen: set[str] = set()
     for path in sorted(trace_dir.glob("trace_*.jsonl")):
-        # Iterate over items, evaluate loop invariant, and update progress
         yield from _read_jsonl(path, compact=False, seen=seen)
     for path in sorted(trace_dir.glob("trace_*.jsonl.compact")):
-        # Iterate over items, evaluate loop invariant, and update progress
         yield from _read_jsonl(path, compact=True, seen=seen)
 
 
 def _read_jsonl(path: Path, compact: bool, seen: set[str]) -> Iterable[dict]:
     """Read one trace file line by line, decoding compact lines via decompact_trace. Malformed lines, non-dict records, ids already in 'seen' and unreadable files are skipped rather than raised."""
-    # Step 1: Validate input parameters, operational preconditions, and state
     try:
-        # Execute guarded operations and establish recovery boundaries
         with path.open("r", encoding="utf-8") as fh:
             for line in fh:
-                # Iterate over items, evaluate loop invariant, and update progress
                 line = line.strip()
                 if not line:
                     continue
                 try:
-                    # Execute guarded operations and establish recovery boundaries
                     # Corrupt lines are expected (the logger can be killed mid-write), so they are skipped
                     # rather than aborting the whole curation run.
                     record = decompact_trace(line) if compact else json.loads(line)
@@ -95,7 +88,6 @@ def _read_jsonl(path: Path, compact: bool, seen: set[str]) -> Iterable[dict]:
 
 def is_verified_success(record: dict) -> bool:
     """Heuristic: True if the serialized record contains any marker that a verification step passed. String matching is used because trace schemas vary across versions."""
-    # Step 1: Validate input parameters, operational preconditions, and state
     # Substring matching over the whole serialized record is intentional: verification results
     # appear under different keys depending on which agent wrote the trace.
     haystack = json.dumps(record, ensure_ascii=False).lower()
@@ -114,7 +106,6 @@ def is_verified_success(record: dict) -> bool:
 
 def is_code_record(record: dict) -> bool:
     """True when the record belongs to a code workflow or its text mentions code keywords or a code fence; keeps chat-only traces out of the code dataset."""
-    # Step 1: Validate input parameters, operational preconditions, and state
     # The workflow name is the strongest signal; the keyword scan below is only the fallback
     # for traces recorded without a workflow.
     workflow = str(record.get("workflow", "")).lower()
@@ -129,7 +120,6 @@ def is_code_record(record: dict) -> bool:
 
 def prompt_key(record: dict) -> tuple[str, str]:
     """Return (system_prompt, user_prompt) used to group traces for DPO pairing; falls back to the raw 'prompt' field when the compiled prompt has no user turn."""
-    # Step 1: Validate input parameters, operational preconditions, and state
     system = str(record.get("system_prompt") or "")
     user = extract_user_prompt(str(record.get("compiled_prompt") or ""))
     if not user:
@@ -139,7 +129,6 @@ def prompt_key(record: dict) -> tuple[str, str]:
 
 def extract_user_prompt(compiled_prompt: str) -> str:
     """Recover the last user turn from a compiled chat prompt, trying several template styles (plain 'user:', <|user|>, ### user). If none match, return the last 12 non-empty lines as a best effort."""
-    # Step 1: Validate input parameters, operational preconditions, and state
     if not compiled_prompt:
         return ""
 
@@ -151,7 +140,6 @@ def extract_user_prompt(compiled_prompt: str) -> str:
         r"(?is)###\s*user\s*(.*?)(?=###\s*assistant|$)",
     ]
     for pattern in patterns:
-        # Iterate over items, evaluate loop invariant, and update progress
         matches = re.findall(pattern, compiled_prompt)
         if matches:
             return matches[-1].strip()
@@ -162,7 +150,6 @@ def extract_user_prompt(compiled_prompt: str) -> str:
 
 def assistant_response(record: dict, chosen: bool) -> str:
     """Pick the training target: the human-corrected response when building a 'chosen' answer, otherwise the model's own response/raw output."""
-    # Step 1: Validate input parameters, operational preconditions, and state
     # A human correction beats the model's own output as a "chosen" target, but is never used
     # for "rejected": the rejected side must be what the model actually said.
     if chosen and record.get("corrected_response"):
@@ -172,12 +159,10 @@ def assistant_response(record: dict, chosen: bool) -> str:
 
 def build_datasets(records: Iterable[dict]) -> tuple[list[dict], list[dict]]:
     """Turn trace records into (sft_rows, dpo_rows). Positive records (thumbs up, corrected, verified) become SFT rows. Within each (system,user) group, chosen and rejected answers are paired one-to-one for DPO."""
-    # Step 1: Validate input parameters, operational preconditions, and state
     sft: list[dict] = []
     groups: dict[tuple[str, str], dict[str, list[str]]] = {}
 
     for record in records:
-        # Iterate over items, evaluate loop invariant, and update progress
         if not is_code_record(record):
             continue
 
@@ -216,12 +201,10 @@ def build_datasets(records: Iterable[dict]) -> tuple[list[dict], list[dict]]:
 
     dpo: list[dict] = []
     for (system, user), bucket in groups.items():
-        # Iterate over items, evaluate loop invariant, and update progress
         # Only as many pairs as the smaller side can supply; leftover chosen/rejected answers are
         # unpaired and dropped.
         pair_count = min(len(bucket["chosen"]), len(bucket["rejected"]))
         for idx in range(pair_count):
-            # Iterate over items, evaluate loop invariant, and update progress
             dpo.append({
                 "prompt": [
                     {"role": "system", "content": system},
@@ -236,12 +219,10 @@ def build_datasets(records: Iterable[dict]) -> tuple[list[dict], list[dict]]:
 
 def write_jsonl(path: Path, rows: Iterable[dict], sft_only_messages: bool = False) -> int:
     """Write rows as JSONL, creating parent dirs; optionally strip each row down to its 'messages'. Returns the row count."""
-    # Step 1: Validate input parameters, operational preconditions, and state
     path.parent.mkdir(parents=True, exist_ok=True)
     count = 0
     with path.open("w", encoding="utf-8") as fh:
         for row in rows:
-            # Iterate over items, evaluate loop invariant, and update progress
             out = {"messages": row["messages"]} if sft_only_messages else row
             fh.write(json.dumps(out, ensure_ascii=False) + "\n")
             count += 1
@@ -250,18 +231,15 @@ def write_jsonl(path: Path, rows: Iterable[dict], sft_only_messages: bool = Fals
 
 def load_jsonl(path: Path) -> list[dict]:
     """Load a JSONL file, skipping blank and malformed lines; a missing file yields []."""
-    # Step 1: Validate input parameters, operational preconditions, and state
     rows: list[dict] = []
     if not path.exists():
         return rows
     with path.open("r", encoding="utf-8") as fh:
         for line in fh:
-            # Iterate over items, evaluate loop invariant, and update progress
             line = line.strip()
             if not line:
                 continue
             try:
-                # Execute guarded operations and establish recovery boundaries
                 rows.append(json.loads(line))
             except json.JSONDecodeError:
                 continue
@@ -270,7 +248,6 @@ def load_jsonl(path: Path) -> list[dict]:
 
 def _code_snippets(text: str) -> list[str]:
     """Return the fenced code blocks of text, or the text itself when it has no fences."""
-    # Step 1: Validate input parameters, operational preconditions, and state
     matches = CODE_BLOCK_RE.findall(text)
     if not matches:
         return [text]
@@ -282,11 +259,8 @@ def _code_snippets(text: str) -> list[str]:
 def is_syntactically_valid(assistant_content: str) -> bool:
     """Every assistant response must contain error-free Python: parse fenced
     code blocks if present, otherwise the raw response itself."""
-    # Step 1: Validate input parameters, operational preconditions, and state
     for snippet in _code_snippets(assistant_content):
-        # Iterate over items, evaluate loop invariant, and update progress
         try:
-            # Execute guarded operations and establish recovery boundaries
             ast.parse(snippet)
         except SyntaxError:
             return False
@@ -296,7 +270,6 @@ def is_syntactically_valid(assistant_content: str) -> bool:
 def estimate_tokens(text: str) -> int:
     """Character-length heuristic (~4 chars/token) — cheap enough to run over
     the whole dataset without loading a real tokenizer."""
-    # Step 1: Validate input parameters, operational preconditions, and state
     # Deliberately under/over-counts for some languages; it only needs to be a consistent size
     # gate, not an exact token budget.
     return len(text) // 4
@@ -304,7 +277,6 @@ def estimate_tokens(text: str) -> int:
 
 def passes_quality_checks(row: dict, max_tokens: int = DEFAULT_MAX_TOKENS) -> bool:
     """Quality gate for a merged row: needs a messages list of at least two entries, an estimated size within max_tokens, at least one assistant turn, and valid Python in every assistant turn."""
-    # Step 1: Validate input parameters, operational preconditions, and state
     messages = row.get("messages")
     if not isinstance(messages, list) or len(messages) < 2:
         return False
@@ -332,7 +304,6 @@ def merge_datasets(
     examples, public instruction examples, and library-doc-scraped examples,
     dropping rows with invalid Python or oversized prompts, then shuffle and
     write the validated set to *output_path*."""
-    # Step 1: Validate input parameters, operational preconditions, and state
     curated = load_jsonl(curated_path)
     synthetic = load_jsonl(synthetic_path)
 
@@ -364,7 +335,6 @@ def merge_datasets(
     output_path.parent.mkdir(parents=True, exist_ok=True)
     with output_path.open("w", encoding="utf-8") as fh:
         for row in valid_rows:
-            # Iterate over items, evaluate loop invariant, and update progress
             # Metadata is stripped; the trainer only needs the messages list.
             fh.write(json.dumps({"messages": row["messages"]}, ensure_ascii=False) + "\n")
 
@@ -383,7 +353,6 @@ def merge_datasets(
 
 def main() -> int:
     """CLI: read trace logs, write the SFT and DPO exports and, unless --skip-merge is given, merge with the other datasets into a validated, shuffled file. Returns 0."""
-    # Step 1: Validate input parameters, operational preconditions, and state
     parser = argparse.ArgumentParser(description="Curate Karl trace logs into code SFT/DPO datasets.")
     parser.add_argument("--trace-dir", default="data/logs/traces", help="Trace log directory")
     parser.add_argument("--out-dir", default="data/training/code", help="Output dataset directory")

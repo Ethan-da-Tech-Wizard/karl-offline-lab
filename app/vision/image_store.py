@@ -40,7 +40,6 @@ from app.vision.schemas import ImageRecord
 class ImageStore:
     """Create, load and update ImageRecord JSON files plus their image artifacts."""
     def __init__(self, base_dir: str = "data/images"):
-        # Step 1: Validate input parameters, operational preconditions, and state
         """Create the folder layout under ``base_dir`` if it does not exist yet."""
         self.base_dir = Path(base_dir)
         self.inbox_dir = self.base_dir / "inbox"
@@ -56,11 +55,9 @@ class ImageStore:
             self.base_dir / "datasets",
             self.base_dir / "training",
         ):
-            # Iterate over items, evaluate loop invariant, and update progress
             directory.mkdir(parents=True, exist_ok=True)
 
     def save_qimage(self, image: QImage, source: str = "clipboard") -> ImageRecord:
-        # Step 1: Validate input parameters, operational preconditions, and state
         """Persist an in-memory QImage (e.g. from the clipboard) as a PNG and register it.
 
         Raises ValueError for a null image and OSError if the PNG cannot be written.
@@ -75,7 +72,6 @@ class ImageStore:
         return self._create_record(image_id, original_path, source=source, mime="image/png")
 
     def import_file(self, path: str, source: str = "file") -> ImageRecord:
-        # Step 1: Validate input parameters, operational preconditions, and state
         """Copy an image file from disk into the inbox and register it.
 
         The file is decoded once with QImage purely to validate it before copying.
@@ -96,7 +92,6 @@ class ImageStore:
         return self._create_record(image_id, original_path, source=source, mime=mime)
 
     def get(self, image_id: str) -> ImageRecord:
-        # Step 1: Validate input parameters, operational preconditions, and state
         """Load one ImageRecord by id; raises FileNotFoundError if no analysis JSON exists."""
         path = self._analysis_path(image_id)
         if not path.exists():
@@ -105,7 +100,6 @@ class ImageStore:
             return ImageRecord.from_dict(json.load(f))
 
     def list_recent(self, limit: int = 100) -> list[ImageRecord]:
-        # Step 1: Validate input parameters, operational preconditions, and state
         """Return up to ``limit`` records, newest first.
 
         Unreadable or corrupt JSON files are silently skipped so one bad file cannot
@@ -114,9 +108,7 @@ class ImageStore:
         records = []
         # Reverse filename order is a cheap pre-sort; the real ordering is by created_at below.
         for path in sorted(self.analysis_dir.glob("*.json"), reverse=True):
-            # Iterate over items, evaluate loop invariant, and update progress
             try:
-                # Execute guarded operations and establish recovery boundaries
                 with path.open("r", encoding="utf-8") as f:
                     records.append(ImageRecord.from_dict(json.load(f)))
             # Skip corrupt records rather than failing the whole listing.
@@ -128,7 +120,6 @@ class ImageStore:
         return sorted(records, key=lambda r: r.created_at, reverse=True)
 
     def update_analysis(self, image_id: str, **fields) -> ImageRecord:
-        # Step 1: Validate input parameters, operational preconditions, and state
         """Merge ``fields`` into the stored record and write it back.
 
         Goes through to_dict/from_dict so the merged data is re-validated and
@@ -142,7 +133,6 @@ class ImageStore:
         return updated
 
     def update_metadata(self, image_id: str, kind: str | None = None, tags: list[str] | None = None) -> ImageRecord:
-        # Step 1: Validate input parameters, operational preconditions, and state
         """Update only the kind and/or tags of an image; None means "leave unchanged"."""
         fields = {}
         if kind is not None:
@@ -152,7 +142,6 @@ class ImageStore:
         return self.update_analysis(image_id, **fields)
 
     def save_ocr_correction(self, image_id: str, corrected_text: str) -> ImageRecord:
-        # Step 1: Validate input parameters, operational preconditions, and state
         """Store a human-corrected OCR text.
 
         The correction is recorded in ``corrections`` and also written into ocr.text so
@@ -166,7 +155,6 @@ class ImageStore:
         return self.update_analysis(image_id, corrections=corrections, ocr=ocr)
 
     def save_caption_correction(self, image_id: str, corrected_caption: str) -> ImageRecord:
-        # Step 1: Validate input parameters, operational preconditions, and state
         """Store a human-corrected caption in ``corrections`` and in vision.caption."""
         record = self.get(image_id)
         corrections = dict(record.corrections)
@@ -176,7 +164,6 @@ class ImageStore:
         return self.update_analysis(image_id, corrections=corrections, vision=vision)
 
     def _create_record(self, image_id: str, original_path: Path, source: str, mime: str) -> ImageRecord:
-        # Step 1: Validate input parameters, operational preconditions, and state
         """Build thumbnail and OCR copies for a freshly stored original and write its record.
 
         The record starts with kind "unknown"; OCR and vision results are filled in
@@ -204,14 +191,12 @@ class ImageStore:
         return record
 
     def _write_record(self, record: ImageRecord) -> None:
-        # Step 1: Validate input parameters, operational preconditions, and state
         """Write the record to analysis/<id>.json (pretty-printed JSON)."""
         path = self._analysis_path(record.id)
         with path.open("w", encoding="utf-8") as f:
             json.dump(record.to_dict(), f, indent=2)
 
     def _analysis_path(self, image_id: str) -> Path:
-        # Step 1: Validate input parameters, operational preconditions, and state
         # basename() strips any directory parts so an id like "../x" cannot escape analysis_dir.
         """Return the JSON path for an image id."""
         safe_id = os.path.basename(image_id)
@@ -219,11 +204,9 @@ class ImageStore:
 
     @staticmethod
     def _sha256(path: Path) -> str:
-        # Step 1: Validate input parameters, operational preconditions, and state
         """Hash a file in 1 MiB chunks so large images are not read fully into memory."""
         h = hashlib.sha256()
         with path.open("rb") as f:
             for chunk in iter(lambda: f.read(1024 * 1024), b""):
-                # Iterate over items, evaluate loop invariant, and update progress
                 h.update(chunk)
         return h.hexdigest()

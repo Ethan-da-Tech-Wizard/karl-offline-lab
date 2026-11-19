@@ -56,7 +56,6 @@ class MCPClientManager:
 
         Set KARL_NO_MCP=1 to create the manager without launching any server.
         """
-        # Step 1: Validate input parameters, operational preconditions, and state
         with cls._lock:
             if cls._instance is None:
                 # Created under the class lock so two threads cannot start duplicate server sets.
@@ -65,7 +64,6 @@ class MCPClientManager:
                     logger.info("KARL_NO_MCP=1 detected. Skipping MCP server auto-start.")
                     return cls._instance
                 try:
-                    # Execute guarded operations and establish recovery boundaries
                     # Auto-start failures are logged but never prevent the app from using the manager object.
                     cls._instance.start()
                 except Exception as e:
@@ -75,7 +73,6 @@ class MCPClientManager:
     @classmethod
     def reset_instance(cls):
         """Forces recreation of the singleton on the next call."""
-        # Step 1: Validate input parameters, operational preconditions, and state
         with cls._lock:
             if cls._instance is not None:
                 cls._instance.stop()
@@ -84,14 +81,12 @@ class MCPClientManager:
     @classmethod
     def get_tool_schemas(cls) -> list[dict]:
         """Return cached tool list; refresh if dirty. Safe to call from any thread."""
-        # Step 1: Validate input parameters, operational preconditions, and state
         global _cached_tools, _tools_cache_dirty
         if os.environ.get("KARL_NO_MCP") == "1":
             return []
         inst = cls.get_instance()
         if _cached_tools is None or _tools_cache_dirty:
             try:
-                # Execute guarded operations and establish recovery boundaries
                 _cached_tools = inst.list_tools()
                 _tools_cache_dirty = False
             except Exception as e:
@@ -103,13 +98,11 @@ class MCPClientManager:
     @classmethod
     def invalidate_cache(cls):
         """Mark the tool cache stale so the next get_tool_schemas() re-queries the servers."""
-        # Step 1: Validate input parameters, operational preconditions, and state
         global _tools_cache_dirty
         _tools_cache_dirty = True
 
     def __init__(self, config_path: str = "data/mcp_config.json"):
         """Remember the config path and immediately start the background event-loop thread."""
-        # Step 1: Validate input parameters, operational preconditions, and state
         self.config_path = config_path
         # server name -> {"session", "command", "args", "stop_event"} for connected servers.
         self.servers: Dict[str, Dict[str, Any]] = {}
@@ -119,14 +112,12 @@ class MCPClientManager:
 
     def _start_loop_thread(self):
         """Starts a background daemon thread running an asyncio event loop."""
-        # Step 1: Validate input parameters, operational preconditions, and state
         self.loop = asyncio.new_event_loop()
         self.loop_thread = threading.Thread(target=self._run_event_loop, daemon=True)
         self.loop_thread.start()
 
     def _run_event_loop(self):
         """Thread target: run the asyncio loop until stop() halts it."""
-        # Step 1: Validate input parameters, operational preconditions, and state
         asyncio.set_event_loop(self.loop)
         self.loop.run_forever()
 
@@ -134,9 +125,7 @@ class MCPClientManager:
 
     def _await_future(self, future):
         """Wait up to the sync timeout for a coroutine result; cancel it and re-raise on timeout."""
-        # Step 1: Validate input parameters, operational preconditions, and state
         try:
-            # Execute guarded operations and establish recovery boundaries
             return future.result(timeout=_SYNC_TIMEOUT_SECONDS)
         except FutureTimeoutError:
             future.cancel()
@@ -144,7 +133,6 @@ class MCPClientManager:
 
     def start(self):
         """Synchronously starts all configured MCP servers."""
-        # Step 1: Validate input parameters, operational preconditions, and state
         if os.environ.get("KARL_NO_MCP") == "1":
             return
         if not self.loop:
@@ -155,11 +143,9 @@ class MCPClientManager:
 
     def stop(self):
         """Synchronously stops all running MCP servers and shuts down the loop."""
-        # Step 1: Validate input parameters, operational preconditions, and state
         if self.loop and self.loop.is_running():
             future = asyncio.run_coroutine_threadsafe(self.async_stop(), self.loop)
             try:
-                # Execute guarded operations and establish recovery boundaries
                 future.result(timeout=5.0)
             except Exception as e:
                 logger.warning(f"Error waiting for servers to stop: {e}")
@@ -173,7 +159,6 @@ class MCPClientManager:
 
     def list_tools(self) -> List[Dict[str, Any]]:
         """Synchronously lists all tools across all connected servers."""
-        # Step 1: Validate input parameters, operational preconditions, and state
         if not self.loop:
             return []
         # Same bridge pattern; errors in the tool itself come back as a normalized dict rather than an exception.
@@ -183,7 +168,6 @@ class MCPClientManager:
 
     def call_tool(self, server_name: str, tool_name: str, arguments: Dict[str, Any]) -> Dict[str, Any]:
         """Synchronously invokes a tool and returns the response dictionary."""
-        # Step 1: Validate input parameters, operational preconditions, and state
         if not self.loop:
             return {"is_error": True, "error": "Event loop not running."}
         future = asyncio.run_coroutine_threadsafe(
@@ -195,13 +179,11 @@ class MCPClientManager:
 
     async def async_start(self):
         """Loads configuration and initiates server connections."""
-        # Step 1: Validate input parameters, operational preconditions, and state
         if not os.path.exists(self.config_path):
             logger.warning(f"Config file not found: {self.config_path}")
             return
 
         try:
-            # Execute guarded operations and establish recovery boundaries
             with open(self.config_path, "r", encoding="utf-8") as f:
                 config = json.load(f)
         except Exception as e:
@@ -211,7 +193,6 @@ class MCPClientManager:
         # Config format matches other MCP clients: {"mcpServers": {name: {command, args, env}}}.
         servers_config = config.get("mcpServers", {})
         for name, cfg in servers_config.items():
-            # Iterate over items, evaluate loop invariant, and update progress
             command = cfg.get("command")
             args = cfg.get("args", [])
             env = cfg.get("env")
@@ -221,14 +202,12 @@ class MCPClientManager:
                 continue
 
             try:
-                # Execute guarded operations and establish recovery boundaries
                 await self.async_connect_server(name, command, args, env)
             except Exception as e:
                 logger.warning(f"Failed to connect to server '{name}': {e}")
 
     async def async_connect_server(self, name: str, command: str, args: List[str], env: Optional[Dict[str, str]] = None):
         """Spawns stdio process for a server and performs MCP initialization."""
-        # Step 1: Validate input parameters, operational preconditions, and state
         # Already connected: nothing to do.
         if name in self.servers:
             return
@@ -239,7 +218,6 @@ class MCPClientManager:
         task = asyncio.create_task(self._run_server_lifecycle(name, command, args, env))
         
         try:
-            # Execute guarded operations and establish recovery boundaries
             await asyncio.wait_for(
                 self._wait_for_server_registration(name, task),
                 timeout=_CONNECT_TIMEOUT_SECONDS,
@@ -250,10 +228,8 @@ class MCPClientManager:
 
     async def _wait_for_server_registration(self, name: str, task: asyncio.Task):
         """Wait until a lifecycle task registers a server or exits."""
-        # Step 1: Validate input parameters, operational preconditions, and state
         # Poll every 10 ms until the lifecycle task has registered the session, or surface its failure.
         while name not in self.servers:
-            # Iterate over items, evaluate loop invariant, and update progress
             if task.done():
                 exc = task.exception()
                 if exc:
@@ -263,7 +239,6 @@ class MCPClientManager:
 
     async def _run_server_lifecycle(self, name: str, command: str, args: List[str], env: Optional[Dict[str, str]]):
         """Runs the context manager lifetime loop inside a single dedicated task."""
-        # Step 1: Validate input parameters, operational preconditions, and state
         server_params = StdioServerParameters(
             command=command,
             args=args,
@@ -271,7 +246,6 @@ class MCPClientManager:
         )
 
         try:
-            # Execute guarded operations and establish recovery boundaries
             # stdio_client spawns the server process; ClientSession speaks MCP over its pipes.
             async with stdio_client(server_params) as (read_stream, write_stream):
                 async with ClientSession(read_stream, write_stream) as session:
@@ -301,9 +275,7 @@ class MCPClientManager:
 
     async def async_stop(self):
         """Tears down all active server connections by setting their stop event."""
-        # Step 1: Validate input parameters, operational preconditions, and state
         for name in list(self.servers.keys()):
-            # Iterate over items, evaluate loop invariant, and update progress
             server = self.servers.get(name)
             if server and "stop_event" in server:
                 server["stop_event"].set()
@@ -311,7 +283,6 @@ class MCPClientManager:
         # 20 polls x 50 ms: wait for lifecycle tasks to remove themselves from self.servers.
         # Wait up to 1 second for all sessions to cleanup and pop
         for _ in range(20):
-            # Iterate over items, evaluate loop invariant, and update progress
             if not self.servers:
                 break
             await asyncio.sleep(0.05)
@@ -319,16 +290,12 @@ class MCPClientManager:
 
     async def async_list_tools(self) -> List[Dict[str, Any]]:
         """Collects tools across all active servers."""
-        # Step 1: Validate input parameters, operational preconditions, and state
         all_tools = []
         for server_name, server in self.servers.items():
-            # Iterate over items, evaluate loop invariant, and update progress
             session = server["session"]
             try:
-                # Execute guarded operations and establish recovery boundaries
                 res = await session.list_tools()
                 for tool in res.tools:
-                    # Iterate over items, evaluate loop invariant, and update progress
                     all_tools.append({
                         "server_name": server_name,
                         "name": tool.name,
@@ -342,13 +309,11 @@ class MCPClientManager:
 
     async def async_call_tool(self, server_name: str, tool_name: str, arguments: Dict[str, Any]) -> Dict[str, Any]:
         """Calls a tool asynchronously and returns a normalized response dict."""
-        # Step 1: Validate input parameters, operational preconditions, and state
         if server_name not in self.servers:
             return {"is_error": True, "error": f"Server '{server_name}' is not connected."}
 
         session = self.servers[server_name]["session"]
         try:
-            # Execute guarded operations and establish recovery boundaries
             res = await session.call_tool(tool_name, arguments)
             
             # Flatten MCP content blocks: text blocks keep their text, others are stringified.
@@ -356,7 +321,6 @@ class MCPClientManager:
             formatted_content = []
             if hasattr(res, "content") and res.content:
                 for content_block in res.content:
-                    # Iterate over items, evaluate loop invariant, and update progress
                     if hasattr(content_block, "text"):
                         formatted_content.append({"type": "text", "text": content_block.text})
                     else:

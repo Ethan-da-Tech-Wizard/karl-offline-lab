@@ -42,7 +42,6 @@ PROJECTION_CANDIDATES = (
 
 def missing_packages() -> list[str]:
     """Return names of required training packages that are not importable. Uses find_spec so nothing heavy is actually imported just to check."""
-    # Step 1: Validate input parameters, operational preconditions, and state
     required = ["peft", "trl", "transformers", "datasets", "torch"]
     missing = [pkg for pkg in required if importlib.util.find_spec(pkg) is None]
     # bitsandbytes is checked separately from the list above: it is only needed for 4-bit loading
@@ -54,7 +53,6 @@ def missing_packages() -> list[str]:
 
 def print_install_instructions(missing: list[str]) -> None:
     """Tell the user (stdout) which training dependencies are missing and where to place base model weights."""
-    # Step 1: Validate input parameters, operational preconditions, and state
     print("Missing training dependencies:", ", ".join(missing))
     print()
     print("Install the training stack inside Karl's virtualenv, for example:")
@@ -66,7 +64,6 @@ def print_install_instructions(missing: list[str]) -> None:
 
 def resolve_base_model(explicit: str | None) -> Path:
     """Pick the HF base model directory: the explicit path if given (must exist), otherwise the alphabetically first folder under data/hf_models. Raises FileNotFoundError if none."""
-    # Step 1: Validate input parameters, operational preconditions, and state
     if explicit:
         path = Path(explicit).expanduser()
         if not path.exists():
@@ -86,7 +83,6 @@ def resolve_base_model(explicit: str | None) -> Path:
 
 def validate_dataset(path: Path) -> int:
     """Check the SFT JSONL exists, is non-empty, and every non-blank line has a 'messages' list of at least 2 entries. Returns the row count; raises on the first bad line so bad data fails before a long GPU run."""
-    # Step 1: Validate input parameters, operational preconditions, and state
     if not path.exists():
         raise FileNotFoundError(
             f"Dataset not found: {path}. Run tools/curate_code_datasets.py "
@@ -95,7 +91,6 @@ def validate_dataset(path: Path) -> int:
     count = 0
     with path.open("r", encoding="utf-8") as fh:
         for line_no, line in enumerate(fh, 1):
-            # Iterate over items, evaluate loop invariant, and update progress
             line = line.strip()
             if not line:
                 continue
@@ -113,11 +108,9 @@ def validate_dataset(path: Path) -> int:
 
 def detect_target_modules(model, candidates: Iterable[str] = PROJECTION_CANDIDATES) -> list[str]:
     """Detect LoRA projection targets present in the loaded model architecture."""
-    # Step 1: Validate input parameters, operational preconditions, and state
     candidate_set = set(candidates)
     found: set[str] = set()
     for name, _module in model.named_modules():
-        # Iterate over items, evaluate loop invariant, and update progress
         suffix = name.rsplit(".", 1)[-1]
         if suffix in candidate_set:
             found.add(suffix)
@@ -137,7 +130,6 @@ def build_sft_config_kwargs(args: argparse.Namespace, checkpoint_dir: Path) -> d
     version happens to be installed -- see filter_kwargs_for_class() for the
     compatibility layer that adapts this to whatever's actually available.
     """
-    # Step 1: Validate input parameters, operational preconditions, and state
     return {
         "output_dir": str(checkpoint_dir),
         # Matches the "text" column produced by format_row() in train().
@@ -173,7 +165,6 @@ def filter_kwargs_for_class(kwargs: dict, cls) -> dict:
     let training proceed with the rest -- logging what got dropped so it's
     not silently lost.
     """
-    # Step 1: Validate input parameters, operational preconditions, and state
     params = inspect.signature(cls.__init__).parameters
     adapted = dict(kwargs)
     # Newer Transformers deprecates gradient_checkpointing in favor of
@@ -184,7 +175,6 @@ def filter_kwargs_for_class(kwargs: dict, cls) -> dict:
         ("gradient_checkpointing", "activation_checkpointing"),
         ("gradient_checkpointing_kwargs", "activation_checkpointing_kwargs"),
     ):
-        # Iterate over items, evaluate loop invariant, and update progress
         if old in adapted and new in params:
             adapted.setdefault(new, adapted[old])
             del adapted[old]
@@ -204,7 +194,6 @@ def filter_kwargs_for_class(kwargs: dict, cls) -> dict:
 
 def train(args: argparse.Namespace) -> Path:
     """Run QLoRA (4-bit NF4) supervised fine-tuning on the curated dataset and save the adapter, tokenizer and log history to args.output_dir. Heavy imports are done here so --help and the pure helpers stay cheap. Requires CUDA. Returns the adapter directory."""
-    # Step 1: Validate input parameters, operational preconditions, and state
     import torch
     from datasets import load_dataset
     from peft import LoraConfig, get_peft_model, prepare_model_for_kbit_training
@@ -232,7 +221,6 @@ def train(args: argparse.Namespace) -> Path:
     # content' transcript.
     def format_row(row: dict) -> dict:
         """Render one dataset row's messages into a single training text, using the tokenizer's chat template when it has one and a plain 'role: content' transcript otherwise."""
-        # Step 1: Validate input parameters, operational preconditions, and state
         messages = row["messages"]
         if hasattr(tokenizer, "apply_chat_template") and tokenizer.chat_template:
             text = tokenizer.apply_chat_template(messages, tokenize=False, add_generation_prompt=False)
@@ -312,7 +300,6 @@ def train(args: argparse.Namespace) -> Path:
 
 def main() -> int:
     """CLI entry: parse hyper-parameters, check dependencies, then call train(). See the code below for exit codes."""
-    # Step 1: Validate input parameters, operational preconditions, and state
     parser = argparse.ArgumentParser(description="Train Karl's curated code QLoRA adapter.")
     parser.add_argument("--dataset", default=str(DEFAULT_DATASET), help="Curated SFT JSONL dataset")
     parser.add_argument("--base-model", default=None, help="HuggingFace base model directory")
@@ -347,7 +334,6 @@ def main() -> int:
 
     dataset_path = Path(args.dataset).expanduser()
     try:
-        # Execute guarded operations and establish recovery boundaries
         example_count = validate_dataset(dataset_path)
     except (FileNotFoundError, ValueError, json.JSONDecodeError) as exc:
         print(f"Dataset validation failed: {exc}", file=sys.stderr)
@@ -365,7 +351,6 @@ def main() -> int:
     print()
 
     try:
-        # Execute guarded operations and establish recovery boundaries
         # train() imports torch/trl lazily, so import-time failures also surface here as a clean
         # "Training failed" message with exit code 1.
         adapter_dir = train(args)

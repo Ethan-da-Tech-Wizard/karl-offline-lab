@@ -43,7 +43,6 @@ class ModelMemoryError(RuntimeError):
 
     def __init__(self, message: str, details: dict):
         """Store a user-facing message plus structured memory-plan details."""
-        # Step 1: Validate input parameters, operational preconditions, and state
         super().__init__(message)
         self.details = details
 
@@ -59,7 +58,6 @@ class CircuitBreakerOpenException(RuntimeError):
 
     def __init__(self, message: str | None = None):
         """Create a circuit-open error with Karl's standard recovery message."""
-        # Step 1: Validate input parameters, operational preconditions, and state
         super().__init__(message or self.MESSAGE)
 
 
@@ -83,7 +81,6 @@ class ModelCircuitBreaker:
         clock=None,
     ):
         """Initialize breaker thresholds and optional monotonic clock."""
-        # Step 1: Validate input parameters, operational preconditions, and state
         self.failure_threshold = failure_threshold
         self.cooldown_duration = cooldown_duration
         self._clock = clock or time.monotonic
@@ -97,7 +94,6 @@ class ModelCircuitBreaker:
         Raises CircuitBreakerOpenException while the breaker is OPEN and the
         cooldown has not expired. Transitions OPEN to HALF_OPEN after cooldown.
         """
-        # Step 1: Validate input parameters, operational preconditions, and state
         if self.state != self.OPEN:
             return
 
@@ -110,14 +106,12 @@ class ModelCircuitBreaker:
 
     def record_success(self) -> None:
         """Reset the breaker to CLOSED after a successful load."""
-        # Step 1: Validate input parameters, operational preconditions, and state
         self.state = self.CLOSED
         self.consecutive_failures = 0
         self.cooldown_expiration = None
 
     def record_failure(self, exc: BaseException | None = None) -> None:
         """Record a terminal load failure and trip OPEN when threshold is met."""
-        # Step 1: Validate input parameters, operational preconditions, and state
         if self.state == self.HALF_OPEN:
             self._trip()
             return
@@ -128,19 +122,16 @@ class ModelCircuitBreaker:
 
     def reset(self) -> None:
         """Manually reset breaker state and failure counters."""
-        # Step 1: Validate input parameters, operational preconditions, and state
         self.state = self.CLOSED
         self.consecutive_failures = 0
         self.cooldown_expiration = None
 
     def _trip(self) -> None:
-        # Step 1: Validate input parameters, operational preconditions, and state
         self.state = self.OPEN
         self.cooldown_expiration = self._clock() + self.cooldown_duration
 
     def get_state(self) -> str:
         """Return the current circuit breaker state (CLOSED / OPEN / COOLDOWN / HALF_OPEN)."""
-        # Step 1: Validate input parameters, operational preconditions, and state
         if self.state == self.OPEN:
             now = self._clock()
             if self.cooldown_expiration is not None and now >= self.cooldown_expiration:
@@ -156,7 +147,6 @@ class _LlamaDraftModelAdapter:
     """Compatibility marker for speculative draft-model integration."""
 
     def __init__(self, draft_model):
-        # Step 1: Validate input parameters, operational preconditions, and state
         self.draft_model = draft_model
 
 
@@ -218,15 +208,12 @@ class ModelLoader:
     @classmethod
     def _read_registry_n_ctx(cls, filename: str) -> int:
         """Look up n_ctx for the given model filename from model_registry.json."""
-        # Step 1: Validate input parameters, operational preconditions, and state
         return config_store.registry_n_ctx(filename)
 
     @classmethod
     def _registry_entry(cls, filename: str) -> dict:
         # Return the registry dict for `filename`, or {} if it is not registered.
-        # Step 1: Validate input parameters, operational preconditions, and state
         for entry in config_store.get_model_registry():
-            # Iterate over items, evaluate loop invariant, and update progress
             if entry.get("filename") == filename:
                 return entry
         return {}
@@ -234,7 +221,6 @@ class ModelLoader:
     @staticmethod
     # Interpret config/env values ("1", "true", "yes", "on", bools) as a boolean.
     def _truthy(value) -> bool:
-        # Step 1: Validate input parameters, operational preconditions, and state
         if isinstance(value, bool):
             return value
         if isinstance(value, str):
@@ -245,7 +231,6 @@ class ModelLoader:
     # Quantized (q8_0) KV cache is opt-in. Precedence: KARL_QUANTIZED_KV_CACHE env var,
     # then ui_config.json, then active_model.json.
     def _quantized_kv_cache_enabled(cls) -> bool:
-        # Step 1: Validate input parameters, operational preconditions, and state
         env_value = os.environ.get("KARL_QUANTIZED_KV_CACHE")
         if env_value is not None:
             return cls._truthy(env_value)
@@ -263,9 +248,7 @@ class ModelLoader:
     # GGML type id for q8_0 (used for type_k/type_v); falls back to the literal 8 for
     # llama-cpp-python builds that don't export the constant.
     def _ggml_type_q8_0() -> int:
-        # Step 1: Validate input parameters, operational preconditions, and state
         try:
-            # Execute guarded operations and establish recovery boundaries
             from llama_cpp import GGML_TYPE_Q8_0
             return GGML_TYPE_Q8_0
         except Exception:
@@ -275,7 +258,6 @@ class ModelLoader:
     # Locate a LoRA adapter file for `adapter_name`, trying the several layouts the
     # trainers produce (per-adapter dir or flat files; .bin or .gguf). None if not found.
     def _adapter_path(cls, adapter_name: str | None) -> str | None:
-        # Step 1: Validate input parameters, operational preconditions, and state
         if not adapter_name:
             return None
         possible_paths = [
@@ -287,7 +269,6 @@ class ModelLoader:
             os.path.join("data", "adapters", f"{adapter_name}.gguf"),
         ]
         for path in possible_paths:
-            # Iterate over items, evaluate loop invariant, and update progress
             if os.path.exists(path):
                 return path
         return None
@@ -296,7 +277,6 @@ class ModelLoader:
     # Use the requested model if it exists, else fall back to the bundled test model;
     # raise FileNotFoundError with remediation text when neither is present.
     def _resolve_model_path(cls, model_path: str) -> str:
-        # Step 1: Validate input parameters, operational preconditions, and state
         if os.path.exists(model_path):
             return model_path
         fallback = "data/models/deepseek-r1-1.5b.gguf"
@@ -328,11 +308,9 @@ class ModelLoader:
           8 – 15 GB/s — Gen3 x8 / Gen2 x16, moderate bottleneck
           < 8 GB/s   — severely throttled lane, inference will be limited
         """
-        # Step 1: Validate input parameters, operational preconditions, and state
         src_cpu = None
         dst_gpu = None
         try:
-            # Execute guarded operations and establish recovery boundaries
             import torch
             if not torch.cuda.is_available():
                 return None
@@ -345,7 +323,6 @@ class ModelLoader:
             # saturate PCIe bandwidth; fall back to regular memory if the
             # system denies the page lock.
             try:
-                # Execute guarded operations and establish recovery boundaries
                 src_cpu = torch.empty(n_floats, dtype=torch.float32, pin_memory=True)
             except Exception:
                 src_cpu = torch.empty(n_floats, dtype=torch.float32)
@@ -358,7 +335,6 @@ class ModelLoader:
             # Timed measurement — synchronize ensures all kernels are complete
             t0 = time.perf_counter()
             for _ in range(N_ITER):
-                # Iterate over items, evaluate loop invariant, and update progress
                 dst_gpu.copy_(src_cpu, non_blocking=False)
             torch.cuda.synchronize()
             elapsed = time.perf_counter() - t0
@@ -371,7 +347,6 @@ class ModelLoader:
         finally:
             del src_cpu, dst_gpu
             try:
-                # Execute guarded operations and establish recovery boundaries
                 import torch
                 if torch.cuda.is_available():
                     torch.cuda.empty_cache()
@@ -381,21 +356,18 @@ class ModelLoader:
     @classmethod
     def get_circuit_breaker_state(cls) -> str:
         """Return the current circuit breaker state (CLOSED / COOLDOWN / HALF_OPEN)."""
-        # Step 1: Validate input parameters, operational preconditions, and state
         with cls._lock:
             return cls._circuit_breaker.get_state()
 
     @classmethod
     def reset_circuit_breaker(cls):
         """Force-close the circuit breaker."""
-        # Step 1: Validate input parameters, operational preconditions, and state
         with cls._lock:
             cls._circuit_breaker.reset()
 
     @classmethod
     def load_latency_s(cls) -> float | None:
         """Wall-clock seconds for the most recent successful model load."""
-        # Step 1: Validate input parameters, operational preconditions, and state
         return getattr(cls, "_load_latency_s", None)
 
     @classmethod
@@ -404,7 +376,6 @@ class ModelLoader:
         PCIe H2D bandwidth in GB/s measured immediately before the last load.
         Returns None on CPU-only systems or when PyTorch is not installed.
         """
-        # Step 1: Validate input parameters, operational preconditions, and state
         return getattr(cls, "_vram_bandwidth_gbs", None)
 
     # ── Tokenizer Vocabulary Leak Inspector ───────────────────────────────────
@@ -417,7 +388,6 @@ class ModelLoader:
         Sources checked (in order): tokenizer.json, tokenizer_config.json,
         special_tokens_map.json.
         """
-        # Step 1: Validate input parameters, operational preconditions, and state
         tokens: list[dict] = []
         seen_ids: set[int] = set()
         seen_texts: set[str] = set()
@@ -429,11 +399,9 @@ class ModelLoader:
         tj_path = os.path.join(adapter_dir, "tokenizer.json")
         if os.path.isfile(tj_path):
             try:
-                # Execute guarded operations and establish recovery boundaries
                 with open(tj_path, "r", encoding="utf-8") as fh:
                     tj = json.load(fh)
                 for entry in tj.get("added_tokens", []):
-                    # Iterate over items, evaluate loop invariant, and update progress
                     if not entry.get("special"):
                         continue
                     tid = int(entry["id"])
@@ -449,11 +417,9 @@ class ModelLoader:
         tc_path = os.path.join(adapter_dir, "tokenizer_config.json")
         if os.path.isfile(tc_path):
             try:
-                # Execute guarded operations and establish recovery boundaries
                 with open(tc_path, "r", encoding="utf-8") as fh:
                     tc = json.load(fh)
                 for id_str, entry in tc.get("added_tokens_decoder", {}).items():
-                    # Iterate over items, evaluate loop invariant, and update progress
                     if not entry.get("special"):
                         continue
                     tid = int(id_str)
@@ -469,11 +435,9 @@ class ModelLoader:
         sm_path = os.path.join(adapter_dir, "special_tokens_map.json")
         if os.path.isfile(sm_path):
             try:
-                # Execute guarded operations and establish recovery boundaries
                 with open(sm_path, "r", encoding="utf-8") as fh:
                     sm = json.load(fh)
                 for _role, val in sm.items():
-                    # Iterate over items, evaluate loop invariant, and update progress
                     content = val if isinstance(val, str) else val.get("content", "")
                     if content and content not in seen_texts:
                         seen_texts.add(content)
@@ -486,15 +450,12 @@ class ModelLoader:
     @staticmethod
     def _get_unk_id(llm) -> int | None:
         """Return the UNK token ID for the loaded llama model, or None if absent."""
-        # Step 1: Validate input parameters, operational preconditions, and state
         try:
-            # Execute guarded operations and establish recovery boundaries
             return llm.token_unk()
         except Exception:
             pass
         # Probe whether id=0 is UNK by inspecting its decoded representation.
         try:
-            # Execute guarded operations and establish recovery boundaries
             piece = llm.detokenize([0])
             if piece and b"unk" in piece.lower():
                 return 0
@@ -510,9 +471,7 @@ class ModelLoader:
         probes whether a future or custom build exposes it.
         Returns True on success, False (silently) when the binding is absent.
         """
-        # Step 1: Validate input parameters, operational preconditions, and state
         try:
-            # Execute guarded operations and establish recovery boundaries
             import llama_cpp as _llama_lib
             # Try the high-level Python module first, then the ctypes sub-module.
             fn = getattr(_llama_lib, "llama_add_token", None)
@@ -544,7 +503,6 @@ class ModelLoader:
         Downstream callers (e.g. interaction_loop.build_prompt) can query
         cls.vocab_leak_tokens() to bypass injecting leaking tags into prompts.
         """
-        # Step 1: Validate input parameters, operational preconditions, and state
         adapter_dir = os.path.join("data", "adapters", adapter_name)
         if not os.path.isdir(adapter_dir):
             cls._vocab_leak_report = {}
@@ -557,7 +515,6 @@ class ModelLoader:
             return {}
 
         try:
-            # Execute guarded operations and establish recovery boundaries
             n_vocab = llm.n_vocab()
         except Exception:
             n_vocab = None
@@ -570,17 +527,14 @@ class ModelLoader:
         # Classify each adapter special token: "hard leak" (maps to <unk> or beyond the vocab),
         # "fragmented" (split into several pieces; softer degradation) or "clean".
         for entry in special_tokens:
-            # Iterate over items, evaluate loop invariant, and update progress
             content    = entry["content"]
             expected_id = entry.get("id")  # None when sourced from special_tokens_map
 
             try:
-                # Execute guarded operations and establish recovery boundaries
                 token_ids = llm.tokenize(content.encode("utf-8"), add_bos=False)
             except TypeError:
                 # Older llama-cpp-python versions don't accept add_bos kwarg
                 try:
-                    # Execute guarded operations and establish recovery boundaries
                     token_ids = llm.tokenize(content.encode("utf-8"))
                 except Exception as exc:
                     logger.warning(
@@ -683,7 +637,6 @@ class ModelLoader:
     @classmethod
     def vocab_leak_report(cls) -> dict:
         """Return the most recent tokenizer vocabulary leak inspection report."""
-        # Step 1: Validate input parameters, operational preconditions, and state
         return cls._vocab_leak_report
 
     @classmethod
@@ -695,7 +648,6 @@ class ModelLoader:
         Intended for use by interaction_loop.build_prompt to bypass injecting
         broken tokens into the model's prompt context.
         """
-        # Step 1: Validate input parameters, operational preconditions, and state
         report = cls._vocab_leak_report
         return {
             e["content"]: e["expected_id"]
@@ -714,7 +666,6 @@ class ModelLoader:
         with n_gpu_layers=-1. If a model is larger than available VRAM, llama.cpp can
         fail after the previous model was already unloaded.
         """
-        # Step 1: Validate input parameters, operational preconditions, and state
         resolved_path = cls._resolve_model_path(model_path)
         filename = os.path.basename(resolved_path)
         entry = cls._registry_entry(filename)
@@ -729,7 +680,6 @@ class ModelLoader:
         adapter_gb = 0.0
         if adapter_path:
             try:
-                # Execute guarded operations and establish recovery boundaries
                 adapter_gb = os.path.getsize(adapter_path) / (1024 ** 3)
             except OSError as exc:
                 logger.debug("could not stat adapter file %s: %s", adapter_path, exc)
@@ -748,7 +698,6 @@ class ModelLoader:
         )
 
         try:
-            # Execute guarded operations and establish recovery boundaries
             hardware = get_hardware_profile()
         except Exception as exc:
             logger.warning("could not collect hardware profile before model load: %s", exc)
@@ -775,9 +724,7 @@ class ModelLoader:
     def _show_memory_warning_dialog(cls, message: str):
         # Dialogs may only be created on the Qt GUI thread; from worker threads this
         # silently does nothing (the failure is still raised/logged by the caller).
-        # Step 1: Validate input parameters, operational preconditions, and state
         try:
-            # Execute guarded operations and establish recovery boundaries
             from PyQt6.QtCore import QThread
             from PyQt6.QtWidgets import QApplication, QMessageBox
 
@@ -801,7 +748,6 @@ class ModelLoader:
         VRAM exceeds the configured safety margin unless
         KARL_ALLOW_OVERSIZED_MODEL=1 is set.
         """
-        # Step 1: Validate input parameters, operational preconditions, and state
         plan = cls.estimate_load_memory(model_path, adapter_name)
         # Explicit operator override for deliberately loading a model that may not fit.
         if os.environ.get("KARL_ALLOW_OVERSIZED_MODEL") == "1":
@@ -841,13 +787,11 @@ class ModelLoader:
     @classmethod
     def _touch_activity(cls) -> None:
         """Refresh the idle timer. Call at every inference entry point."""
-        # Step 1: Validate input parameters, operational preconditions, and state
         cls._last_activity_time = time.time()
 
     @classmethod
     def _start_idle_watcher(cls) -> None:
         """Spawn the background adapter-offload daemon (once per process)."""
-        # Step 1: Validate input parameters, operational preconditions, and state
         if cls._idle_watcher_started:
             return
         cls._idle_watcher_started = True
@@ -856,12 +800,9 @@ class ModelLoader:
         # generation is in flight, detach the LoRA adapter to free VRAM. get_instance()
         # lazily reloads it on the next call (see _adapter_offloaded).
         def _watcher():
-            # Step 1: Validate input parameters, operational preconditions, and state
             while True:
-                # Iterate over items, evaluate loop invariant, and update progress
                 time.sleep(30)
                 try:
-                    # Execute guarded operations and establish recovery boundaries
                     if cls._last_activity_time == 0.0:
                         continue
                     if time.time() - cls._last_activity_time < 300:
@@ -876,7 +817,6 @@ class ModelLoader:
                         adapter_name = cls._active_adapter
                         # Best-effort C-layer LoRA detach before flagging offload.
                         try:
-                            # Execute guarded operations and establish recovery boundaries
                             import llama_cpp.llama_cpp as _ll
                             if (hasattr(_ll, "llama_lora_adapter_remove")
                                     and hasattr(cls._instance, "_lora_adapter")):
@@ -916,7 +856,6 @@ class ModelLoader:
             ModelMemoryError: preflight RAM/VRAM guard blocks the load.
             RuntimeError/OSError: llama-cpp load or platform checks fail.
         """
-        # Step 1: Validate input parameters, operational preconditions, and state
         with cls._lock:
             # Mark this as an active inference call for the idle watcher.
             # Mark this as an active inference call for the idle watcher.
@@ -967,7 +906,6 @@ class ModelLoader:
                 _fallback_draft_model_path = draft_model_path
 
                 def _local_fallback_factory():
-                    # Step 1: Validate input parameters, operational preconditions, and state
                     return cls.get_instance(
                         model_path=_fallback_model_path,
                         adapter_name=_fallback_adapter_name,
@@ -975,7 +913,6 @@ class ModelLoader:
                     )
 
                 try:
-                    # Execute guarded operations and establish recovery boundaries
                     remote = RemoteRPCModel(
                         remote_url,
                         remote_token,
@@ -1098,7 +1035,6 @@ class ModelLoader:
                 # failed load would leave the user with no model at all.
                 n_ctx = cls._read_registry_n_ctx(model_name)
                 try:
-                    # Execute guarded operations and establish recovery boundaries
                     cls.preflight_model_load(model_path, adapter_name)
                 except (ModelMemoryError, MemoryError, OSError, RuntimeError) as exc:
                     cls._circuit_breaker.record_failure(exc)
@@ -1107,7 +1043,6 @@ class ModelLoader:
                 # Release the old instance and GPU memory before allocating the new one.
                 if cls._instance is not None:
                     try:
-                        # Execute guarded operations and establish recovery boundaries
                         logger.info("Closing existing Llama instance to free VRAM")
                         cls._instance.close()
                     except Exception as e:
@@ -1117,7 +1052,6 @@ class ModelLoader:
                 import gc
                 gc.collect()
                 try:
-                    # Execute guarded operations and establish recovery boundaries
                     import torch
                     if torch.cuda.is_available():
                         torch.cuda.empty_cache()
@@ -1157,7 +1091,6 @@ class ModelLoader:
                 # n_gpu_layers=-1 (offload everything), flash attention, mmap+mlock for
                 # predictable residency, and cpu_count-2 threads to keep the UI responsive.
                 def _attempt_load(ctx_size, ts=None):
-                    # Step 1: Validate input parameters, operational preconditions, and state
                     threads = max(1, multiprocessing.cpu_count() - 2)
                     gpu_tag = f", {len(ts)}-GPU split" if ts else ""
                     kwargs = dict(
@@ -1199,7 +1132,6 @@ class ModelLoader:
                     
                     # Older llama-cpp-python builds reject type_k/type_v: retry with the default F16 KV cache.
                     try:
-                        # Execute guarded operations and establish recovery boundaries
                         return Llama(**kwargs)
                     except TypeError:
                         if quantized_kv_cache and ("type_k" in kwargs or "type_v" in kwargs):
@@ -1235,7 +1167,6 @@ class ModelLoader:
                 # before the next model can load.
                 if cls._backend_freed:
                     try:
-                        # Execute guarded operations and establish recovery boundaries
                         import llama_cpp.llama_cpp as _llama_lib
                         _llama_lib.llama_backend_init()
                         cls._backend_freed = False
@@ -1270,7 +1201,6 @@ class ModelLoader:
                 if tensor_split is not None:
                     _t0 = time.perf_counter()
                     try:
-                        # Execute guarded operations and establish recovery boundaries
                         cls._instance = _attempt_load(current_n_ctx, ts=tensor_split)
                         cls._load_latency_s = time.perf_counter() - _t0
                         cls._n_ctx = current_n_ctx
@@ -1284,10 +1214,8 @@ class ModelLoader:
                 # Single-GPU fallback: context halving loop (also the only path when
                 # only one GPU is present or the multi-GPU attempt did not succeed).
                 while cls._instance is None:
-                    # Iterate over items, evaluate loop invariant, and update progress
                     _t0 = time.perf_counter()
                     try:
-                        # Execute guarded operations and establish recovery boundaries
                         cls._instance = _attempt_load(current_n_ctx)
                         cls._load_latency_s = time.perf_counter() - _t0
                         cls._n_ctx = current_n_ctx  # Store successfully allocated limit
@@ -1309,7 +1237,6 @@ class ModelLoader:
                         import gc
                         gc.collect()
                         try:
-                            # Execute guarded operations and establish recovery boundaries
                             import torch
                             if torch.cuda.is_available():
                                 torch.cuda.empty_cache()
@@ -1350,7 +1277,6 @@ class ModelLoader:
                     # Tear down existing draft
                     if cls._draft_instance is not None:
                         try:
-                            # Execute guarded operations and establish recovery boundaries
                             cls._draft_instance.close()
                         except Exception:
                             pass
@@ -1358,7 +1284,6 @@ class ModelLoader:
 
                     if draft_model_path and os.path.exists(draft_model_path):
                         try:
-                            # Execute guarded operations and establish recovery boundaries
                             from llama_cpp import Llama as _LlamaInner
                             threads = max(1, multiprocessing.cpu_count() - 2)
                             
@@ -1373,7 +1298,6 @@ class ModelLoader:
                                 use_mlock=True,
                             )
                             try:
-                                # Execute guarded operations and establish recovery boundaries
                                 cls._draft_instance = _LlamaInner(**draft_kwargs)
                             except (OSError, RuntimeError) as e:
                                 if "mlock" in str(e).lower() or "locked memory" in str(e).lower():
@@ -1388,7 +1312,6 @@ class ModelLoader:
                             # (available since 0.2.77). If the installed version lacks this kwarg,
                             # catch TypeError and continue without speculative support.
                             try:
-                                # Execute guarded operations and establish recovery boundaries
                                 if cls._instance is not None:
                                     cls._instance.close()
                                 
@@ -1405,7 +1328,6 @@ class ModelLoader:
                                     use_mlock=True,
                                 )
                                 try:
-                                    # Execute guarded operations and establish recovery boundaries
                                     cls._instance = Llama(**primary_kwargs)
                                 except (OSError, RuntimeError) as e:
                                     if "mlock" in str(e).lower() or "locked memory" in str(e).lower():
@@ -1430,7 +1352,6 @@ class ModelLoader:
                             logger.warning(f"Failed to load draft model {draft_model_path}: {e}")
                             cls._draft_instance = None
                             try:
-                                # Execute guarded operations and establish recovery boundaries
                                 config_store.set_active_draft_model(None, enabled=False)
                                 logger.info("Speculative decoding has been disabled in configuration due to loading failure.")
                             except Exception as config_err:
@@ -1452,7 +1373,6 @@ class ModelLoader:
 
         Raises RuntimeError if any generation currently holds the inference lock.
         """
-        # Step 1: Validate input parameters, operational preconditions, and state
         with cls._lock:
             cls._raise_if_inference_active("reset ModelLoader")
             cls._instance_locked = False
@@ -1462,7 +1382,6 @@ class ModelLoader:
             # 1. Release KV-cache memory before closing the Llama handle.
             if cls._instance is not None:
                 try:
-                    # Execute guarded operations and establish recovery boundaries
                     cls._instance.set_cache(None)
                 except Exception:
                     pass
@@ -1470,7 +1389,6 @@ class ModelLoader:
             # 2. Close and explicitly delete Llama handles to drop all C-level refs
             if cls._instance is not None:
                 try:
-                    # Execute guarded operations and establish recovery boundaries
                     cls._instance.close()
                 except Exception:
                     pass
@@ -1479,7 +1397,6 @@ class ModelLoader:
 
             if cls._draft_instance is not None:
                 try:
-                    # Execute guarded operations and establish recovery boundaries
                     cls._draft_instance.close()
                 except Exception:
                     pass
@@ -1498,7 +1415,6 @@ class ModelLoader:
 
             # 3. PyTorch CUDA defragmentation
             try:
-                # Execute guarded operations and establish recovery boundaries
                 import torch
                 if torch.cuda.is_available():
                     torch.cuda.empty_cache()
@@ -1509,7 +1425,6 @@ class ModelLoader:
             # 4. llama-cpp C-backend teardown — forces OS to reclaim all GGML/CUDA
             #    allocations. The backend is re-initialised automatically on next load.
             try:
-                # Execute guarded operations and establish recovery boundaries
                 import llama_cpp.llama_cpp as _llama_lib
                 _llama_lib.llama_backend_free()
                 cls._backend_freed = True
@@ -1523,9 +1438,7 @@ class ModelLoader:
     @staticmethod
     def _free_vram_mb() -> float | None:
         """Return the minimum free VRAM (MB) across all GPUs, or None."""
-        # Step 1: Validate input parameters, operational preconditions, and state
         try:
-            # Execute guarded operations and establish recovery boundaries
             gpus = get_hardware_profile().get("gpu_list", [])
             if not gpus:
                 return None
@@ -1541,7 +1454,6 @@ class ModelLoader:
         Capacity is 25 % of free VRAM (clamped to 256 MB–2 GB).
         Skipped entirely when free VRAM < 500 MB to avoid OOM.
         """
-        # Step 1: Validate input parameters, operational preconditions, and state
         if cls._instance is None or not cls._cache_enabled:
             return
 
@@ -1562,7 +1474,6 @@ class ModelLoader:
             capacity = 1 << 30   # 1 GB fallback when VRAM info is unavailable
 
         try:
-            # Execute guarded operations and establish recovery boundaries
             cache = LlamaRAMCache(capacity_bytes=capacity)
             cls._instance.set_cache(cache)
             logger.info("KV prompt cache attached (%.2f GB).", capacity / (1 << 30))
@@ -1573,7 +1484,6 @@ class ModelLoader:
     # Replacing the cache with a fresh one discards all cached prompt prefixes.
     def clear_cache(cls) -> None:
         """Clear prompt cache to force fresh generation."""
-        # Step 1: Validate input parameters, operational preconditions, and state
         with cls._lock:
             if cls._instance is not None:
                 cls._attach_kv_cache()
@@ -1584,7 +1494,6 @@ class ModelLoader:
     # Guard used by reset/reload paths so a model is never torn down under a live generation.
     def _raise_if_inference_active(cls, operation: str = "reset ModelLoader") -> None:
         """Raise RuntimeError if any generation is in flight."""
-        # Step 1: Validate input parameters, operational preconditions, and state
         count = cls._active_generation_count
         if count > 0 or cls._instance_locked:
             raise RuntimeError(
@@ -1598,7 +1507,6 @@ class ModelLoader:
     # unlock_instance(); the instance counts as "locked" while any generation is active.
     def lock_instance(cls) -> None:
         """Mark the singleton as in-use by an active generation."""
-        # Step 1: Validate input parameters, operational preconditions, and state
         with cls._lock:
             cls._active_generation_count += 1
             cls._instance_locked = True
@@ -1610,7 +1518,6 @@ class ModelLoader:
     @classmethod
     def unlock_instance(cls) -> None:
         """Release one active generation lock from the singleton."""
-        # Step 1: Validate input parameters, operational preconditions, and state
         with cls._lock:
             cls._active_generation_count = max(0, cls._active_generation_count - 1)
             if cls._active_generation_count == 0:
@@ -1623,7 +1530,6 @@ class ModelLoader:
     @classmethod
     def acquire_instance(cls, **kwargs):
         """Like get_instance but asserts the lock is clear before a reload."""
-        # Step 1: Validate input parameters, operational preconditions, and state
         llm = cls.get_instance(**kwargs)
         cls.lock_instance()
         return llm
@@ -1633,11 +1539,9 @@ class ModelLoader:
     # next call uses the local model) and the reason is kept for the UI to display.
     def _remote_fallback(cls, reason: str) -> None:
         """Disable remote inference after a failure and remember the reason."""
-        # Step 1: Validate input parameters, operational preconditions, and state
         cls._remote_fallback_reason = reason
         cls._remote_instance = None
         try:
-            # Execute guarded operations and establish recovery boundaries
             cfg = config_store.get_engine_config()
             url = cfg.get("remote_engine_url") or cfg.get("remote_server_url")
             token = cfg.get("remote_engine_token") or cfg.get("remote_auth_token")
@@ -1648,20 +1552,17 @@ class ModelLoader:
     @classmethod
     def last_remote_fallback_reason(cls) -> str | None:
         """Return why remote inference was last disabled, or None if it never was."""
-        # Step 1: Validate input parameters, operational preconditions, and state
         return cls._remote_fallback_reason
 
     @classmethod
     def is_instance_locked(cls) -> bool:
         """Return True when a generation is actively using the model."""
-        # Step 1: Validate input parameters, operational preconditions, and state
         with cls._lock:
             return cls._instance_locked
 
     @classmethod
     def context_limit(cls) -> int:
         """Return the context limit of the loaded GGUF model or config fallback."""
-        # Step 1: Validate input parameters, operational preconditions, and state
         return cls.n_ctx()
 
     @classmethod
@@ -1672,7 +1573,6 @@ class ModelLoader:
         so trace logs and the status bar reflect that generation happened on
         the configured Karl bridge rather than a local GGUF.
         """
-        # Step 1: Validate input parameters, operational preconditions, and state
         remote = cls._remote_instance
         if remote is not None:
             url = getattr(remote, "server_url", "") or ""
@@ -1684,7 +1584,6 @@ class ModelLoader:
     @classmethod
     def n_ctx(cls) -> int:
         """Return the context window size for the loaded model."""
-        # Step 1: Validate input parameters, operational preconditions, and state
         with cls._lock:
             # A RemoteRPCModel has no locally-knowable context window (the
             # remote bridge owns that). Skip straight to the registry-based
@@ -1694,7 +1593,6 @@ class ModelLoader:
             # model -> last known class value -> 4096 default.
             if cls._instance is not None and cls._remote_instance is None:
                 try:
-                    # Execute guarded operations and establish recovery boundaries
                     if hasattr(cls._instance, "n_ctx"):
                         val = cls._instance.n_ctx
                         if callable(val):
@@ -1708,7 +1606,6 @@ class ModelLoader:
             
             # Fallback to active model's n_ctx
             try:
-                # Execute guarded operations and establish recovery boundaries
                 from app.engine import config_store
                 active = config_store.get_active_model()
                 if active and "filename" in active:
@@ -1725,14 +1622,12 @@ class ModelLoader:
     @classmethod
     def is_loaded(cls) -> bool:
         """Return True when a primary Llama instance or a remote engine is active."""
-        # Step 1: Validate input parameters, operational preconditions, and state
         with cls._lock:
             return cls._instance is not None or cls._remote_instance is not None
 
     @classmethod
     def is_speculative(cls) -> bool:
         """True when a draft model is attached and speculative decoding is active."""
-        # Step 1: Validate input parameters, operational preconditions, and state
         with cls._lock:
             return cls._draft_instance is not None
 
@@ -1745,14 +1640,12 @@ class ModelLoader:
         Some builds may expose a per-call ``draft_model`` kwarg; this helper lets
         generation loops pass it without breaking builds that reject it.
         """
-        # Step 1: Validate input parameters, operational preconditions, and state
         with cls._lock:
             draft = cls._draft_instance
             instance = cls._instance
         if draft is None or instance is None:
             return {}
         try:
-            # Execute guarded operations and establish recovery boundaries
             params = inspect.signature(instance.__call__).parameters
         except (TypeError, ValueError):
             return {}
@@ -1767,7 +1660,6 @@ class ModelLoader:
     # --- Registry-derived metadata for the loaded model ---
     def get_quantization(cls) -> str | None:
         """Return quantization level from the registry entry for the loaded model."""
-        # Step 1: Validate input parameters, operational preconditions, and state
         from app.engine import config_store
         name = getattr(cls, "_model_name", None)
         if not name:
@@ -1778,7 +1670,6 @@ class ModelLoader:
     @classmethod
     def vram_estimate_gb(cls) -> float | None:
         """Return estimated VRAM requirement from registry for the loaded model."""
-        # Step 1: Validate input parameters, operational preconditions, and state
         from app.engine import config_store
         name = getattr(cls, "_model_name", None)
         if not name:

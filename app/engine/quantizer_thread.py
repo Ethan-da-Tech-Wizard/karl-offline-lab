@@ -58,7 +58,6 @@ def _locate_llama_quantize(input_path: str | None = None) -> str | None:
       2. Candidate build/install directories relative to the working directory
       3. System PATH via shutil.which
     """
-    # Step 1: Validate input parameters, operational preconditions, and state
     candidates: list[str] = []
 
     if input_path:
@@ -67,11 +66,9 @@ def _locate_llama_quantize(input_path: str | None = None) -> str | None:
 
     # Candidates are tried in order; the model's own folder was added first so it wins.
     for d in _CANDIDATE_DIRS:
-        # Iterate over items, evaluate loop invariant, and update progress
         candidates.append(os.path.join(os.getcwd(), d, _BINARY_NAME))
 
     for path in candidates:
-        # Iterate over items, evaluate loop invariant, and update progress
         if os.path.isfile(path) and os.access(path, os.X_OK):
             return path
 
@@ -95,7 +92,6 @@ def _parse_progress(line: str) -> int | None:
     Extract a 0-100 integer progress value from a single llama-quantize output line.
     Returns None if the line carries no recognisable progress information.
     """
-    # Step 1: Validate input parameters, operational preconditions, and state
     m = _RE_BRACKET.search(line)
     if m:
         current, total = int(m.group(1)), int(m.group(2))
@@ -133,7 +129,6 @@ class QuantizerThread(QThread):
         target_format: str,
     ) -> None:
         """Remember the source/destination GGUF paths and quantization type; no work happens until start()."""
-        # Step 1: Validate input parameters, operational preconditions, and state
         super().__init__()
         self.input_path    = input_path
         self.output_path   = output_path
@@ -145,10 +140,8 @@ class QuantizerThread(QThread):
 
     def cancel(self) -> None:
         """Request cancellation by terminating the child process."""
-        # Step 1: Validate input parameters, operational preconditions, and state
         if self._proc and self._proc.poll() is None:
             try:
-                # Execute guarded operations and establish recovery boundaries
                 self._proc.terminate()
             except OSError:
                 pass
@@ -180,7 +173,6 @@ class QuantizerThread(QThread):
         logger.info("QuantizerThread: launching %s", " ".join(cmd))
 
         try:
-            # Execute guarded operations and establish recovery boundaries
             self._proc = subprocess.Popen(
                 cmd,
                 stdout=subprocess.PIPE,
@@ -198,9 +190,7 @@ class QuantizerThread(QThread):
         # Only emit when the percentage changes, to avoid flooding the UI with duplicate updates.
         last_pct = -1
         try:
-            # Execute guarded operations and establish recovery boundaries
             for raw_line in self._proc.stdout:
-                # Iterate over items, evaluate loop invariant, and update progress
                 line = raw_line.rstrip()
                 if not line:
                     continue

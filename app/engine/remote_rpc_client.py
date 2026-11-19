@@ -39,12 +39,10 @@ class RemoteRPCError(RuntimeError):
 
 
 def _is_private_host(hostname: str | None) -> bool:
-    # Step 1: Validate input parameters, operational preconditions, and state
     """True for loopback or private-network addresses, or the names localhost/127.0.0.1/::1."""
     if not hostname:
         return False
     try:
-        # Execute guarded operations and establish recovery boundaries
         # Raises ValueError for DNS names, handled just below.
         return ip_address(hostname).is_private
     except ValueError:
@@ -52,7 +50,6 @@ def _is_private_host(hostname: str | None) -> bool:
 
 
 def _ssl_context_for_url(url: str) -> ssl.SSLContext | None:
-    # Step 1: Validate input parameters, operational preconditions, and state
     """Return the SSL context for a wss:// URL, or None for plain ws://.
 
     Certificate checking is disabled only for private/loopback hosts (typically
@@ -70,7 +67,6 @@ def _ssl_context_for_url(url: str) -> ssl.SSLContext | None:
 
 
 def _with_token_query(url: str, token: str) -> str:
-    # Step 1: Validate input parameters, operational preconditions, and state
     """Return ``url`` with a ``token`` query parameter added (existing parameters are kept)."""
     parsed = urlparse(url)
     query = dict(parse_qsl(parsed.query, keep_blank_values=True))
@@ -97,7 +93,6 @@ class RemoteRPCModel:
         local_fallback_factory=None,
         handshake_timeout: float = 5.0,
     ):
-        # Step 1: Validate input parameters, operational preconditions, and state
         """``on_fallback(message)`` is called with the error text when remote generation fails.
         ``local_fallback_factory()`` may return a local model to finish the request instead.
         Raises RemoteRPCError if no server URL is configured.
@@ -111,7 +106,6 @@ class RemoteRPCModel:
             raise RemoteRPCError("Remote engine mode is enabled but no server URL is configured.")
 
     def tokenize(self, data: bytes | str, add_bos: bool = False) -> list[int]:
-        # Step 1: Validate input parameters, operational preconditions, and state
         """Cheap token-count stand-in (about 1 token per 3 characters) returning a list of dummy ids."""
         if isinstance(data, bytes):
             text = data.decode("utf-8", errors="ignore")
@@ -126,7 +120,6 @@ class RemoteRPCModel:
         return list(range(count))
 
     def __call__(self, prompt: str, **kwargs) -> Iterator[dict[str, Any]]:
-        # Step 1: Validate input parameters, operational preconditions, and state
         """Generate from ``prompt``. With stream=True returns an iterator of llama-cpp style chunks.
 
         Without stream, the whole stream is consumed and one completion dict is returned.
@@ -140,7 +133,6 @@ class RemoteRPCModel:
         return self._stream(prompt, kwargs)
 
     def _stream(self, prompt: str, kwargs: dict[str, Any]) -> Iterator[dict[str, Any]]:
-        # Step 1: Validate input parameters, operational preconditions, and state
         # Items: chunk dicts, {"error": msg} on failure, or None meaning "finished".
         """Yield completion chunks produced by a background thread that talks to the server.
 
@@ -156,9 +148,7 @@ class RemoteRPCModel:
         thread.start()
 
         while True:
-            # Iterate over items, evaluate loop invariant, and update progress
             try:
-                # Execute guarded operations and establish recovery boundaries
                 # Poll with a timeout so a dead worker thread is noticed instead of hanging forever.
                 item = queue.get(timeout=0.25)
             except Empty:
@@ -198,15 +188,12 @@ class RemoteRPCModel:
         kwargs: dict[str, Any],
         queue: Queue[dict[str, Any] | None],
     ) -> None:
-        # Step 1: Validate input parameters, operational preconditions, and state
         """Async worker: connect, send submit_chat, translate notifications into queue items.
 
         Always ends by putting None (success) or an error dict on the queue.
         """
         try:
-            # Execute guarded operations and establish recovery boundaries
             try:
-                # Execute guarded operations and establish recovery boundaries
                 # Lazy import: the websockets package is only needed in remote mode.
                 from websockets.asyncio.client import connect as ws_connect
             except ImportError as exc:
@@ -224,7 +211,6 @@ class RemoteRPCModel:
                 timeout=self.handshake_timeout,
             )
             try:
-                # Execute guarded operations and establish recovery boundaries
                 # Millisecond timestamp doubles as the JSON-RPC request id used to recognise the reply.
                 req_id = int(time.time() * 1000)
                 params = {

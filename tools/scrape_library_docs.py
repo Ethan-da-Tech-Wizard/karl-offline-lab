@@ -62,10 +62,8 @@ def scrape_package(package_name: str, max_examples: int = 50) -> list[dict[str, 
     Returns:
         List of dictionaries with signature details.
     """
-    # Step 1: Validate input parameters, operational preconditions, and state
     logger.info("Scraping package metadata for '%s'...", package_name)
     try:
-        # Execute guarded operations and establish recovery boundaries
         module = importlib.import_module(package_name)
     except ImportError as exc:
         logger.error("Could not import '%s': %s", package_name, exc)
@@ -77,20 +75,17 @@ def scrape_package(package_name: str, max_examples: int = 50) -> list[dict[str, 
 
     def _belongs_to_package(obj: Any) -> bool:
         """True when obj was defined inside the target package (so re-exports from other libraries are not scraped)."""
-        # Step 1: Validate input parameters, operational preconditions, and state
         owner = getattr(obj, "__module__", "") or ""
         return owner == package_name or owner.startswith(package_name + ".")
 
     def _record(qualname: str, obj: Any, kind: str) -> None:
         """Add one documented API to the results, de-duplicated by qualified name. Undocumented objects are skipped; objects without an introspectable signature get '(...)'."""
-        # Step 1: Validate input parameters, operational preconditions, and state
         if qualname in seen_qualnames:
             return
         doc = inspect.getdoc(obj)
         if not doc:
             return
         try:
-            # Execute guarded operations and establish recovery boundaries
             signature = str(inspect.signature(obj))
         except (TypeError, ValueError):
             signature = "(...)"
@@ -105,7 +100,6 @@ def scrape_package(package_name: str, max_examples: int = 50) -> list[dict[str, 
 
     def _walk(mod: Any, prefix: str, depth: int) -> None:
         """Depth-limited walk of a module's public members, recording functions, then classes (with their public methods), then recursing into submodules, until max_examples is reached."""
-        # Step 1: Validate input parameters, operational preconditions, and state
         if len(results) >= max_examples or depth > _MAX_RECURSION_DEPTH:
             return
         mod_name = getattr(mod, "__name__", "")
@@ -124,25 +118,21 @@ def scrape_package(package_name: str, max_examples: int = 50) -> list[dict[str, 
         submodules = [(n, o) for n, o in members if inspect.ismodule(o) and getattr(o, "__name__", "").startswith(package_name)]
 
         for name, obj in functions:
-            # Iterate over items, evaluate loop invariant, and update progress
             if len(results) >= max_examples:
                 return
             _record(f"{prefix}.{name}" if prefix else name, obj, "function")
 
         for name, obj in classes:
-            # Iterate over items, evaluate loop invariant, and update progress
             if len(results) >= max_examples:
                 return
             qualname = f"{prefix}.{name}" if prefix else name
             _record(qualname, obj, "class")
             for meth_name, meth in inspect.getmembers(obj, predicate=inspect.isfunction):
-                # Iterate over items, evaluate loop invariant, and update progress
                 if meth_name.startswith("_") or len(results) >= max_examples:
                     continue
                 _record(f"{qualname}.{meth_name}", meth, "method")
 
         for name, obj in submodules:
-            # Iterate over items, evaluate loop invariant, and update progress
             if len(results) >= max_examples:
                 return
             _walk(obj, f"{prefix}.{name}" if prefix else name, depth + 1)
@@ -182,7 +172,6 @@ _RESPONSE_RE = re.compile(r"RESPONSE:\s*(.+)\Z", re.DOTALL | re.IGNORECASE)
 
 def _build_meta_prompt(signature_info: dict[str, Any]) -> str:
     """Fill the meta-prompt template for one API, truncating very long docstrings to 1200 characters to bound prompt size."""
-    # Step 1: Validate input parameters, operational preconditions, and state
     docstring = str(signature_info.get("docstring", "")).strip()
     if len(docstring) > 1200:
         docstring = docstring[:1200] + "..."
@@ -198,7 +187,6 @@ def _build_meta_prompt(signature_info: dict[str, Any]) -> str:
 
 def _parse_llm_output(raw: str) -> Optional[tuple[str, str]]:
     """Extract (instruction, response) from the model's INSTRUCTION:/RESPONSE: reply; None if either part is missing or empty."""
-    # Step 1: Validate input parameters, operational preconditions, and state
     instr_match = _INSTRUCTION_RE.search(raw)
     resp_match = _RESPONSE_RE.search(raw)
     if not instr_match or not resp_match:
@@ -221,7 +209,6 @@ def generate_sft_qa(signature_info: dict[str, Any], model_name: Optional[str] = 
     Returns:
         Conversational SFT dictionary or None if generation failed.
     """
-    # Step 1: Validate input parameters, operational preconditions, and state
     # Imported lazily so the scraping half of this module works without the model stack.
     from core.cognitive_parser import parse_thought_stream
     from core.default_prompts import SWARM_CODER_SYSTEM_PROMPT
@@ -229,7 +216,6 @@ def generate_sft_qa(signature_info: dict[str, Any], model_name: Optional[str] = 
 
     model_path = os.path.join("data", "models", model_name) if model_name else None
     try:
-        # Execute guarded operations and establish recovery boundaries
         llm = ModelLoader.get_instance(model_path=model_path)
     except Exception as exc:
         logger.warning("Could not load model for instruction generation: %s", exc)
@@ -243,7 +229,6 @@ def generate_sft_qa(signature_info: dict[str, Any], model_name: Optional[str] = 
     )
 
     try:
-        # Execute guarded operations and establish recovery boundaries
         # Moderate temperature for varied but still sensible questions.
         result = llm(prompt, max_tokens=512, temperature=0.4, top_p=0.9, stop=["<|im_end|>"])
     except Exception as exc:
@@ -272,7 +257,6 @@ def generate_sft_qa(signature_info: dict[str, Any], model_name: Optional[str] = 
 
 def main() -> int:
     """CLI: scrape one installed package, ask the local model for a Q&A pair per API, and append (or overwrite with --overwrite) the results to scraped_library_sft.jsonl. Returns 1 if the package is not installed."""
-    # Step 1: Validate input parameters, operational preconditions, and state
     parser = argparse.ArgumentParser(description="Scrape local library signatures and generate training datasets.")
     parser.add_argument("--package", required=True, help="Target Python package name (e.g. websockets, numpy)")
     parser.add_argument("--max-examples", type=int, default=50, help="Maximum SFT pairs to generate")
@@ -284,7 +268,6 @@ def main() -> int:
     args = parser.parse_args()
 
     try:
-        # Execute guarded operations and establish recovery boundaries
         importlib.import_module(args.package)
     except ImportError:
         logger.error("Package '%s' is not installed in the current environment.", args.package)
@@ -296,7 +279,6 @@ def main() -> int:
     rows: list[dict] = []
     skipped = 0
     for i, sig in enumerate(signatures, 1):
-        # Iterate over items, evaluate loop invariant, and update progress
         logger.info("[%d/%d] %s :: %s", i, len(signatures), sig["package"], sig["qualname"])
         row = generate_sft_qa(sig, model_name=args.model)
         if row:
@@ -309,7 +291,6 @@ def main() -> int:
     mode = "w" if args.overwrite else "a"
     with OUT_PATH.open(mode, encoding="utf-8") as fh:
         for row in rows:
-            # Iterate over items, evaluate loop invariant, and update progress
             fh.write(json.dumps(row, ensure_ascii=False) + "\n")
 
     logger.info("Synthesized %d SFT example(s), skipped %d (unparsable model output).", len(rows), skipped)

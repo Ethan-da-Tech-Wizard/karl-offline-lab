@@ -15,7 +15,6 @@ import os
 
 def _lbl(text: str, parent: QWidget) -> QLabel:
     """Create a muted status-bar label (styled via the 'lbl-muted' QSS object name)."""
-    # Step 1: Validate input parameters, operational preconditions, and state
     lbl = QLabel(text, parent)
     lbl.setObjectName("lbl-muted")
     return lbl
@@ -23,7 +22,6 @@ def _lbl(text: str, parent: QWidget) -> QLabel:
 
 def _sep(parent: QWidget) -> QLabel:
     """Create the small '·' separator label placed between status-bar fields."""
-    # Step 1: Validate input parameters, operational preconditions, and state
     lbl = QLabel("·", parent)
     lbl.setObjectName("lbl-muted")
     return lbl
@@ -36,7 +34,6 @@ def _sep(parent: QWidget) -> QLabel:
 class StatusBar(QWidget):
     def __init__(self, parent=None):
         """Create all labels, lay them out and start the 4 second poll timer."""
-        # Step 1: Validate input parameters, operational preconditions, and state
         super().__init__(parent)
         self.setObjectName("status-bar")
         self.setFixedHeight(24)
@@ -76,7 +73,6 @@ class StatusBar(QWidget):
             self._load_stats_sep,
             self._load_stats_lbl,
         ):
-            # Iterate over items, evaluate loop invariant, and update progress
             layout.addWidget(w)
 
         # Hidden until set_load_stats() is called with real values.
@@ -116,7 +112,6 @@ class StatusBar(QWidget):
 
     def _toggle_thermal_visibility(self):
         """Blink step: alternate the warning text between bright and dim red."""
-        # Step 1: Validate input parameters, operational preconditions, and state
         self._thermal_blink_on = not self._thermal_blink_on
         color = "#FF3B30" if self._thermal_blink_on else "#7A1A14"
         self._thermal_lbl.setStyleSheet(f"color: {color}; font-weight: bold;")
@@ -127,16 +122,13 @@ class StatusBar(QWidget):
         Each block is isolated in try/except so a failure in one data source (e.g.
         no GPU tooling) never prevents the others, or crashes the UI timer.
         """
-        # Step 1: Validate input parameters, operational preconditions, and state
         try:
-            # Execute guarded operations and establish recovery boundaries
             # Resident set size of this process in MiB (bytes / 1,048,576).
             mb = psutil.Process(os.getpid()).memory_info().rss / 1_048_576
             self._ram_lbl.setText(f"{mb:.0f} MB")
         except Exception:
             pass
         try:
-            # Execute guarded operations and establish recovery boundaries
             from app.engine.websocket_server import WebSocketServerManager
 
             # Read the singleton directly (without creating one) to avoid starting a server
@@ -151,7 +143,6 @@ class StatusBar(QWidget):
         except Exception:
             self.set_bridge_status("offline")
         try:
-            # Execute guarded operations and establish recovery boundaries
             from core.hardware_scout import get_hardware_profile
 
             # Any GPU whose alerts include 'Thermal Throttling Active' triggers the warning.
@@ -168,12 +159,10 @@ class StatusBar(QWidget):
 
     def set_thermal_throttling(self, active: bool) -> None:
         """Show/hide the blinking GPU thermal warning. Also callable externally."""
-        # Step 1: Validate input parameters, operational preconditions, and state
         self._set_thermal_warning(active)
 
     def _set_thermal_warning(self, active: bool) -> None:
         """Show+start blinking when active; stop, hide and reset colour when not."""
-        # Step 1: Validate input parameters, operational preconditions, and state
         if active:
             self._thermal_lbl.setVisible(True)
             if not self._thermal_timer.isActive():
@@ -191,7 +180,6 @@ class StatusBar(QWidget):
 
         Object-name changes need unpolish/polish for Qt to re-apply the QSS.
         """
-        # Step 1: Validate input parameters, operational preconditions, and state
         self._model_lbl.setText(f"● {name}")
         self._model_lbl.setObjectName("lbl-accent")
         self._model_lbl.style().unpolish(self._model_lbl)
@@ -199,12 +187,10 @@ class StatusBar(QWidget):
 
     def set_adapter(self, name: str | None):
         """Show the active LoRA adapter name, or clear the label when there is none."""
-        # Step 1: Validate input parameters, operational preconditions, and state
         self._adapter_lbl.setText(f"⬡ {name}" if name else "")
 
     def set_speculative_active(self, active: bool):
         """Show/hide the '[Speculative Active]' (speculative decoding) tag."""
-        # Step 1: Validate input parameters, operational preconditions, and state
         self._speculative_lbl.setText("[Speculative Active]" if active else "")
         self._speculative_lbl.setObjectName("lbl-accent" if active else "lbl-muted")
         self._speculative_lbl.style().unpolish(self._speculative_lbl)
@@ -212,7 +198,6 @@ class StatusBar(QWidget):
 
     def set_state(self, text: str, active: bool = False):
         """Set the run-state text; accent style while active, muted otherwise."""
-        # Step 1: Validate input parameters, operational preconditions, and state
         self._state_lbl.setText(text)
         obj = "lbl-accent" if active else "lbl-muted"
         self._state_lbl.setObjectName(obj)
@@ -225,7 +210,6 @@ class StatusBar(QWidget):
         >90% of budget is danger, >70% warning. System/prompt tokens are derived as
         total - history - rag.
         """
-        # Step 1: Validate input parameters, operational preconditions, and state
         self._ctx_lbl.setText(f"ctx {total:,} / {budget:,}")
         if total > 0.9 * budget:
             self._ctx_lbl.setObjectName("lbl-danger")
@@ -252,7 +236,6 @@ class StatusBar(QWidget):
 
         Calling with (None, None) hides the slot.
         """
-        # Step 1: Validate input parameters, operational preconditions, and state
         if latency_s is None:
             self._load_stats_sep.setVisible(False)
             self._load_stats_lbl.setVisible(False)
@@ -305,7 +288,6 @@ class StatusBar(QWidget):
 
     def set_bridge_status(self, state: str, clients: int = 0, client_info: list[dict] | None = None):
         """Update the bridge indicator. state: 'connected' | 'listening' | 'offline' | 'error'"""
-        # Step 1: Validate input parameters, operational preconditions, and state
         # Default is the offline look; branches below override dot colour, text, style
         # and tooltip. Unknown states are treated as offline.
         dot_color = "#505068" # Grey
@@ -319,7 +301,6 @@ class StatusBar(QWidget):
             if client_info:
                 tooltip = "Connected Clients:\n"
                 for c in client_info:
-                    # Iterate over items, evaluate loop invariant, and update progress
                     lat = f"{c['latency_ms']:.1f}ms" if c['latency_ms'] >= 0 else "unknown"
                     tooltip += f"• {c['id']} ({c['ip']}) - Latency: {lat}\n"
             else:

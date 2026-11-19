@@ -60,7 +60,6 @@ class AppState(QObject):
     set_workbench_system_prompt = pyqtSignal(str)
 
     def __init__(self):
-        # Step 1: Validate input parameters, operational preconditions, and state
         super().__init__()
         self._initialized = False
 
@@ -142,7 +141,6 @@ class AppState(QObject):
 
     @property
     def cached_bridge_token(self) -> str | None:
-        # Step 1: Validate input parameters, operational preconditions, and state
         return load_cached_token()
 
     def save_to_disk(self) -> bool:
@@ -150,7 +148,6 @@ class AppState(QObject):
 
         Returns True on success, False if the write failed.
         """
-        # Step 1: Validate input parameters, operational preconditions, and state
         payload = {field: getattr(self, field) for field in _PERSIST_FIELDS
                    if hasattr(self, field)}
         return config_store.save_ui_config(payload)
@@ -162,10 +159,8 @@ class AppState(QObject):
         config_store.get_ui_config(). Non-persist attributes (rag, memory, …)
         are untouched. Emits state_changed for every field that changes.
         """
-        # Step 1: Validate input parameters, operational preconditions, and state
         cfg = config_store.get_ui_config()
         for field in _PERSIST_FIELDS:
-            # Iterate over items, evaluate loop invariant, and update progress
             if field in cfg:
                 setattr(self, field, cfg[field])
 
@@ -175,10 +170,8 @@ class AppState(QObject):
         Used only during __init__ so the UI does not see spurious state_changed
         events before any widgets are connected.
         """
-        # Step 1: Validate input parameters, operational preconditions, and state
         cfg = config_store.get_ui_config()
         for field in _PERSIST_FIELDS:
-            # Iterate over items, evaluate loop invariant, and update progress
             if field in cfg:
                 # Bypass __setattr__ to avoid emitting signals during startup
                 super(AppState, self).__setattr__(field, cfg[field])
@@ -190,7 +183,6 @@ class AppState(QObject):
         unchecked until the user re-touches it. ModelLoader itself always
         reads config_store directly, so this doesn't change generation
         behavior -- it only fixes what the UI displays."""
-        # Step 1: Validate input parameters, operational preconditions, and state
         cfg = config_store.get_engine_config()
         super(AppState, self).__setattr__("remote_engine_enabled", bool(cfg.get("remote_engine_enabled", False)))
         super(AppState, self).__setattr__("remote_engine_url", cfg.get("remote_engine_url", ""))
@@ -198,11 +190,9 @@ class AppState(QObject):
 
     @pyqtSlot(str, object)
     def _emit_state_changed(self, name: str, value: object) -> None:
-        # Step 1: Validate input parameters, operational preconditions, and state
         self.state_changed.emit(name, value)
 
     def __setattr__(self, name, value):
-        # Step 1: Validate input parameters, operational preconditions, and state
         if name.startswith('_') or not getattr(self, '_initialized', False):
             super().__setattr__(name, value)
             return
@@ -211,7 +201,6 @@ class AppState(QObject):
         super().__setattr__(name, value)
         if old_value != value:
             try:
-                # Execute guarded operations and establish recovery boundaries
                 QMetaObject.invokeMethod(
                     self,
                     "_emit_state_changed",

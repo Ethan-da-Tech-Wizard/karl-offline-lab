@@ -36,7 +36,6 @@ from app.utils.custom_embeddings import TfidfEmbedder
 
 def _hline() -> QFrame:
     """Create a horizontal divider line."""
-    # Step 1: Validate input parameters, operational preconditions, and state
     f = QFrame()
     f.setFrameShape(QFrame.Shape.HLine)
     return f
@@ -44,7 +43,6 @@ def _hline() -> QFrame:
 
 def _section(text: str) -> QLabel:
     """Create a section-header label (QSS object name 'section-header')."""
-    # Step 1: Validate input parameters, operational preconditions, and state
     lbl = QLabel(text)
     lbl.setObjectName("section-header")
     return lbl
@@ -52,7 +50,6 @@ def _section(text: str) -> QLabel:
 
 def _label(text: str, obj: str = "") -> QLabel:
     """Create a QLabel, optionally tagging it with a QSS object name."""
-    # Step 1: Validate input parameters, operational preconditions, and state
     lbl = QLabel(text)
     if obj:
         lbl.setObjectName(obj)
@@ -72,7 +69,6 @@ class _IngestThread(QThread):
 
     def __init__(self, rag, filepaths, chunk_size: int = 200, overlap: int = 50):
         """Accept one path or a list of paths; chunk_size/overlap are measured in words/tokens by the RAG engine."""
-        # Step 1: Validate input parameters, operational preconditions, and state
         super().__init__()
         self.rag = rag
         if isinstance(filepaths, (list, tuple)):
@@ -84,11 +80,8 @@ class _IngestThread(QThread):
 
     def run(self):
         """Ingest all files through rag.ingest_files in batches of 32 and report progress."""
-        # Step 1: Validate input parameters, operational preconditions, and state
         try:
-            # Execute guarded operations and establish recovery boundaries
             def _progress(current, total, event):
-                # Step 1: Validate input parameters, operational preconditions, and state
                 self.progress.emit(
                     int(current),
                     int(total),
@@ -120,7 +113,6 @@ class _RagOperationThread(QThread):
 
     def __init__(self, rag, operation: str, argument: str | None = None):
         """`operation` is one of preload/remove_source/rebuild/clear; `argument` is the source name for remove_source."""
-        # Step 1: Validate input parameters, operational preconditions, and state
         super().__init__()
         self.rag = rag
         self.operation = operation
@@ -128,9 +120,7 @@ class _RagOperationThread(QThread):
 
     def run(self):
         """Dispatch to the matching RAG method; an unknown operation raises and is reported as an error."""
-        # Step 1: Validate input parameters, operational preconditions, and state
         try:
-            # Execute guarded operations and establish recovery boundaries
             if self.operation == "preload":
                 self.rag.preload_encoder()
                 self.done.emit("Encoder ready.")
@@ -156,7 +146,6 @@ class _SearchThread(QThread):
 
     def __init__(self, rag, query: str, top_k: int, mode: str):
         """Store the query, number of results and retrieval mode (dense, sparse or hybrid)."""
-        # Step 1: Validate input parameters, operational preconditions, and state
         super().__init__()
         self.rag = rag
         self.query = query
@@ -165,9 +154,7 @@ class _SearchThread(QThread):
 
     def run(self):
         """Run retrieve_with_metadata and emit (query, results); the query is echoed so the UI can label it."""
-        # Step 1: Validate input parameters, operational preconditions, and state
         try:
-            # Execute guarded operations and establish recovery boundaries
             results = self.rag.retrieve_with_metadata(
                 self.query,
                 top_k=self.top_k,
@@ -186,7 +173,6 @@ class VectorProjectionWidget(QFrame):
 
     def __init__(self, parent=None):
         """Create the projection widget and initialize hover/fade state."""
-        # Step 1: Validate input parameters, operational preconditions, and state
         super().__init__(parent)
         self.setObjectName("vector-projection-widget")
         # Small minimum keeps layouts from fighting when collapsed.
@@ -209,13 +195,11 @@ class VectorProjectionWidget(QFrame):
 
     def start_fade_in(self):
         """Restart the fade-in animation from fully transparent."""
-        # Step 1: Validate input parameters, operational preconditions, and state
         self.opacity = 0.0
         self.animation_timer.start(25)  # ~40 FPS
 
     def _animate_step(self):
         """Advance the fade by one step, stopping the timer once fully opaque."""
-        # Step 1: Validate input parameters, operational preconditions, and state
         self.opacity += 0.08
         if self.opacity >= 1.0:
             self.opacity = 1.0
@@ -224,31 +208,26 @@ class VectorProjectionWidget(QFrame):
 
     def set_query(self, x: float, y: float):
         """Set the query point (x, y in 0..1) and replay the fade."""
-        # Step 1: Validate input parameters, operational preconditions, and state
         self.query_point = (x, y)
         self.start_fade_in()
 
     def set_documents(self, docs: list[dict]):
         """Replace the document points and replay the fade."""
-        # Step 1: Validate input parameters, operational preconditions, and state
         self.doc_points = docs
         self.start_fade_in()
 
     def set_axes(self, label_x: str, label_y: str):
         """Set the axis captions (e.g. the two chosen terms) and replay the fade."""
-        # Step 1: Validate input parameters, operational preconditions, and state
         self.axis_labels = (label_x, label_y)
         self.start_fade_in()
 
     def resizeEvent(self, event):
         """Repaint on resize so the geometry is recomputed."""
-        # Step 1: Validate input parameters, operational preconditions, and state
         super().resizeEvent(event)
         self.update()
 
     def mouseMoveEvent(self, event: QMouseEvent):
         """Find the document/query point within 12px of the cursor and mark it hovered."""
-        # Step 1: Validate input parameters, operational preconditions, and state
         pos = event.position()
         px = pos.x()
         py = pos.y()
@@ -268,7 +247,6 @@ class VectorProjectionWidget(QFrame):
         
         if plot_w > 0 and plot_h > 0:
             for dp in self.doc_points:
-                # Iterate over items, evaluate loop invariant, and update progress
                 dx = margin_left + dp["x"] * plot_w
                 dy = margin_top + (1.0 - dp["y"]) * plot_h
                 dist = math.hypot(px - dx, py - dy)
@@ -294,7 +272,6 @@ class VectorProjectionWidget(QFrame):
 
     def leaveEvent(self, event):
         """Clear the hover tooltip when the mouse leaves."""
-        # Step 1: Validate input parameters, operational preconditions, and state
         self.hovered_point = None
         self.update()
 
@@ -302,7 +279,6 @@ class VectorProjectionWidget(QFrame):
         """Paint the card, grid, axes, query-to-document lines with similarity labels,
         the points, and a hover card that shows the 2D cosine-similarity math.
         """
-        # Step 1: Validate input parameters, operational preconditions, and state
         painter = QPainter(self)
         painter.setRenderHint(QPainter.RenderHint.Antialiasing)
         
@@ -329,7 +305,6 @@ class VectorProjectionWidget(QFrame):
         # All colours go through apply_alpha so the fade-in affects everything.
         # Helper for applying fade opacity to colors
         def apply_alpha(color_val, default_alpha: int = 255) -> QColor:
-            # Step 1: Validate input parameters, operational preconditions, and state
             col = QColor(color_val)
             col.setAlpha(int(default_alpha * self.opacity))
             return col
@@ -345,7 +320,6 @@ class VectorProjectionWidget(QFrame):
         
         ticks = [0.0, 0.25, 0.5, 0.75, 1.0]
         for tick in ticks:
-            # Iterate over items, evaluate loop invariant, and update progress
             tx = margin_left + tick * plot_w
             ty = margin_top + (1.0 - tick) * plot_h
             
@@ -409,7 +383,6 @@ class VectorProjectionWidget(QFrame):
             
             # Draw lines to docs first (so circles render on top)
             for dp in self.doc_points:
-                # Iterate over items, evaluate loop invariant, and update progress
                 dx = margin_left + dp["x"] * plot_w
                 dy = margin_top + (1.0 - dp["y"]) * plot_h
                 
@@ -462,7 +435,6 @@ class VectorProjectionWidget(QFrame):
         # Documents are green, the query is cyan; each gets a faint glow ring.
         # Draw doc points with neon glow and correct thin white border
         for dp in self.doc_points:
-            # Iterate over items, evaluate loop invariant, and update progress
             dx = margin_left + dp["x"] * plot_w
             dy = margin_top + (1.0 - dp["y"]) * plot_h
             
@@ -582,7 +554,6 @@ class KnowledgeBaseWorkspace(QWidget):
 
     def __init__(self, state, parent=None):
         """Create KB controls, enable file drag-and-drop, and load RAG settings."""
-        # Step 1: Validate input parameters, operational preconditions, and state
         super().__init__(parent)
         self.state = state
         self.setObjectName("workspace-root")
@@ -601,7 +572,6 @@ class KnowledgeBaseWorkspace(QWidget):
 
     def dragEnterEvent(self, event):
         """Accept drag events that contain local file URLs."""
-        # Step 1: Validate input parameters, operational preconditions, and state
         if event.mimeData().hasUrls():
             event.acceptProposedAction()
         else:
@@ -609,7 +579,6 @@ class KnowledgeBaseWorkspace(QWidget):
 
     def dragMoveEvent(self, event):
         """Keep accepting supported URL drags while hovering over the workspace."""
-        # Step 1: Validate input parameters, operational preconditions, and state
         if event.mimeData().hasUrls():
             event.acceptProposedAction()
         else:
@@ -617,13 +586,11 @@ class KnowledgeBaseWorkspace(QWidget):
 
     def dropEvent(self, event):
         """Queue dropped supported files for ingestion."""
-        # Step 1: Validate input parameters, operational preconditions, and state
         urls = event.mimeData().urls()
         # Keep in sync with the file dialog filter and the ingest description text.
         supported_exts = {".pdf", ".docx", ".txt", ".md", ".py", ".csv"}
         new_paths = []
         for url in urls:
-            # Iterate over items, evaluate loop invariant, and update progress
             filepath = url.toLocalFile()
             if os.path.isfile(filepath):
                 ext = os.path.splitext(filepath)[1].lower()
@@ -631,7 +598,6 @@ class KnowledgeBaseWorkspace(QWidget):
                     new_paths.append(filepath)
         if new_paths:
             for p in new_paths:
-                # Iterate over items, evaluate loop invariant, and update progress
                 if not any(item["path"] == p for item in self._ingest_queue):
                     self._ingest_queue.append({"path": p, "status": "Pending", "error": ""})
             self._update_queue_ui()
@@ -640,7 +606,6 @@ class KnowledgeBaseWorkspace(QWidget):
 
     def _build_ui(self):
         """Build explorer, ingest, search, and vector sandbox tabs."""
-        # Step 1: Validate input parameters, operational preconditions, and state
         root = QVBoxLayout(self)
         root.setContentsMargins(12, 12, 12, 12)
         root.setSpacing(10)
@@ -702,7 +667,6 @@ class KnowledgeBaseWorkspace(QWidget):
 
     def _build_explorer_tab(self) -> QWidget:
         """Build the sources list (with remove/rebuild/clear) and the chunk inspector."""
-        # Step 1: Validate input parameters, operational preconditions, and state
         w = QWidget()
         layout = QHBoxLayout(w)
         layout.setContentsMargins(8, 8, 8, 8)
@@ -763,7 +727,6 @@ class KnowledgeBaseWorkspace(QWidget):
 
     def _build_ingest_tab(self) -> QWidget:
         """Build the chunk-size/overlap controls, the file picker, queue list and progress bar."""
-        # Step 1: Validate input parameters, operational preconditions, and state
         w = QWidget()
         layout = QVBoxLayout(w)
         layout.setContentsMargins(12, 12, 12, 12)
@@ -849,7 +812,6 @@ class KnowledgeBaseWorkspace(QWidget):
 
     def _build_search_tab(self) -> QWidget:
         """Build the search tester: distance threshold, top-k, mode, query box and result view."""
-        # Step 1: Validate input parameters, operational preconditions, and state
         w = QWidget()
         layout = QVBoxLayout(w)
         layout.setContentsMargins(12, 12, 12, 12)
@@ -938,7 +900,6 @@ class KnowledgeBaseWorkspace(QWidget):
 
     def _update_encoder_status(self):
         """Show whether the sentence encoder is loaded and enable Preload only if it is not."""
-        # Step 1: Validate input parameters, operational preconditions, and state
         loaded = self.state.rag.is_encoder_loaded
         self._model_status_lbl.setText(f"Encoder: {'Ready' if loaded else 'Lazy-loaded (Not loaded)'}")
         self._model_status_lbl.setStyleSheet(f"color: {'#00C2FF' if loaded else '#9090A8'}; font-weight: bold;")
@@ -946,7 +907,6 @@ class KnowledgeBaseWorkspace(QWidget):
 
     def _preload_encoder(self):
         """Load the encoder in the background so the first search/ingest is not slow."""
-        # Step 1: Validate input parameters, operational preconditions, and state
         self._model_status_lbl.setText("Encoder: Loading...")
         self._preload_btn.setEnabled(False)
         self._start_rag_operation(
@@ -958,7 +918,6 @@ class KnowledgeBaseWorkspace(QWidget):
 
     def _update_health_lbl(self):
         """Show index health: 'Healthy' needs chunks and a non-empty index file, else 'Empty'."""
-        # Step 1: Validate input parameters, operational preconditions, and state
         index_file = self.state.rag.INDEX_FILE
         index_size_kb = 0
         if os.path.exists(index_file):
@@ -969,11 +928,9 @@ class KnowledgeBaseWorkspace(QWidget):
 
     def _refresh_sources(self):
         """Reload the source list and the source/chunk counters."""
-        # Step 1: Validate input parameters, operational preconditions, and state
         self._source_list.clear()
         sources = self.state.rag.list_sources()
         for s in sources:
-            # Iterate over items, evaluate loop invariant, and update progress
             self._source_list.addItem(s)
         total = self.state.rag.total_chunks
         self._stats_lbl.setText(f"{len(sources)} sources · {total} chunks")
@@ -981,7 +938,6 @@ class KnowledgeBaseWorkspace(QWidget):
 
     def _on_source_selected(self, source: str):
         """Show up to 20 chunks of the selected source in the inspector (HTML-escaped)."""
-        # Step 1: Validate input parameters, operational preconditions, and state
         if not source:
             return
         docs = [
@@ -993,7 +949,6 @@ class KnowledgeBaseWorkspace(QWidget):
             f"<div style='font-size:9pt;color:#9090A8;margin-bottom:12px;'>Total {len(docs)} chunks ingested</div>"
         ]
         for d in docs[:20]:
-            # Iterate over items, evaluate loop invariant, and update progress
             lines.append(
                 f"<div style='background:#141424;border:1px solid #28283f;border-radius:6px;padding:12px;margin-bottom:12px;'>"
                 f"<div style='font-size:8.5pt;color:#9090A8;margin-bottom:6px;font-weight:bold;'>Chunk {d['chunk_id']}</div>"
@@ -1007,7 +962,6 @@ class KnowledgeBaseWorkspace(QWidget):
 
     def _ingest_file(self):
         """Open a file dialog and ingest the chosen files, replacing the queue."""
-        # Step 1: Validate input parameters, operational preconditions, and state
         paths, _ = QFileDialog.getOpenFileNames(
             self, "Add File(s) to Knowledge Base", "",
             "Documents (*.pdf *.docx *.txt *.md *.py *.csv);;All Files (*)"
@@ -1021,10 +975,8 @@ class KnowledgeBaseWorkspace(QWidget):
 
     def _update_queue_ui(self):
         """Redraw the queue list as '[status] filename - error'."""
-        # Step 1: Validate input parameters, operational preconditions, and state
         self._queue_list.clear()
         for item in self._ingest_queue:
-            # Iterate over items, evaluate loop invariant, and update progress
             fname = os.path.basename(item["path"])
             status = item["status"]
             err = f" - {item['error']}" if item["error"] else ""
@@ -1035,7 +987,6 @@ class KnowledgeBaseWorkspace(QWidget):
 
         When nothing is pending it finishes up: hide progress and refresh the lists.
         """
-        # Step 1: Validate input parameters, operational preconditions, and state
         pending = [item for item in self._ingest_queue if item["status"] == "Pending"]
         if not pending:
             self._progress.setVisible(False)
@@ -1045,7 +996,6 @@ class KnowledgeBaseWorkspace(QWidget):
             return
 
         for item in pending:
-            # Iterate over items, evaluate loop invariant, and update progress
             item["status"] = "Queued"
         self._update_queue_ui()
 
@@ -1070,7 +1020,6 @@ class KnowledgeBaseWorkspace(QWidget):
         # Per-file progress: update the bar/status text and mark the matching queue
         # entry (matched by file name) as done.
         def on_progress(current, total, filename, chunks, status):
-            # Step 1: Validate input parameters, operational preconditions, and state
             self._progress.setRange(0, max(1, total))
             self._progress.setValue(current)
             if filename:
@@ -1078,16 +1027,13 @@ class KnowledgeBaseWorkspace(QWidget):
                     f"Parsed {current}/{total}: {filename} ({chunks} chunks)"
                 )
                 for item in self._ingest_queue:
-                    # Iterate over items, evaluate loop invariant, and update progress
                     if os.path.basename(item["path"]) == filename:
                         item["status"] = "Done" if status == "parsed" else status.title()
                         break
             self._update_queue_ui()
 
         def on_done(filename, count):
-            # Step 1: Validate input parameters, operational preconditions, and state
             for item in self._ingest_queue:
-                # Iterate over items, evaluate loop invariant, and update progress
                 if item["status"] in {"Queued", "Parsed"}:
                     item["status"] = "Done"
             self._update_queue_ui()
@@ -1097,9 +1043,7 @@ class KnowledgeBaseWorkspace(QWidget):
             self._update_encoder_status()
             
         def on_error(msg):
-            # Step 1: Validate input parameters, operational preconditions, and state
             for item in self._ingest_queue:
-                # Iterate over items, evaluate loop invariant, and update progress
                 if item["status"] in {"Queued", "Parsed"}:
                     item["status"] = "Failed"
                     item["error"] = msg
@@ -1114,14 +1058,12 @@ class KnowledgeBaseWorkspace(QWidget):
 
     def _set_index_controls_enabled(self, enabled: bool):
         """Enable/disable the buttons that must not run while an index operation is active."""
-        # Step 1: Validate input parameters, operational preconditions, and state
         for control in (
             getattr(self, "_remove_btn", None),
             getattr(self, "_rebuild_btn", None),
             getattr(self, "_clear_btn", None),
             getattr(self, "_preload_btn", None),
         ):
-            # Iterate over items, evaluate loop invariant, and update progress
             if control is not None:
                 control.setEnabled(enabled)
 
@@ -1139,7 +1081,6 @@ class KnowledgeBaseWorkspace(QWidget):
         Disables index controls, shows an indeterminate progress bar and invokes the
         optional callbacks; returns False if another operation is already running.
         """
-        # Step 1: Validate input parameters, operational preconditions, and state
         if self._rag_operation_thread is not None and self._rag_operation_thread.isRunning():
             self._ingest_status.setText("Another index operation is already running.")
             return False
@@ -1152,7 +1093,6 @@ class KnowledgeBaseWorkspace(QWidget):
         thread = _RagOperationThread(self.state.rag, operation, argument)
 
         def on_done(msg: str):
-            # Step 1: Validate input parameters, operational preconditions, and state
             if done_cb is not None:
                 done_cb(msg)
             else:
@@ -1161,14 +1101,12 @@ class KnowledgeBaseWorkspace(QWidget):
                 self._ingest_status.setText(msg)
 
         def on_error(msg: str):
-            # Step 1: Validate input parameters, operational preconditions, and state
             if error_cb is not None:
                 error_cb(msg)
             else:
                 self._ingest_status.setText(f"Index operation error: {msg}")
 
         def on_finished():
-            # Step 1: Validate input parameters, operational preconditions, and state
             self._progress.setVisible(False)
             self._progress.setRange(0, 100)
             self._set_index_controls_enabled(True)
@@ -1188,7 +1126,6 @@ class KnowledgeBaseWorkspace(QWidget):
 
     def _remove_selected_source(self):
         """Confirm, then remove the selected source's chunks and rebuild the index."""
-        # Step 1: Validate input parameters, operational preconditions, and state
         curr_source = self._source_list.currentItem()
         if not curr_source:
             QMessageBox.warning(self, "No Selection", "Please select a source to remove.")
@@ -1215,7 +1152,6 @@ class KnowledgeBaseWorkspace(QWidget):
 
     def _rebuild_index(self):
         """Confirm, then re-encode every stored chunk (rebuild the vector index)."""
-        # Step 1: Validate input parameters, operational preconditions, and state
         reply = QMessageBox.question(
             self, "Rebuild Index",
             "This will re-encode all chunks in metadata. Proceed?",
@@ -1234,18 +1170,15 @@ class KnowledgeBaseWorkspace(QWidget):
 
     def open_ingest_dialog(self):
         """Public entry used by the command palette: show the ingest tab and the file dialog."""
-        # Step 1: Validate input parameters, operational preconditions, and state
         self._tabs.setCurrentIndex(1)
         self._ingest_file()
 
     def rebuild_index(self):
         """Public entry used by the command palette; same as the Rebuild button."""
-        # Step 1: Validate input parameters, operational preconditions, and state
         self._rebuild_index()
 
     def _send_query_to_workbench(self):
         """Switch to the Workbench (index 0) and put the query in its input box."""
-        # Step 1: Validate input parameters, operational preconditions, and state
         query = self._search_input.text().strip()
         if not query:
             return
@@ -1255,7 +1188,6 @@ class KnowledgeBaseWorkspace(QWidget):
 
     def _run_search(self):
         """Run the query in a background thread; empty index/query or a running search is ignored."""
-        # Step 1: Validate input parameters, operational preconditions, and state
         query = self._search_input.text().strip()
         if not query:
             return
@@ -1274,17 +1206,14 @@ class KnowledgeBaseWorkspace(QWidget):
         thread = _SearchThread(self.state.rag, query, top_k, mode)
 
         def on_done(done_query: str, results: list):
-            # Step 1: Validate input parameters, operational preconditions, and state
             self._render_search_results(done_query, results)
 
         def on_error(msg: str):
-            # Step 1: Validate input parameters, operational preconditions, and state
             self._search_results.setHtml(
                 f"<div style='color:#F05050;'>Search error: {html.escape(msg)}</div>"
             )
 
         def on_finished():
-            # Step 1: Validate input parameters, operational preconditions, and state
             self._search_btn.setEnabled(True)
             self._search_input.setEnabled(True)
             self._active_threads.discard(thread)
@@ -1306,7 +1235,6 @@ class KnowledgeBaseWorkspace(QWidget):
         filtering). Distance is colour coded: <0.3 green, <=0.7 amber, else red; the
         bar shows distance relative to the threshold.
         """
-        # Step 1: Validate input parameters, operational preconditions, and state
         from app.ui.themes import get_theme_colors
         colors = get_theme_colors(self.state)
         accent = colors.get("accent", "#00C2FF")
@@ -1330,7 +1258,6 @@ class KnowledgeBaseWorkspace(QWidget):
             f"<div style='font-size:9pt;color:{text_mid};margin-bottom:12px;'>Found {len(results)} chunks:</div>"
         ]
         for idx, r in enumerate(results):
-            # Iterate over items, evaluate loop invariant, and update progress
             dist = r["distance"]
             rank = r.get("rank", idx + 1)
             dist_color = "#2DD4A0" if dist < 0.3 else ("#F0B030" if dist <= 0.7 else "#F05050")
@@ -1363,14 +1290,11 @@ class KnowledgeBaseWorkspace(QWidget):
 
     def _handle_search_result_link(self, url):
         """Handle 'copy:<chunk_id>' links by copying that chunk's text to the clipboard."""
-        # Step 1: Validate input parameters, operational preconditions, and state
         link = url.toString()
         if link.startswith("copy:"):
             try:
-                # Execute guarded operations and establish recovery boundaries
                 chunk_id = int(link.split(":")[1])
                 for doc in self.state.rag.documents:
-                    # Iterate over items, evaluate loop invariant, and update progress
                     if doc.get("chunk_id") == chunk_id:
                         from PyQt6.QtGui import QGuiApplication
                         clipboard = QGuiApplication.clipboard()
@@ -1383,7 +1307,6 @@ class KnowledgeBaseWorkspace(QWidget):
 
     def _clear_index(self):
         """Confirm, then permanently delete the whole vector index."""
-        # Step 1: Validate input parameters, operational preconditions, and state
         reply = QMessageBox.question(
             self, "Clear index",
             "This permanently deletes the vector index and all ingested data. Continue?",
@@ -1403,13 +1326,11 @@ class KnowledgeBaseWorkspace(QWidget):
 
     def _load_rag_config(self):
         """Load threshold/top-k/mode from data/rag_config.json into AppState (defaults if absent)."""
-        # Step 1: Validate input parameters, operational preconditions, and state
         import json
         cfg_path = os.path.join("data", "rag_config.json")
         self.state.rag_mode = "dense"
         if os.path.exists(cfg_path):
             try:
-                # Execute guarded operations and establish recovery boundaries
                 with open(cfg_path, "r", encoding="utf-8") as f:
                     cfg = json.load(f)
                     self.state.rag_threshold = float(cfg.get("rag_threshold", 0.0))
@@ -1420,12 +1341,10 @@ class KnowledgeBaseWorkspace(QWidget):
 
     def _save_rag_config(self):
         """Persist the current retrieval settings; errors are ignored (settings are non-critical)."""
-        # Step 1: Validate input parameters, operational preconditions, and state
         import json
         os.makedirs("data", exist_ok=True)
         cfg_path = os.path.join("data", "rag_config.json")
         try:
-            # Execute guarded operations and establish recovery boundaries
             cfg = {
                 "rag_threshold": self.state.rag_threshold,
                 "rag_top_k": self.state.rag_top_k,
@@ -1438,19 +1357,16 @@ class KnowledgeBaseWorkspace(QWidget):
 
     def _on_threshold_changed(self, val):
         """Slot: store and persist the new distance threshold."""
-        # Step 1: Validate input parameters, operational preconditions, and state
         self.state.rag_threshold = val
         self._save_rag_config()
 
     def _on_topk_changed(self, val):
         """Slot: store and persist the new top-k."""
-        # Step 1: Validate input parameters, operational preconditions, and state
         self.state.rag_top_k = val
         self._save_rag_config()
 
     def _on_mode_changed(self, val):
         """Slot: store and persist the retrieval mode."""
-        # Step 1: Validate input parameters, operational preconditions, and state
         self.state.rag_mode = val
         self._save_rag_config()
 
@@ -1460,7 +1376,6 @@ class KnowledgeBaseWorkspace(QWidget):
 
     def _build_sandbox_tab(self) -> QWidget:
         """Build the sandbox: document builder (left) and math inspector tabs (right)."""
-        # Step 1: Validate input parameters, operational preconditions, and state
         w = QWidget()
         layout = QHBoxLayout(w)
         layout.setContentsMargins(8, 8, 8, 8)
@@ -1586,7 +1501,6 @@ class KnowledgeBaseWorkspace(QWidget):
 
     def _reset_sandbox_docs(self):
         """Restore the four default demo sentences and recompute."""
-        # Step 1: Validate input parameters, operational preconditions, and state
         self._sandbox_doc_list.clear()
         defaults = [
             "The quick brown fox jumps over the lazy dog",
@@ -1595,13 +1509,11 @@ class KnowledgeBaseWorkspace(QWidget):
             "The medical physician treated patients yesterday"
         ]
         for d in defaults:
-            # Iterate over items, evaluate loop invariant, and update progress
             self._sandbox_doc_list.addItem(d)
         self._recompute_sandbox()
 
     def _add_sandbox_doc(self):
         """Add the typed sentence to the sandbox and recompute."""
-        # Step 1: Validate input parameters, operational preconditions, and state
         text = self._sandbox_doc_input.text().strip()
         if text:
             self._sandbox_doc_list.addItem(text)
@@ -1610,7 +1522,6 @@ class KnowledgeBaseWorkspace(QWidget):
 
     def _remove_sandbox_doc(self):
         """Delete the selected sentence and recompute."""
-        # Step 1: Validate input parameters, operational preconditions, and state
         curr = self._sandbox_doc_list.currentItem()
         if curr:
             self._sandbox_doc_list.takeItem(self._sandbox_doc_list.row(curr))
@@ -1625,7 +1536,6 @@ class KnowledgeBaseWorkspace(QWidget):
         # Gather documents
         docs = []
         for i in range(self._sandbox_doc_list.count()):
-            # Iterate over items, evaluate loop invariant, and update progress
             docs.append(self._sandbox_doc_list.item(i).text())
 
         if not docs:
@@ -1642,7 +1552,6 @@ class KnowledgeBaseWorkspace(QWidget):
         self._sandbox_vocab_table.setRowCount(len(vocab))
         inv_vocab = {v: k for k, v in vocab.items()}
         for i in range(len(vocab)):
-            # Iterate over items, evaluate loop invariant, and update progress
             word = inv_vocab[i]
             # DF
             df_count = sum(1 for d in docs if word in self._tfidf.tokenize(d))
@@ -1667,19 +1576,15 @@ class KnowledgeBaseWorkspace(QWidget):
         # Collect all non-zero values to find the max
         all_vals = []
         for doc in docs:
-            # Iterate over items, evaluate loop invariant, and update progress
             vec = self._tfidf.transform(doc)
             for val in vec:
-                # Iterate over items, evaluate loop invariant, and update progress
                 if val > 0.0:
                     all_vals.append(val)
         max_val = max(all_vals) if all_vals else 1.0
 
         for r_idx, doc in enumerate(docs):
-            # Iterate over items, evaluate loop invariant, and update progress
             vec = self._tfidf.transform(doc)
             for c_idx in range(len(vocab)):
-                # Iterate over items, evaluate loop invariant, and update progress
                 val = vec[c_idx] if len(vec) > c_idx else 0.0
                 item = QTableWidgetItem(f"{val:.4f}" if val > 0 else "0.0")
                 if val > 0:
@@ -1700,7 +1605,6 @@ class KnowledgeBaseWorkspace(QWidget):
                 docs_tokens = [self._tfidf.tokenize(d) for d in docs]
                 df_counts = {}
                 for word in vocab:
-                    # Iterate over items, evaluate loop invariant, and update progress
                     df_counts[word] = sum(1 for tokens in docs_tokens if word in tokens)
                 
                 # Sort terms by DF descending, then alphabetically
@@ -1720,7 +1624,6 @@ class KnowledgeBaseWorkspace(QWidget):
                 
                 doc_points = []
                 for doc_idx, doc in enumerate(docs):
-                    # Iterate over items, evaluate loop invariant, and update progress
                     d_vec = self._tfidf.transform(doc)
                     d_x = float(d_vec[idx_x]) if idx_x >= 0 and len(d_vec) > idx_x else 0.0
                     d_y = float(d_vec[idx_y]) if idx_y >= 0 and len(d_vec) > idx_y else 0.0
@@ -1744,14 +1647,12 @@ class KnowledgeBaseWorkspace(QWidget):
         dot product) and ranks documents by score; vectors are already L2-normalised
         so the dot product is the cosine similarity.
         """
-        # Step 1: Validate input parameters, operational preconditions, and state
         query = self._sandbox_query_input.text().strip()
         if not query:
             return
 
         docs = []
         for i in range(self._sandbox_doc_list.count()):
-            # Iterate over items, evaluate loop invariant, and update progress
             docs.append(self._sandbox_doc_list.item(i).text())
 
         if not docs or not self._tfidf.vocabulary:
@@ -1773,7 +1674,6 @@ class KnowledgeBaseWorkspace(QWidget):
         # Show query vector non-zero terms
         q_non_zero = []
         for i, val in enumerate(q_vec):
-            # Iterate over items, evaluate loop invariant, and update progress
             if val > 0:
                 q_non_zero.append(f"{inv_vocab[i]}: {val:.4f}")
         q_vec_str = ", ".join(q_non_zero) if q_non_zero else "None (No overlapping vocabulary words)"
@@ -1783,14 +1683,12 @@ class KnowledgeBaseWorkspace(QWidget):
         # Compute cosine similarity for each document and explain
         ranked_docs = []
         for doc_idx, doc in enumerate(docs):
-            # Iterate over items, evaluate loop invariant, and update progress
             d_vec = self._tfidf.transform(doc)
             sim = self._tfidf.cosine_similarity(q_vec, d_vec)
 
             # Detail the math
             overlap_calcs = []
             for i in range(len(vocab)):
-                # Iterate over items, evaluate loop invariant, and update progress
                 q_val = q_vec[i]
                 d_val = d_vec[i]
                 if q_val > 0.0 and d_val > 0.0:
@@ -1798,7 +1696,6 @@ class KnowledgeBaseWorkspace(QWidget):
 
             equation_parts = []
             for word, qv, dv, prod in overlap_calcs:
-                # Iterate over items, evaluate loop invariant, and update progress
                 equation_parts.append(f"({word}: {qv:.3f} &times; {dv:.3f} = {prod:.4f})")
             
             calc_text = " + ".join(equation_parts) if equation_parts else "0.0"
@@ -1818,7 +1715,6 @@ class KnowledgeBaseWorkspace(QWidget):
         ranked_docs.sort(key=lambda x: x["similarity"], reverse=True)
 
         for rd in ranked_docs:
-            # Iterate over items, evaluate loop invariant, and update progress
             sim = rd["similarity"]
             pct = sim * 100
             color = "#00C2FF" if sim > 0.3 else "#505068"
@@ -1846,7 +1742,6 @@ class KnowledgeBaseWorkspace(QWidget):
         docs_tokens = [self._tfidf.tokenize(d) for d in docs]
         df_counts = {}
         for word in vocab:
-            # Iterate over items, evaluate loop invariant, and update progress
             df_counts[word] = sum(1 for tokens in docs_tokens if word in tokens)
         
         # Sort terms by DF descending, then alphabetically
@@ -1871,7 +1766,6 @@ class KnowledgeBaseWorkspace(QWidget):
         # Compute coordinates for documents
         doc_points = []
         for doc_idx, doc in enumerate(docs):
-            # Iterate over items, evaluate loop invariant, and update progress
             d_vec = self._tfidf.transform(doc)
             sim = self._tfidf.cosine_similarity(q_vec, d_vec)
             

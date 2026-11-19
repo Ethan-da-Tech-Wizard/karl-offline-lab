@@ -60,17 +60,14 @@ def _check_syntax(filepath: str, content: str) -> tuple[bool, str]:
 
     Other file types are assumed valid because no parser is available for them.
     """
-    # Step 1: Validate input parameters, operational preconditions, and state
     if filepath.endswith(".py"):
         try:
-            # Execute guarded operations and establish recovery boundaries
             ast.parse(content)
             return True, ""
         except SyntaxError as exc:
             return False, f"SyntaxError: {exc.msg} at line {exc.lineno}"
     if filepath.endswith(".json"):
         try:
-            # Execute guarded operations and establish recovery boundaries
             json.loads(content)
             return True, ""
         except json.JSONDecodeError as exc:
@@ -84,11 +81,9 @@ def _lint_violation_count(filepath: str, content: str) -> int:
     The code is written to a temp file (pyflakes needs a path). Linter problems
     never fail scoring: they just count as zero violations.
     """
-    # Step 1: Validate input parameters, operational preconditions, and state
     if not filepath.endswith(".py") or not content.strip():
         return 0
     try:
-        # Execute guarded operations and establish recovery boundaries
         with tempfile.NamedTemporaryFile("w", suffix=".py", delete=False, encoding="utf-8") as tf:
             tf.write(content)
             tmp_path = tf.name
@@ -106,7 +101,6 @@ def _lint_violation_count(filepath: str, content: str) -> int:
     # undefined and the NameError is swallowed by this inner try/except.
     finally:
         try:
-            # Execute guarded operations and establish recovery boundaries
             Path(tmp_path).unlink(missing_ok=True)
         except Exception:
             pass
@@ -117,7 +111,6 @@ def _diff_size(original: str, candidate: str) -> int:
 
     A brand-new file (empty original) has size 0 so creation is not penalized.
     """
-    # Step 1: Validate input parameters, operational preconditions, and state
     if not original:
         return 0
     a = original.splitlines()
@@ -132,7 +125,6 @@ def _signature_alignment(content: str, known_names: set[str]) -> float:
     to check against (empty index, or no call-like tokens found) so a
     workspace with no memory index doesn't unfairly tank every candidate.
     """
-    # Step 1: Validate input parameters, operational preconditions, and state
     if not known_names:
         return 1.0
     called = set(re.findall(r"\b([a-zA-Z_][a-zA-Z0-9_]*)\s*\(", content))
@@ -154,7 +146,6 @@ def score_candidate(
     known_names: set[str] | None = None,
 ) -> dict[str, Any]:
     """Score a single candidate. Returns a breakdown dict with 'total_score'."""
-    # Step 1: Validate input parameters, operational preconditions, and state
     syntax_ok, syntax_error = _check_syntax(filepath, content)
     # Skip lint when the file does not even parse; the syntax penalty already dominates.
     lint_violations = _lint_violation_count(filepath, content) if syntax_ok else 0
@@ -194,7 +185,6 @@ def select_winner(
     Ties are broken by preferring the earlier candidate (lower temperature /
     more conservative persona — see CoderAgent.PERSONAS ordering).
     """
-    # Step 1: Validate input parameters, operational preconditions, and state
     if not candidates:
         raise ValueError("select_winner() requires at least one candidate")
 

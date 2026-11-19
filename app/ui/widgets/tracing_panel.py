@@ -22,7 +22,6 @@ class TracingPanel(QFrame):
     """
     def __init__(self, state, parent=None):
         """Create an idle panel; the 25 ms timer is only started while active."""
-        # Step 1: Validate input parameters, operational preconditions, and state
         super().__init__(parent)
         self.state = state
         self._active = False
@@ -40,14 +39,12 @@ class TracingPanel(QFrame):
 
     def set_active(self, active: bool):
         """Turn the tracing animation on or off."""
-        # Step 1: Validate input parameters, operational preconditions, and state
         self._active = active
         self._update_timer_state()
         self.update()
 
     def set_accent_color(self, hex_color: str):
         """Override the trace colour (hex string); None-equivalent falls back to the theme accent."""
-        # Step 1: Validate input parameters, operational preconditions, and state
         self._accent_color = hex_color
         self.update()
 
@@ -57,7 +54,6 @@ class TracingPanel(QFrame):
         No timer when inactive, when reduced motion is on, or when the theme's
         motion style is "static" -- saves CPU and respects accessibility settings.
         """
-        # Step 1: Validate input parameters, operational preconditions, and state
         is_reduced = getattr(self.state, "reduced_motion", False) if self.state else False
         colors = get_theme_colors(self.state) if self.state else {}
         motion_style = colors.get("motion_style", "normal")
@@ -70,7 +66,6 @@ class TracingPanel(QFrame):
 
     def _on_tick(self):
         """Advance one animation frame (called every 25 ms)."""
-        # Step 1: Validate input parameters, operational preconditions, and state
         intensity = getattr(self.state, "animation_intensity", 1.0) if self.state else 1.0
         colors = get_theme_colors(self.state) if self.state else {}
         motion_style = colors.get("motion_style", "normal")
@@ -97,13 +92,11 @@ class TracingPanel(QFrame):
 
     def update_style(self):
         """Re-evaluate the timer and repaint after theme/appearance changes."""
-        # Step 1: Validate input parameters, operational preconditions, and state
         self._update_timer_state()
         self.update()
 
     def paintEvent(self, event):
         """Draw the border outline: static/pulse as a solid line, otherwise a moving dash."""
-        # Step 1: Validate input parameters, operational preconditions, and state
         super().paintEvent(event)
         if not self._active:
             return

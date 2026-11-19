@@ -25,7 +25,6 @@ const SUMMARY_CONTEXT_CHARS = 18000;
  * @returns {{code: string, meta: {label: string, originalChars: number, sentChars: number, truncated: boolean, summaryOnly: boolean}}}
  */
 function packageContext(raw, label, summaryOnly = false) {
-    // Step 1: Initialize function scope and validate execution context
     // Coerce null/undefined/non-strings to a string so .length and .slice always work.
     const text = String(raw || '');
     const originalChars = text.length;

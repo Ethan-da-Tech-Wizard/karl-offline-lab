@@ -62,7 +62,6 @@ def _clamp_max_tokens_to_context(
     """Identical to app/engine/llm_thread.py's helper of the same name -- see
     that file for the full rationale. Kept duplicated per this file's
     existing convention of mirroring llm_thread.py's per-generation helpers."""
-    # Step 1: Validate input parameters, operational preconditions, and state
     remaining = context_budget - current_prompt_tokens - safety_margin
     return max(0, min(configured_max_tokens, remaining))
 
@@ -76,9 +75,7 @@ def _trim_memory() -> None:
     this was reproduced against). Kept duplicated per this file's existing
     convention of mirroring llm_thread.py's per-generation helpers.
     """
-    # Step 1: Validate input parameters, operational preconditions, and state
     try:
-        # Execute guarded operations and establish recovery boundaries
         import ctypes
         ctypes.CDLL("libc.so.6").malloc_trim(0)
     except Exception:
@@ -87,9 +84,7 @@ def _trim_memory() -> None:
 
 def _get_gpu_temp() -> float | None:
     """Return the hottest GPU temp across all NVML-monitored GPUs, or None."""
-    # Step 1: Validate input parameters, operational preconditions, and state
     try:
-        # Execute guarded operations and establish recovery boundaries
         from core.hardware_scout import get_hardware_profile
         temps = [
             g["temperature_c"]
@@ -104,13 +99,11 @@ def _get_gpu_temp() -> float | None:
 # True when `text` starts with "{" and its braces balance (string/escape aware):
 # detects the end of a compact "Machine Speak" JSON trace while streaming.
 def _json_object_complete(text: str) -> bool:
-    # Step 1: Validate input parameters, operational preconditions, and state
     depth = 0
     in_string = False
     escaped = False
     started = False
     for ch in text.lstrip():
-        # Iterate over items, evaluate loop invariant, and update progress
         if not started:
             if ch != "{":
                 return False
@@ -147,16 +140,13 @@ def _salvage_compact_trace_fields(buffer: str) -> tuple[str, str]:
     ("thinking"/"response") field values directly so a malformed trace
     doesn't leak raw JSON scaffolding to the user as the chat response."""
 
-    # Step 1: Validate input parameters, operational preconditions, and state
     # Local helper: regex-extract one JSON string value, decoding escapes when possible.
     def _extract(key: str) -> str:
-        # Step 1: Validate input parameters, operational preconditions, and state
         match = re.search(rf'"{re.escape(key)}"\s*:\s*"((?:\\.|[^"\\])*)"', buffer)
         if not match:
             return ""
         raw = match.group(1)
         try:
-            # Execute guarded operations and establish recovery boundaries
             return json.loads(f'"{raw}"')
         except Exception:
             return raw.replace('\\"', '"').replace("\\n", "\n")
@@ -169,10 +159,8 @@ def _salvage_compact_trace_fields(buffer: str) -> tuple[str, str]:
 # Decode a compact trace and push its thought/response to the parser's emitters;
 # returns False when the buffer isn't a trace (caller falls back to raw text).
 def _emit_compacted_generation(buffer: str, parser: StreamingThoughtParser) -> bool:
-    # Step 1: Validate input parameters, operational preconditions, and state
     stripped = buffer.strip()
     try:
-        # Execute guarded operations and establish recovery boundaries
         trace = decompact_trace(stripped)
     except Exception as exc:
         if _COMPACT_TRACE_MARKER not in stripped:
@@ -247,7 +235,6 @@ class AgenticThread(QThread):
             adapter_name: Optional LoRA adapter for ModelLoader.
             model_name: Optional display/trace model name override.
         """
-        # Step 1: Validate input parameters, operational preconditions, and state
         super().__init__()
         self.system_prompt = system_prompt
         # Copy so appending assistant turns / injected prompts never mutates the caller's list.
@@ -272,30 +259,25 @@ class AgenticThread(QThread):
 
     def request_stop(self):
         """Request cooperative cancellation and stop the watchdog."""
-        # Step 1: Validate input parameters, operational preconditions, and state
         self._stop_requested = True
         self._watchdog_stop.set()
 
     # Watchdog and token-counting helpers below behave exactly like their llm_thread twins.
     def _mark_token_activity(self):
-        # Step 1: Validate input parameters, operational preconditions, and state
         self.last_token_timestamp = time.time()
 
     def _emit_watchdog_timeout(self):
-        # Step 1: Validate input parameters, operational preconditions, and state
         if self._watchdog_error_emitted:
             return
         self._watchdog_error_emitted = True
         self.error_occurred.emit(_WATCHDOG_ERROR)
 
     def _cleanup_after_watchdog_timeout(self, llm=None):
-        # Step 1: Validate input parameters, operational preconditions, and state
         self._stop_requested = True
         self._watchdog_timed_out = True
         self._emit_watchdog_timeout()
         if self.task_id:
             try:
-                # Execute guarded operations and establish recovery boundaries
                 TaskSupervisor.instance().fail(self.task_id, _WATCHDOG_ERROR)
             except Exception:
                 pass
@@ -303,29 +285,24 @@ class AgenticThread(QThread):
         close_fn = getattr(generator, "close", None)
         if callable(close_fn):
             try:
-                # Execute guarded operations and establish recovery boundaries
                 close_fn()
             except Exception:
                 pass
         reset_fn = getattr(llm, "reset", None)
         if callable(reset_fn):
             try:
-                # Execute guarded operations and establish recovery boundaries
                 reset_fn()
             except Exception:
                 pass
 
     def _start_watchdog(self, llm=None) -> threading.Thread:
-        # Step 1: Validate input parameters, operational preconditions, and state
         self._watchdog_stop.clear()
         self._watchdog_timed_out = False
         self._watchdog_error_emitted = False
         self._mark_token_activity()
 
         def _monitor():
-            # Step 1: Validate input parameters, operational preconditions, and state
             while not self._watchdog_stop.wait(0.25):
-                # Iterate over items, evaluate loop invariant, and update progress
                 if self._stop_requested:
                     return
                 if time.time() - self.last_token_timestamp > self.watchdog_timeout_seconds:
@@ -337,17 +314,14 @@ class AgenticThread(QThread):
         return thread
 
     def _stop_watchdog(self, thread: threading.Thread | None):
-        # Step 1: Validate input parameters, operational preconditions, and state
         self._watchdog_stop.set()
         if thread and thread.is_alive():
             thread.join(timeout=1.0)
 
     def _token_count(self, llm, text: str) -> int:
-        # Step 1: Validate input parameters, operational preconditions, and state
         if not text:
             return 0
         try:
-            # Execute guarded operations and establish recovery boundaries
             return len(llm.tokenize(text.encode("utf-8"), add_bos=False))
         except TypeError:
             return len(llm.tokenize(text.encode("utf-8")))
@@ -356,7 +330,6 @@ class AgenticThread(QThread):
             return max(1, len(text) // 3)
 
     def _message_token_count(self, llm, msg) -> int:
-        # Step 1: Validate input parameters, operational preconditions, and state
         role = msg.get("role", "")
         content = msg.get("content", "")
         return self._token_count(llm, f"<|im_start|>{role}\n{content}<|im_end|>\n")
@@ -372,7 +345,6 @@ class AgenticThread(QThread):
         # Find all assistant turns with think blocks, except the most recent one
         assistant_indices = []
         for i, msg in enumerate(history):
-            # Iterate over items, evaluate loop invariant, and update progress
             if msg.get("role") == "assistant" and "<think>" in msg.get("content", "") and "</think>" in msg.get("content", ""):
                 assistant_indices.append(i)
         
@@ -406,7 +378,6 @@ class AgenticThread(QThread):
         
         Always keeps the first user message (the seed) and the most recent turns.
         """
-        # Step 1: Validate input parameters, operational preconditions, and state
         # History budget = window - reply reserve - system prompt tokens (floor 256).
         context_budget = ModelLoader.context_limit()
         base_tokens = self._token_count(llm, system_prompt)
@@ -422,7 +393,6 @@ class AgenticThread(QThread):
         kept = []
         running = 0
         for msg in reversed(processed):
-            # Iterate over items, evaluate loop invariant, and update progress
             entry_len = self._message_token_count(llm, msg)
             if running + entry_len > budget and kept:
                 break  # Stop adding older messages
@@ -441,9 +411,7 @@ class AgenticThread(QThread):
         return kept
 
     def _response_reserve(self) -> int:
-        # Step 1: Validate input parameters, operational preconditions, and state
         try:
-            # Execute guarded operations and establish recovery boundaries
             max_tokens = int(self.hyperparams.get("max_tokens", _RESPONSE_RESERVE))
         except Exception:
             max_tokens = _RESPONSE_RESERVE
@@ -451,14 +419,12 @@ class AgenticThread(QThread):
 
     def _build_prompt_with_context_budget(self, llm, system_prompt: str, history: list[dict]):
         """Compile the prompt and enforce a final tokenizer-measured budget."""
-        # Step 1: Validate input parameters, operational preconditions, and state
         budget = max(256, ModelLoader.context_limit() - self._response_reserve())
         working_history = [dict(m) for m in history]
         working_system = system_prompt
         changed = False
 
         def _compile():
-            # Step 1: Validate input parameters, operational preconditions, and state
             core.interaction_loop.ACTIVE_HYPERPARAMS = self.hyperparams
             prompt_text = core.interaction_loop.build_prompt(working_system, working_history)
             return prompt_text, self._token_count(llm, prompt_text)
@@ -466,7 +432,6 @@ class AgenticThread(QThread):
         prompt, tokens = _compile()
 
         while working_history and tokens > budget:
-            # Iterate over items, evaluate loop invariant, and update progress
             if len(working_history) > 1:
                 working_history.pop(0)
                 changed = True
@@ -483,7 +448,6 @@ class AgenticThread(QThread):
             prompt, tokens = _compile()
 
         while tokens > budget and len(working_system) > 512:
-            # Iterate over items, evaluate loop invariant, and update progress
             keep = max(512, len(working_system) // 2)
             working_system = (
                 working_system[:keep]
@@ -500,7 +464,6 @@ class AgenticThread(QThread):
         return prompt, working_history, working_system, tokens, budget
 
     def _is_repetitive_response(self, previous: str, current: str) -> bool:
-        # Step 1: Validate input parameters, operational preconditions, and state
         # Normalize whitespace/case, then treat two long (>=80 chars) responses that are
         # >=96% similar as a loop: the model is repeating itself, so the loop should end.
         prev = " ".join((previous or "").split()).lower()
@@ -511,7 +474,6 @@ class AgenticThread(QThread):
 
     def _run_single_generation(self, llm, prompt, raw_file, thermal_enabled: bool = False):
         """Runs streaming generation, continuing automatically if truncated."""
-        # Step 1: Validate input parameters, operational preconditions, and state
         global _thermal_suspended
         raw_output = ""
         # Determine starting mode for the streaming parser.
@@ -604,9 +566,7 @@ class AgenticThread(QThread):
             state_transitioned = False
 
             try:
-                # Execute guarded operations and establish recovery boundaries
                 for chunk in response_gen:
-                    # Iterate over items, evaluate loop invariant, and update progress
                     if self._watchdog_timed_out or self._stop_requested:
                         break
                     if 'choices' not in chunk or not chunk['choices']:
@@ -703,7 +663,6 @@ class AgenticThread(QThread):
             if current_tokens_count > 0.8 * context_budget and parser.parsed_thought:
                 self.new_thought_token.emit("\n[Context full — compressing cognitive state...]\n")
                 try:
-                    # Execute guarded operations and establish recovery boundaries
                     compress_prompt = (
                         "<|im_start|>system\n"
                         "You are a cognitive compression tool. Summarize the reasoning steps, calculations, "
@@ -770,7 +729,6 @@ class AgenticThread(QThread):
         CircuitBreakerOpenException is converted into error_occurred with the
         operator-facing circuit-breaker message.
         """
-        # Step 1: Validate input parameters, operational preconditions, and state
         # Register with the supervisor so the loop can be listed and cancelled.
         supervisor = TaskSupervisor.instance()
         if self.task_id is None:
@@ -782,7 +740,6 @@ class AgenticThread(QThread):
         original_affinity = None
         lock_held = False  # set once acquire_instance() has taken the inference lock
         try:
-            # Execute guarded operations and establish recovery boundaries
             import os
             import psutil
             if hasattr(os, "sched_getaffinity") and hasattr(os, "sched_setaffinity"):
@@ -797,7 +754,6 @@ class AgenticThread(QThread):
 
         # Hot-reload the user-editable prompt/loop modules so edits apply to this run.
         try:
-            # Execute guarded operations and establish recovery boundaries
             core.interaction_loop = compile_and_reload(
                 core.interaction_loop,
                 "core/interaction_loop.py",
@@ -874,7 +830,6 @@ class AgenticThread(QThread):
 
                 # Emit context budget stats for the HUD
                 try:
-                    # Execute guarded operations and establish recovery boundaries
                     # The HUD stats are best-effort; a tokenizer error here must never abort generation, hence
                     # the broad except below.
                     hist_tokens = sum(self._message_token_count(llm, m) for m in trimmed_history)
@@ -938,12 +893,9 @@ class AgenticThread(QThread):
                 gpu_temp = _get_gpu_temp()
                 throttle_reasons = []
                 try:
-                    # Execute guarded operations and establish recovery boundaries
                     from core.hardware_scout import get_hardware_profile
                     for gpu in get_hardware_profile().get("gpu_list", []):
-                        # Iterate over items, evaluate loop invariant, and update progress
                         for alert in gpu.get("alerts", []):
-                            # Iterate over items, evaluate loop invariant, and update progress
                             # De-duplicated so a multi-GPU box with the same alert on every card logs it once.
                             if alert not in throttle_reasons:
                                 throttle_reasons.append(alert)
@@ -969,7 +921,6 @@ class AgenticThread(QThread):
                         # 150 x 0.1 s = the 15 s cooldown, in short sleeps so a stop request is honoured within
                         # ~0.1 s instead of after the whole wait.
                         for _ in range(150):
-                            # Iterate over items, evaluate loop invariant, and update progress
                             if self._stop_requested:
                                 break
                             time.sleep(0.1)
@@ -981,7 +932,6 @@ class AgenticThread(QThread):
                         )
                         # 50 x 0.1 s = 5 s, again polling the stop flag.
                         for _ in range(50):
-                            # Iterate over items, evaluate loop invariant, and update progress
                             if self._stop_requested:
                                 break
                             time.sleep(0.1)
@@ -1077,7 +1027,6 @@ class AgenticThread(QThread):
             # Restore original CPU affinity
             if original_affinity:
                 try:
-                    # Execute guarded operations and establish recovery boundaries
                     import os
                     if hasattr(os, "sched_setaffinity"):
                         os.sched_setaffinity(0, original_affinity)

@@ -46,7 +46,6 @@ class ImageAnalysisThread(QThread):
         prompt: str | None = None,
         parent=None,
     ):
-        # Step 1: Validate input parameters, operational preconditions, and state
         """Store the image store, target image id, OCR language, analysis mode and optional prompt."""
         super().__init__(parent)
         self.image_store = image_store
@@ -56,13 +55,11 @@ class ImageAnalysisThread(QThread):
         self.prompt = prompt
 
     def run(self):
-        # Step 1: Validate input parameters, operational preconditions, and state
         """Thread body: OCR (if the mode asks for it), then vision analysis, then emit ``done``.
 
         Each stage persists its result immediately so partial work survives a later failure.
         """
         try:
-            # Execute guarded operations and establish recovery boundaries
             record = self.image_store.get(self.image_id)
             # Prefer the OCR-normalized copy; fall back to the original file.
             image_path = record.processed_path or record.original_path

@@ -22,13 +22,11 @@ logger = logging.getLogger("karl.tool_executor")
 
 def build_tool_schema_prompt(tools: list[dict]) -> str:
     """Convert MCP tool list to a prompt-injectable XML schema block."""
-    # Step 1: Validate input parameters, operational preconditions, and state
     if not tools:
         return ""
     # The model is told about tools through a small XML-like block in the prompt (no native function-calling API).
     lines = ["<available_tools>"]
     for t in tools:
-        # Iterate over items, evaluate loop invariant, and update progress
         schema = t.get("input_schema", {})
         props = schema.get("properties", {})
         param_strs = [
@@ -55,13 +53,11 @@ def build_tool_schema_prompt(tools: list[dict]) -> str:
 
 def parse_tool_calls(text: str) -> list[dict]:
     """Extract all <tool_call> blocks from model output."""
-    # Step 1: Validate input parameters, operational preconditions, and state
     calls = []
     # Match <tool_call server='..' name='..'>body</tool_call>; DOTALL lets bodies span lines.
     # Attributes are parsed separately so server= and name= are accepted in either order and
     # with either quote style; a call with no name cannot be dispatched and is skipped.
     for m in re.finditer(r"<tool_call((?:\s+[a-zA-Z_]+\s*=\s*(?:'[^']*'|\"[^\"]*\"))*)\s*>(.*?)</tool_call>", text, re.DOTALL):
-        # Iterate over items, evaluate loop invariant, and update progress
         attrs = {
             a.group(1): a.group(2) if a.group(2) is not None else a.group(3)
             for a in re.finditer(r"([a-zA-Z_]+)\s*=\s*(?:'([^']*)'|\"([^\"]*)\")", m.group(1))
@@ -77,7 +73,6 @@ def parse_tool_calls(text: str) -> list[dict]:
         lines = body.splitlines()
         i = 0
         while i < len(lines):
-            # Iterate over items, evaluate loop invariant, and update progress
             line = lines[i]
             match = re.match(r"^\s*([a-zA-Z_][a-zA-Z0-9_-]*)\s*:(.*)$", line)
             if match:
@@ -117,23 +112,19 @@ def parse_tool_calls(text: str) -> list[dict]:
 
 def execute_tool_calls(calls: list[dict]) -> list[str]:
     """Execute a list of parsed tool calls via MCPClientManager. Returns result strings."""
-    # Step 1: Validate input parameters, operational preconditions, and state
     # Lazy import: MCP is optional and heavy.
     from app.engine.mcp_client import MCPClientManager
     results = []
     try:
-        # Execute guarded operations and establish recovery boundaries
         manager = MCPClientManager.get_instance()
     except Exception as e:
         return [f"<tool_result>ERROR: MCP manager unavailable: {e}</tool_result>"]
 
     for call in calls:
-        # Iterate over items, evaluate loop invariant, and update progress
         if call["name"] == "done":
             results.append("<tool_result name='done'>OK</tool_result>")
             continue
         try:
-            # Execute guarded operations and establish recovery boundaries
             resp = manager.call_tool(call["server"], call["name"], call["args"])
             if resp.get("is_error"):
                 text = resp.get("error", "Unknown error")

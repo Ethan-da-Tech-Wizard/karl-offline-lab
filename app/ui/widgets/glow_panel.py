@@ -20,7 +20,6 @@ class GlowPanel(QFrame):
     """
     def __init__(self, state, parent=None, glow_color=None, blur_radius=12):
         """Create the panel; `glow_color` overrides the theme accent, `blur_radius` is the base blur."""
-        # Step 1: Validate input parameters, operational preconditions, and state
         super().__init__(parent)
         self.state = state
         self._glow_color = glow_color
@@ -34,7 +33,6 @@ class GlowPanel(QFrame):
 
     def set_glow_color(self, hex_color: str):
         """Override the glow colour (hex string) and re-apply the effect."""
-        # Step 1: Validate input parameters, operational preconditions, and state
         self._glow_color = hex_color
         self._apply_glow()
 
@@ -44,7 +42,6 @@ class GlowPanel(QFrame):
         No glow when reduced motion is on, glow is disabled, or strength is <= 0 --
         the effect is a GPU/CPU cost and an accessibility concern.
         """
-        # Step 1: Validate input parameters, operational preconditions, and state
         is_reduced = getattr(self.state, "reduced_motion", False) if self.state else False
         glow_enabled = getattr(self.state, "glow_enabled", True) if self.state else True
         glow_strength = getattr(self.state, "glow_strength", 1.0) if self.state else 1.0
@@ -72,5 +69,4 @@ class GlowPanel(QFrame):
             
     def update_style(self):
         """Refresh the glow after theme/appearance settings change."""
-        # Step 1: Validate input parameters, operational preconditions, and state
         self._apply_glow()

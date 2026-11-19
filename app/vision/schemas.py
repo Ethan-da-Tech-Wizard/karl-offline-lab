@@ -33,7 +33,6 @@ class OcrResult:
 
     @classmethod
     def from_dict(cls, data: dict[str, Any] | None) -> "OcrResult":
-        # Step 1: Validate input parameters, operational preconditions, and state
         # Accept None so callers can pass a record that has no OCR section yet.
         """Build an OcrResult from a possibly-None dict, filling defaults for missing keys."""
         data = data or {}
@@ -47,7 +46,6 @@ class OcrResult:
         )
 
     def to_dict(self) -> dict[str, Any]:
-        # Step 1: Validate input parameters, operational preconditions, and state
         """Return a plain nested dict suitable for json.dumps."""
         return asdict(self)
 
@@ -65,7 +63,6 @@ class VisionResult:
 
     @classmethod
     def from_dict(cls, data: dict[str, Any] | None) -> "VisionResult":
-        # Step 1: Validate input parameters, operational preconditions, and state
         """Build a VisionResult from a possibly-None dict, filling defaults for missing keys."""
         data = data or {}
         return cls(
@@ -79,7 +76,6 @@ class VisionResult:
         )
 
     def to_dict(self) -> dict[str, Any]:
-        # Step 1: Validate input parameters, operational preconditions, and state
         """Return a plain nested dict suitable for json.dumps."""
         return asdict(self)
 
@@ -121,7 +117,6 @@ class ImageRecord:
 
     @classmethod
     def from_dict(cls, data: dict[str, Any]) -> "ImageRecord":
-        # Step 1: Validate input parameters, operational preconditions, and state
         """Rebuild an ImageRecord from stored JSON; only ``id`` is mandatory.
 
         Nested ocr/vision dicts are converted back into their dataclasses.
@@ -146,7 +141,6 @@ class ImageRecord:
         )
 
     def to_dict(self) -> dict[str, Any]:
-        # Step 1: Validate input parameters, operational preconditions, and state
         """Serialize to a JSON-ready dict."""
         data = asdict(self)
         # asdict() already recurses, but we call to_dict explicitly so any custom

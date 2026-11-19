@@ -48,7 +48,6 @@ class DefinitionVisitor(ast.NodeVisitor):
 
     def __init__(self, source: str, filepath: str):
         """Keep the source lines (for slicing out each definition's text) and the file path recorded in each entry."""
-        # Step 1: Validate input parameters, operational preconditions, and state
         self.lines = source.splitlines()
         self.filepath = filepath
         self.definitions: list[dict] = []
@@ -56,35 +55,29 @@ class DefinitionVisitor(ast.NodeVisitor):
 
     def visit_ClassDef(self, node: ast.ClassDef) -> None:
         """Record the class itself, then record its direct methods only (nested classes are not descended into)."""
-        # Step 1: Validate input parameters, operational preconditions, and state
         self.definitions.append(self._build_entry(node, kind="class", qualname=node.name))
         self._class_stack.append(node.name)
         for child in node.body:
-            # Iterate over items, evaluate loop invariant, and update progress
             if isinstance(child, (ast.FunctionDef, ast.AsyncFunctionDef)):
                 self._record_function(child)
         self._class_stack.pop()
 
     def visit_FunctionDef(self, node: ast.FunctionDef) -> None:
         """Record a module-level function."""
-        # Step 1: Validate input parameters, operational preconditions, and state
         self._record_function(node)
 
     def visit_AsyncFunctionDef(self, node: ast.AsyncFunctionDef) -> None:
         """Record a module-level async function."""
-        # Step 1: Validate input parameters, operational preconditions, and state
         self._record_function(node)
 
     def _record_function(self, node: ast.FunctionDef | ast.AsyncFunctionDef) -> None:
         """Add a function/method entry; its qualname is prefixed with the enclosing class name when inside a class."""
-        # Step 1: Validate input parameters, operational preconditions, and state
         qualname = ".".join(self._class_stack + [node.name])
         kind = "method" if self._class_stack else "function"
         self.definitions.append(self._build_entry(node, kind=kind, qualname=qualname))
 
     def _build_entry(self, node: ast.AST, kind: str, qualname: str) -> dict:
         """Build the metadata dict for one definition: docstring, formatted args, return annotation, line span (including decorators) and its dedented source text."""
-        # Step 1: Validate input parameters, operational preconditions, and state
         docstring = ast.get_docstring(node) or ""
         args = self._format_args(node) if kind != "class" else ""
         returns = ""
@@ -118,7 +111,6 @@ class DefinitionVisitor(ast.NodeVisitor):
     @staticmethod
     def _format_args(node: ast.FunctionDef | ast.AsyncFunctionDef) -> str:
         """Render a function's parameter list (positional, *args or bare *, keyword-only, **kwargs) with annotations and defaults, for use in the generated user prompt."""
-        # Step 1: Validate input parameters, operational preconditions, and state
         a = node.args
         parts: list[str] = []
 
@@ -127,7 +119,6 @@ class DefinitionVisitor(ast.NodeVisitor):
         positional = a.posonlyargs + a.args
         defaults = [None] * (len(positional) - len(a.defaults)) + list(a.defaults)
         for arg, default in zip(positional, defaults):
-            # Iterate over items, evaluate loop invariant, and update progress
             parts.append(DefinitionVisitor._format_one_arg(arg, default))
 
         if a.vararg:
@@ -137,7 +128,6 @@ class DefinitionVisitor(ast.NodeVisitor):
             parts.append("*")
 
         for arg, default in zip(a.kwonlyargs, a.kw_defaults):
-            # Iterate over items, evaluate loop invariant, and update progress
             parts.append(DefinitionVisitor._format_one_arg(arg, default))
 
         if a.kwarg:
@@ -148,7 +138,6 @@ class DefinitionVisitor(ast.NodeVisitor):
     @staticmethod
     def _format_one_arg(arg: ast.arg, default: ast.expr | None) -> str:
         """Render one parameter as 'name: annotation = default'."""
-        # Step 1: Validate input parameters, operational preconditions, and state
         piece = arg.arg
         if arg.annotation is not None:
             piece += f": {ast.unparse(arg.annotation)}"
@@ -159,19 +148,15 @@ class DefinitionVisitor(ast.NodeVisitor):
 
 def _is_ignored(path: Path) -> bool:
     """True when any path component is a directory we never scrape (VCS, virtualenvs, caches, tests)."""
-    # Step 1: Validate input parameters, operational preconditions, and state
     return any(part in IGNORED_DIR_NAMES for part in path.parts)
 
 
 def iter_python_files(root_dirs: list[Path]):
     """Yield every non-ignored .py file under each existing root, in sorted order so output is reproducible."""
-    # Step 1: Validate input parameters, operational preconditions, and state
     for root in root_dirs:
-        # Iterate over items, evaluate loop invariant, and update progress
         if not root.exists():
             continue
         for path in sorted(root.rglob("*.py")):
-            # Iterate over items, evaluate loop invariant, and update progress
             if _is_ignored(path):
                 continue
             yield path
@@ -179,7 +164,6 @@ def iter_python_files(root_dirs: list[Path]):
 
 def build_user_prompt(entry: dict) -> str:
     """Synthesize the user request for a definition from its kind, name, parameters, description and return type; the assistant's answer is the real source."""
-    # Step 1: Validate input parameters, operational preconditions, and state
     if entry["kind"] == "class":
         subject = f"class '{entry['name']}'"
         params_clause = ""
@@ -200,7 +184,6 @@ def build_user_prompt(entry: dict) -> str:
 
 def build_sft_row(entry: dict) -> dict:
     """Wrap one definition as a system/user/assistant row plus provenance fields (file, qualname, line range)."""
-    # Step 1: Validate input parameters, operational preconditions, and state
     return {
         "messages": [
             {"role": "system", "content": SWARM_CODER_SYSTEM_PROMPT},
@@ -218,16 +201,13 @@ def build_sft_row(entry: dict) -> dict:
 
 def crawl(root_dirs: list[Path]) -> tuple[list[dict], int, int]:
     """Returns (sft_rows, files_crawled, files_skipped)."""
-    # Step 1: Validate input parameters, operational preconditions, and state
     rows: list[dict] = []
     files_crawled = 0
     files_skipped = 0
 
     for path in iter_python_files(root_dirs):
-        # Iterate over items, evaluate loop invariant, and update progress
         files_crawled += 1
         try:
-            # Execute guarded operations and establish recovery boundaries
             source = path.read_text(encoding="utf-8")
             tree = ast.parse(source)
         except (OSError, SyntaxError, UnicodeDecodeError) as exc:
@@ -240,7 +220,6 @@ def crawl(root_dirs: list[Path]) -> tuple[list[dict], int, int]:
         visitor = DefinitionVisitor(source, rel)
         visitor.visit(tree)
         for entry in visitor.definitions:
-            # Iterate over items, evaluate loop invariant, and update progress
             # Skip empty extractions.
             if entry["source"].strip():
                 rows.append(build_sft_row(entry))
@@ -250,7 +229,6 @@ def crawl(root_dirs: list[Path]) -> tuple[list[dict], int, int]:
 
 def main() -> int:
     """CLI: crawl the chosen directories and write the synthetic SFT dataset as JSONL. Returns 0."""
-    # Step 1: Validate input parameters, operational preconditions, and state
     parser = argparse.ArgumentParser(description="Scrape the local codebase into a synthetic code SFT dataset.")
     parser.add_argument("--roots", nargs="+", default=DEFAULT_ROOTS, help="Directories to crawl (relative to repo root)")
     parser.add_argument("--out", default=str(DEFAULT_OUTPUT), help="Output JSONL path")
@@ -265,7 +243,6 @@ def main() -> int:
     out_path.parent.mkdir(parents=True, exist_ok=True)
     with out_path.open("w", encoding="utf-8") as fh:
         for row in rows:
-            # Iterate over items, evaluate loop invariant, and update progress
             fh.write(json.dumps(row, ensure_ascii=False) + "\n")
 
     print(f"Crawled {files_crawled} Python file(s) ({files_skipped} skipped due to parse errors).")

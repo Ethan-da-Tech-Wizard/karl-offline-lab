@@ -17,16 +17,13 @@ import subprocess
 # optimisations are valid on this CPU.
 def get_cpu_flags() -> list[str]:
     """Returns a list of CPU instruction flags (avx, avx2, etc.)."""
-    # Step 1: Validate input parameters, operational preconditions, and state
     flags = []
     try:
-        # Execute guarded operations and establish recovery boundaries
         system = platform.system()
         if system == "Linux":
             if os.path.exists("/proc/cpuinfo"):
                 with open("/proc/cpuinfo", "r") as f:
                     for line in f:
-                        # Iterate over items, evaluate loop invariant, and update progress
                         if line.startswith("flags") or line.startswith("Features"):
                             content = line.lower()
                             # Flags are matched with surrounding whitespace so 'avx' does not also
@@ -34,7 +31,6 @@ def get_cpu_flags() -> list[str]:
                             # Check for common vector extensions
                             candidates = ["avx", "avx2", "avx512f", "fma", "sse4_1", "sse4_2", "neon"]
                             for cand in candidates:
-                                # Iterate over items, evaluate loop invariant, and update progress
                                 if f" {cand} " in content or f"\t{cand} " in content or content.endswith(f" {cand}\n"):
                                     flags.append(cand)
         elif system == "Darwin":
@@ -52,7 +48,6 @@ def get_cpu_flags() -> list[str]:
                 "hw.optional.armv8_crc32": "crc32"
             }
             for key, val in candidates.items():
-                # Iterate over items, evaluate loop invariant, and update progress
                 if f"{key}: 1" in content:
                     flags.append(val)
     except Exception:
@@ -65,7 +60,6 @@ def get_cpu_flags() -> list[str]:
 # tools/decrypt_logs.py.
 def get_hardware_uuid() -> str:
     """Retrieves physical motherboard UUID or a stable hardware-bound fallback."""
-    # Step 1: Validate input parameters, operational preconditions, and state
     system = platform.system()
     if system == "Linux":
         # Try each candidate independently -- a PermissionError on one path
@@ -83,9 +77,7 @@ def get_hardware_uuid() -> str:
             "/sys/devices/virtual/dmi/id/product_uuid",
             "/etc/machine-id",
         ]:
-            # Iterate over items, evaluate loop invariant, and update progress
             try:
-                # Execute guarded operations and establish recovery boundaries
                 if os.path.exists(path):
                     with open(path, "r") as f:
                         uuid_str = f.read().strip()
@@ -95,7 +87,6 @@ def get_hardware_uuid() -> str:
                 continue
     elif system == "Darwin":
         try:
-            # Execute guarded operations and establish recovery boundaries
             # IOPlatformUUID is the stable per-machine id on macOS.
             cmd = "ioreg -rd1 -c IOPlatformExpertDevice | grep IOPlatformUUID"
             result = subprocess.run(cmd, shell=True, capture_output=True, text=True)
@@ -109,7 +100,6 @@ def get_hardware_uuid() -> str:
     # on the same machine.
     # Fallback: Hash MAC addresses + CPU Info
     try:
-        # Execute guarded operations and establish recovery boundaries
         import uuid
         import hashlib
         mac = str(uuid.getnode())
@@ -126,7 +116,6 @@ def get_hardware_profile():
     Returns a dict of available hardware resources including CPU flags.
     GPUtil is optional — if no discrete GPU is found, vram_gb = 0.0.
     """
-    # Step 1: Validate input parameters, operational preconditions, and state
     import psutil
 
     # 'available' (not 'free') RAM: includes reclaimable cache, which is what a model load can really
@@ -139,17 +128,14 @@ def get_hardware_profile():
     # ── NVIDIA NVML Monitoring ───────────────────────────────────────────────
     nvml_info = {}
     try:
-        # Execute guarded operations and establish recovery boundaries
         # NVML supplies temperature and throttle alerts that GPUtil does not expose; keyed by GPU
         # index to merge below.
         import pynvml
         # Always pair nvmlInit with nvmlShutdown (the finally block below).
         pynvml.nvmlInit()
         try:
-            # Execute guarded operations and establish recovery boundaries
             device_count = pynvml.nvmlDeviceGetCount()
             for i in range(device_count):
-                # Iterate over items, evaluate loop invariant, and update progress
                 handle = pynvml.nvmlDeviceGetHandleByIndex(i)
                 
                 # Fetch Temperature
@@ -174,14 +160,12 @@ def get_hardware_profile():
     # ─────────────────────────────────────────────────────────────────────────
 
     try:
-        # Execute guarded operations and establish recovery boundaries
         import GPUtil
         gpus = GPUtil.getGPUs()
         if gpus:
             # The largest FREE VRAM on any single GPU: a model must fit on one device unless split.
             vram_gb = max(gpu.memoryFree / 1024 for gpu in gpus)
             for gpu in gpus:
-                # Iterate over items, evaluate loop invariant, and update progress
                 gpu_data = {
                     "id": gpu.id,
                     "name": gpu.name,

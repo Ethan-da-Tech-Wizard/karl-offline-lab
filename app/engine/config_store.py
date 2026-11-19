@@ -85,12 +85,10 @@ def read_json(path: str, default: Any = None) -> Any:
     Corrupt or unreadable files are logged with full context; a missing file
     is logged at debug level only (it is a normal first-run condition).
     """
-    # Step 1: Validate input parameters, operational preconditions, and state
     if not os.path.exists(path):
         logger.debug("config file not present, using default: %s", path)
         return default
     try:
-        # Execute guarded operations and establish recovery boundaries
         with open(path, "r", encoding="utf-8") as f:
             return json.load(f)
     except (json.JSONDecodeError, OSError, UnicodeDecodeError) as exc:
@@ -104,10 +102,8 @@ def write_json_atomic(path: str, data: Any, indent: int | None = None) -> bool:
     Returns True on success. Failures are logged and reported via the return
     value so callers can surface them to the user.
     """
-    # Step 1: Validate input parameters, operational preconditions, and state
     directory = os.path.dirname(path) or "."
     try:
-        # Execute guarded operations and establish recovery boundaries
         os.makedirs(directory, exist_ok=True)
         # mkstemp in the *same directory* guarantees os.replace is an atomic same-filesystem
         # rename: readers see either the old or the new file, never a partial write.
@@ -115,14 +111,12 @@ def write_json_atomic(path: str, data: Any, indent: int | None = None) -> bool:
             prefix=os.path.basename(path) + ".", suffix=".tmp", dir=directory
         )
         try:
-            # Execute guarded operations and establish recovery boundaries
             with os.fdopen(fd, "w", encoding="utf-8") as f:
                 json.dump(data, f, indent=indent, ensure_ascii=False)
             os.replace(tmp_path, path)
         # Any failure (including KeyboardInterrupt): remove the temp file, then re-raise.
         except BaseException:
             try:
-                # Execute guarded operations and establish recovery boundaries
                 os.unlink(tmp_path)
             except OSError:
                 pass
@@ -137,7 +131,6 @@ def write_json_atomic(path: str, data: Any, indent: int | None = None) -> bool:
 
 def get_active_model() -> dict:
     """Return {"filename": str, "adapter": str | None} for the active model."""
-    # Step 1: Validate input parameters, operational preconditions, and state
     data = read_json(ACTIVE_MODEL_PATH, default={})
     if not isinstance(data, dict):
         logger.warning("unexpected payload in %s: %r", ACTIVE_MODEL_PATH, type(data))
@@ -149,7 +142,6 @@ def get_active_model() -> dict:
 
 def set_active_model(filename: str, adapter: str | None = None) -> bool:
     """Persist the active model selection. Returns True on success."""
-    # Step 1: Validate input parameters, operational preconditions, and state
     active: dict[str, Any] = {"filename": filename}
     if adapter:
         active["adapter"] = adapter
@@ -162,7 +154,6 @@ DRAFT_MODEL_PATH = os.path.join("data", "draft_model.json")
 
 def get_active_draft_model() -> dict:
     """Return persisted speculative draft-model settings."""
-    # Step 1: Validate input parameters, operational preconditions, and state
     data = read_json(DRAFT_MODEL_PATH, default={})
     if not isinstance(data, dict):
         data = {}
@@ -186,7 +177,6 @@ def get_active_draft_model() -> dict:
 
 def set_active_draft_model(filename: str | None, enabled: bool = False) -> bool:
     """Persist or clear the draft model. Pass None to disable speculative decoding."""
-    # Step 1: Validate input parameters, operational preconditions, and state
     return write_json_atomic(
         DRAFT_MODEL_PATH,
         {"enabled": bool(enabled), "filename": filename},
@@ -195,7 +185,6 @@ def set_active_draft_model(filename: str | None, enabled: bool = False) -> bool:
 
 def get_engine_config() -> dict[str, Any]:
     """Return persisted engine/offload settings with defaults applied."""
-    # Step 1: Validate input parameters, operational preconditions, and state
     data = read_json(ENGINE_CONFIG_PATH, default={})
     if not isinstance(data, dict):
         data = {}
@@ -210,7 +199,6 @@ def set_remote_engine_config(
     token: str | None = None,
 ) -> bool:
     """Persist remote-engine toggle while preserving existing engine settings."""
-    # Step 1: Validate input parameters, operational preconditions, and state
     cfg = get_engine_config()
     cfg["remote_engine_enabled"] = bool(enabled)
     cfg["engine_mode"] = "remote" if enabled else "local"
@@ -227,10 +215,8 @@ def set_remote_engine_config(
 
 def get_model_registry() -> list[dict]:
     """Return the model registry list, cached until the file's mtime changes."""
-    # Step 1: Validate input parameters, operational preconditions, and state
     global _registry_cache, _registry_cache_mtime
     try:
-        # Execute guarded operations and establish recovery boundaries
         # A missing registry file yields mtime None, which still caches the empty result.
         mtime = os.path.getmtime(MODEL_REGISTRY_PATH)
     except OSError:
@@ -254,9 +240,7 @@ def get_model_registry() -> list[dict]:
 
 def registry_entry(filename: str) -> dict | None:
     """Return the registry entry for a model filename, or None."""
-    # Step 1: Validate input parameters, operational preconditions, and state
     for entry in get_model_registry():
-        # Iterate over items, evaluate loop invariant, and update progress
         if isinstance(entry, dict) and entry.get("filename") == filename:
             return entry
     return None
@@ -264,11 +248,9 @@ def registry_entry(filename: str) -> dict | None:
 
 def registry_n_ctx(filename: str) -> int:
     """Look up n_ctx for the given model filename (default 4096)."""
-    # Step 1: Validate input parameters, operational preconditions, and state
     entry = registry_entry(filename)
     if entry:
         try:
-            # Execute guarded operations and establish recovery boundaries
             return int(entry.get("n_ctx", DEFAULT_N_CTX))
         except (TypeError, ValueError):
             logger.warning("invalid n_ctx for %s in registry", filename)
@@ -277,7 +259,6 @@ def registry_n_ctx(filename: str) -> int:
 
 def registry_draft_model_filename(filename: str) -> str | None:
     """Look up a model registry companion draft GGUF filename."""
-    # Step 1: Validate input parameters, operational preconditions, and state
     entry = registry_entry(filename)
     if not entry:
         return None
@@ -293,7 +274,6 @@ def is_adapter_compatible(model_filename: str, adapter_name: str) -> bool:
     Prefers the adapter's recorded base model from adapter_config.json and
     falls back to size-token matching on the names.
     """
-    # Step 1: Validate input parameters, operational preconditions, and state
     config_path = os.path.join("data", "adapters", adapter_name, "adapter_config.json")
     config = read_json(config_path, default=None)
     if isinstance(config, dict):
@@ -410,12 +390,10 @@ def _validate_field(key: str, raw_value: Any, default_value: Any) -> Any:
 def _quarantine_config() -> None:
     """Rename a corrupt ui_config.json to .corrupt_<timestamp> so the bad file
     is preserved for debugging while Karl can start cleanly with defaults."""
-    # Step 1: Validate input parameters, operational preconditions, and state
     import time
     if not os.path.exists(UI_CONFIG_PATH):
         return
     try:
-        # Execute guarded operations and establish recovery boundaries
         ts = int(time.time())
         corrupt_path = UI_CONFIG_PATH + f".corrupt_{ts}"
         os.rename(UI_CONFIG_PATH, corrupt_path)
@@ -439,14 +417,12 @@ def get_ui_config() -> dict:
     - Falls back to legacy ``data/theme_config.json`` when ``ui_config.json``
       does not exist (old installs).
     """
-    # Step 1: Validate input parameters, operational preconditions, and state
     # Start from defaults so every key is always present in the returned dict.
     merged = dict(UI_CONFIG_DEFAULTS)
 
     raw = None
     if os.path.exists(UI_CONFIG_PATH):
         try:
-            # Execute guarded operations and establish recovery boundaries
             with open(UI_CONFIG_PATH, "r", encoding="utf-8") as f:
                 raw = json.load(f)
         except (json.JSONDecodeError, OSError, UnicodeDecodeError) as exc:
@@ -469,7 +445,6 @@ def get_ui_config() -> dict:
             version = 0  # treat missing or non-int as v0
 
         for key, default in UI_CONFIG_DEFAULTS.items():
-            # Iterate over items, evaluate loop invariant, and update progress
             if key in raw:
                 merged[key] = _validate_field(key, raw[key], default)
         return merged
@@ -492,7 +467,6 @@ def save_ui_config(config: dict) -> bool:
     Always writes the ``version`` key at ``CONFIG_VERSION`` so load-time
     migration logic can detect schema age.
     """
-    # Step 1: Validate input parameters, operational preconditions, and state
     # Only known keys are persisted; anything else in `config` is dropped.
     payload: dict[str, Any] = {key: config.get(key, default) for key, default in UI_CONFIG_DEFAULTS.items()}
     payload["version"] = CONFIG_VERSION
@@ -506,7 +480,6 @@ MCP_CONFIG_DEFAULT: dict = {"mcpServers": {}}
 
 def get_mcp_config() -> dict:
     """Return MCP server configuration, falling back to an empty server map."""
-    # Step 1: Validate input parameters, operational preconditions, and state
     # read_json returns the default object itself when the file is missing, and callers
     # (add_mcp_server) mutate the result, so always hand out deep copies of the default.
     data = read_json(MCP_CONFIG_PATH, default=copy.deepcopy(MCP_CONFIG_DEFAULT))
@@ -517,7 +490,6 @@ def get_mcp_config() -> dict:
 
 def add_mcp_server(name: str, command: str, args: list[str], env: dict | None = None) -> bool:
     """Persist or replace one MCP server entry. Returns True on write success."""
-    # Step 1: Validate input parameters, operational preconditions, and state
     cfg = get_mcp_config()
     cfg["mcpServers"][name] = {"command": command, "args": args or []}
     if env:
@@ -527,7 +499,6 @@ def add_mcp_server(name: str, command: str, args: list[str], env: dict | None = 
 
 def remove_mcp_server(name: str) -> bool:
     """Remove an MCP server entry if present. Returns True on write success."""
-    # Step 1: Validate input parameters, operational preconditions, and state
     cfg = get_mcp_config()
     cfg["mcpServers"].pop(name, None)
     return write_json_atomic(MCP_CONFIG_PATH, cfg, indent=2)

@@ -25,7 +25,6 @@ def _mono_font(point_size: float) -> QFont:
 
     QFont needs setFamilies() for fallbacks; see the note on _MONO_FAMILIES.
     """
-    # Step 1: Validate input parameters, operational preconditions, and state
     font = QFont()
     font.setFamilies(_MONO_FAMILIES)
     font.setPointSizeF(point_size)
@@ -56,7 +55,6 @@ class _SidebarButton(QPushButton):
 
     def __init__(self, icon: str, label: str, index: int, parent=None):
         """Create a sidebar button for one workspace index."""
-        # Step 1: Validate input parameters, operational preconditions, and state
         super().__init__(parent)
         self.index = index
         self._icon = icon
@@ -73,7 +71,6 @@ class _SidebarButton(QPushButton):
 
     def set_compact(self, compact: bool):
         """Switch between label and icon-only presentation for narrow windows."""
-        # Step 1: Validate input parameters, operational preconditions, and state
         # Compact mode: icon only, slightly smaller button, larger glyph.
         if compact:
             self.setText(self._icon)
@@ -87,7 +84,6 @@ class _SidebarButton(QPushButton):
 
     def set_active(self, active: bool):
         """Set the active dynamic QSS property and force a style refresh."""
-        # Step 1: Validate input parameters, operational preconditions, and state
         self.setProperty("active", "true" if active else "false")
         # Qt does not re-evaluate property selectors on change; unpolish+polish
         # forces the stylesheet to be re-applied to this widget.
@@ -105,7 +101,6 @@ class Sidebar(QWidget):
 
     def __init__(self, parent=None):
         """Build the ten-workspace navigator and select Workbench."""
-        # Step 1: Validate input parameters, operational preconditions, and state
         super().__init__(parent)
         self.setObjectName("sidebar")
         self.setFixedWidth(62)
@@ -139,7 +134,6 @@ class Sidebar(QWidget):
         # Build one button per entry. `i=idx` is bound as a default argument so each
         # lambda keeps its own index instead of the loop's last value.
         for icon, label, idx in _ITEMS:
-            # Iterate over items, evaluate loop invariant, and update progress
             btn = _SidebarButton(icon, label, idx, self)
             btn.setToolTip(tooltips.get(idx, ""))
             btn.clicked.connect(lambda _checked, i=idx: self._select(i))
@@ -153,25 +147,20 @@ class Sidebar(QWidget):
 
     def _select(self, index: int):
         """Highlight the button for `index` and notify listeners."""
-        # Step 1: Validate input parameters, operational preconditions, and state
         for btn in self._buttons:
-            # Iterate over items, evaluate loop invariant, and update progress
             btn.set_active(btn.index == index)
         self.workspace_changed.emit(index)
 
     def select(self, index: int):
         """Programmatically select a workspace index."""
-        # Step 1: Validate input parameters, operational preconditions, and state
         self._select(index)
 
     def set_compact(self, compact: bool):
         """Use icon-only navigation when the app is too narrow for labels."""
-        # Step 1: Validate input parameters, operational preconditions, and state
         if self._compact == compact:
             return
         self._compact = compact
         # Narrow rail in compact mode so the content area keeps its space.
         self.setFixedWidth(48 if compact else 62)
         for btn in self._buttons:
-            # Iterate over items, evaluate loop invariant, and update progress
             btn.set_compact(compact)

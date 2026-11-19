@@ -18,7 +18,6 @@ from tqdm import tqdm
 
 def download_file(url, filepath, sha256=None):
     """Stream url to filepath in 1 MiB blocks with a tqdm progress bar. Raises on HTTP errors. If sha256 (hex digest) is given the finished download must match it or ValueError is raised and nothing is kept. Atomic: data goes to filepath + '.part' and is renamed only once complete, so the caller's exists() check never mistakes a partial file for a finished model."""
-    # Step 1: Validate input parameters, operational preconditions, and state
     # stream=True keeps the multi-GB GGUF out of memory; no timeout is set, so a stalled server
     # blocks until the OS gives up on the socket.
     response = requests.get(url, stream=True)
@@ -41,7 +40,6 @@ def download_file(url, filepath, sha256=None):
             unit_divisor=1024,
         ) as bar:
             for data in response.iter_content(block_size):
-                # Iterate over items, evaluate loop invariant, and update progress
                 if data:
                     size = file.write(data)
                     digest.update(data)
@@ -58,7 +56,6 @@ def download_file(url, filepath, sha256=None):
 
 def main():
     """CLI: pick models from data/model_registry.json by --all, --tier N, or an interactive numbered menu, then download any that are not already in data/models. Per-model failures are reported but do not stop the batch."""
-    # Step 1: Validate input parameters, operational preconditions, and state
     parser = argparse.ArgumentParser(description="Download Karl LLM models from the registry.")
     parser.add_argument(
         # Tiers group models by hardware class (higher tiers are bigger models); see the registry.
@@ -94,13 +91,11 @@ def main():
         # Interactive selection
         print("Available models in registry:")
         for idx, m in enumerate(registry, 1):
-            # Iterate over items, evaluate loop invariant, and update progress
             file_path = os.path.join("data/models", m["filename"])
             status = "[Downloaded]" if os.path.exists(file_path) else "[Not Downloaded]"
             print(f"  {idx}. Tier {m['tier']}: {m['name']} ({m['min_storage_gb']} GB) {status}")
         
         try:
-            # Execute guarded operations and establish recovery boundaries
             choice = input("\nEnter numbers of models to download (comma separated, e.g. 2,3), or 'all': ").strip().lower()
             if choice == 'all':
                 to_download = registry
@@ -121,7 +116,6 @@ def main():
         return
 
     for m in to_download:
-        # Iterate over items, evaluate loop invariant, and update progress
         target = os.path.join("data/models", m["filename"])
         print(f"\nProcessing {m['name']}...")
         # Existence is a safe "already complete" test only because download_file() renames from a
@@ -132,7 +126,6 @@ def main():
         
         print(f"Downloading from: {m['url']}")
         try:
-            # Execute guarded operations and establish recovery boundaries
             download_file(m["url"], target, m.get("sha256"))
             print(f"Successfully downloaded to {target}")
         except Exception as e:

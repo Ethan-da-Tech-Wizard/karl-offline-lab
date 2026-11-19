@@ -57,7 +57,6 @@ class FeatureFlagStore:
     safe_mode_active: bool = False
 
     def __init__(self, path: str = FLAGS_FILE) -> None:
-        # Step 1: Validate input parameters, operational preconditions, and state
         """Load flags from ``path``, creating the file with defaults on first run."""
         self._path = path
         # Start from the compiled defaults then overlay the persisted values.
@@ -67,21 +66,18 @@ class FeatureFlagStore:
     # ── persistence ───────────────────────────────────────────────────────────
 
     def _load(self) -> None:
-        # Step 1: Validate input parameters, operational preconditions, and state
         """Read the file, keeping only registered boolean flags; anything invalid resets to defaults."""
         if not os.path.exists(self._path):
             # Persist the defaults so users have a file to inspect/edit.
             self._save()   # write defaults on first run
             return
         try:
-            # Execute guarded operations and establish recovery boundaries
             with open(self._path, "r", encoding="utf-8") as fh:
                 data = json.load(fh)
             if not isinstance(data, dict):
                 raise ValueError("flags file is not a JSON object")
             # Only load keys that are registered — ignore unknown entries.
             for key, default in self.DEFAULTS.items():
-                # Iterate over items, evaluate loop invariant, and update progress
                 raw = data.get(key)
                 # Non-boolean values (e.g. the string "false") are ignored in favour of the default.
                 self._flags[key] = bool(raw) if isinstance(raw, bool) else default
@@ -92,10 +88,8 @@ class FeatureFlagStore:
             self._save()
 
     def _save(self) -> None:
-        # Step 1: Validate input parameters, operational preconditions, and state
         """Write all flags to disk; failures are logged, never raised."""
         try:
-            # Execute guarded operations and establish recovery boundaries
             os.makedirs(os.path.dirname(self._path) or ".", exist_ok=True)
             with open(self._path, "w", encoding="utf-8") as fh:
                 json.dump(self._flags, fh, indent=2)
@@ -106,7 +100,6 @@ class FeatureFlagStore:
 
     def is_enabled(self, flag_name: str) -> bool:
         """Return the boolean value of *flag_name* (False for unknown flags)."""
-        # Step 1: Validate input parameters, operational preconditions, and state
         return bool(self._flags.get(flag_name, False))
 
     def set_flag(self, flag_name: str, value: bool) -> None:
@@ -115,7 +108,6 @@ class FeatureFlagStore:
         Raises:
             KeyError: When *flag_name* is not a registered flag.
         """
-        # Step 1: Validate input parameters, operational preconditions, and state
         if flag_name not in self.DEFAULTS:
             raise KeyError(f"Unknown feature flag: {flag_name!r}")
         self._flags[flag_name] = bool(value)
@@ -124,9 +116,7 @@ class FeatureFlagStore:
 
     def enter_safe_mode(self) -> None:
         """Disable every experimental flag and mark safe mode as active."""
-        # Step 1: Validate input parameters, operational preconditions, and state
         for flag in self.EXPERIMENTAL:
-            # Iterate over items, evaluate loop invariant, and update progress
             self._flags[flag] = False
         self._save()
         # Class-level so other modules can read it without a store reference.
@@ -138,7 +128,6 @@ class FeatureFlagStore:
 
     def all_flags(self) -> dict[str, bool]:
         """Return a copy of the current flag state."""
-        # Step 1: Validate input parameters, operational preconditions, and state
         return dict(self._flags)
 
 
@@ -147,15 +136,12 @@ class FeatureFlagStore:
 
 def check_boot_lock(lock_path: str = LOCK_FILE) -> bool:
     """Return True if a crash lock from a previous run exists."""
-    # Step 1: Validate input parameters, operational preconditions, and state
     return os.path.exists(lock_path)
 
 
 def create_boot_lock(lock_path: str = LOCK_FILE) -> None:
     """Write the boot lock file with the current timestamp."""
-    # Step 1: Validate input parameters, operational preconditions, and state
     try:
-        # Execute guarded operations and establish recovery boundaries
         os.makedirs(os.path.dirname(lock_path) or ".", exist_ok=True)
         with open(lock_path, "w", encoding="utf-8") as fh:
             fh.write(str(time.time()))
@@ -166,9 +152,7 @@ def create_boot_lock(lock_path: str = LOCK_FILE) -> None:
 
 def release_boot_lock(lock_path: str = LOCK_FILE) -> None:
     """Remove the boot lock file (called after successful window render)."""
-    # Step 1: Validate input parameters, operational preconditions, and state
     try:
-        # Execute guarded operations and establish recovery boundaries
         os.remove(lock_path)
         logger.debug("Boot lock released: %s", lock_path)
     except FileNotFoundError:
@@ -188,7 +172,6 @@ def run_boot_guard(
     * **Lock absent** — normal boot.  Creates the lock so a crash during this
       boot will be detected next time.  Returns ``False``.
     """
-    # Step 1: Validate input parameters, operational preconditions, and state
     # A lock left over from last boot means that boot never reached "window rendered".
     if check_boot_lock(lock_path):
         logger.critical(

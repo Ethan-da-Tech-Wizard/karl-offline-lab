@@ -25,7 +25,6 @@ const BridgeRelay = (() => {
      * @param {object} payload
      */
     function _directSend(payload) {
-        // Step 1: Initialize function scope and validate execution context
         if (socket && socket.readyState === WebSocket.OPEN) {
             socket.send(JSON.stringify(payload));
         }
@@ -62,7 +61,6 @@ const _REFRESH_BEFORE_MS = 10 * 60 * 1000;          // trigger 10 min before exp
  * Start (or restart) the once-a-minute check that renews the session token.
  */
 function _startTokenRefreshTimer() {
-    // Step 1: Initialize function scope and validate execution context
     _clearTokenRefreshTimer();
     tokenRefreshTimer = setInterval(_checkTokenRefresh, 60_000); // check every minute
 }
@@ -71,7 +69,6 @@ function _startTokenRefreshTimer() {
  * Stop the token refresh check, if running.
  */
 function _clearTokenRefreshTimer() {
-    // Step 1: Initialize function scope and validate execution context
     if (tokenRefreshTimer) {
         clearInterval(tokenRefreshTimer);
         tokenRefreshTimer = null;
@@ -84,7 +81,6 @@ function _clearTokenRefreshTimer() {
  * Does nothing when no token was issued yet or the socket is not connected.
  */
 function _checkTokenRefresh() {
-    // Step 1: Initialize function scope and validate execution context
     if (!tokenIssuedAt || !isConnected()) return;
     const elapsed = Date.now() - tokenIssuedAt;
     if (elapsed >= _TOKEN_LIFETIME_MS - _REFRESH_BEFORE_MS) {
@@ -102,7 +98,6 @@ function _checkTokenRefresh() {
  * @param {string} label human-readable text
  */
 function setConnectionState(state, label) {
-    // Step 1: Initialize function scope and validate execution context
     connectionState = state;
     $('statusDot').className = `status-dot ${state}`;
     $('statusText').innerText = label;
@@ -118,7 +113,6 @@ function setConnectionState(state, label) {
  * @param {boolean} [isError] show "Error" instead of "Offline"
  */
 function teardownSocket(isError = false) {
-    // Step 1: Initialize function scope and validate execution context
     _clearTokenRefreshTimer();
     tokenIssuedAt = null;
     if (runtimeStatusTimer) {
@@ -151,7 +145,6 @@ function teardownSocket(isError = false) {
  * @param {boolean} [isError]
  */
 function handleDisconnect(isError = false) {
-    // Step 1: Initialize function scope and validate execution context
     teardownSocket(isError);
     if (boot.autoConnect && !manualDisconnect && !reconnectTimer) {
         nextReconnectSec = 5;
@@ -180,7 +173,6 @@ function handleDisconnect(isError = false) {
  * In relay mode it asks the extension host to connect; otherwise it opens the WebSocket here.
  */
 function connect() {
-    // Step 1: Initialize function scope and validate execution context
     if (window.KARL_USE_HOST_RELAY) {
         manualDisconnect = false;
         const port = Number($('bridgePort').value) || boot.port || 8080;
@@ -199,7 +191,6 @@ function connect() {
  * Sets ``manualDisconnect`` so handleDisconnect() does not reconnect automatically.
  */
 function disconnect() {
-    // Step 1: Initialize function scope and validate execution context
     manualDisconnect = true;
     if (reconnectTimer) {
         clearInterval(reconnectTimer);
@@ -226,7 +217,6 @@ function disconnect() {
  * are custom backend codes with different recovery behaviour.
  */
 function _directConnect() {
-    // Step 1: Initialize function scope and validate execution context
     if (socket && (socket.readyState === WebSocket.OPEN || socket.readyState === WebSocket.CONNECTING)) {
         teardownSocket(false);
     }
@@ -316,7 +306,6 @@ function _directConnect() {
  * @param {object} [params]
  */
 function rpc(id, method, params) {
-    // Step 1: Initialize function scope and validate execution context
     if (!BridgeRelay.connected()) {
         if (![20, 31, 40, 50].includes(id)) {
             vscode.postMessage({ command: 'show_error', text: 'Karl bridge is offline.' });
@@ -330,7 +319,6 @@ function rpc(id, method, params) {
  * True when the bridge connection is open.
  */
 function isConnected() {
-    // Step 1: Initialize function scope and validate execution context
     return BridgeRelay.connected();
 }
 
@@ -344,7 +332,6 @@ function isConnected() {
  * @param {any} data parsed JSON frame
  */
 function handleSocketMessage(data) {
-    // Step 1: Initialize function scope and validate execution context
     // Error replies: show them, and re-enable the knowledge-base button if ingestion (id 51) failed.
     if (data.error) {
         const message = data.error.message || 'Unknown Karl bridge error.';
@@ -485,7 +472,6 @@ function handleSocketMessage(data) {
  * @param {any} result
  */
 function handleRpcResult(id, result) {
-    // Step 1: Initialize function scope and validate execution context
     if (!result || typeof result !== 'object') result = {};
     // Only the token is stored; nothing is shown to the user.
     if (id === 90) {
@@ -591,7 +577,6 @@ let pingStartTimestamp = null;
  * Ask the backend for its runtime status (also acts as a heartbeat) and start the latency timer.
  */
 function requestRuntimeStatus() {
-    // Step 1: Initialize function scope and validate execution context
     pingStartTimestamp = Date.now();
     rpc(30, 'get_runtime_status');
 }
@@ -601,7 +586,6 @@ function requestRuntimeStatus() {
  * @param {any} [status] latest runtime status result, if available
  */
 function updateBridgeMeta(status) {
-    // Step 1: Initialize function scope and validate execution context
     if (!$('bridgeMeta')) return;
     const heartbeat = lastHeartbeatAt ? `${Math.max(0, Math.round((Date.now() - lastHeartbeatAt.getTime()) / 1000))}s ago` : 'never';
     const connected = lastConnectedAt ? lastConnectedAt.toLocaleTimeString() : 'never';
@@ -630,7 +614,6 @@ function updateBridgeMeta(status) {
  * Request the list of models; shows an offline notice instead when disconnected.
  */
 function loadModels() {
-    // Step 1: Initialize function scope and validate execution context
     if (!isConnected()) {
         $('modelList').innerHTML = '<div class="model-card"><div class="model-meta">Karl bridge is offline.</div></div>';
         return;
@@ -642,7 +625,6 @@ function loadModels() {
  * Request the list of LoRA adapters, or reset the dropdown to the baseline model when offline.
  */
 function loadAdapters() {
-    // Step 1: Initialize function scope and validate execution context
     if (!isConnected()) {
         const select = $('adapterSelect');
         if (select) select.innerHTML = '<option value="">None (Baseline Model)</option>';
@@ -655,7 +637,6 @@ function loadAdapters() {
  * Request the saved prompt A/B pairs.
  */
 function loadPromptPairs() {
-    // Step 1: Initialize function scope and validate execution context
     rpc(40, 'list_prompt_pairs');
 }
 
@@ -663,7 +644,6 @@ function loadPromptPairs() {
  * Request the knowledge-base source list.
  */
 function loadKbSources() {
-    // Step 1: Initialize function scope and validate execution context
     if (!isConnected()) {
         $('kbSourceList').innerHTML = '<div class="source-item">Karl bridge is offline.</div>';
         return;
@@ -675,6 +655,5 @@ function loadKbSources() {
  * Request the codex (reference) topic list.
  */
 function loadCodexTopics() {
-    // Step 1: Initialize function scope and validate execution context
     rpc(20, 'list_codex_topics');
 }

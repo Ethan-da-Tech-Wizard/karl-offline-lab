@@ -61,7 +61,6 @@ def gpu_used_mb(gpu: dict) -> float:
 
 def parse_args():
     """Define and parse the eval CLI flags (workflow, dataset, template, sampling limits, save/no-save, dry-run and the two --list-* options)."""
-    # Step 1: Validate input parameters, operational preconditions, and state
     p = argparse.ArgumentParser(
         description="Karl Eval Harness — run structured evals against the local LLM",
         formatter_class=argparse.RawDescriptionHelpFormatter,
@@ -133,25 +132,21 @@ def dry_run_mode(dataset_path: str, workflow_name: str):
     Grader-only test: reads dataset, uses the 'expected' field as the model
     output, and grades it. Should always pass. Useful for CI or grader testing.
     """
-    # Step 1: Validate input parameters, operational preconditions, and state
     print(f"\n  DRY RUN — grading 'expected' values as outputs (no model loaded)")
     from eval.graders import run_grader
 
     cases = []
     with open(dataset_path, "r", encoding="utf-8") as f:
         for line in f:
-            # Iterate over items, evaluate loop invariant, and update progress
             line = line.strip()
             if line and not line.startswith("#"):
                 try:
-                    # Execute guarded operations and establish recovery boundaries
                     cases.append(json.loads(line))
                 except json.JSONDecodeError:
                     pass
 
     passed = 0
     for i, case in enumerate(cases, 1):
-        # Iterate over items, evaluate loop invariant, and update progress
         grader = case.get("grader", "keyword_hit")
         expected_raw = case.get("expected", "")
         # Structured 'expected' values are serialised so string-based graders can consume them.
@@ -170,7 +165,6 @@ def dry_run_mode(dataset_path: str, workflow_name: str):
             kwargs["context_chunks"] = [case.get("context", expected_str)]
 
         try:
-            # Execute guarded operations and establish recovery boundaries
             result = run_grader(grader, expected_str, **kwargs)
             status = "✓" if result["passed"] else "✗"
             if result["passed"]:
@@ -189,13 +183,11 @@ def dry_run_mode(dataset_path: str, workflow_name: str):
 
 def main():
     """Eval CLI driver. Lists workflows/templates on request, resolves the dataset, runs either the grader-only dry run or a real harness run with a VRAM before/after check, optionally saves the report, and exits 0 (all passed), 1 (failures or errors) or 2 (bad arguments or missing dataset)."""
-    # Step 1: Validate input parameters, operational preconditions, and state
     args = parse_args()
 
     if args.list_workflows:
         print("\nAvailable workflows:")
         for name, label in list_workflows():
-            # Iterate over items, evaluate loop invariant, and update progress
             wf = get_workflow(name)
             print(f"  {name:<22} — {label}  (template: {wf['template']})")
         sys.exit(0)
@@ -203,7 +195,6 @@ def main():
     if args.list_templates:
         print("\nAvailable templates:")
         for t in list_templates():
-            # Iterate over items, evaluate loop invariant, and update progress
             print(f"  {t}")
         sys.exit(0)
 
@@ -235,9 +226,7 @@ def main():
     from core.hardware_scout import get_hardware_profile
     def get_vram_usage():
         """Snapshot of per-GPU used memory in MB keyed by GPU id; returns {} when no GPU info is available so the leak check is simply skipped."""
-        # Step 1: Validate input parameters, operational preconditions, and state
         try:
-            # Execute guarded operations and establish recovery boundaries
             profile = get_hardware_profile()
             gpus = profile.get("gpu_list", [])
             return {g["id"]: gpu_used_mb(g) for g in gpus}
@@ -260,7 +249,6 @@ def main():
     vram_end = get_vram_usage()
     if vram_baseline and vram_end:
         for gpu_id, start_mb in vram_baseline.items():
-            # Iterate over items, evaluate loop invariant, and update progress
             end_mb = vram_end.get(gpu_id, 0)
             # 50 MB tolerance for allocator fragmentation and other processes.
             # Allow for a small margin (50MB) of fragmentation or background noise

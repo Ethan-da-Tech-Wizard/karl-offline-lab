@@ -36,7 +36,6 @@ from app.ui.themes import get_theme_colors, MONO
 
 def _hline() -> QFrame:
     """Create a horizontal divider (QSS object name 'line')."""
-    # Step 1: Validate input parameters, operational preconditions, and state
     f = QFrame()
     f.setFrameShape(QFrame.Shape.HLine)
     f.setObjectName("line")
@@ -45,7 +44,6 @@ def _hline() -> QFrame:
 
 def _section(text: str) -> QLabel:
     """Create a bold, letter-spaced section header label."""
-    # Step 1: Validate input parameters, operational preconditions, and state
     lbl = QLabel(text)
     lbl.setObjectName("section-header")
     lbl.setStyleSheet("font-weight: bold; letter-spacing: 1.5px;")
@@ -54,7 +52,6 @@ def _section(text: str) -> QLabel:
 
 def _label(text: str, obj: str = "") -> QLabel:
     """Create a QLabel, optionally tagging it with a QSS object name (e.g. 'lbl-muted')."""
-    # Step 1: Validate input parameters, operational preconditions, and state
     lbl = QLabel(text)
     if obj:
         lbl.setObjectName(obj)
@@ -63,7 +60,6 @@ def _label(text: str, obj: str = "") -> QLabel:
 
 def _row(label_text: str, widget: QWidget) -> QWidget:
     """Wrap `widget` in a row with a fixed-width muted caption on the left (form-style layout)."""
-    # Step 1: Validate input parameters, operational preconditions, and state
     w = QWidget()
     lo = QHBoxLayout(w)
     lo.setContentsMargins(0, 2, 0, 2)
@@ -82,7 +78,6 @@ def _row(label_text: str, widget: QWidget) -> QWidget:
 class ExecutionTraceFlowchart(QWidget):
     def __init__(self, parent=None):
         """Create the flowchart with its default (sparse/TF-IDF) step texts."""
-        # Step 1: Validate input parameters, operational preconditions, and state
         super().__init__(parent)
         self.setMinimumHeight(440)
         self.state = None
@@ -100,7 +95,6 @@ class ExecutionTraceFlowchart(QWidget):
 
     def set_mode(self, is_sparse: bool):
         """Switch the vectorization step's label between TF-IDF and SentenceTransformer and repaint."""
-        # Step 1: Validate input parameters, operational preconditions, and state
         self._is_sparse = is_sparse
         mode_str = "TF-IDF" if is_sparse else "SentenceTransformer"
         self.steps[1] = (f"2. QUERY VECTORIZATION ({mode_str})", f"Converts query into a normalized vector using {mode_str}.")
@@ -112,7 +106,6 @@ class ExecutionTraceFlowchart(QWidget):
         Layout is computed from the widget width each paint (boxes centred, fixed
         420x56 size with a 20px gap), so the chart stays centred on resize.
         """
-        # Step 1: Validate input parameters, operational preconditions, and state
         painter = QPainter(self)
         painter.setRenderHint(QPainter.RenderHint.Antialiasing)
         
@@ -143,7 +136,6 @@ class ExecutionTraceFlowchart(QWidget):
         start_y = 20
         
         for i, (title, desc) in enumerate(self.steps):
-            # Iterate over items, evaluate loop invariant, and update progress
             box_x = (w - box_w) // 2
             box_y = start_y + i * (box_h + gap)
             
@@ -193,7 +185,6 @@ class AILabWorkspace(QWidget):
 
     def __init__(self, state: AppState, parent=None):
         """Build both tabs and subscribe to AppState changes (active model/adapter labels)."""
-        # Step 1: Validate input parameters, operational preconditions, and state
         super().__init__(parent)
         self.setObjectName("workspace-root")
         self.state = state
@@ -228,7 +219,6 @@ class AILabWorkspace(QWidget):
 
     def _build_pipeline_tab(self):
         """Build tab A: configuration drawer (left) and visual inspector tabs (right)."""
-        # Step 1: Validate input parameters, operational preconditions, and state
         self._pipeline_tab_w = QWidget()
         main_lay = QHBoxLayout(self._pipeline_tab_w)
         main_lay.setContentsMargins(0, 8, 0, 0)
@@ -332,7 +322,6 @@ class AILabWorkspace(QWidget):
 
     def _build_vector_math_subtab(self):
         """Build the 'Vector Math' sub-tab: a stack with a sparse page and a dense page."""
-        # Step 1: Validate input parameters, operational preconditions, and state
         self._vector_math_tab = QWidget()
         layout = QVBoxLayout(self._vector_math_tab)
         layout.setContentsMargins(0, 8, 0, 0)
@@ -387,7 +376,6 @@ class AILabWorkspace(QWidget):
 
     def _build_rag_playground_subtab(self):
         """Build the 'RAG Playground' sub-tab: query box plus a step-by-step cosine math report."""
-        # Step 1: Validate input parameters, operational preconditions, and state
         self._rag_playground_tab = QWidget()
         layout = QVBoxLayout(self._rag_playground_tab)
         layout.setContentsMargins(0, 8, 0, 0)
@@ -418,7 +406,6 @@ class AILabWorkspace(QWidget):
 
     def _build_projection_subtab(self):
         """Build the '2D Projection' sub-tab hosting the shared VectorProjectionWidget."""
-        # Step 1: Validate input parameters, operational preconditions, and state
         self._projection_tab = QWidget()
         layout = QVBoxLayout(self._projection_tab)
         layout.setContentsMargins(0, 8, 0, 0)
@@ -430,7 +417,6 @@ class AILabWorkspace(QWidget):
 
     def _build_execution_trace_subtab(self):
         """Build the 'Execution Trace' sub-tab hosting the flowchart."""
-        # Step 1: Validate input parameters, operational preconditions, and state
         self._execution_trace_tab = QWidget()
         layout = QVBoxLayout(self._execution_trace_tab)
         layout.setContentsMargins(0, 8, 0, 0)
@@ -445,7 +431,6 @@ class AILabWorkspace(QWidget):
 
     def _build_composer_tab(self):
         """Build tab B: a scrollable form describing a custom agent and a Publish button."""
-        # Step 1: Validate input parameters, operational preconditions, and state
         self._composer_tab_w = QWidget()
         
         # Scroll area keeps the form usable in small windows.
@@ -527,7 +512,6 @@ class AILabWorkspace(QWidget):
 
     def _on_state_changed(self, name: str, value: object):
         """Slot: refresh the active model/adapter labels when AppState changes."""
-        # Step 1: Validate input parameters, operational preconditions, and state
         if name == "model_name":
             self._active_model_lbl.setText(f"Active Model: {value}")
         elif name == "adapter_name":
@@ -535,7 +519,6 @@ class AILabWorkspace(QWidget):
 
     def _on_vectorizer_changed(self):
         """Slot: switch the math page and flowchart to the chosen mode and recompute."""
-        # Step 1: Validate input parameters, operational preconditions, and state
         is_sparse = (self._vectorizer_combo.currentIndex() == 0)
         self._math_stack.setCurrentIndex(0 if is_sparse else 1)
         self._flowchart_widget.set_mode(is_sparse)
@@ -548,7 +531,6 @@ class AILabWorkspace(QWidget):
         app's SentenceTransformer and L2-normalises it, so dot product equals cosine
         similarity. Errors are shown in the dimension label, not raised.
         """
-        # Step 1: Validate input parameters, operational preconditions, and state
         text = self._sentences_input.toPlainText().strip()
         if not text:
             return
@@ -580,7 +562,6 @@ class AILabWorkspace(QWidget):
                 # Retrieve dense embeddings
                 embeddings = []
                 for s in sentences:
-                    # Iterate over items, evaluate loop invariant, and update progress
                     emb = self.state.rag.encoder.encode([s])[0]
                     # L2 normalized
                     norm = np.linalg.norm(emb)
@@ -610,14 +591,11 @@ class AILabWorkspace(QWidget):
         # Calculate DF for each vocab word
         df_counts = {}
         for s in sentences:
-            # Iterate over items, evaluate loop invariant, and update progress
             tokens = set(self._tfidf.tokenize(s))
             for w in tokens:
-                # Iterate over items, evaluate loop invariant, and update progress
                 df_counts[w] = df_counts.get(w, 0) + 1
 
         for word, idx in sorted(vocab.items(), key=lambda x: x[1]):
-            # Iterate over items, evaluate loop invariant, and update progress
             df = df_counts.get(word, 0)
             idf = self._tfidf.idf[idx]
             
@@ -635,17 +613,14 @@ class AILabWorkspace(QWidget):
         self._matrix_table.horizontalHeader().setSectionResizeMode(QHeaderView.ResizeMode.ResizeToContents)
 
         for s_idx, s in enumerate(sentences):
-            # Iterate over items, evaluate loop invariant, and update progress
             self._matrix_table.setItem(s_idx, 0, QTableWidgetItem(f"Doc {s_idx + 1}"))
             vec = self._cached_embeddings[s_idx]
             for w_idx in range(len(vocab)):
-                # Iterate over items, evaluate loop invariant, and update progress
                 val = vec[w_idx]
                 self._matrix_table.setItem(s_idx, w_idx + 1, QTableWidgetItem(f"{val:.4f}"))
 
     def _populate_dense_math_table(self):
         """Show the first 20 components of the first sentence's dense embedding."""
-        # Step 1: Validate input parameters, operational preconditions, and state
         if not self._cached_embeddings:
             self._neural_table.setRowCount(0)
             return
@@ -656,7 +631,6 @@ class AILabWorkspace(QWidget):
         self._neural_table.setRowCount(show_count)
         
         for i in range(show_count):
-            # Iterate over items, evaluate loop invariant, and update progress
             val = first_emb[i]
             self._neural_table.setItem(i, 0, QTableWidgetItem(str(i)))
             self._neural_table.setItem(i, 1, QTableWidgetItem(f"{val:.6f}"))
@@ -668,7 +642,6 @@ class AILabWorkspace(QWidget):
         cosine similarity, and updates the 2D projection (TF-IDF: the two most
         common terms as axes; dense: a PCA projection).
         """
-        # Step 1: Validate input parameters, operational preconditions, and state
         query = self._query_input.text().strip()
         if not query or not self._cached_sentences:
             return
@@ -683,7 +656,6 @@ class AILabWorkspace(QWidget):
                 return
         else:
             try:
-                # Execute guarded operations and establish recovery boundaries
                 q_vec = self.state.rag.encoder.encode([query])[0]
                 norm = np.linalg.norm(q_vec)
                 if norm > 0.0:
@@ -711,10 +683,8 @@ class AILabWorkspace(QWidget):
             # Sort terms by document frequency (DF)
             df_counts = {}
             for s in self._cached_sentences:
-                # Iterate over items, evaluate loop invariant, and update progress
                 tokens = set(self._tfidf.tokenize(s))
                 for w in tokens:
-                    # Iterate over items, evaluate loop invariant, and update progress
                     df_counts[w] = df_counts.get(w, 0) + 1
             
             sorted_terms = sorted(vocab.keys(), key=lambda w: (-df_counts[w], w))
@@ -738,7 +708,6 @@ class AILabWorkspace(QWidget):
             # PCA projection for Dense
             self._projection_widget.set_axes("PCA Component 1", "PCA Component 2")
             try:
-                # Execute guarded operations and establish recovery boundaries
                 pca_docs, q_proj = self._project_pca_docs_and_query(self._cached_embeddings, q_vec)
                 self._projection_widget.set_query(q_proj[0], q_proj[1])
             except Exception:
@@ -748,7 +717,6 @@ class AILabWorkspace(QWidget):
                 self._projection_widget.set_query(0.5, 0.5)
 
         for idx, doc in enumerate(self._cached_sentences):
-            # Iterate over items, evaluate loop invariant, and update progress
             d_vec = self._cached_embeddings[idx]
             dot_product = float(np.dot(q_vec, d_vec))
             d_norm = float(np.linalg.norm(d_vec))
@@ -799,7 +767,6 @@ class AILabWorkspace(QWidget):
         Returns (document points, query point). The 0.15-0.85 margin keeps points
         away from the plot edges.
         """
-        # Step 1: Validate input parameters, operational preconditions, and state
         all_embeds = np.vstack(doc_embeddings + [query_embedding])
         
         # PCA requires mean-centred data.
@@ -829,7 +796,6 @@ class AILabWorkspace(QWidget):
 
     def showEvent(self, event):
         """Refresh the model/adapter dropdowns and (re)run the visualizer whenever the tab is shown."""
-        # Step 1: Validate input parameters, operational preconditions, and state
         super().showEvent(event)
         self._refresh_combos()
         # Automatically run visualizer on display if it hasn't run yet
@@ -842,9 +808,7 @@ class AILabWorkspace(QWidget):
         models_dir = "data/models"
         if os.path.exists(models_dir):
             try:
-                # Execute guarded operations and establish recovery boundaries
                 for f in sorted(os.listdir(models_dir)):
-                    # Iterate over items, evaluate loop invariant, and update progress
                     if f.endswith(".gguf"):
                         self._base_model_combo.addItem(f)
             except Exception:
@@ -860,9 +824,7 @@ class AILabWorkspace(QWidget):
         adapters_dir = "data/adapters"
         if os.path.exists(adapters_dir):
             try:
-                # Execute guarded operations and establish recovery boundaries
                 for d in sorted(os.listdir(adapters_dir)):
-                    # Iterate over items, evaluate loop invariant, and update progress
                     d_path = os.path.join(adapters_dir, d)
                     if os.path.isdir(d_path):
                         self._lora_adapter_combo.addItem(d)
@@ -875,7 +837,6 @@ class AILabWorkspace(QWidget):
         The JSON file maps agent id -> profile. An unreadable existing file is
         replaced (with a warning) rather than blocking the user.
         """
-        # Step 1: Validate input parameters, operational preconditions, and state
         name = self._agent_name_input.text().strip()
         label = self._agent_label_input.text().strip()
         desc = self._agent_desc_input.text().strip()
@@ -926,7 +887,6 @@ class AILabWorkspace(QWidget):
         agents_data = {}
         if os.path.exists(agents_file):
             try:
-                # Execute guarded operations and establish recovery boundaries
                 with open(agents_file, "r", encoding="utf-8") as f:
                     agents_data = json.load(f)
             except Exception as e:
@@ -935,7 +895,6 @@ class AILabWorkspace(QWidget):
         agents_data[name] = profile
 
         try:
-            # Execute guarded operations and establish recovery boundaries
             with open(agents_file, "w", encoding="utf-8") as f:
                 json.dump(agents_data, f, indent=2, ensure_ascii=False)
         except Exception as e:

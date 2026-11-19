@@ -20,7 +20,6 @@ def symbol_to_qicon(icon_widget_class, state, color_role="accent", size=16) -> Q
     """Render a BaseSymbol subclass to a QIcon, for buttons that need an icon
     alongside a text label rather than a standalone icon-only button (see
     IconBtn for that case)."""
-    # Step 1: Validate input parameters, operational preconditions, and state
     icon_widget = icon_widget_class(state, color_role=color_role, size=size)
     pixmap = icon_widget.grab()
     icon_widget.deleteLater()
@@ -33,7 +32,6 @@ class BaseSymbol(QWidget):
     """Base class for theme-aware custom painted icons."""
     def __init__(self, state, color_role="accent", size=16, parent=None):
         """`color_role` is a key of the theme palette (e.g. 'accent', 'green', 'red')."""
-        # Step 1: Validate input parameters, operational preconditions, and state
         super().__init__(parent)
         self.state = state
         self.color_role = color_role
@@ -42,7 +40,6 @@ class BaseSymbol(QWidget):
 
     def set_color_role(self, role: str):
         """Switch to another palette colour role and repaint."""
-        # Step 1: Validate input parameters, operational preconditions, and state
         self.color_role = role
         self.update()
 
@@ -52,7 +49,6 @@ class BaseSymbol(QWidget):
         Unknown roles fall back to the accent colour; the theme is looked up on
         every call so repaints follow live theme changes.
         """
-        # Step 1: Validate input parameters, operational preconditions, and state
         colors = get_theme_colors(self.state)
         hex_color = colors.get(self.color_role, colors.get("accent", "#00C2FF"))
         return QColor(hex_color)
@@ -62,7 +58,6 @@ class BaseSymbol(QWidget):
 class HamburgerIcon(BaseSymbol):
     """Draws a clean, futuristic 3-line menu bar icon."""
     def paintEvent(self, event):
-        # Step 1: Validate input parameters, operational preconditions, and state
         painter = QPainter(self)
         painter.setRenderHint(QPainter.RenderHint.Antialiasing)
         
@@ -84,7 +79,6 @@ class HamburgerIcon(BaseSymbol):
 class BrainIcon(BaseSymbol):
     """Draws an abstract neural network node schema representing cognitive reasoning."""
     def paintEvent(self, event):
-        # Step 1: Validate input parameters, operational preconditions, and state
         painter = QPainter(self)
         painter.setRenderHint(QPainter.RenderHint.Antialiasing)
         
@@ -125,7 +119,6 @@ class BrainIcon(BaseSymbol):
 class ThumbsUpIcon(BaseSymbol):
     """Draws a clean vector thumbs-up glyph."""
     def paintEvent(self, event):
-        # Step 1: Validate input parameters, operational preconditions, and state
         painter = QPainter(self)
         painter.setRenderHint(QPainter.RenderHint.Antialiasing)
         
@@ -160,7 +153,6 @@ class ThumbsUpIcon(BaseSymbol):
 class ThumbsDownIcon(BaseSymbol):
     """Draws a clean vector thumbs-down glyph."""
     def paintEvent(self, event):
-        # Step 1: Validate input parameters, operational preconditions, and state
         painter = QPainter(self)
         painter.setRenderHint(QPainter.RenderHint.Antialiasing)
         
@@ -192,7 +184,6 @@ class ThumbsDownIcon(BaseSymbol):
 class DocIcon(BaseSymbol):
     """Draws a document outline sheet with a clean folded top corner."""
     def paintEvent(self, event):
-        # Step 1: Validate input parameters, operational preconditions, and state
         painter = QPainter(self)
         painter.setRenderHint(QPainter.RenderHint.Antialiasing)
         
@@ -226,7 +217,6 @@ class DocIcon(BaseSymbol):
 class CheckIcon(BaseSymbol):
     """Draws a vector checkmark path."""
     def paintEvent(self, event):
-        # Step 1: Validate input parameters, operational preconditions, and state
         painter = QPainter(self)
         painter.setRenderHint(QPainter.RenderHint.Antialiasing)
         
@@ -245,7 +235,6 @@ class CheckIcon(BaseSymbol):
 class CrossIcon(BaseSymbol):
     """Draws a vector cancel cross."""
     def paintEvent(self, event):
-        # Step 1: Validate input parameters, operational preconditions, and state
         painter = QPainter(self)
         painter.setRenderHint(QPainter.RenderHint.Antialiasing)
         
@@ -264,7 +253,6 @@ class CrossIcon(BaseSymbol):
 class GearIcon(BaseSymbol):
     """Draws a clean, futuristic gear/settings icon."""
     def paintEvent(self, event):
-        # Step 1: Validate input parameters, operational preconditions, and state
         painter = QPainter(self)
         painter.setRenderHint(QPainter.RenderHint.Antialiasing)
         
@@ -287,7 +275,6 @@ class GearIcon(BaseSymbol):
         # Draw 8 teeth
         import math
         for i in range(8):
-            # Iterate over items, evaluate loop invariant, and update progress
             angle = i * math.pi / 4.0
             x1 = cx + r_outer * math.cos(angle)
             y1 = cy + r_outer * math.sin(angle)
@@ -303,7 +290,6 @@ class IconBtn(QPushButton):
 
     def __init__(self, icon_widget_class, state, color_role="accent", tooltip="", size=28, parent=None):
         """Create a fixed-size icon button from a BaseSymbol subclass."""
-        # Step 1: Validate input parameters, operational preconditions, and state
         super().__init__(parent)
         self.setObjectName("btn-ghost")
         self.setFixedSize(size, size)
@@ -319,5 +305,4 @@ class IconBtn(QPushButton):
         
     def update_style(self):
         """Repaint the hosted icon after a theme/state change."""
-        # Step 1: Validate input parameters, operational preconditions, and state
         self.icon_widget.update()

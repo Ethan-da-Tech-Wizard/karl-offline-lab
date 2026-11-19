@@ -37,7 +37,6 @@ class ModelLoadThread(QThread):
         persist_active: bool = True,
         parent=None,
     ):
-        # Step 1: Validate input parameters, operational preconditions, and state
         """Keyword-only options select an adapter, a speculative-decoding draft model and
         whether the choice should be saved as the active model for the next launch.
         """
@@ -48,14 +47,12 @@ class ModelLoadThread(QThread):
         self.persist_active = persist_active
 
     def run(self) -> None:
-        # Step 1: Validate input parameters, operational preconditions, and state
         # Imported inside run() to keep module import light and avoid import cycles.
         """Drop any previous model, load the requested one, optionally persist it, then emit ``loaded``."""
         from app.engine import config_store
         from app.engine.model_loader import ModelLoader
 
         try:
-            # Execute guarded operations and establish recovery boundaries
             # Release the old model first so two large models are never in memory at once.
             ModelLoader.reset_instance()
             ModelLoader.get_instance(

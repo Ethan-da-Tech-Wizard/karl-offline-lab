@@ -56,10 +56,8 @@ class _ModelInitThread(QThread):
         warms it for every later consumer. Errors are converted to short status
         strings because signals cross threads and must not raise.
         """
-        # Step 1: Validate input parameters, operational preconditions, and state
         from app.engine.model_loader import ModelLoader
         try:
-            # Execute guarded operations and establish recovery boundaries
             ModelLoader.get_instance()
             adapter = getattr(ModelLoader, "_active_adapter", None)
             self.loaded.emit(ModelLoader.model_name(), adapter)
@@ -77,7 +75,6 @@ class MainWindow(QMainWindow):
 
     def __init__(self):
         """Create AppState, build the workspace stack, and defer heavy startup work."""
-        # Step 1: Validate input parameters, operational preconditions, and state
         super().__init__()
         self.setWindowTitle("Karl")
         self.setMinimumSize(760, 560)
@@ -116,7 +113,6 @@ class MainWindow(QMainWindow):
         # Workspace switching (Ctrl+1 to Ctrl+0)
         self._workspace_shortcuts = []
         for idx in range(10):
-            # Iterate over items, evaluate loop invariant, and update progress
             key = f"Ctrl+{idx+1}" if idx < 9 else "Ctrl+0"
             shortcut = QShortcut(QKeySequence(key), self)
             # Use a helper slot to avoid lambda cell capture issues
@@ -157,7 +153,6 @@ class MainWindow(QMainWindow):
         A factory is used instead of an inline lambda in the loop so each shortcut
         binds its own idx rather than the loop variable's final value.
         """
-        # Step 1: Validate input parameters, operational preconditions, and state
         return lambda: self.switch_workspace(idx)
 
     def switch_workspace(self, index: int) -> None:
@@ -166,54 +161,45 @@ class MainWindow(QMainWindow):
         Going through the sidebar (not the stack) keeps the highlighted button and
         the visible page in sync; the sidebar emits workspace_changed.
         """
-        # Step 1: Validate input parameters, operational preconditions, and state
         self._sidebar.select(index)
 
     def start_new_workbench_session(self) -> None:
         """Jump to the Workbench (index 0) and start a fresh chat session."""
-        # Step 1: Validate input parameters, operational preconditions, and state
         self.switch_workspace(0)
         self._workbench.new_session()
 
     def save_workbench_session(self) -> None:
         """Jump to the Workbench (index 0) and save the current chat session."""
-        # Step 1: Validate input parameters, operational preconditions, and state
         self.switch_workspace(0)
         self._workbench.save_current_session()
 
     def toggle_workbench_rag(self) -> None:
         """Jump to the Workbench and toggle the RAG (retrieval) pipeline."""
-        # Step 1: Validate input parameters, operational preconditions, and state
         self.switch_workspace(0)
         self._workbench.toggle_rag_pipeline()
 
     def toggle_workbench_agentic_loop(self) -> None:
         """Jump to the Workbench and toggle the agentic tool loop."""
-        # Step 1: Validate input parameters, operational preconditions, and state
         self.switch_workspace(0)
         self._workbench.toggle_agentic_loop()
 
     def open_knowledge_ingest(self) -> None:
         """Jump to the Knowledge Base (index 2) and open its ingest dialog."""
-        # Step 1: Validate input parameters, operational preconditions, and state
         self.switch_workspace(2)
         self._knowledge_base.open_ingest_dialog()
 
     def rebuild_knowledge_index(self) -> None:
         """Jump to the Knowledge Base (index 2) and rebuild its search index."""
-        # Step 1: Validate input parameters, operational preconditions, and state
         self.switch_workspace(2)
         self._knowledge_base.rebuild_index()
 
     def run_eval_suite(self) -> None:
         """Jump to the Eval Suite (index 5) and start a run."""
-        # Step 1: Validate input parameters, operational preconditions, and state
         self.switch_workspace(5)
         self._eval.run_suite()
 
     def open_system_defaults(self) -> None:
         """Jump to System Config (index 7) and show its Defaults tab."""
-        # Step 1: Validate input parameters, operational preconditions, and state
         self.switch_workspace(7)
         self._system.show_defaults_tab()
 
@@ -222,7 +208,6 @@ class MainWindow(QMainWindow):
 
         Imported lazily so the palette module is only loaded when first used.
         """
-        # Step 1: Validate input parameters, operational preconditions, and state
         from app.ui.widgets.command_palette import CommandPalette
         palette = CommandPalette(self, self)
         palette.exec()
@@ -234,7 +219,6 @@ class MainWindow(QMainWindow):
         of well-known input attribute names, then the first editable line/text edit
         found by a generic widget-tree search.
         """
-        # Step 1: Validate input parameters, operational preconditions, and state
         # Nothing to focus if the stack is empty.
         current_widget = self._stack.currentWidget()
         if not current_widget:
@@ -256,7 +240,6 @@ class MainWindow(QMainWindow):
             "_model_path_input",
             "_log_token_input",
         ):
-            # Iterate over items, evaluate loop invariant, and update progress
             inp = getattr(current_widget, attr, None)
             if inp is not None and inp.isVisible() and inp.isEnabled():
                 inp.setFocus()
@@ -265,7 +248,6 @@ class MainWindow(QMainWindow):
         from PyQt6.QtWidgets import QLineEdit, QTextEdit
         inputs = current_widget.findChildren((QLineEdit, QTextEdit))
         for inp in inputs:
-            # Iterate over items, evaluate loop invariant, and update progress
             if inp.isVisible() and inp.isEnabled() and not inp.isReadOnly():
                 inp.setFocus()
                 break
@@ -316,7 +298,6 @@ class MainWindow(QMainWindow):
             self._docs,
             self._flywheel,
         ):
-            # Iterate over items, evaluate loop invariant, and update progress
             self._stack.addWidget(ws)
 
         # Status bar
@@ -334,7 +315,6 @@ class MainWindow(QMainWindow):
 
     def resizeEvent(self, event):
         """Collapse the sidebar to icons when the window is narrower than 850 px."""
-        # Step 1: Validate input parameters, operational preconditions, and state
         super().resizeEvent(event)
         # resizeEvent can fire during construction before the sidebar exists.
         if hasattr(self, "_sidebar"):
@@ -342,7 +322,6 @@ class MainWindow(QMainWindow):
 
     def _connect_signals(self):
         """Connect workspace/state signals to the status bar, sidebar and theme code."""
-        # Step 1: Validate input parameters, operational preconditions, and state
         self._sidebar.workspace_changed.connect(self._stack.setCurrentIndex)
         # Defer focus by one event-loop tick so the new page is actually visible first.
         self._stack.currentChanged.connect(lambda _idx: QTimer.singleShot(0, self._focus_active_input))
@@ -360,7 +339,6 @@ class MainWindow(QMainWindow):
 
     def _setup_autosave_checkpoint_timer(self):
         """Start a 60 second timer that checkpoints in-flight work for crash recovery."""
-        # Step 1: Validate input parameters, operational preconditions, and state
         self._autosave_checkpoint_timer = QTimer(self)
         self._autosave_checkpoint_timer.setInterval(60_000)
         self._autosave_checkpoint_timer.timeout.connect(self._autosave_active_checkpoint)
@@ -372,13 +350,11 @@ class MainWindow(QMainWindow):
         Idle sessions are skipped so we do not rewrite the file needlessly; failures
         are logged and swallowed because autosave must never crash the app.
         """
-        # Step 1: Validate input parameters, operational preconditions, and state
         thread = getattr(self._workbench, "_thread", None)
         chat_running = bool(thread and thread.isRunning())
         if not (self._state.generating or self._state.swarm_running or chat_running):
             return
         try:
-            # Execute guarded operations and establish recovery boundaries
             self._state.memory.save_autosave_checkpoint(
                 self._workbench.chat_history,
                 self._stack.currentIndex(),
@@ -401,9 +377,7 @@ class MainWindow(QMainWindow):
 
         The checkpoint is always cleared afterwards so the prompt is shown once.
         """
-        # Step 1: Validate input parameters, operational preconditions, and state
         try:
-            # Execute guarded operations and establish recovery boundaries
             checkpoint = self._state.memory.load_autosave_checkpoint()
         except Exception as exc:
             logger.warning("Could not read autosave checkpoint: %s", exc)
@@ -416,7 +390,6 @@ class MainWindow(QMainWindow):
         # Under tests there is no human to answer the dialog, so restore silently.
         if QCoreApplication.instance() and QCoreApplication.instance().property("is_test"):
             try:
-                # Execute guarded operations and establish recovery boundaries
                 self._restore_autosave_checkpoint(checkpoint)
             finally:
                 self._state.memory.clear_autosave_checkpoint()
@@ -431,7 +404,6 @@ class MainWindow(QMainWindow):
             QMessageBox.StandardButton.Yes,
         )
         try:
-            # Execute guarded operations and establish recovery boundaries
             if answer == QMessageBox.StandardButton.Yes:
                 self._restore_autosave_checkpoint(checkpoint)
         finally:
@@ -443,7 +415,6 @@ class MainWindow(QMainWindow):
         Supports both the new format (a serialised SessionTree under "root") and
         the legacy flat chat_history list of message dicts.
         """
-        # Step 1: Validate input parameters, operational preconditions, and state
         from app.utils.session_tree import SessionTree
 
         # Prefer the tree format; fall back to the legacy flat history key.
@@ -453,7 +424,6 @@ class MainWindow(QMainWindow):
         else:
             tree = SessionTree()
             for msg in raw_tree or []:
-                # Iterate over items, evaluate loop invariant, and update progress
                 tree.add_message(
                     msg.get("role", "user"),
                     msg.get("content", ""),
@@ -498,7 +468,6 @@ class MainWindow(QMainWindow):
 
     def _init_model(self):
         """Start the background model load unless one is already running."""
-        # Step 1: Validate input parameters, operational preconditions, and state
         if self._model_init_thread is not None and self._model_init_thread.isRunning():
             return
         self._status_bar.set_state("loading model…", True)
@@ -509,7 +478,6 @@ class MainWindow(QMainWindow):
 
     def _on_startup_model_loaded(self, name: str, adapter: object):
         """Slot: the model finished loading; sync AppState, status bar and dropdowns."""
-        # Step 1: Validate input parameters, operational preconditions, and state
         self._state.model_name = name
         self._status_bar.set_model(name)
 
@@ -531,7 +499,6 @@ class MainWindow(QMainWindow):
 
     def _on_startup_model_failed(self, message: str):
         """Slot: show the load failure message in the status bar (not a modal dialog)."""
-        # Step 1: Validate input parameters, operational preconditions, and state
         self._status_bar.set_state(message, False)
 
     # ── slots ─────────────────────────────────────────────────────────────────
@@ -542,7 +509,6 @@ class MainWindow(QMainWindow):
         The "modelState" property drives stylesheet selectors; unpolish/polish forces
         Qt to re-evaluate the style because property changes are not auto-applied.
         """
-        # Step 1: Validate input parameters, operational preconditions, and state
         self._status_bar.set_state(text, active)
         state = "idle"
         if text == "error":
@@ -555,7 +521,6 @@ class MainWindow(QMainWindow):
 
     def _on_adapter_changed(self, name: str):
         """Slot: record the active adapter name (empty string means no adapter)."""
-        # Step 1: Validate input parameters, operational preconditions, and state
         self._state.adapter_name = name if name else None
 
     def _on_state_changed(self, name: str, value: object):
@@ -564,7 +529,6 @@ class MainWindow(QMainWindow):
         Appearance fields re-apply the theme; model/adapter changes refresh the
         status bar.
         """
-        # Step 1: Validate input parameters, operational preconditions, and state
         if name in (
             "theme_preset", "theme_mode", "custom_accent", "layout_preset",
             "reduced_motion", "glow_enabled", "animation_intensity", "glow_strength"
@@ -582,14 +546,12 @@ class MainWindow(QMainWindow):
 
     def _open_appearance_controls(self):
         """Jump to System Config and show its appearance (theme) tab if it has one."""
-        # Step 1: Validate input parameters, operational preconditions, and state
         self.switch_workspace(7)
         if hasattr(self._system, "show_theme_tab"):
             self._system.show_theme_tab()
 
     def _load_theme_config(self):
         """Copy persisted UI settings from config_store into AppState, then apply the theme."""
-        # Step 1: Validate input parameters, operational preconditions, and state
         from app.engine import config_store
 
         config = config_store.get_ui_config()
@@ -611,7 +573,6 @@ class MainWindow(QMainWindow):
 
     def _apply_theme_from_state(self):
         """Compile the stylesheet from AppState and apply it app-wide, then relayout."""
-        # Step 1: Validate input parameters, operational preconditions, and state
         from PyQt6.QtWidgets import QApplication
         from app.ui.themes import get_theme_stylesheet
 
@@ -676,17 +637,14 @@ class MainWindow(QMainWindow):
 
     def _init_websocket_server(self):
         """Start the local WebSocket bridge (port 8080); failure is non-fatal."""
-        # Step 1: Validate input parameters, operational preconditions, and state
         from app.engine.websocket_server import WebSocketServerManager
         try:
-            # Execute guarded operations and establish recovery boundaries
             self._ws_server = WebSocketServerManager.get_instance(port=8080, state=self._state)
         except Exception as e:
             logger.warning(f"Failed to start WebSocket server on boot: {e}")
 
     def showEvent(self, event):
         """On first show, release the boot lock and begin polling bridge status."""
-        # Step 1: Validate input parameters, operational preconditions, and state
         super().showEvent(event)
         if not hasattr(self, "_bridge_poll_timer"):
             # Window rendered successfully — release the boot crash-detection lock.
@@ -703,9 +661,7 @@ class MainWindow(QMainWindow):
 
         States: offline (no server), listening (server, no clients), connected (n clients).
         """
-        # Step 1: Validate input parameters, operational preconditions, and state
         try:
-            # Execute guarded operations and establish recovery boundaries
             from app.engine.websocket_server import WebSocketServerManager
             ws_mgr = WebSocketServerManager._instance
             if ws_mgr and ws_mgr.server is not None:
@@ -718,7 +674,6 @@ class MainWindow(QMainWindow):
                 self._status_bar.set_bridge_status("offline")
         except Exception:
             try:
-                # Execute guarded operations and establish recovery boundaries
                 self._status_bar.set_bridge_status("offline")
             except Exception:
                 pass
@@ -729,7 +684,6 @@ class MainWindow(QMainWindow):
         Order matters: threads are joined before Qt objects are destroyed, and each
         cleanup step is isolated in try/except so one failure cannot block exit.
         """
-        # Step 1: Validate input parameters, operational preconditions, and state
         self._workbench.on_close()
 
         # The llama load cannot be interrupted; wait for it so the process
@@ -744,21 +698,18 @@ class MainWindow(QMainWindow):
         from app.engine.websocket_server import WebSocketServerManager
         from app.utils.keychain_manager import revoke_tokens
         try:
-            # Execute guarded operations and establish recovery boundaries
             WebSocketServerManager.reset_instance()
         except Exception as e:
             logger.warning(f"Error during exit teardown: {e}")
 
         # Purge sensitive tokens from kernel and OS vaults on exit
         try:
-            # Execute guarded operations and establish recovery boundaries
             revoke_tokens()
         except Exception:
             pass
 
         # Scrub any live shared memory segments before Qt tears down the process.
         try:
-            # Execute guarded operations and establish recovery boundaries
             from app.utils.ipc_helper import SharedMemoryManager
             SharedMemoryManager.instance()._cleanup_all()
         except Exception as e:

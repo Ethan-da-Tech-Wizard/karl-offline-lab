@@ -28,7 +28,6 @@ class TrainingThread(QThread):
 
     def __init__(self, hf_base_dir: str, adapter_name: str, config: dict):
         """Remember the HF base model folder, adapter name and hyperparameter dict."""
-        # Step 1: Validate input parameters, operational preconditions, and state
         super().__init__()
         self.hf_base_dir = hf_base_dir
         self.adapter_name = adapter_name
@@ -36,12 +35,10 @@ class TrainingThread(QThread):
 
     def request_stop(self):
         """Ask the training loop to stop (cooperative interruption flag)."""
-        # Step 1: Validate input parameters, operational preconditions, and state
         self.requestInterruption()
 
     def run(self):
         """Run the whole pipeline: load model, apply LoRA, train with SFTTrainer, save, convert to GGUF."""
-        # Step 1: Validate input parameters, operational preconditions, and state
         # Registering lets the task supervisor show progress and call request_stop() on cancel.
         from app.engine.task_supervisor import TaskSupervisor
         task_id = TaskSupervisor.instance().register(
@@ -52,7 +49,6 @@ class TrainingThread(QThread):
         try:
             # torch, transformers, peft, trl and datasets are imported here, not at module top:
             # they are heavy and optional, so the UI must start (and the export tab must work) without them.
-            # Execute guarded operations and establish recovery boundaries
             import os
             import gc
             import torch
@@ -155,7 +151,6 @@ class TrainingThread(QThread):
             thread_ref = self
             class TrainerProgressCallback(TrainerCallback):
                 def on_log(self, args, state, control, logs=None, **kwargs):
-                    # Step 1: Validate input parameters, operational preconditions, and state
                     if logs and "loss" in logs:
                         loss_val = float(logs["loss"])
                         epoch_val = state.epoch if state.epoch is not None else 0.0
@@ -163,7 +158,6 @@ class TrainingThread(QThread):
                         thread_ref.log.emit(f"Step {state.global_step}/{state.max_steps} | Epoch {epoch_val:.2f} | Loss: {loss_val:.4f}")
 
                 def on_step_end(self, args, state, control, **kwargs):
-                    # Step 1: Validate input parameters, operational preconditions, and state
                     epoch_val = state.epoch if state.epoch is not None else 0.0
                     thread_ref.progress.emit(state.global_step, state.max_steps, epoch_val)
                     if state.max_steps > 0:
@@ -184,7 +178,6 @@ class TrainingThread(QThread):
             # The log history (loss per step) is stored beside the adapter so the loss curve can be shown later.
             # Save training history
             try:
-                # Execute guarded operations and establish recovery boundaries
                 history_path = os.path.join(adapter_path, "train_history.json")
                 with open(history_path, "w", encoding="utf-8") as fh:
                     json.dump(trainer.state.log_history, fh, indent=2)
@@ -233,7 +226,6 @@ class TrainingThread(QThread):
             import gc
             gc.collect()
             try:
-                # Execute guarded operations and establish recovery boundaries
                 import torch
                 if torch.cuda.is_available():
                     torch.cuda.empty_cache()
@@ -250,7 +242,6 @@ class AutoTrainThread(QThread):
 
     def __init__(self, topic: str, adapter_name: str, config: dict):
         """Remember the topic, adapter name and config dict; no process exists until run()."""
-        # Step 1: Validate input parameters, operational preconditions, and state
         super().__init__()
         self.topic = topic
         self.adapter_name = adapter_name
@@ -259,18 +250,15 @@ class AutoTrainThread(QThread):
 
     def request_stop(self):
         """Interrupt the read loop and terminate the child process if one is running."""
-        # Step 1: Validate input parameters, operational preconditions, and state
         self.requestInterruption()
         if self.process is not None:
             try:
-                # Execute guarded operations and establish recovery boundaries
                 self.process.terminate()
             except Exception:
                 pass
 
     def run(self):
         """Launch auto_train.py with the configured options and forward its output line by line."""
-        # Step 1: Validate input parameters, operational preconditions, and state
         from app.engine.task_supervisor import TaskSupervisor
         task_id = TaskSupervisor.instance().register(
             name=f"Auto-Train Swarm: {self.adapter_name}",
@@ -297,7 +285,6 @@ class AutoTrainThread(QThread):
         self.log.emit(f"Launching Auto-Train Swarm Process: {' '.join(cmd)}")
         
         try:
-            # Execute guarded operations and establish recovery boundaries
             # stderr is merged into stdout so one stream carries every message; bufsize=1 gives line buffering.
             self.process = subprocess.Popen(
                 cmd,
@@ -310,7 +297,6 @@ class AutoTrainThread(QThread):
             
             # Blocking read loop on the worker thread; the interruption flag is checked once per output line.
             while True:
-                # Iterate over items, evaluate loop invariant, and update progress
                 if self.isInterruptionRequested():
                     self.process.terminate()
                     self.log.emit("Auto-training execution interrupted by user.")
@@ -341,7 +327,6 @@ class _FlywheelStatsThread(QThread):
 
     def run(self):
         """Read the data files and emit stats_ready with a dict of display strings."""
-        # Step 1: Validate input parameters, operational preconditions, and state
         stats = {}
         try:
             # Traces: count non-blank lines in every trace JSONL file.
@@ -350,9 +335,7 @@ class _FlywheelStatsThread(QThread):
             trace_files = glob.glob("data/logs/traces/*.jsonl")
             total_traces = 0
             for fp in trace_files:
-                # Iterate over items, evaluate loop invariant, and update progress
                 try:
-                    # Execute guarded operations and establish recovery boundaries
                     with open(fp, "r", encoding="utf-8") as f:
                         total_traces += sum(1 for line in f if line.strip())
                 except Exception:
@@ -384,12 +367,10 @@ class _FlywheelStatsThread(QThread):
             if os.path.exists(curated_path):
                 with open(curated_path, "r", encoding="utf-8") as f:
                     for line in f:
-                        # Iterate over items, evaluate loop invariant, and update progress
                         line = line.strip()
                         if not line:
                             continue
                         try:
-                            # Execute guarded operations and establish recovery boundaries
                             entry = json.loads(line)
                             src = entry.get("source", "")
                             if src == "thumbs_up":
@@ -427,11 +408,9 @@ class _FlywheelStatsThread(QThread):
             export_jsonls = [f for f in export_jsonls if "curated" not in os.path.basename(f)]
             if export_jsonls:
                 try:
-                    # Execute guarded operations and establish recovery boundaries
                     with open(export_jsonls[0], "r", encoding="utf-8") as f:
                         lines = []
                         for _ in range(50):
-                            # Iterate over items, evaluate loop invariant, and update progress
                             line = f.readline()
                             if not line:
                                 break
@@ -480,7 +459,6 @@ class MiniTrainThread(QThread):
         save_dir: str = "data/mini_gpt"
     ):
         """Store the text and config; weights are saved under save_dir (data/mini_gpt by default)."""
-        # Step 1: Validate input parameters, operational preconditions, and state
         super().__init__()
         self.dataset_text = dataset_text
         self.config = config
@@ -489,17 +467,14 @@ class MiniTrainThread(QThread):
 
     def stop(self):
         """Set the stop flag; the training loop checks it once per step."""
-        # Step 1: Validate input parameters, operational preconditions, and state
         self._stop_requested = True
 
     def request_stop(self):
         """Alias of stop() so the task supervisor can cancel this thread."""
-        # Step 1: Validate input parameters, operational preconditions, and state
         self.stop()
 
     def run(self):
         """Tokenize, build the model, run the training loop with periodic evaluation and sampling, then save."""
-        # Step 1: Validate input parameters, operational preconditions, and state
         from app.engine.task_supervisor import TaskSupervisor
         task_id = TaskSupervisor.instance().register(
             name="MiniGPT Training",
@@ -507,7 +482,6 @@ class MiniTrainThread(QThread):
         )
         self.task_id = task_id
         try:
-            # Execute guarded operations and establish recovery boundaries
             self.log.emit("Initializing MiniGPT Trainer...")
             
             # Lazy imports
@@ -574,7 +548,6 @@ class MiniTrainThread(QThread):
             # get_batch: random windows of block_size characters; targets are the same window shifted one character ahead.
             # Batch helper
             def get_batch(split):
-                # Step 1: Validate input parameters, operational preconditions, and state
                 split_data = train_data if split == 'train' else val_data
                 # Upper bound is len - block_size so that the shifted target window (i+1 .. i+block_size) never runs
                 # past the end of the data.
@@ -588,14 +561,11 @@ class MiniTrainThread(QThread):
             # estimate_loss: average of 10 random batches per split, with the model in eval mode (no dropout), then back to train mode.
             @torch.no_grad()
             def estimate_loss():
-                # Step 1: Validate input parameters, operational preconditions, and state
                 out = {}
                 model.eval()
                 for split in ['train', 'val']:
-                    # Iterate over items, evaluate loop invariant, and update progress
                     losses = torch.zeros(10)
                     for k in range(10):
-                        # Iterate over items, evaluate loop invariant, and update progress
                         X, Y = get_batch(split)
                         _, loss = model(X, Y)
                         losses[k] = loss.item()
@@ -607,7 +577,6 @@ class MiniTrainThread(QThread):
             self.log.emit("Starting training loop...")
             
             for step in range(max_iters + 1):
-                # Iterate over items, evaluate loop invariant, and update progress
                 if self._stop_requested:
                     self.log.emit("Training interrupted by user.")
                     break

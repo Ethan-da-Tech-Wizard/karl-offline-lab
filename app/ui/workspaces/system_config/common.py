@@ -15,7 +15,6 @@ from PyQt6.QtWidgets import QWidget, QHBoxLayout, QLabel, QFrame
 
 def _section(text: str) -> QLabel:
     """Return a QLabel styled as a section heading via the "section-header" QSS id."""
-    # Step 1: Validate input parameters, operational preconditions, and state
     lbl = QLabel(text)
     lbl.setObjectName("section-header")
     return lbl
@@ -23,7 +22,6 @@ def _section(text: str) -> QLabel:
 
 def _hline() -> QFrame:
     """Return a horizontal rule (QFrame HLine) used to separate groups in a panel."""
-    # Step 1: Validate input parameters, operational preconditions, and state
     f = QFrame()
     f.setFrameShape(QFrame.Shape.HLine)
     return f
@@ -32,7 +30,6 @@ def _hline() -> QFrame:
 def _row(label_text: str, widget: QWidget) -> QWidget:
     """Build a "label: widget" row with a fixed-width muted label column."""
     # Plain container widget; the caller adds the returned row to its own layout.
-    # Step 1: Validate input parameters, operational preconditions, and state
     w = QWidget()
     lo = QHBoxLayout(w)
     lo.setContentsMargins(0, 2, 0, 2)
