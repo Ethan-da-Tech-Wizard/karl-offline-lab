@@ -115,7 +115,7 @@ class TestWebSocketBridge(unittest.TestCase):
     """Integration tests that start the real WebSocketServerManager on a test port and drive it with a websockets client: RPC methods, notifications, token auth and rotation. Qt events are pumped by a spinner task because signals cross threads."""
     def setUp(self):
         """Create a QCoreApplication, start the bridge server on port 8081 (a test-only port) and prepare a sandbox directory with a trivially passing test script."""
-        # Returned from setUp, so the test is reported as skipped rather than failed.
+        # skipTest raises SkipTest, so the test is reported as skipped rather than failed.
         if _running_under_bwrap():
             self.skipTest("Codex sandbox blocks reliable localhost WebSocket tests")
 
@@ -676,7 +676,7 @@ class TestWebSocketBridge(unittest.TestCase):
         self.manager._rotate_token()
         expired_token = self.manager.bridge_token
         
-        # 3. Fast-forward time by 13 hours (46800 seconds); the lifetime is shorter than that (rotation test below uses 50000 s).
+        # 3. Fast-forward time by 13 hours (46800 seconds); the lifetime (_TOKEN_LIFETIME) is 12 hours = 43200 s, so 13 hours is past expiry.
         # 3. Fast-forward time by 13 hours (46800 seconds)
         mock_time.return_value = now + 46800.0
         
