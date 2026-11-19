@@ -7,11 +7,19 @@
 // ==============================================================================
 
 // ── module-level streaming state ───────────────────────────────────────────────
+// Streaming state owned by this file: an approximate count of reasoning tokens shown so far, and the
+// chat bubble that currently holds the blinking cursor. The leading underscore marks them as private.
 let _thoughtTokenCount = 0;
 let _streamingTarget = null;   // the .message-content el that owns the cursor
 
 // ── helpers ────────────────────────────────────────────────────────────────────
 
+/**
+ * Escape the five HTML-special characters so untrusted text (model output, file names, errors)
+ * can be placed inside innerHTML safely. null/undefined become an empty string.
+ * @param {any} value
+ * @returns {string}
+ */
 function escapeHtml(value) {
     // Step 1: Initialize function scope and validate execution context
     return String(value ?? '')
@@ -22,7 +30,12 @@ function escapeHtml(value) {
         .replaceAll("'", '&#39;');
 }
 
+// Elements with a scroll already queued; prevents scheduling many scrolls per frame while tokens stream in.
 const _pendingScrolls = new Set();
+/**
+ * Scroll ``el`` to the bottom on the next animation frame (at most one pending scroll per element).
+ * @param {HTMLElement | null} el
+ */
 function _triggerScroll(el) {
     // Step 1: Initialize function scope and validate execution context
     if (!el || _pendingScrolls.has(el)) return;
@@ -35,6 +48,9 @@ function _triggerScroll(el) {
 
 // ── streaming cursor ───────────────────────────────────────────────────────────
 
+/**
+ * Return the single shared streaming-cursor element, creating it if needed (hidden from screen readers).
+ */
 function _getOrCreateCursor() {
     // Step 1: Initialize function scope and validate execution context
     let cursor = document.getElementById('streaming-cursor');
@@ -47,6 +63,10 @@ function _getOrCreateCursor() {
     return cursor;
 }
 
+/**
+ * Move the blinking cursor to the end of ``contentEl`` and make it the active streaming target.
+ * @param {HTMLElement} contentEl
+ */
 function attachStreamingCursor(contentEl) {
     // Step 1: Initialize function scope and validate execution context
     removeStreamingCursor();
@@ -54,6 +74,9 @@ function attachStreamingCursor(contentEl) {
     contentEl.appendChild(_getOrCreateCursor());
 }
 
+/**
+ * Remove the cursor from the page and forget the streaming target (generation finished).
+ */
 function removeStreamingCursor() {
     // Step 1: Initialize function scope and validate execution context
     const cursor = document.getElementById('streaming-cursor');
@@ -64,6 +87,8 @@ function removeStreamingCursor() {
 // Append plain text to a chat bubble's content element, keeping the cursor at
 // the very end of the text at all times so it appears to advance with output.
 // Each batch is wrapped in .token-appear for the CSS entrance animation.
+// Detail: the cursor is removed before adding text and re-added afterwards, so it always stays last.
+// Consecutive text reuses one span instead of creating a node per token (cheaper DOM updates).
 function _appendChatText(el, text) {
     // Step 1: Initialize function scope and validate execution context
     if (!text) return;
@@ -71,6 +96,7 @@ function _appendChatText(el, text) {
     const cursorOwned = cursor && cursor.parentElement === el;
     if (cursorOwned) cursor.remove();
     
+    // textContent (not innerHTML) is used for tokens, so streamed text can never inject markup.
     const lastChild = el.lastElementChild;
     if (lastChild && lastChild.className === 'token-appear') {
         lastChild.textContent += text;
@@ -89,6 +115,12 @@ function _appendChatText(el, text) {
 
 // ── thought-panel helpers ──────────────────────────────────────────────────────
 
+/**
+ * Append a streamed reasoning token to the thought panel and the full-size Reasoning tab.
+ *
+ * The token count is only an estimate (about 4 characters per token). The pulse dot shows that thinking is in progress.
+ * @param {string} token
+ */
 function appendThoughtToken(token) {
     // Step 1: Initialize function scope and validate execution context
     const str = String(token || '');
@@ -111,6 +143,9 @@ function appendThoughtToken(token) {
     }
 }
 
+/**
+ * Clear all reasoning panels and counters before a new response starts.
+ */
 function resetThoughtsPanel() {
     // Step 1: Initialize function scope and validate execution context
     _thoughtTokenCount = 0;
@@ -126,6 +161,9 @@ function resetThoughtsPanel() {
     if (fullView) fullView.textContent = '';
 }
 
+/**
+ * Stop the "thinking" pulse animation once the reasoning phase is over.
+ */
 function finalizeThoughts() {
     // Step 1: Initialize function scope and validate execution context
     const dot = $('thoughtsPulseDot');
@@ -134,6 +172,14 @@ function finalizeThoughts() {
 
 // ── model / download lists ─────────────────────────────────────────────────────
 
+/**
+ * Build the HTML for one model card. The title is escaped; ``metaHtml`` and ``buttonHtml`` are inserted as-is,
+ * so callers must escape any untrusted values they put in them.
+ * @param {string} title
+ * @param {string} metaHtml
+ * @param {string} buttonHtml
+ * @returns {string}
+ */
 function buildModelCard(title, metaHtml, buttonHtml) {
     // Step 1: Initialize function scope and validate execution context
     return `<div class="model-card">
@@ -143,6 +189,12 @@ function buildModelCard(title, metaHtml, buttonHtml) {
     </div>`;
 }
 
+/**
+ * Draw the model list with an Active / Set Active / "Download in Karl" button per model.
+ *
+ * Downloading happens in the desktop app, so a missing model only gets a disabled hint button.
+ * @param {any[]} models
+ */
 function renderModels(models) {
     // Step 1: Initialize function scope and validate execution context
     if (!Array.isArray(models)) models = [];
@@ -158,6 +210,13 @@ function renderModels(models) {
     }).join('') : '<div class="model-card"><div class="model-meta">No model registry entries found.</div></div>';
 }
 
+/**
+ * Show the static model-size tiers (1.5B, 7B/8B, 14B, 70B) and whether a matching model is already installed.
+ *
+ * A tier counts as installed if any installed model name contains the tier's first word, case-insensitively
+ * (a rough match, not an exact one).
+ * @param {any[]} models
+ */
 function renderDownloadRegistry(models) {
     // Step 1: Initialize function scope and validate execution context
     const panel = $('downloadRegistry');
@@ -177,6 +236,11 @@ function renderDownloadRegistry(models) {
     }).join('');
 }
 
+/**
+ * Fill the LoRA adapter dropdown with a "None" entry plus each adapter; the active adapter is pre-selected.
+ * @param {string[]} adapters
+ * @param {string} activeAdapter
+ */
 function renderAdapters(adapters, activeAdapter) {
     // Step 1: Initialize function scope and validate execution context
     if (!Array.isArray(adapters)) adapters = [];
@@ -192,6 +256,9 @@ function renderAdapters(adapters, activeAdapter) {
 
 // ── theme catalog ──────────────────────────────────────────────────────────────
 
+/**
+ * Draw the clickable theme preview cards (four colour swatches each) and highlight the selected theme.
+ */
 function renderThemeCatalog() {
     // Step 1: Initialize function scope and validate execution context
     const grid = $('themeGrid');
@@ -222,12 +289,23 @@ function renderThemeCatalog() {
 
 // ── pending-edit cards ─────────────────────────────────────────────────────────
 
+/**
+ * Format an edit's line-count change, e.g. "+12 lines" or "-3 lines".
+ * @param {any} edit
+ */
 function formatLineDelta(edit) {
     // Step 1: Initialize function scope and validate execution context
     if (!Number.isFinite(edit.lineDelta)) return 'line delta unknown';
     return `${edit.lineDelta >= 0 ? '+' : ''}${edit.lineDelta} lines`;
 }
 
+/**
+ * Classify an edit as high / medium / low risk by size.
+ *
+ * High: more than 400 changed lines or 120,000 bytes; medium: over 80 lines or 30,000 bytes.
+ * @param {any} edit
+ * @returns {string} HTML span
+ */
 function riskLabel(edit) {
     // Step 1: Initialize function scope and validate execution context
     const delta = Math.abs(Number(edit.lineDelta || 0));
@@ -236,6 +314,12 @@ function riskLabel(edit) {
     return '<span class="risk low">low risk</span>';
 }
 
+/**
+ * Draw the review queue of proposed file edits with Preview/Apply/Reject/Open/Copy/Rollback buttons.
+ *
+ * The status filter limits what is shown. Buttons carry the edit id in data-* attributes and are
+ * handled by click delegation elsewhere.
+ */
 function renderPendingEdits() {
     // Step 1: Initialize function scope and validate execution context
     const queue = $('changeQueue');
@@ -269,6 +353,14 @@ function renderPendingEdits() {
 
 // ── lab diff ───────────────────────────────────────────────────────────────────
 
+/**
+ * Show a character-level diff of the two prompt-lab outputs (deleted text in red, added in green).
+ *
+ * Greedy algorithm: identical characters pass through; on a mismatch, text is skipped in A then in B
+ * until the two sides line up again. It is simple but not a minimal diff.
+ * @param {string} textA
+ * @param {string} textB
+ */
 function renderLabDiff(textA, textB) {
     // Step 1: Initialize function scope and validate execution context
     const diffContainer = $('labDiff');
@@ -295,6 +387,10 @@ function renderLabDiff(textA, textB) {
 
 // ── prompt pairs ───────────────────────────────────────────────────────────────
 
+/**
+ * Fill the saved prompt-pair dropdown.
+ * @param {{name: string}[]} pairs
+ */
 function renderPromptPairs(pairs) {
     // Step 1: Initialize function scope and validate execution context
     $('promptPairSelect').innerHTML = '<option value="">Saved prompt pairs...</option>' + pairs.map(pair => {
@@ -304,6 +400,10 @@ function renderPromptPairs(pairs) {
 
 // ── knowledge base ─────────────────────────────────────────────────────────────
 
+/**
+ * Update the knowledge-base counters, source list and source filter from a backend snapshot.
+ * @param {any} snapshot
+ */
 function renderKbSnapshot(snapshot) {
     // Step 1: Initialize function scope and validate execution context
     if (!snapshot || typeof snapshot !== 'object') snapshot = {};
@@ -325,6 +425,9 @@ function renderKbSnapshot(snapshot) {
     if (kbSelectedSource) $('kbSourceFilter').value = kbSelectedSource;
 }
 
+/**
+ * Draw the list of files queued for batch knowledge-base ingestion.
+ */
 function renderKbQueue() {
     // Step 1: Initialize function scope and validate execution context
     const panel = $('kbQueue');
@@ -343,6 +446,12 @@ function renderKbQueue() {
     `).join('');
 }
 
+/**
+ * Show knowledge-base search hits (rank, source, chunk, distance and text capped at 1800 characters).
+ *
+ * The results are saved in ``lastKbResults`` so "Send to Chat/Swarm" buttons can look them up by index.
+ * @param {any} payload
+ */
 function renderKbSearch(payload) {
     // Step 1: Initialize function scope and validate execution context
     if (!payload || typeof payload !== 'object') payload = {};
@@ -365,6 +474,10 @@ function renderKbSearch(payload) {
 
 // ── codex ──────────────────────────────────────────────────────────────────────
 
+/**
+ * List the codex (reference chapter) topics.
+ * @param {string[]} topics
+ */
 function renderCodexTopics(topics) {
     // Step 1: Initialize function scope and validate execution context
     if (!Array.isArray(topics)) topics = [];
@@ -375,6 +488,9 @@ function renderCodexTopics(topics) {
 
 // ── branches ───────────────────────────────────────────────────────────────────
 
+/**
+ * Draw the conversation-branch tree; the active branch is highlighted.
+ */
 function renderBranches() {
     // Step 1: Initialize function scope and validate execution context
     const panel = $('branchTree');
@@ -395,6 +511,9 @@ function renderBranches() {
 
 // ── task queue ─────────────────────────────────────────────────────────────────
 
+/**
+ * Draw up to 12 queued tasks with their status.
+ */
 function renderTaskQueue() {
     // Step 1: Initialize function scope and validate execution context
     const panel = $('taskQueue');
@@ -414,6 +533,10 @@ function renderTaskQueue() {
 
 // ── context meter ──────────────────────────────────────────────────────────────
 
+/**
+ * Show how much of the context was sent (e.g. "1200/80000 chars") and warn if it was truncated.
+ * @param {any} meta {sentChars, originalChars, label, truncated} or null
+ */
 function renderContextMeta(meta) {
     // Step 1: Initialize function scope and validate execution context
     if (!meta) {
@@ -427,6 +550,11 @@ function renderContextMeta(meta) {
 
 // ── swarm timeline / log ───────────────────────────────────────────────────────
 
+/**
+ * Add an entry to the swarm timeline (newest first) and to the Swarm Progress feed (with a time stamp).
+ * @param {string} title
+ * @param {string} detail
+ */
 function addTimeline(title, detail) {
     // Step 1: Initialize function scope and validate execution context
     const item = document.createElement('div');
@@ -453,6 +581,10 @@ function addTimeline(title, detail) {
     }
 }
 
+/**
+ * Append a line to the terminal-style log panel and keep it scrolled to the bottom.
+ * @param {string} message
+ */
 function log(message) {
     // Step 1: Initialize function scope and validate execution context
     const terminal = $('terminal');
@@ -462,6 +594,12 @@ function log(message) {
 
 // ── diagnostics ────────────────────────────────────────────────────────────────
 
+/**
+ * List editor problems grouped by file; severity decides the colour class.
+ *
+ * Each row stores file/line/column in data attributes so a click can open that location.
+ * @param {any} diagDetails
+ */
 function renderDiagnosticsList(diagDetails) {
     // Step 1: Initialize function scope and validate execution context
     const listPanel = $('diagnosticsList');
@@ -490,6 +628,10 @@ function renderDiagnosticsList(diagDetails) {
 
 // ── cockpit state ──────────────────────────────────────────────────────────────
 
+/**
+ * Refresh the cockpit summary (workspace, active file, git branch, pending edits and diagnostics counts).
+ * @param {any} state
+ */
 function updateCockpitState(state) {
     // Step 1: Initialize function scope and validate execution context
     $('cockpitWorkspace').innerText = state.workspacePath || '--';
@@ -513,6 +655,9 @@ function updateCockpitState(state) {
 
 // ── runtime status ─────────────────────────────────────────────────────────────
 
+/**
+ * Reset all runtime fields to their offline placeholders.
+ */
 function renderRuntimeOffline() {
     // Step 1: Initialize function scope and validate execution context
     $('runtimeModel').innerText = 'unknown';
@@ -523,6 +668,14 @@ function renderRuntimeOffline() {
     $('cockpitSystem').innerText = '--';
 }
 
+/**
+ * Show the backend's model, adapter, memory, client count and bridge capabilities, and update the connection label.
+ *
+ * The connection label shows "Busy" while generating, or the latency in ms; more than 200 ms counts as slow.
+ * The RAM check compares system RAM with the model's minimum.
+ * @param {any} status
+ * @param {number} [latency] round-trip time in ms
+ */
 function renderRuntimeStatus(status, latency = 0) {
     // Step 1: Initialize function scope and validate execution context
     if (!status || typeof status !== 'object') status = {};
@@ -531,6 +684,7 @@ function renderRuntimeStatus(status, latency = 0) {
     const runtime = status.runtime || {};
     const system = status.system || {};
     const bridge = status.bridge || {};
+    // Defensive parsing: every field may be missing from an older or partial backend response.
     const clients = Number.isInteger(bridge.clients) ? bridge.clients : 0;
 
     const desc = `${model.name || 'none'}${model.loaded ? ' loaded' : ''}`;
@@ -564,12 +718,14 @@ function renderRuntimeStatus(status, latency = 0) {
     if (status.bridge && status.bridge.version) {
         $('bridgeMeta').dataset.version = status.bridge.version;
     }
+    // Without the "vision" capability in the bridge, the image tools show a warning.
     if (status.bridge && status.bridge.capabilities && status.bridge.capabilities.includes('vision')) {
         $('visionBridgeWarning').style.display = 'none';
     } else {
         $('visionBridgeWarning').style.display = 'block';
     }
 
+    // Only rewrite the label while connected, so this late status reply cannot overwrite an offline or error state.
     // Dynamic latency and workload status indication
     if (connectionState === 'connected' || connectionState === 'busy') {
         const isBusy = runtime.state === 'running' || runtime.state === 'generating';
@@ -599,6 +755,13 @@ function renderRuntimeStatus(status, latency = 0) {
 
 // ── chat bubbles ───────────────────────────────────────────────────────────────
 
+/**
+ * Add a chat bubble for ``role`` ("user" or "assistant").
+ *
+ * An empty assistant bubble starts a streaming response and gets the blinking cursor.
+ * @param {string} role
+ * @param {string} text
+ */
 function appendMessageBubble(role, text) {
     // Step 1: Initialize function scope and validate execution context
     const msg = document.createElement('div');
@@ -616,6 +779,10 @@ function appendMessageBubble(role, text) {
     _triggerScroll($('chatMessages'));
 }
 
+/**
+ * Add a streamed token to the newest assistant bubble, routing any <think> text to the reasoning panel.
+ * @param {string} token
+ */
 function appendChatToken(token) {
     // Step 1: Initialize function scope and validate execution context
     const target = $('chatMessages').querySelector('.message.assistant:last-child .message-content');
@@ -628,13 +795,17 @@ function appendChatToken(token) {
 // Routes incoming response-stream tokens: text content goes to the chat
 // bubble; <think>…</think> sections are routed to the reasoning panel.
 // The streaming cursor is kept at the very end of chat content at all times.
+// Detail: a small state machine driven by ``responseThinkActive``. NOTE: it only recognises <think> and
+// </think> tags that arrive whole inside one token.
 function routeThinkMarkup(token, chatTarget) {
     // Step 1: Initialize function scope and validate execution context
     const text = String(token || '');
+    // Fast path: ordinary text with no tags goes straight to the bubble.
     if (!responseThinkActive && !text.includes('<think') && !text.includes('</think>')) {
         _appendChatText(chatTarget, text);
         return;
     }
+    // Slow path: split the token at tag boundaries and send each part to the right place.
     let remaining = text;
     while (remaining.length) {
         if (responseThinkActive) {
@@ -663,6 +834,9 @@ function routeThinkMarkup(token, chatTarget) {
 
 // ── quick actions / recent tasks ───────────────────────────────────────────────
 
+/**
+ * Draw the one-click workflow buttons (names match the ids in commands.js WORKFLOW_REGISTRY).
+ */
 function renderQuickActions() {
     // Step 1: Initialize function scope and validate execution context
     const panel = $('quickActions');
@@ -680,6 +854,9 @@ function renderQuickActions() {
     `).join('');
 }
 
+/**
+ * List the 8 most recent tasks; clicking one re-runs it (via data-task-idx).
+ */
 function renderRecentTasks() {
     // Step 1: Initialize function scope and validate execution context
     const panel = $('recentTasksHistory');
@@ -698,6 +875,9 @@ function renderRecentTasks() {
     `).join('');
 }
 
+/**
+ * List the 6 most recent knowledge-base searches; clicking one repeats it.
+ */
 function renderRecentKbQueries() {
     // Step 1: Initialize function scope and validate execution context
     const panel = $('recentKbQueries');

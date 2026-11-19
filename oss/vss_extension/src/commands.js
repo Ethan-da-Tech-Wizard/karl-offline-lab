@@ -7,12 +7,25 @@
 //          Coordinates editor events, client state, and backend RPC messaging.
 // ==============================================================================
 
+// vscode is supplied by the editor at runtime. packageContext bounds payload size (fileOps.js)
+// and execGit runs git without a shell (gitOps.js).
 const vscode = require('vscode');
 const path = require('path');
 const { packageContext } = require('./fileOps');
 const { execGit } = require('./gitOps');
 
+/**
+ * Catalogue of one-click Karl workflows, keyed by id.
+ *
+ * Each entry describes: a title and description for menus; precondition flags
+ * (``requiresSelection``, ``requiresFile``, ``requiresGit``) that buildWorkflowContext() enforces;
+ * ``targetTab`` (which Karl tab opens: chat, swarm, git, diagnostics, knowledge or vision); and
+ * ``promptBuilder(context)``, which turns the gathered {filepath, code, objective} into the
+ * prompt text. extension.js registers each id as a "karl.<id>" command.
+ * @type {Record<string, any>}
+ */
 const WORKFLOW_REGISTRY = {
+    // Code-selection workflows (open the chat tab).
     fixSelection: {
         id: 'fixSelection',
         title: 'Refactor Selection',
@@ -31,6 +44,7 @@ const WORKFLOW_REGISTRY = {
         targetTab: 'chat',
         promptBuilder: (context) => `Explain this code from ${context.filepath}:\n\n${context.code}\n\nObjective: ${context.objective}`
     },
+    // File-level workflows (open the swarm tab): they send the whole active file.
     generateTests: {
         id: 'generateTests',
         title: 'Generate Tests',
@@ -55,6 +69,7 @@ const WORKFLOW_REGISTRY = {
         targetTab: 'swarm',
         promptBuilder: (context) => `Implement the changes in: ${context.filepath}\n\nCode:\n${context.code}\n\nObjective: ${context.objective}`
     },
+    // Git workflows: ``code`` is filled with git output instead of editor text.
     reviewStagedDiff: {
         id: 'reviewStagedDiff',
         title: 'Review Staged Diff',
@@ -95,6 +110,7 @@ const WORKFLOW_REGISTRY = {
         targetTab: 'git',
         promptBuilder: (context) => `Summarize current git branch state:\n\n${context.code}\n\nObjective: ${context.objective}`
     },
+    // Diagnostics workflows: ``code`` is a JSON summary of the editor's problems.
     explainDiagnostics: {
         id: 'explainDiagnostics',
         title: 'Explain Diagnostics',
@@ -110,6 +126,7 @@ const WORKFLOW_REGISTRY = {
         targetTab: 'diagnostics',
         promptBuilder: (context) => `Explain these diagnostics in active file:\n\n${context.code}\n\nObjective: ${context.objective}`
     },
+    // Free-form workflows with no code payload, only the user's objective.
     askWorkspace: {
         id: 'askWorkspace',
         title: 'Ask About Workspace',
@@ -124,6 +141,7 @@ const WORKFLOW_REGISTRY = {
         targetTab: 'swarm',
         promptBuilder: (context) => `Create an implementation plan across the selected files:\n\n${context.code}\n\nObjective: ${context.objective}`
     },
+    // Special case: runWorkflow() sends the selection to knowledge-base search instead of a chat prompt.
     searchKbSelection: {
         id: 'searchKbSelection',
         title: 'Search KB',
@@ -133,6 +151,7 @@ const WORKFLOW_REGISTRY = {
         targetTab: 'knowledge',
         promptBuilder: (context) => `${context.code}`
     },
+    // Vision workflows: ``filepath`` is an image file chosen by the user.
     analyzeImage: {
         id: 'analyzeImage',
         title: 'Analyze Image',
@@ -156,6 +175,7 @@ const WORKFLOW_REGISTRY = {
  */
 function currentWorkspacePath(fallbackFile) {
     // Step 1: Initialize function scope and validate execution context
+    // The first workspace folder is treated as the project root.
     if (vscode.workspace.workspaceFolders && vscode.workspace.workspaceFolders.length > 0) {
         return vscode.workspace.workspaceFolders[0].uri.fsPath;
     }
@@ -169,12 +189,15 @@ function currentWorkspacePath(fallbackFile) {
  */
 function groupedDiagnostics(currentFileOnly = false) {
     // Step 1: Initialize function scope and validate execution context
+    // Remember the active file so currentFileOnly can filter to it.
     const activeFile = vscode.window.activeTextEditor ? vscode.window.activeTextEditor.document.uri.fsPath : '';
     const groups = new Map();
     const counts = { error: 0, warning: 0, info: 0, hint: 0 };
+    // Index = VS Code DiagnosticSeverity (0 Error, 1 Warning, 2 Information, 3 Hint).
     const severityName = ['error', 'warning', 'info', 'hint'];
     for (const [uri, items] of vscode.languages.getDiagnostics()) {
         if (currentFileOnly && uri.fsPath !== activeFile) continue;
+        // Cap at 25 diagnostics per file; a few hundred lint messages would flood the prompt.
         const fileItems = items.slice(0, 25).map(item => {
             const severity = severityName[item.severity] || 'info';
             counts[severity] += 1;
@@ -182,6 +205,7 @@ function groupedDiagnostics(currentFileOnly = false) {
                 severity,
                 message: item.message,
                 source: item.source || '',
+                // VS Code positions are 0-based; people (and the model) expect 1-based lines and columns.
                 line: item.range.start.line + 1,
                 character: item.range.start.character + 1
             };
@@ -198,6 +222,7 @@ function groupedDiagnostics(currentFileOnly = false) {
  */
 async function revealKarlPanel(sidebarProvider) {
     await vscode.commands.executeCommand('workbench.view.extension.karl-swarm');
+    // The webview may not exist yet; wait until it reports ready before posting messages to it.
     await sidebarProvider.waitForWebview();
 }
 
@@ -209,6 +234,7 @@ async function revealKarlPanel(sidebarProvider) {
  * @returns {Promise<void>}
  */
 async function runWorkflow(sidebarProvider, workflow, customUri = null) {
+    // A null context means a precondition failed and the user was already told why.
     const context = await buildWorkflowContext(workflow, sidebarProvider, customUri);
     if (!context) return;
 
@@ -217,6 +243,7 @@ async function runWorkflow(sidebarProvider, workflow, customUri = null) {
     let isSummary = false;
     const originalChars = finalCode.length;
 
+    // Large payloads: let the user choose between the full text and a head/tail summary.
     if (originalChars > 30000) {
         const selection = await vscode.window.showWarningMessage(
             `The packaged context is large (${originalChars} characters). How would you like to proceed?`,
@@ -234,6 +261,7 @@ async function runWorkflow(sidebarProvider, workflow, customUri = null) {
         }
     }
 
+    // Final size enforcement; this may truncate even when the user picked "Send Full Context" (70k limit).
     const packaged = packageContext(finalCode, workflow.title, isSummary);
     finalCode = packaged.code;
     isTruncated = packaged.meta.truncated;
@@ -241,6 +269,7 @@ async function runWorkflow(sidebarProvider, workflow, customUri = null) {
 
     await revealKarlPanel(sidebarProvider);
 
+    // Knowledge-base search needs just the text, not a workflow start.
     if (workflow.id === 'searchKbSelection') {
         sidebarProvider.postMessageToWebview({
             command: 'search_kb_text',
@@ -249,6 +278,7 @@ async function runWorkflow(sidebarProvider, workflow, customUri = null) {
         return;
     }
 
+    // The webview receives everything it needs to start the workflow.
     sidebarProvider.postMessageToWebview({
         command: 'start_workflow',
         workflowId: workflow.id,
@@ -279,6 +309,7 @@ async function runWorkflow(sidebarProvider, workflow, customUri = null) {
  * @returns {Promise<void>}
  */
 async function runWorkflowById(sidebarProvider, workflowId, _payload = {}) {
+    // Unknown ids are ignored silently.
     const workflow = WORKFLOW_REGISTRY[workflowId];
     if (workflow) {
         await runWorkflow(sidebarProvider, workflow);
@@ -293,12 +324,14 @@ async function runWorkflowById(sidebarProvider, workflowId, _payload = {}) {
  * @returns {Promise<{code: string, filepath: string, objective: string} | null>}
  */
 async function buildWorkflowContext(workflow, sidebarProvider, customUri = null) {
+    // Output fields built up below depending on which preconditions the workflow declares.
     let code = '';
     let filepath = '';
     let objective = '';
 
     const editor = vscode.window.activeTextEditor;
 
+    // Selection workflows need highlighted text in the active editor.
     if (workflow.requiresSelection) {
         if (!editor) {
             vscode.window.showErrorMessage('No active text editor found.');
@@ -312,10 +345,13 @@ async function buildWorkflowContext(workflow, sidebarProvider, customUri = null)
         }
         filepath = editor.document.uri.fsPath;
     } else if (workflow.requiresFile) {
+        // File workflows use the file from the explorer/context menu (customUri) if given,
+        // otherwise the active editor.
         if (customUri) {
             filepath = customUri.fsPath;
             try {
                 const stat = await vscode.workspace.fs.stat(customUri);
+                // Only read regular files; for folders ``code`` stays empty.
                 if (stat.type === vscode.FileType.File) {
                     const bytes = await vscode.workspace.fs.readFile(customUri);
                     code = new TextDecoder('utf-8').decode(bytes);
@@ -334,6 +370,7 @@ async function buildWorkflowContext(workflow, sidebarProvider, customUri = null)
         }
     }
 
+    // Git workflows: run the appropriate git command in the workspace root.
     if (workflow.requiresGit) {
         const workspacePath = currentWorkspacePath('');
         if (!workspacePath) {
@@ -341,6 +378,7 @@ async function buildWorkflowContext(workflow, sidebarProvider, customUri = null)
             return null;
         }
         try {
+            // generateCommitMessage deliberately reuses the staged diff.
             if (workflow.id === 'reviewStagedDiff' || workflow.id === 'generateCommitMessage') {
                 code = await execGit(['diff', '--staged'], workspacePath);
             } else if (workflow.id === 'reviewUnstagedDiff') {
@@ -348,6 +386,7 @@ async function buildWorkflowContext(workflow, sidebarProvider, customUri = null)
             } else if (workflow.id === 'reviewCombinedDiff') {
                 code = await execGit(['diff', 'HEAD'], workspacePath);
             } else if (workflow.id === 'branchSummary') {
+                // Three read-only git queries run in parallel and are combined into one summary text.
                 const [branch, status, recent] = await Promise.all([
                     execGit(['branch', '--show-current'], workspacePath),
                     execGit(['status', '--short', '--branch'], workspacePath),
@@ -360,12 +399,14 @@ async function buildWorkflowContext(workflow, sidebarProvider, customUri = null)
             return null;
         }
 
+        // An empty diff means nothing to review (the branch summary is always non-empty).
         if (workflow.id !== 'branchSummary' && !code.trim()) {
             vscode.window.showInformationMessage('No git changes found.');
             return null;
         }
     }
 
+    // Diagnostics workflows: gather problems from the editor, not from git or a file.
     if (workflow.id === 'explainDiagnostics' || workflow.id === 'explainCurrentFileDiagnostics') {
         const currentFileOnly = (workflow.id === 'explainCurrentFileDiagnostics');
         const diagnostics = groupedDiagnostics(currentFileOnly);
@@ -376,6 +417,7 @@ async function buildWorkflowContext(workflow, sidebarProvider, customUri = null)
         code = JSON.stringify(diagnostics, null, 2);
     }
 
+    // Vision workflows: use the given/open file, else ask the user to pick an image.
     if (workflow.id === 'analyzeImage' || workflow.id === 'reviewScreenshotError') {
         let pathFromUri = customUri && customUri.fsPath;
         if (!pathFromUri && editor) {
@@ -400,6 +442,7 @@ async function buildWorkflowContext(workflow, sidebarProvider, customUri = null)
         code = `Image File: ${filepath}`;
     }
 
+    // Workflows in this list ask the user what to do and pre-fill a sensible default.
     const needsPrompt = [
         'fixSelection', 'explainSelection', 'generateTests', 'reviewActiveFile',
         'sendCurrentFileToSwarm', 'createImplementationPlan', 'askWorkspace',
@@ -418,6 +461,7 @@ async function buildWorkflowContext(workflow, sidebarProvider, customUri = null)
             prompt: `${workflow.title}: What should Karl do?`,
             value: defaultValue
         });
+        // Pressing Escape cancels the workflow; an empty answer falls back to the default text.
         if (userObjective === undefined) return null;
         objective = userObjective.trim() || defaultValue;
     }
@@ -432,6 +476,7 @@ async function buildWorkflowContext(workflow, sidebarProvider, customUri = null)
  * @returns {Promise<void>}
  */
 async function sendActiveFileToKb(sidebarProvider, uri) {
+    // Explorer context menu supplies a URI; otherwise use the active editor's file.
     const selectedPath = uri && uri.fsPath ? uri.fsPath : null;
     const editor = vscode.window.activeTextEditor;
     const filePath = selectedPath || (editor ? editor.document.uri.fsPath : '');
@@ -453,6 +498,7 @@ async function sendActiveFileToKb(sidebarProvider, uri) {
  * @returns {Promise<void>}
  */
 async function sendWorkspaceFolderToKb(sidebarProvider, uri) {
+    // Prefer the folder right-clicked in the explorer, else the workspace root.
     const workspacePath = uri && uri.fsPath ? uri.fsPath : currentWorkspacePath('');
     if (!workspacePath) {
         vscode.window.showWarningMessage('Open a workspace before ingesting a folder.');
@@ -465,6 +511,7 @@ async function sendWorkspaceFolderToKb(sidebarProvider, uri) {
     });
 }
 
+// Exported for extension.js, sidebarProvider.js and tests.
 module.exports = {
     WORKFLOW_REGISTRY,
     currentWorkspacePath,
