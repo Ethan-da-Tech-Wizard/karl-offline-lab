@@ -6,6 +6,10 @@
 #          Provides responsive layout controls, parameter adjustment surfaces,
 #          and visual feedback components within Karl's PyQt6 shell.
 # ==============================================================================
+# Background QThread workers for the Training Studio tabs. Each worker reports
+# only through Qt signals (never touches widgets), registers with the
+# TaskSupervisor so it appears in the global task list, and exposes
+# request_stop() so the supervisor can cancel it.
 
 import os
 import json
@@ -15,6 +19,7 @@ import subprocess
 from PyQt6.QtCore import QThread, pyqtSignal
 
 class TrainingThread(QThread):
+    """Fine-tune a LoRA/QLoRA adapter on data/training/curated.jsonl and convert it to GGUF."""
     loss = pyqtSignal(int, float, float)     # step, loss_val, epoch
     progress = pyqtSignal(int, int, float)   # step, total_steps, epoch
     done = pyqtSignal(str)                   # adapter_path
@@ -22,6 +27,7 @@ class TrainingThread(QThread):
     log = pyqtSignal(str)
 
     def __init__(self, hf_base_dir: str, adapter_name: str, config: dict):
+        """Remember the HF base model folder, adapter name and hyperparameter dict."""
         # Step 1: Validate input parameters, operational preconditions, and state
         super().__init__()
         self.hf_base_dir = hf_base_dir
@@ -29,11 +35,14 @@ class TrainingThread(QThread):
         self.config = config
 
     def request_stop(self):
+        """Ask the training loop to stop (cooperative interruption flag)."""
         # Step 1: Validate input parameters, operational preconditions, and state
         self.requestInterruption()
 
     def run(self):
+        """Run the whole pipeline: load model, apply LoRA, train with SFTTrainer, save, convert to GGUF."""
         # Step 1: Validate input parameters, operational preconditions, and state
+        # Registering lets the task supervisor show progress and call request_stop() on cancel.
         from app.engine.task_supervisor import TaskSupervisor
         task_id = TaskSupervisor.instance().register(
             name=f"LoRA Training: {self.adapter_name}",
@@ -41,11 +50,14 @@ class TrainingThread(QThread):
         )
         self.task_id = task_id
         try:
+            # torch, transformers, peft, trl and datasets are imported here, not at module top:
+            # they are heavy and optional, so the UI must start (and the export tab must work) without them.
             # Execute guarded operations and establish recovery boundaries
             import os
             import gc
             import torch
 
+            # expandable_segments reduces CUDA memory fragmentation on small GPUs.
             # Configure PyTorch to prevent memory fragmentation
             os.environ["PYTORCH_ALLOC_CONF"] = "expandable_segments:True"
             
@@ -60,6 +72,7 @@ class TrainingThread(QThread):
             from peft import LoraConfig, get_peft_model
             from trl import SFTConfig, SFTTrainer
 
+            # Training data is the curated example file written by the Dataset/Workbench feedback flow.
             # Load dataset from curated examples
             dataset_path = "data/training/curated.jsonl"
             dataset = load_dataset("json", data_files=dataset_path, split="train")
@@ -69,10 +82,12 @@ class TrainingThread(QThread):
             if tokenizer.pad_token is None:
                 tokenizer.pad_token = tokenizer.eos_token
 
+            # QLoRA: load the base weights in 4-bit NF4 with double quantization to fit in far less VRAM.
             # Set up QLoRA if requested and bitsandbytes is available
             use_qlora = self.config.get("use_qlora", False)
             device_map_to_use = {"": 0} if torch.cuda.is_available() else "auto"
             
+            # fp16 on GPU halves memory versus fp32; on CPU stay in fp32 because fp16 math is unsupported/slow there.
             # Load model weights in float16 on GPU (saves 50% VRAM over default float32)
             torch_dtype = torch.float16 if torch.cuda.is_available() else torch.float32
 
@@ -96,6 +111,7 @@ class TrainingThread(QThread):
                     device_map=device_map_to_use
                 )
 
+            # LoRA adapters are attached to all attention and MLP projection layers of a Llama/Qwen-style model.
             self.log.emit("Configuring LoRA...")
             lora_config = LoraConfig(
                 r=self.config.get("rank", 16),
@@ -109,12 +125,15 @@ class TrainingThread(QThread):
             # Prepare model for training
             model = get_peft_model(model, lora_config)
             
+            # The KV cache conflicts with gradient checkpointing, so it is disabled during training.
             # Disable caching to support gradient checkpointing during SFT
             model.config.use_cache = False
 
             adapter_path = os.path.join("data", "adapters", self.adapter_name)
             os.makedirs(adapter_path, exist_ok=True)
 
+            # Batch size 1 with 4 accumulation steps gives an effective batch of 4 while keeping memory low.
+            # save_strategy="no": only the final adapter is kept; the temp_checkpoints folder is deleted later.
             training_args = SFTConfig(
                 output_dir=os.path.join(adapter_path, "temp_checkpoints"),
                 dataset_text_field="messages",
@@ -130,6 +149,8 @@ class TrainingThread(QThread):
                 gradient_checkpointing=True if torch.cuda.is_available() else False,
             )
 
+            # Trainer callback bridges Hugging Face logging to Qt signals; thread_ref is needed because
+            # the callback class has its own `self` and cannot see the thread otherwise.
             # Callback to report progress and loss
             thread_ref = self
             class TrainerProgressCallback(TrainerCallback):
@@ -160,6 +181,7 @@ class TrainingThread(QThread):
 
             trainer.train()
 
+            # The log history (loss per step) is stored beside the adapter so the loss curve can be shown later.
             # Save training history
             try:
                 # Execute guarded operations and establish recovery boundaries
@@ -180,6 +202,7 @@ class TrainingThread(QThread):
             if os.path.exists(temp_checkpoints):
                 shutil.rmtree(temp_checkpoints)
 
+            # llama.cpp loads LoRA as GGUF, so the PEFT adapter is converted with the bundled script in a subprocess.
             # Convert to GGUF format
             self.log.emit("Converting PyTorch adapter to GGUF format...")
             import subprocess
@@ -200,9 +223,11 @@ class TrainingThread(QThread):
             self.done.emit(adapter_path)
             TaskSupervisor.instance().finish(task_id)
 
+        # Any failure is reported to both the supervisor and the UI.
         except Exception as e:
             TaskSupervisor.instance().fail(task_id, str(e))
             self.error.emit(str(e))
+        # Always release Python and CUDA memory so the inference model can be reloaded afterwards.
         finally:
             # Re-collect garbage and empty CUDA cache to release VRAM to the OS
             import gc
@@ -217,11 +242,14 @@ class TrainingThread(QThread):
 
 
 class AutoTrainThread(QThread):
+    """Run auto_train.py (the synthesize/solve/verify/train flywheel) as a subprocess and stream its output."""
+    # log: one line of subprocess output; done: adapter name; error: failure text.
     log = pyqtSignal(str)
     done = pyqtSignal(str)
     error = pyqtSignal(str)
 
     def __init__(self, topic: str, adapter_name: str, config: dict):
+        """Remember the topic, adapter name and config dict; no process exists until run()."""
         # Step 1: Validate input parameters, operational preconditions, and state
         super().__init__()
         self.topic = topic
@@ -230,6 +258,7 @@ class AutoTrainThread(QThread):
         self.process = None
 
     def request_stop(self):
+        """Interrupt the read loop and terminate the child process if one is running."""
         # Step 1: Validate input parameters, operational preconditions, and state
         self.requestInterruption()
         if self.process is not None:
@@ -240,6 +269,7 @@ class AutoTrainThread(QThread):
                 pass
 
     def run(self):
+        """Launch auto_train.py with the configured options and forward its output line by line."""
         # Step 1: Validate input parameters, operational preconditions, and state
         from app.engine.task_supervisor import TaskSupervisor
         task_id = TaskSupervisor.instance().register(
@@ -248,6 +278,7 @@ class AutoTrainThread(QThread):
         )
         self.task_id = task_id
         
+        # A separate process isolates the heavy training run (and its GPU memory) from the UI process.
         cmd = [
             sys.executable,
             "auto_train.py",
@@ -267,6 +298,7 @@ class AutoTrainThread(QThread):
         
         try:
             # Execute guarded operations and establish recovery boundaries
+            # stderr is merged into stdout so one stream carries every message; bufsize=1 gives line buffering.
             self.process = subprocess.Popen(
                 cmd,
                 stdout=subprocess.PIPE,
@@ -276,6 +308,7 @@ class AutoTrainThread(QThread):
                 universal_newlines=True
             )
             
+            # Blocking read loop on the worker thread; the interruption flag is checked once per output line.
             while True:
                 # Iterate over items, evaluate loop invariant, and update progress
                 if self.isInterruptionRequested():
@@ -288,6 +321,7 @@ class AutoTrainThread(QThread):
                     break
                 self.log.emit(line.strip())
                 
+            # Exit code 0 means success; anything else is reported as an error.
             rc = self.process.wait()
             if rc == 0:
                 self.done.emit(self.adapter_name)
@@ -302,12 +336,15 @@ class AutoTrainThread(QThread):
 
 class _FlywheelStatsThread(QThread):
     """Reads flywheel stats off the main thread to avoid blocking the UI."""
+    # All keys are strings ready to drop into the Flywheel tab labels.
     stats_ready = pyqtSignal(dict)
 
     def run(self):
+        """Read the data files and emit stats_ready with a dict of display strings."""
         # Step 1: Validate input parameters, operational preconditions, and state
         stats = {}
         try:
+            # Traces: count non-blank lines in every trace JSONL file.
             # Traces
             import glob
             trace_files = glob.glob("data/logs/traces/*.jsonl")
@@ -322,6 +359,7 @@ class _FlywheelStatsThread(QThread):
                     pass
             stats["traces_total"] = str(total_traces)
 
+            # Sessions: count saved session files and report how long ago the newest was written.
             # Sessions
             session_files = glob.glob("data/sessions/*.json")
             stats["sessions_saved"] = str(len(session_files))
@@ -338,6 +376,8 @@ class _FlywheelStatsThread(QThread):
             else:
                 stats["last_session"] = "none"
 
+            # Feedback tallies come from the "source" field of each curated example.
+            # SFT examples are good + corrected ones; DPO pairs are limited by the smaller of thumbs up and down.
             # Feedback from curated.jsonl
             thumbs_up = thumbs_down = corrections = 0
             curated_path = "data/training/curated.jsonl"
@@ -366,6 +406,7 @@ class _FlywheelStatsThread(QThread):
             stats["sft_examples"] = str(thumbs_up + corrections)
             stats["dpo_pairs"] = str(min(thumbs_up, thumbs_down))
 
+            # Last export: the newest file in data/training that is not the curated dataset itself.
             # Last export
             export_files = sorted(
                 glob.glob("data/training/*.jsonl") + glob.glob("data/training/*.json"),
@@ -379,6 +420,7 @@ class _FlywheelStatsThread(QThread):
             else:
                 stats["last_export"] = "none"
 
+            # Preview: first 50 lines of the newest exported JSONL.
             # Last SFT export content
             last_sft_content = ""
             export_jsonls = sorted(glob.glob("data/training/*.jsonl"), key=os.path.getmtime, reverse=True)
@@ -399,6 +441,7 @@ class _FlywheelStatsThread(QThread):
                     pass
             stats["last_sft_content"] = last_sft_content
 
+            # Eval score is read from the last evaluation summary file.
             # Eval score
             if os.path.exists("data/eval_last.json"):
                 with open("data/eval_last.json", "r", encoding="utf-8") as f:
@@ -413,6 +456,7 @@ class _FlywheelStatsThread(QThread):
                 stats["eval_dataset"] = "—"
                 stats["eval_date"] = "—"
 
+        # A failure is surfaced in the first label rather than raised, because this runs on a worker thread.
         except Exception as e:
             stats["traces_total"] = f"error: {e}"
 
@@ -420,6 +464,8 @@ class _FlywheelStatsThread(QThread):
 
 
 class MiniTrainThread(QThread):
+    """Train the educational character-level MiniGPT (app/engine/mini_transformer) on plain text."""
+    # loss: (step, validation loss); progress: (step, total, sample text); done: save folder.
     # Signals for communicating with UI
     loss = pyqtSignal(int, float)            # step, loss_val
     progress = pyqtSignal(int, int, str)     # step, total_steps, text_sample
@@ -433,6 +479,7 @@ class MiniTrainThread(QThread):
         config: dict,
         save_dir: str = "data/mini_gpt"
     ):
+        """Store the text and config; weights are saved under save_dir (data/mini_gpt by default)."""
         # Step 1: Validate input parameters, operational preconditions, and state
         super().__init__()
         self.dataset_text = dataset_text
@@ -441,14 +488,17 @@ class MiniTrainThread(QThread):
         self._stop_requested = False
 
     def stop(self):
+        """Set the stop flag; the training loop checks it once per step."""
         # Step 1: Validate input parameters, operational preconditions, and state
         self._stop_requested = True
 
     def request_stop(self):
+        """Alias of stop() so the task supervisor can cancel this thread."""
         # Step 1: Validate input parameters, operational preconditions, and state
         self.stop()
 
     def run(self):
+        """Tokenize, build the model, run the training loop with periodic evaluation and sampling, then save."""
         # Step 1: Validate input parameters, operational preconditions, and state
         from app.engine.task_supervisor import TaskSupervisor
         task_id = TaskSupervisor.instance().register(
@@ -464,6 +514,7 @@ class MiniTrainThread(QThread):
             import torch
             from app.engine.mini_transformer import MiniGPT, CharTokenizer
 
+            # Hyperparameters come from the config dict with small-model defaults.
             # 1. Hyperparameters
             batch_size = self.config.get("batch_size", 32)
             block_size = self.config.get("block_size", 64)
@@ -480,6 +531,7 @@ class MiniTrainThread(QThread):
             device = "cuda" if torch.cuda.is_available() else "cpu"
             self.log.emit(f"Using device: {device.upper()}")
 
+            # The tokenizer is fitted on the dataset text, so its vocabulary is the set of distinct characters.
             # 2. Tokenizer
             self.log.emit("Fitting tokenizer...")
             tokenizer = CharTokenizer()
@@ -490,11 +542,13 @@ class MiniTrainThread(QThread):
             # Encode data
             data = torch.tensor(tokenizer.encode(self.dataset_text), dtype=torch.long)
             
+            # 90% of the characters train the model and 10% are held out for validation.
             # Split train / val
             n = int(0.9 * len(data))
             train_data = data[:n]
             val_data = data[n:]
             
+            # Need more than one block of training data or get_batch could not sample a window.
             if len(train_data) <= block_size:
                 raise ValueError(f"Dataset is too short! Must be longer than block size ({block_size}).")
 
@@ -517,6 +571,7 @@ class MiniTrainThread(QThread):
             # Optimizer
             optimizer = torch.optim.AdamW(model.parameters(), lr=learning_rate)
 
+            # get_batch: random windows of block_size characters; targets are the same window shifted one character ahead.
             # Batch helper
             def get_batch(split):
                 # Step 1: Validate input parameters, operational preconditions, and state
@@ -528,6 +583,7 @@ class MiniTrainThread(QThread):
                 return x, y
 
             # Validation loss helper
+            # estimate_loss: average of 10 random batches per split, with the model in eval mode (no dropout), then back to train mode.
             @torch.no_grad()
             def estimate_loss():
                 # Step 1: Validate input parameters, operational preconditions, and state
@@ -545,6 +601,7 @@ class MiniTrainThread(QThread):
                 model.train()
                 return out
 
+            # Standard loop: sample a batch, forward, backprop, optimiser step, with periodic evaluation and sampling.
             self.log.emit("Starting training loop...")
             
             for step in range(max_iters + 1):
@@ -572,6 +629,7 @@ class MiniTrainThread(QThread):
                     self.loss.emit(step, eval_losses['val'])
 
                 # Periodic text sampling
+                # Sample from a single start token (index 0) every sample_interval steps.
                 if step % sample_interval == 0:
                     model.eval()
                     # Feed a newline character as the start context
@@ -583,6 +641,7 @@ class MiniTrainThread(QThread):
 
                     self.progress.emit(step, max_iters, sample_text)
 
+            # Save weights, architecture config and tokenizer tables so the inference sandbox can rebuild the model.
             # 4. Save model weights, tokenizer, and config
             os.makedirs(self.save_dir, exist_ok=True)
             
@@ -601,6 +660,8 @@ class MiniTrainThread(QThread):
                     "vocab_size": vocab_size
                 }, f, indent=2)
 
+            # NOTE: JSON turns the integer keys of itos into strings, and CharTokenizer.decode looks up
+            # integer ids, so a tokenizer restored from this file decodes every id to an empty string.
             # Save tokenizer metadata
             vocab_path = os.path.join(self.save_dir, "tokenizer.json")
             with open(vocab_path, "w", encoding="utf-8") as f:

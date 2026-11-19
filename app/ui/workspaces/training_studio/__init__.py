@@ -6,6 +6,9 @@
 #          Provides responsive layout controls, parameter adjustment surfaces,
 #          and visual feedback components within Karl's PyQt6 shell.
 # ==============================================================================
+# Training Studio ("AI Lab") workspace container. It owns the six tabs (Flywheel,
+# Dataset, Export, Train, Auto-Train, Mini-GPT Sandbox) and a stats line
+# summarising the curated dataset; the tabs themselves live in sibling modules.
 
 from PyQt6.QtWidgets import QWidget, QVBoxLayout, QHBoxLayout, QLabel, QTabWidget
 
@@ -69,6 +72,8 @@ class TrainingStudioWorkspace(QWidget):
         self.auto_train_tab = AutoTrainTab(self.state)
         self.mini_gpt_tab = MiniGptTab(self.state)
 
+        # Tabs communicate through signals: the dataset tab announces edits so the
+        # header stats and the Train tab's counts can refresh immediately.
         # Wire communication signals
         self.dataset_tab.dataset_changed.connect(self._refresh)
 
@@ -86,16 +91,19 @@ class TrainingStudioWorkspace(QWidget):
         self._refresh()
 
     def _on_tab_changed(self, idx: int):
+        """Reload Flywheel statistics when its tab (index 0) is selected, since they change in the background."""
         # Step 1: Validate input parameters, operational preconditions, and state
         if idx == 0:  # Flywheel tab
             self.flywheel_tab.load_stats()
 
     def showEvent(self, event):
+        """Refresh dataset stats and tabs every time the workspace becomes visible."""
         # Step 1: Validate input parameters, operational preconditions, and state
         super().showEvent(event)
         self._refresh()
 
     def _refresh(self):
+        """Update the header summary (total, good, corrected) and refresh the Dataset and Train tabs."""
         # Step 1: Validate input parameters, operational preconditions, and state
         stats = self.state.curator.get_stats()
         self._stats_lbl.setText(
