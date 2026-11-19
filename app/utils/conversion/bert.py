@@ -406,8 +406,8 @@ class NomicBertModel(BertModel):
             raise ValueError(f"unrecognized parameters: n_positions={npos}, max_trained_positions={mtp}")
 
         # Only the activation used by the runtime graph is accepted.
-        # (Note: operator precedence makes this assert vacuous for non-MoE models.)
-        assert self.hparams["activation_function"] == "gelu" if self.is_moe else "swiglu"
+        # MoE (v2) models use gelu, the dense v1/v1.5 models use swiglu.
+        assert self.hparams["activation_function"] == ("gelu" if self.is_moe else "swiglu")
 
         # the HF "causal" flag is ignored upstream.
         # this doesn't do anything in the HF version
