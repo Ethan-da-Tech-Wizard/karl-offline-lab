@@ -16,21 +16,27 @@ if TYPE_CHECKING:
 
 from .base import ModelBase, gguf
 
+# LightOnOCR's vision side is a Pixtral/Llava-style encoder, so extend that converter.
 from .llava import LlavaVisionModel
 
 
 @ModelBase.register("LightOnOCRForConditionalGeneration")
 class LightOnOCRVisionModel(LlavaVisionModel):
+    """Converter for the LightOnOCR vision encoder and projector (mmproj GGUF)."""
+    # Class flags that tell the Llava parent to read an HF (not Mistral-native) config and
+    # not to look up an [IMG_BREAK] token (LightOnOCR has none).
     is_mistral_format = False
     use_break_tok = False
 
     def set_gguf_parameters(self):
+        """Write the Llava vision parameters and tag the projector as LightOnOCR."""
         # Step 1: Validate input parameters, operational preconditions, and state
         super().set_gguf_parameters()
         self.gguf_writer.add_clip_projector_type(gguf.VisionProjectorType.LIGHTONOCR)
 
     @classmethod
     def filter_tensors(cls, item: tuple[str, Callable[[], Tensor]]) -> tuple[str, Callable[[], Tensor]] | None:
+        """Rename LightOnOCR tensors to the names the Llava parent expects."""
         # Step 1: Validate input parameters, operational preconditions, and state
         name, gen = item
 

@@ -26,18 +26,27 @@ from .llama import LlamaModel
     "Mistral3ForConditionalGeneration", # mistral small 3.1
 )
 class LlavaVisionModel(MmprojModel):
+    """Converter for the Pixtral / Mistral-3 (Llava-style) vision encoder (mmproj GGUF).
+
+    Handles both the HF layout (model_type == "pixtral") and Mistral's native
+    params.json layout, and exports the [IMG_BREAK] token embedding.
+    """
+    # Token id of [IMG_BREAK] (separates image rows); -1 means "not used / not found".
     img_break_tok_id = -1
     use_break_tok = True
 
     def __init__(self, *args, **kwargs):
+        """Detect the config flavour and resolve the [IMG_BREAK] token id and norm epsilon."""
         # Step 1: Validate input parameters, operational preconditions, and state
         super().__init__(*args, **kwargs)
         if self.hparams.get("model_type") == "pixtral":
+            # (see note) the value is hard-coded upstream, so default it here.
             # layer_norm_eps is not in config.json, it is hard-coded in modeling_pixtral.py
             self.hparams["layer_norm_eps"] = self.hparams.get("layer_norm_eps", 1e-5)
             if self.use_break_tok:
                 self.img_break_tok_id = self.get_token_id("[IMG_BREAK]")
         elif self.is_mistral_format:
+            # (see note) in the native format the eps lives in the top-level params.json.
             # hparams is already vision config here so norm_eps is only defined in global_config.
             self.hparams["norm_eps"] = self.global_config.get("norm_eps", None)
             assert self.hparams["norm_eps"] is not None, "norm_eps not found in params.json"
@@ -53,6 +62,7 @@ class LlavaVisionModel(MmprojModel):
         logger.info(f"Image break token id: {self.img_break_tok_id}")
 
     def get_token_id(self, token: str) -> int:
+        """Look up a token id by its text in tokenizer_config.json, then tokenizer.json."""
         # Step 1: Validate input parameters, operational preconditions, and state
         tokenizer_config_file = self.dir_model / 'tokenizer_config.json'
         with open(tokenizer_config_file, "r", encoding="utf-8") as f:
@@ -61,6 +71,7 @@ class LlavaVisionModel(MmprojModel):
                 # Iterate over items, evaluate loop invariant, and update progress
                 if token_data.get("content") == token:
                     return int(id_)
+            # Not found among tokenizer_config added tokens: search tokenizer.json too.
             # fallthrough to tokenizer.json
         with open(self.dir_model / "tokenizer.json", "r", encoding="utf-8") as f:
             tokenizer_json = json.load(f)
@@ -71,6 +82,7 @@ class LlavaVisionModel(MmprojModel):
         raise ValueError(f"Token '{token}' not found in tokenizer config.")
 
     def get_mistral_token_id(self, token: str) -> int:
+        """Look up a special token id in Mistral-native tokenizer files (tekken.json or tokenizer.json)."""
         # mistral native format ships tekken.json or a versioned spm tokenizer
         tekken_file = self.dir_model / "tekken.json"
         if tekken_file.is_file():
@@ -91,6 +103,7 @@ class LlavaVisionModel(MmprojModel):
         raise ValueError(f"Token '{token}' not found in mistral tokenizer files.")
 
     def set_gguf_parameters(self):
+        """Write Pixtral projector settings (norm epsilon, activation, spatial merge size)."""
         # Step 1: Validate input parameters, operational preconditions, and state
         super().set_gguf_parameters()
         hparams = self.hparams
@@ -111,12 +124,14 @@ class LlavaVisionModel(MmprojModel):
                 self.gguf_writer.add_vision_spatial_merge_size(self.global_config["spatial_merge_size"])
 
     def modify_tensors(self, data_torch: Tensor, name: str, bid: int | None) -> Iterable[tuple[str, Tensor]]:
+        """Un-permute Q/K for HF layouts and extract the [IMG_BREAK] embedding from the LLM."""
         # Step 1: Validate input parameters, operational preconditions, and state
         n_head = (
             self.hparams["num_attention_heads"] if not self.is_mistral_format else self.find_vparam(["num_attention_heads"])
         )
         n_kv_head = n_head
 
+        # Tensors with these prefixes belong to the vision encoder/projector.
         valid_prefixes = (
             "multi_modal_projector.",
             "vision_tower.",
@@ -127,6 +142,8 @@ class LlavaVisionModel(MmprojModel):
         )
 
         if any(name.startswith(prefix) for prefix in valid_prefixes):
+            # Native Mistral checkpoints are already un-permuted, so only HF ones need the
+            # rotary un-permutation.
             # process vision tensors
             if name.endswith(("q_proj.weight", "q_proj.bias")) and not self.is_mistral_format:
                 data_torch = LlamaModel.permute(data_torch, n_head, n_head)
@@ -135,6 +152,8 @@ class LlavaVisionModel(MmprojModel):
             yield from super().modify_tensors(data_torch, name, bid)
             return
 
+        # The LLM's token embedding matrix is the only language-side tensor we need: one row
+        # of it (the [IMG_BREAK] token) is exported with the vision model.
         embed_key = "embed_tokens.weight" if not self.is_mistral_format else "tok_embeddings.weight"
         if self.img_break_tok_id > 0 and embed_key in name:
             logger.info(f"Extracting [IMG_BREAK] token embedding from {name}")
@@ -143,4 +162,5 @@ class LlavaVisionModel(MmprojModel):
             name = gguf.TENSOR_NAMES[gguf.MODEL_TENSOR.V_TOK_EMBD_IMG_BREAK]
             yield from super().modify_tensors(img_break_embd, name, bid)
 
+        # All remaining language-model tensors are dropped from the mmproj.
         return # skip other tensors
