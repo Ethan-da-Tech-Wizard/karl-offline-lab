@@ -6,6 +6,8 @@
 #          Provides responsive layout controls, parameter adjustment surfaces,
 #          and visual feedback components within Karl's PyQt6 shell.
 # ==============================================================================
+# Export tab: writes the curated dataset (data/training/curated.jsonl) out as
+# Unsloth-compatible SFT or DPO JSONL, after a quick structural validation.
 
 import os
 import json
@@ -17,6 +19,7 @@ from PyQt6.QtWidgets import (
 from app.ui.widgets.glow_panel import GlowPanel
 
 def _section(text: str) -> QLabel:
+    """Return a QLabel styled as a section heading."""
     # Step 1: Validate input parameters, operational preconditions, and state
     lbl = QLabel(text)
     lbl.setObjectName("section-header")
@@ -24,13 +27,16 @@ def _section(text: str) -> QLabel:
 
 
 class ExportTab(QWidget):
+    """Tab widget with one card per export format (SFT and DPO) and a status line."""
     def __init__(self, state, parent=None):
+        """Store state and build the tab."""
         # Step 1: Validate input parameters, operational preconditions, and state
         super().__init__(parent)
         self.state = state
         self._build_ui()
 
     def _build_ui(self):
+        """Build the two export cards and the status label."""
         # Step 1: Validate input parameters, operational preconditions, and state
         layout = QVBoxLayout(self)
         layout.setContentsMargins(12, 12, 12, 12)
@@ -41,6 +47,7 @@ class ExportTab(QWidget):
         cards_layout.setContentsMargins(0, 0, 0, 0)
         cards_layout.setSpacing(16)
 
+        # SFT card: instruction-following chat traces.
         # SFT Panel
         sft_box = GlowPanel(self.state)
         sft_l = QVBoxLayout(sft_box)
@@ -62,6 +69,7 @@ class ExportTab(QWidget):
         sft_l.addWidget(sft_btn)
         cards_layout.addWidget(sft_box, 1)
 
+        # DPO card: needs both a thumbs-up (chosen) and a thumbs-down (rejected) sample to form pairs.
         # DPO Panel
         dpo_box = GlowPanel(self.state)
         dpo_l = QVBoxLayout(dpo_box)
@@ -90,6 +98,9 @@ class ExportTab(QWidget):
         layout.addWidget(self._export_status)
 
     def _export(self, mode: str):
+        """Validate the curated dataset, ask for a destination file, and export in the given mode ("sft" or "dpo")."""
+        # Preflight: refuse empty datasets, then confirm every non-blank line is JSON carrying
+        # either "messages" or "prompt", so a corrupt file is caught before the exporter runs.
         # Validation preflight
         curated_file = "data/training/curated.jsonl"
         if not os.path.exists(curated_file) or os.path.getsize(curated_file) == 0:
@@ -110,6 +121,7 @@ class ExportTab(QWidget):
             QMessageBox.critical(self, "Dataset Validation Error", f"curated.jsonl format validation failed:\n{e}")
             return
 
+        # The curator does the actual conversion; the line count is re-read from the output file to report what was written.
         path, _ = QFileDialog.getSaveFileName(
             self, "Save export", f"unsloth_{mode}.jsonl", "JSONL (*.jsonl)"
         )

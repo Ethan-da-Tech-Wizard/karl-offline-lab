@@ -6,6 +6,9 @@
 #          Provides responsive layout controls, parameter adjustment surfaces,
 #          and visual feedback components within Karl's PyQt6 shell.
 # ==============================================================================
+# Auto-Train tab: a one-click front end for the flywheel pipeline. It gathers a
+# topic, adapter name and LoRA hyperparameters, starts an AutoTrainThread, and
+# streams that thread's log lines into a read-only view.
 
 import re
 
@@ -20,6 +23,7 @@ from app.ui.workspaces.training_studio.threads import AutoTrainThread
 from app.engine.model_loader import ModelLoader
 
 def _section(text: str) -> QLabel:
+    """Return a QLabel styled as a section heading (same helper as in the other tabs)."""
     # Step 1: Validate input parameters, operational preconditions, and state
     lbl = QLabel(text)
     lbl.setObjectName("section-header")
@@ -27,6 +31,7 @@ def _section(text: str) -> QLabel:
 
 
 def _hline() -> QFrame:
+    """Return a horizontal rule used to separate groups of controls."""
     # Step 1: Validate input parameters, operational preconditions, and state
     f = QFrame()
     f.setFrameShape(QFrame.Shape.HLine)
@@ -34,20 +39,25 @@ def _hline() -> QFrame:
 
 
 class AutoTrainTab(QWidget):
+    """Tab widget that configures and launches the automatic synthesize-solve-verify-train loop."""
     def __init__(self, state, parent=None):
+        """Store state and build the tab; no thread runs until the user starts one."""
         # Step 1: Validate input parameters, operational preconditions, and state
         super().__init__(parent)
         self.state = state
+        # _active_threads keeps a strong reference to running QThreads so they are not garbage collected.
         self._active_threads = set()
         self._auto_thread = None
         self._build_ui()
 
     def _build_ui(self):
+        """Build the configuration column (left) and the guide plus log column (right)."""
         # Step 1: Validate input parameters, operational preconditions, and state
         layout = QHBoxLayout(self)
         layout.setContentsMargins(8, 8, 8, 8)
         layout.setSpacing(12)
 
+        # Left column: configuration form in a GlowPanel.
         # Left Column: Configuration
         left_col = GlowPanel(self.state)
         left_layout = QVBoxLayout(left_col)
@@ -73,6 +83,8 @@ class AutoTrainTab(QWidget):
         grid.setSpacing(8)
         grid.setContentsMargins(0, 4, 0, 4)
 
+        # Ranges: examples 2-200, epochs 1-20, LoRA rank 1-256, alpha 1-512, learning rate 1e-6..1e-2.
+        # Defaults (15 examples, 3 epochs, rank 16, alpha 32, lr 2e-4) are a conventional small-LoRA starting point.
         # Generate Count
         self._auto_count_spin = QSpinBox()
         self._auto_count_spin.setRange(2, 200)
@@ -111,6 +123,7 @@ class AutoTrainTab(QWidget):
         grid.addWidget(QLabel("Learning Rate:"), 2, 0)
         grid.addWidget(self._auto_lr_spin, 2, 1)
 
+        # QLoRA (4-bit) is on by default so training fits on small GPUs.
         # QLoRA Checkbox
         self._auto_qlora_check = QCheckBox("4-bit QLoRA")
         self._auto_qlora_check.setChecked(True)
@@ -134,6 +147,7 @@ class AutoTrainTab(QWidget):
         left_layout.addStretch()
         layout.addWidget(left_col, 1)
 
+        # Right column: explanation of the pipeline and the live log.
         # Right Column: Guide & Output Logs
         right_col = QWidget()
         right_layout = QVBoxLayout(right_col)
@@ -176,6 +190,7 @@ class AutoTrainTab(QWidget):
         layout.addWidget(right_col, 1)
 
     def _begin_auto_training(self):
+        """Validate the inputs, free VRAM, then start the AutoTrainThread with the chosen configuration."""
         # Step 1: Validate input parameters, operational preconditions, and state
         topic = self._auto_topic_input.text().strip()
         adapter_name = self._auto_adapter_input.text().strip()
@@ -186,19 +201,23 @@ class AutoTrainTab(QWidget):
             self._auto_log.append("Please specify an adapter save name.")
             return
 
+        # Adapter name becomes a folder under data/adapters, so strip anything but letters, digits, _ and -.
         # Sanitize adapter name for file path
         adapter_name = re.sub(r'[^a-zA-Z0-9_\-]', '_', adapter_name)
         self._auto_adapter_input.setText(adapter_name)
 
+        # Unload the inference model first; training needs the GPU/RAM that the loaded model occupies.
         # Release VRAM first
         ModelLoader.reset_instance()
 
         self._auto_train_btn.setEnabled(False)
         self._auto_progress.setVisible(True)
+        # A (0, 0) range makes the bar an indeterminate busy indicator; the pipeline reports no percentage.
         self._auto_progress.setRange(0, 0)  # Indeterminate progress bar
         self._auto_log.clear()
         self._auto_log.append("Starting automated flywheel training pipeline...")
 
+        # Keys match what AutoTrainThread expects in its config dict.
         config = {
             "count": self._auto_count_spin.value(),
             "epochs": self._auto_epochs_spin.value(),
@@ -208,6 +227,7 @@ class AutoTrainTab(QWidget):
             "use_qlora": self._auto_qlora_check.isChecked()
         }
 
+        # Keep the thread referenced until finished, then let Qt delete it.
         self._auto_thread = AutoTrainThread(topic, adapter_name, config)
         self._active_threads.add(self._auto_thread)
         self._auto_thread.finished.connect(
@@ -220,10 +240,12 @@ class AutoTrainTab(QWidget):
         self._auto_thread.start()
 
     def _on_auto_log(self, text: str):
+        """Append a log line from the worker to the log view."""
         # Step 1: Validate input parameters, operational preconditions, and state
         self._auto_log.append(text)
 
     def _on_auto_done(self, adapter_name: str):
+        """Re-enable the controls, announce the adapter location and clear the inputs."""
         # Step 1: Validate input parameters, operational preconditions, and state
         self._auto_train_btn.setEnabled(True)
         self._auto_progress.setVisible(False)
@@ -235,6 +257,7 @@ class AutoTrainTab(QWidget):
         self._auto_adapter_input.clear()
 
     def _on_auto_error(self, msg: str):
+        """Re-enable the controls and show the error both in the log and in a dialog."""
         # Step 1: Validate input parameters, operational preconditions, and state
         self._auto_train_btn.setEnabled(True)
         self._auto_progress.setVisible(False)
