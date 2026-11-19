@@ -65,6 +65,22 @@ class _ParsedFile:
     error: str | None = None
 
 
+# Embedding sizes of common SentenceTransformer models, keyed by model name without the org prefix.
+_KNOWN_EMBEDDING_DIMS = {
+    "all-MiniLM-L6-v2": 384,
+    "all-MiniLM-L12-v2": 384,
+    "paraphrase-MiniLM-L6-v2": 384,
+    "bge-small-en-v1.5": 384,
+    "e5-small-v2": 384,
+    "all-mpnet-base-v2": 768,
+    "bge-base-en-v1.5": 768,
+    "e5-base-v2": 768,
+    "nomic-embed-text-v1.5": 768,
+    "bge-large-en-v1.5": 1024,
+    "e5-large-v2": 1024,
+}
+
+
 class RAGPipeline:
     # Default paths; __init__ overrides them per namespace.
     """Local retrieval-augmented-generation store: FAISS vectors plus SQLite metadata.
@@ -107,8 +123,9 @@ class RAGPipeline:
 
         os.makedirs(self.index_path, exist_ok=True)
 
-        # 384 is the embedding size of the default all-MiniLM-L6-v2 model; a different model needs a different value.
-        self.dimension = 384
+        # The index must be created before the (slow) encoder loads, so the dimension comes from a table of
+        # well-known models; unknown models default to 384 and are corrected once the encoder reports its size.
+        self.dimension = _KNOWN_EMBEDDING_DIMS.get(model_name.split("/")[-1], 384)
         self.index = self._new_index()
 
         # In-memory copy of the metadata rows, kept for the UI and for sparse/exact-match search.
@@ -344,6 +361,18 @@ class RAGPipeline:
             _sink = io.StringIO()
             with contextlib.redirect_stdout(_sink), contextlib.redirect_stderr(_sink):
                 self._encoder = SentenceTransformer(self.model_name)
+            # Trust the model over the lookup table: if the size differs, an empty index is rebuilt at the right
+            # size; a populated one cannot be converted, so warn that rebuild_index() is needed.
+            actual_dim = self._encoder.get_sentence_embedding_dimension()
+            if actual_dim and actual_dim != self.dimension:
+                self.dimension = int(actual_dim)
+                if self.index.ntotal == 0:
+                    self.index = self._new_index()
+                else:
+                    logger.warning(
+                        "Embedding dimension %d does not match the loaded index (%d); run rebuild_index().",
+                        actual_dim, self.index.d,
+                    )
         return self._encoder
 
     @property
