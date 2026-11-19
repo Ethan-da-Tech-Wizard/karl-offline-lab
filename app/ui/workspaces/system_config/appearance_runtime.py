@@ -25,6 +25,11 @@ from app.ui.themes import THEMES, get_theme_colors
 
 logger = logging.getLogger("karl.system_config")
 
+# Runtime half of the Theme tab (widgets live in appearance_panel.py). Flow on any
+# control change: _on_control_changed -> (120 ms debounce) -> _apply_active_theme
+# -> state fields written -> appearance_changed signal -> main_window's
+# _apply_theme_from_state recompiles and installs the QSS. Nothing is written to
+# disk until Save (_save_appearance_config), so a live preview can be abandoned.
 class AppearanceRuntimeMixin:
     """Mixin with the apply/preview/save logic for appearance settings."""
     def _on_control_changed(self):
@@ -59,10 +64,15 @@ class AppearanceRuntimeMixin:
         """Copy control values into app state and notify the shell to rebuild and apply the stylesheet."""
         # Controls are the source of truth here; state is written from them, not the reverse.
         # Read from controls
+        # All reads happen before any write so a half-updated state is never visible to
+        # listeners that react to the signal below.
         theme_preset = self._theme_preset_combo.currentText()
         layout_preset = self._layout_preset_combo.currentText()
         glow_enabled = self._glow_enabled_check.isChecked()
         reduced_motion = self._reduced_motion_check_app.isChecked()
+        # Sliders hold integer tenths (0-20); dividing by 10.0 gives the 0.0-2.0
+        # multiplier stored in state (glow_strength is read by GlowPanel, animation_intensity
+        # by TracingPanel).
         glow_strength = self._glow_strength_slider.value() / 10.0
         animation_intensity = self._animation_intensity_slider.value() / 10.0
         custom_accent = self._active_custom_accent
@@ -78,10 +88,14 @@ class AppearanceRuntimeMixin:
 
         # The shell listens to this signal and recompiles the QApplication stylesheet.
         # Trigger QApplication stylesheet compilation & reload
+        # Payload-free signal on purpose: receivers re-read state, so the signal cannot
+        # carry stale values if two changes land close together.
         self.appearance_changed.emit()
 
         # Preview widgets paint from state, so they must be told to repaint.
         # Update preview card elements
+        # The preview card and icons are not styled by QSS alone (custom-painted), so
+        # they need an explicit repaint; then the swatches are rebuilt from the same state.
         self._preview_card.update_style()
         self._check_icon_preview.update()
         self._cross_icon_preview.update()
@@ -93,8 +107,10 @@ class AppearanceRuntimeMixin:
         """Rebuild the five colour swatches (accent, alt, surface, deep, text) from the current theme."""
         # deleteLater (not immediate delete) is the safe way to discard widgets still in the layout.
         # Clear existing swatches
+        # takeAt(0) detaches the layout item; deleteLater schedules the widget for
+        # deletion once control returns to the event loop, which is safe even if this
+        # runs inside a signal emitted by one of those widgets.
         while self._swatches_layout.count():
-            # Iterate over items, evaluate loop invariant, and update progress
             item = self._swatches_layout.takeAt(0)
             if item.widget():
                 item.widget().deleteLater()
@@ -102,6 +118,8 @@ class AppearanceRuntimeMixin:
         # get_theme_colors resolves preset + custom accent + mode into one palette dict.
         # Generate colors for current state
         colors = get_theme_colors(self.state)
+        # (palette key, caption) pairs: five roles are enough to judge a theme at a glance
+        # (highlight, its darker partner, two background depths, primary text).
         swatch_keys = [
             ("accent", "ACCENT"),
             ("accent_dark", "ALT"),
@@ -111,7 +129,6 @@ class AppearanceRuntimeMixin:
         ]
         
         for key, label in swatch_keys:
-            # Iterate over items, evaluate loop invariant, and update progress
             hex_val = colors.get(key, "#000000")
             
             swatch_unit = QWidget()
@@ -120,6 +137,8 @@ class AppearanceRuntimeMixin:
             su_layout.setSpacing(2)
             
             color_box = QLabel()
+            # 36x24 px chips with a 1 px border in the theme border colour, so dark
+            # background swatches stay visible against a dark panel.
             color_box.setFixedSize(36, 24)
             color_box.setStyleSheet(
                 f"background-color: {hex_val}; border: 1px solid {colors.get('border', '#35356E')}; border-radius: 3px;"
@@ -140,26 +159,30 @@ class AppearanceRuntimeMixin:
 
     def _update_theme_gallery(self):
         """Rebuild the theme gallery cards, skipping the work if the selection has not changed."""
-        # Step 1: Validate input parameters, operational preconditions, and state
         if not hasattr(self, "_theme_gallery_layout"):
             return
         # The 20 cards only differ by which one carries the ACTIVE marker;
         # skip the full rebuild when the selection hasn't changed.
+        # Cache key is just the selected name: the card contents depend only on THEMES
+        # (static) and on which card is marked ACTIVE. Rebuilding on every slider tick
+        # would destroy and recreate every card while the user drags.
         selected_now = self._theme_preset_combo.currentText()
         if (getattr(self, "_gallery_built_for", None) == selected_now
                 and self._theme_gallery_layout.count() > 0):
             return
         self._gallery_built_for = selected_now
         while self._theme_gallery_layout.count():
-            # Iterate over items, evaluate loop invariant, and update progress
             item = self._theme_gallery_layout.takeAt(0)
             widget = item.widget()
             if widget:
                 widget.deleteLater()
 
         selected = self._theme_preset_combo.currentText()
+        # Cards read colours straight from the raw THEMES entry (not get_theme_colors) so
+        # each card previews its own theme regardless of the current mode or accent
+        # override. .get() defaults mirror the Karl Obsidian Core palette for entries
+        # that omit a key.
         for name, data in THEMES.items():
-            # Iterate over items, evaluate loop invariant, and update progress
             border = data.get("border_hi", "#35356E")
             accent = data.get("accent", "#00E5FF")
             accent_alt = data.get("accent_alt", "#0099AA")
@@ -186,6 +209,9 @@ class AppearanceRuntimeMixin:
             hl.addWidget(title, 1)
             apply_btn = QPushButton("Apply")
             apply_btn.setObjectName("btn-primary" if name == selected else "btn-secondary")
+            # Default-arg capture (n=name) binds each loop value at definition time; a plain
+            # closure would make every button apply the last theme. _checked swallows the
+            # bool Qt passes for clicked.
             apply_btn.clicked.connect(lambda _checked=False, n=name: self._apply_theme_preset_from_gallery(n))
             hl.addWidget(apply_btn)
             cl.addWidget(header)
@@ -199,6 +225,8 @@ class AppearanceRuntimeMixin:
             sl = QHBoxLayout(swatch_row)
             sl.setContentsMargins(0, 0, 0, 0)
             sl.setSpacing(5)
+            # Six chips per card: wider palette than the live swatches because here the
+            # user is choosing between themes and needs the raised/surface/deep elevations.
             for value, label in (
                 (accent, "accent"),
                 (accent_alt, "alt"),
@@ -207,7 +235,6 @@ class AppearanceRuntimeMixin:
                 (bg_raised, "raised"),
                 (text_hi, "text"),
             ):
-                # Iterate over items, evaluate loop invariant, and update progress
                 box = QLabel()
                 box.setFixedSize(34, 16)
                 box.setToolTip(f"{label}: {value}")
@@ -217,13 +244,17 @@ class AppearanceRuntimeMixin:
             cl.addWidget(swatch_row)
             self._theme_gallery_layout.addWidget(card)
 
+        # Trailing stretch keeps the cards top-aligned when fewer cards than the
+        # viewport height are shown.
         self._theme_gallery_layout.addStretch(1)
 
 
 
     def _apply_theme_preset_from_gallery(self, name: str):
         """Select the given preset in the combo; the combo's change signal does the actual apply."""
-        # Step 1: Validate input parameters, operational preconditions, and state
+        # Going through the combo (not applying directly) keeps one code path: the
+        # combo's currentTextChanged runs _on_preset_changed, which updates the
+        # description, accent preview, theme and gallery.
         idx = self._theme_preset_combo.findText(name)
         if idx >= 0:
             self._theme_preset_combo.setCurrentIndex(idx)
@@ -234,7 +265,10 @@ class AppearanceRuntimeMixin:
         """Persist all appearance and related runtime settings to ui_config without any dialog."""
         # The dict also carries unrelated keys (log rotation, thermal, remote engine) because
         # save_ui_config replaces the stored config as a whole; omitting them would reset them.
-        # Step 1: Validate input parameters, operational preconditions, and state
+        # Keys here must cover everything save_ui_config validates, because it replaces
+        # the stored config whole. Note that the remote token is persisted in this file
+        # alongside the URL (the Hardware tab also calls set_remote_engine_config), so
+        # ui_config.json should be treated as sensitive on shared machines.
         config_store.save_ui_config({
             "theme_preset": self.state.theme_preset,
             "custom_accent": self.state.custom_accent,
@@ -261,15 +295,15 @@ class AppearanceRuntimeMixin:
 
     def _save_appearance_config(self):
         """Save the appearance config, remove the legacy theme_config.json and confirm to the user."""
-        # Step 1: Validate input parameters, operational preconditions, and state
         self._save_appearance_config_silent()
         
         # data/theme_config.json is the old storage location; ui_config.json supersedes it.
         # Delete old config if exists to clean up
+        # get_ui_config falls back to this legacy file only when ui_config.json is
+        # missing; after a successful save the new file exists, so the old one can go.
         old_path = "data/theme_config.json"
         if os.path.exists(old_path):
             try:
-                # Execute guarded operations and establish recovery boundaries
                 os.remove(old_path)
             # Failing to remove the legacy file is harmless, so the error is ignored.
             except Exception:
