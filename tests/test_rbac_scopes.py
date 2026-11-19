@@ -48,6 +48,7 @@ _TOKEN_STORE: dict[str, list[str]] = {
 
 
 def _stub_init_security(self) -> None:
+    """Replacement for _init_security that installs the fixture admin token, a copy of the scoped token store and an empty blocked-path set, without touching the real bridge_token.json."""
     # Step 1: Validate input parameters, operational preconditions, and state
     self.bridge_token = _ADMIN_TOKEN
     self._token_created_at = time.time()
@@ -58,9 +59,11 @@ def _stub_init_security(self) -> None:
 # ── Test server context manager ───────────────────────────────────────────────
 
 class _TestServer:
+    """Context manager that starts a real WebSocketServerManager on a test port with RAG, inference, SSL and codex seeding patched out, and stops its loop on exit."""
     _port: int = 19997
 
     def __enter__(self):
+        """Apply the patches, start the server and wait until it is bound; returns the manager."""
         # Step 1: Validate input parameters, operational preconditions, and state
         from app.engine.websocket_server import WebSocketServerManager
 
@@ -82,6 +85,7 @@ class _TestServer:
         return self._mgr
 
     def __exit__(self, *_):
+        """Stop the server's event loop and undo all patches."""
         # Step 1: Validate input parameters, operational preconditions, and state
         if self._mgr is not None:
             try:
@@ -96,6 +100,7 @@ class _TestServer:
 
 
 def _url(port: int, token: str) -> str:
+    """Build the ws:// URL for a port and token."""
     # Step 1: Validate input parameters, operational preconditions, and state
     return f"ws://127.0.0.1:{port}?token={token}"
 
@@ -103,6 +108,7 @@ def _url(port: int, token: str) -> str:
 # ── Helper: single RPC round-trip ─────────────────────────────────────────────
 
 async def _rpc(url: str, method: str, params: dict | None = None, rpc_id: int = 1) -> dict:
+    """Open a connection with the given token, send one JSON-RPC request and return the decoded response."""
     # Step 1: Validate input parameters, operational preconditions, and state
     async with websockets.connect(url, open_timeout=3.0) as ws:
         await ws.send(json.dumps({
@@ -122,6 +128,7 @@ def test_invalid_token_rejected_with_4001():
 
     # Step 1: Validate input parameters, operational preconditions, and state
     async def _connect_invalid(url: str) -> int | None:
+        """Connect with a bad token and return the close code the server sends."""
         # Step 1: Validate input parameters, operational preconditions, and state
         try:
             # Execute guarded operations and establish recovery boundaries
@@ -274,6 +281,7 @@ def test_add_scoped_token_registers_new_token():
 
     # Step 1: Validate input parameters, operational preconditions, and state
     async def _connect_new_token(url: str) -> dict:
+        """Connect with the newly added token and return its get_runtime_status response."""
         # Step 1: Validate input parameters, operational preconditions, and state
         async with websockets.connect(url, open_timeout=3.0) as ws:
             await ws.send(json.dumps({

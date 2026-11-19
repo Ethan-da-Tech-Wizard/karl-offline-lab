@@ -98,6 +98,7 @@ def _make_serve_factory(fail_ports: set[int]):
     """
     # Step 1: Validate input parameters, operational preconditions, and state
     async def _serve(handler, host, port, ssl=None, **kwargs):
+        """Fake websockets.serve: raise OSError 'Address already in use' for ports in fail_ports, otherwise return a mock server."""
         # Step 1: Validate input parameters, operational preconditions, and state
         if port in fail_ports:
             raise OSError(98, "Address already in use")
@@ -178,6 +179,7 @@ def test_two_concurrent_managers_land_on_different_ports(tmp_path):
     bound_lock = threading.Lock()
 
     async def _tracking_serve(handler, host, port, ssl=None, **kwargs):
+        """Fake serve that remembers bound ports (under a lock) and raises OSError for a port another manager already holds."""
         # Step 1: Validate input parameters, operational preconditions, and state
         with bound_lock:
             # Simulate that if another instance already has a port, it's occupied

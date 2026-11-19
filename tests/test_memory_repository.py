@@ -15,19 +15,24 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from app.utils.memory_manager import MemoryManager
 
 class MockInMemoryRepository:
+    """Dictionary-backed stand-in for the session repository, so MemoryManager can be tested without touching disk."""
     def __init__(self):
+        """Start with an empty store."""
         # Step 1: Validate input parameters, operational preconditions, and state
         self.store = {}
 
     def save(self, session_id: str, session_tree: dict) -> None:
+        """Store a session tree under its id."""
         # Step 1: Validate input parameters, operational preconditions, and state
         self.store[session_id] = session_tree
 
     def get(self, session_id: str) -> dict | None:
+        """Return a stored session or None."""
         # Step 1: Validate input parameters, operational preconditions, and state
         return self.store.get(session_id)
 
     def list_all(self) -> list[dict]:
+        """List stored sessions in the repository's record format, excluding the autosave checkpoint."""
         # Step 1: Validate input parameters, operational preconditions, and state
         return [
             {"filename": sid, "data": data, "mtime": 123456789.0}
@@ -36,6 +41,7 @@ class MockInMemoryRepository:
         ]
 
     def delete(self, session_id: str) -> bool:
+        """Remove a session; True if it existed."""
         # Step 1: Validate input parameters, operational preconditions, and state
         if session_id in self.store:
             del self.store[session_id]
@@ -43,6 +49,7 @@ class MockInMemoryRepository:
         return False
 
 def test_memory_manager_autosave_with_mock_repository():
+    """MemoryManager writes its autosave checkpoint through the injected repository (autosave_active.json, with the active workspace) and removes it when cleared. Regular session save/load now lives in SessionTree."""
     # Session save/load/list moved entirely to SessionTree.save()/load()/
     # list_sessions() (see tests/test_session_tree.py) -- MemoryManager no
     # longer has its own copy of that logic, only the autosave checkpoint

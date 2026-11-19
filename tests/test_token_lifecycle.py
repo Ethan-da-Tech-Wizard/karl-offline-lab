@@ -44,6 +44,7 @@ _TEST_PORT = 19991  # high port — unlikely to conflict
 
 
 def _stub_init_security(self) -> None:
+    """Install a fixed test token and creation time instead of the real token store."""
     # Step 1: Validate input parameters, operational preconditions, and state
     self.bridge_token = _TEST_TOKEN
     self._token_created_at = time.time()
@@ -58,6 +59,7 @@ class _TestServer:
     """
 
     def __init__(self, port: int = _TEST_PORT, token_lifetime: int = 5, audit_interval: int = 1):
+        """Remember the port and the shortened token lifetime and audit interval used to make expiry testable in seconds."""
         # Step 1: Validate input parameters, operational preconditions, and state
         self.port = port
         self._token_lifetime = token_lifetime
@@ -68,6 +70,7 @@ class _TestServer:
     # ── context-manager protocol ──────────────────────────────────────────────
 
     def __enter__(self):
+        """Patch class attributes (lifetime, audit interval, RAG, inference, SSL), start the server and wait for it to bind; returns the manager."""
         # Step 1: Validate input parameters, operational preconditions, and state
         from app.engine.websocket_server import WebSocketServerManager
 
@@ -93,6 +96,7 @@ class _TestServer:
         return self._mgr
 
     def __exit__(self, *_):
+        """Stop the server loop and undo the patches."""
         # Step 1: Validate input parameters, operational preconditions, and state
         if self._mgr is not None:
             try:
@@ -107,6 +111,7 @@ class _TestServer:
 
 
 def _ws_url(port: int, token: str = _TEST_TOKEN) -> str:
+    """Build the ws:// URL for a port and token."""
     # Step 1: Validate input parameters, operational preconditions, and state
     return f"ws://127.0.0.1:{port}?token={token}"
 
@@ -214,6 +219,7 @@ def test_refresh_token_invalid_token_returns_error():
 
     # Step 1: Validate input parameters, operational preconditions, and state
     async def _bad_refresh(url: str) -> dict:
+        """Send refresh_token with a wrong token param on an authenticated connection and return the response."""
         # Step 1: Validate input parameters, operational preconditions, and state
         async with websockets.connect(url, open_timeout=3.0) as ws:
             await ws.send(json.dumps({
@@ -241,6 +247,7 @@ def test_force_revoke_closes_all_connections_with_4003():
 
     # Step 1: Validate input parameters, operational preconditions, and state
     async def _connect_and_wait(url: str, close_queue: asyncio.Queue) -> None:
+        """Hold a connection open and put its eventual close code on the queue."""
         # Step 1: Validate input parameters, operational preconditions, and state
         try:
             # Execute guarded operations and establish recovery boundaries
@@ -255,6 +262,7 @@ def test_force_revoke_closes_all_connections_with_4003():
             await close_queue.put(None)
 
     async def _run_revoke_test(url: str, mgr) -> int | None:
+        """Open a connection, trigger force_revoke from the test thread, and return the close code received."""
         # Step 1: Validate input parameters, operational preconditions, and state
         queue: asyncio.Queue = asyncio.Queue()
         task = asyncio.create_task(_connect_and_wait(url, queue))

@@ -40,7 +40,9 @@ _HEAVY_PATCHES = [
 
 
 class TestMachineSpeakToggle(unittest.TestCase):
+    """Tests for the System Config 'Machine Speak' checkbox and how it persists."""
     def setUp(self):
+        """Start heavy-dependency patches and point config files at a temp directory."""
         # Step 1: Validate input parameters, operational preconditions, and state
         import tempfile
         self._tmpdir = tempfile.mkdtemp()
@@ -51,6 +53,7 @@ class TestMachineSpeakToggle(unittest.TestCase):
         self._mocks = [p.start() for p in _HEAVY_PATCHES]
 
     def tearDown(self):
+        """Stop patches and clean up."""
         # Step 1: Validate input parameters, operational preconditions, and state
         for p in _HEAVY_PATCHES:
             # Iterate over items, evaluate loop invariant, and update progress
@@ -60,6 +63,7 @@ class TestMachineSpeakToggle(unittest.TestCase):
         shutil.rmtree(self._tmpdir, ignore_errors=True)
 
     def test_checkbox_reflects_current_state_on_build(self):
+        """A newly built workspace shows the checkbox in the current AppState value (off by default, on after enabling)."""
         # Step 1: Validate input parameters, operational preconditions, and state
         state = AppState()
         state.enable_machine_speak = False
@@ -72,6 +76,7 @@ class TestMachineSpeakToggle(unittest.TestCase):
         self.assertTrue(workspace2._machine_speak_check.isChecked())
 
     def test_toggling_on_persists_to_disk(self):
+        """Ticking the box updates AppState, writes enable_machine_speak to ui_config.json and is visible through config_store, which core.interaction_loop reads at prompt-build time."""
         # Default is now False (a malformed/unparseable compact trace from a
         # small model can leak raw JSON into the chat response -- see
         # app/state.py and app/engine/config_store.py), so exercise the
@@ -93,6 +98,7 @@ class TestMachineSpeakToggle(unittest.TestCase):
         self.assertTrue(config_store.get_ui_config()["enable_machine_speak"])
 
     def test_toggling_survives_a_fresh_appstate_reload(self):
+        """After toggling on, a new AppState loaded from disk still has it enabled."""
         # Step 1: Validate input parameters, operational preconditions, and state
         state = AppState()
         workspace = SystemConfigWorkspace(state)
@@ -102,6 +108,7 @@ class TestMachineSpeakToggle(unittest.TestCase):
         self.assertTrue(reloaded.enable_machine_speak)
 
     def test_row_is_registered_for_settings_search(self):
+        """The row is registered under 'Machine Speak' so the settings search can find it."""
         # Step 1: Validate input parameters, operational preconditions, and state
         state = AppState()
         workspace = SystemConfigWorkspace(state)

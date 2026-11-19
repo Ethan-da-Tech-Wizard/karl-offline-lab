@@ -15,6 +15,7 @@ from pathlib import Path
 
 
 def test_registry_companion_draft_is_discoverable(tmp_path, monkeypatch):
+    """A registry entry can name a companion draft model for a target; it is discoverable by registry_draft_model_filename and the draft config is off by default."""
     # Step 1: Validate input parameters, operational preconditions, and state
     from app.engine import config_store
 
@@ -42,6 +43,7 @@ def test_registry_companion_draft_is_discoverable(tmp_path, monkeypatch):
 
 
 def test_active_draft_model_persists_enabled_flag(tmp_path, monkeypatch):
+    """set_active_draft_model persists the filename and enabled flag, and clearing it persists disabled with no filename."""
     # Step 1: Validate input parameters, operational preconditions, and state
     from app.engine import config_store
 
@@ -59,6 +61,7 @@ def test_active_draft_model_persists_enabled_flag(tmp_path, monkeypatch):
 
 
 def test_model_loader_uses_persisted_draft_setting():
+    """Source-level guard: ModelLoader reads the persisted draft setting, reloads when it changes, wraps the draft in an adapter class and passes it as draft_model."""
     # Step 1: Validate input parameters, operational preconditions, and state
     source = Path("app/engine/model_loader.py").read_text(encoding="utf-8")
 
@@ -70,6 +73,7 @@ def test_model_loader_uses_persisted_draft_setting():
 
 
 def test_status_bar_exposes_speculative_indicator():
+    """Source-level guard: the status bar has set_speculative_active and shows '[Speculative Active]'."""
     # Step 1: Validate input parameters, operational preconditions, and state
     source = Path("app/ui/widgets/status_bar.py").read_text(encoding="utf-8")
 

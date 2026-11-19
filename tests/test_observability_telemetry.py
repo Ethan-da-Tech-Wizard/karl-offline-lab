@@ -18,9 +18,11 @@ import tests.qt_test_helper  # noqa: F401  # Ensures global QApplication runs he
 from app.ui.workspaces.system_config.observability_tab import ObservabilityTab
 
 class MockState:
+    """Empty stand-in for AppState; the tab only needs an object to hold."""
     pass
 
 def test_telemetry_metrics_calculation():
+    """The Observability tab averages a dummy performance-telemetry file into its metric pills: TTFT 400.0 ms, tokens/s 25.00, cache hit rate 40.0% (hits over total) and VRAM delta +15.0 MB."""
     # Step 1: Validate input parameters, operational preconditions, and state
     state = MockState()
     

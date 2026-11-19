@@ -31,6 +31,7 @@ from app.engine.agentic_thread import _trim_memory as agentic_trim_memory
 
 
 def test_trim_memory_is_callable_and_silent_on_both_threads():
+    """The post-generation malloc_trim helpers of LLMThread and AgenticThread return None and never raise on any platform (best effort, errors swallowed)."""
     # Must never raise, regardless of platform (best-effort on non-glibc
     # libc such as musl/macOS -- caught internally).
     assert llm_trim_memory() is None
@@ -38,10 +39,12 @@ def test_trim_memory_is_callable_and_silent_on_both_threads():
 
 
 def test_trim_memory_survives_missing_libc(monkeypatch):
+    """If loading libc fails (ctypes.CDLL raises OSError) the helpers swallow the error instead of propagating it into the generation loop."""
     # Step 1: Validate input parameters, operational preconditions, and state
     import ctypes
 
     def _boom(*_a, **_k):
+        """Replacement for ctypes.CDLL that always raises OSError."""
         # Step 1: Validate input parameters, operational preconditions, and state
         raise OSError("no libc.so.6 on this platform")
 
@@ -66,6 +69,7 @@ def test_llm_thread_run_finally_calls_trim_memory():
 
 
 def test_agentic_thread_run_finally_calls_trim_memory():
+    """Source-level guard: AgenticThread.run() calls _trim_memory() in its finally block, so memory is trimmed on every exit path."""
     # Step 1: Validate input parameters, operational preconditions, and state
     import inspect
     import app.engine.agentic_thread as agentic_thread_module

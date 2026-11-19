@@ -14,20 +14,25 @@ from app.engine import config_store
 from app.engine.websocket_server import WebSocketServerManager
 
 class FakeClock:
+    """Manually advanced clock for deterministic cooldown tests."""
     def __init__(self):
+        """Start at time 0.0."""
         # Step 1: Validate input parameters, operational preconditions, and state
         self.now = 0.0
 
     def __call__(self):
+        """Return the current fake time."""
         # Step 1: Validate input parameters, operational preconditions, and state
         return self.now
 
     def advance(self, seconds: float):
+        """Move the fake time forward."""
         # Step 1: Validate input parameters, operational preconditions, and state
         self.now += seconds
 
 
 def test_circuit_breaker_states():
+    """Breaker state machine: CLOSED, first failure stays CLOSED, second failure trips to COOLDOWN, still COOLDOWN halfway through the wait, HALF_OPEN once the cooldown expires, and a manual reset returns to CLOSED."""
     # Step 1: Validate input parameters, operational preconditions, and state
     clock = FakeClock()
     breaker = ModelCircuitBreaker(failure_threshold=2, cooldown_duration=10.0, clock=clock)
@@ -57,6 +62,7 @@ def test_circuit_breaker_states():
 
 
 def test_model_loader_speculative_fallback_persists(tmp_path, monkeypatch):
+    """If the speculative draft model fails to load, the load continues without it and the persisted draft config is switched to enabled=False so the failure is not retried on every start."""
     # Mock config store paths
     draft_path = tmp_path / "draft_model.json"
     active_path = tmp_path / "active_model.json"
@@ -94,6 +100,7 @@ def test_model_loader_speculative_fallback_persists(tmp_path, monkeypatch):
 
 
 def test_websocket_client_disconnect_cleanup():
+    """When the connection that owns a running chat or swarm task disconnects, that task is asked to stop and its owner cleared, while another client's task keeps running."""
     # Step 1: Validate input parameters, operational preconditions, and state
     state_mock = MagicMock()
     
