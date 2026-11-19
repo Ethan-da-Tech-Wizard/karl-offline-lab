@@ -576,6 +576,8 @@ class MiniTrainThread(QThread):
             def get_batch(split):
                 # Step 1: Validate input parameters, operational preconditions, and state
                 split_data = train_data if split == 'train' else val_data
+                # Upper bound is len - block_size so that the shifted target window (i+1 .. i+block_size) never runs
+                # past the end of the data.
                 ix = torch.randint(len(split_data) - block_size, (batch_size,))
                 x = torch.stack([split_data[i:i+block_size] for i in ix])
                 y = torch.stack([split_data[i+1:i+block_size+1] for i in ix])
@@ -615,6 +617,7 @@ class MiniTrainThread(QThread):
                 logits, loss = model(xb, yb)
                 
                 # Backpropagation
+                # set_to_none frees gradient memory instead of zero-filling it, which is slightly faster and cheaper.
                 optimizer.zero_grad(set_to_none=True)
                 loss.backward()
                 optimizer.step()
@@ -631,8 +634,10 @@ class MiniTrainThread(QThread):
                 # Periodic text sampling
                 # Sample from a single start token (index 0) every sample_interval steps.
                 if step % sample_interval == 0:
+                    # Sampling must not use dropout, and train() is restored below so training continues unchanged.
                     model.eval()
                     # Feed a newline character as the start context
+                    # Token id 0 is the first vocabulary character (the lowest sorted one), used as a neutral seed.
                     context = torch.zeros((1, 1), dtype=torch.long, device=device)
                     # Generate 150 characters
                     gen_ids = model.generate(context, max_new_tokens=150, temperature=0.8, top_k=20)[0].tolist()
@@ -660,8 +665,8 @@ class MiniTrainThread(QThread):
                     "vocab_size": vocab_size
                 }, f, indent=2)
 
-            # NOTE: JSON turns the integer keys of itos into strings, and CharTokenizer.decode looks up
-            # integer ids, so a tokenizer restored from this file decodes every id to an empty string.
+            # JSON turns the integer keys of itos into strings, and CharTokenizer.decode looks up integer ids,
+            # so the loader (mini_gpt_tab._run_mini_inference) converts the keys back to int when reading this file.
             # Save tokenizer metadata
             vocab_path = os.path.join(self.save_dir, "tokenizer.json")
             with open(vocab_path, "w", encoding="utf-8") as f:
