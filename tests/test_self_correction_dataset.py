@@ -23,6 +23,7 @@ from tools.generate_code_sft_dataset import DefinitionVisitor, build_user_prompt
 
 
 def test_normalize_problem_record_accepts_verifiable_task():
+    """A record with a verification_script is turned into a CodingProblem: the id is kept, and supplied code is appended to the prompt as 'Context/code'. Pins the normalisation contract the STaR generator relies on."""
     # Step 1: Validate input parameters, operational preconditions, and state
     record = {
         "id": "task-1",
@@ -41,11 +42,13 @@ def test_normalize_problem_record_accepts_verifiable_task():
 
 
 def test_normalize_problem_record_rejects_missing_verifier():
+    """Without a verification_script the record is rejected (None); an unverifiable problem could never produce trustworthy training data."""
     # Step 1: Validate input parameters, operational preconditions, and state
     assert normalize_problem_record({"prompt": "Write code"}) is None
 
 
 def test_extract_code_and_thought_blocks():
+    """The <think> body and the fenced python code are extracted separately and stripped."""
     # Step 1: Validate input parameters, operational preconditions, and state
     text = "<think>\nfix off by one\n</think>\n```python\ndef solve():\n    return 1\n```"
 
@@ -54,6 +57,7 @@ def test_extract_code_and_thought_blocks():
 
 
 def test_code_diff_tracks_correction():
+    """The unified diff between failed and corrected code uses the fixed filenames failed_attempt.py/corrected_attempt.py and marks the changed line with -/+."""
     # Step 1: Validate input parameters, operational preconditions, and state
     before = "```python\ndef solve():\n    return 1\n```"
     after = "```python\ndef solve():\n    return 2\n```"
@@ -67,6 +71,7 @@ def test_code_diff_tracks_correction():
 
 
 def test_build_self_correction_row_format():
+    """A failed-then-fixed trajectory becomes a system/user/assistant row tagged origin=self_correction_star with the iteration count; the assistant turn carries <think>, the diff, and a JSON transition block that must itself parse as valid JSON."""
     # Step 1: Validate input parameters, operational preconditions, and state
     problem = CodingProblem(
         problem_id="p1",
@@ -107,6 +112,7 @@ def test_build_self_correction_row_format():
 
 
 def test_build_correction_prompt_includes_traceback():
+    """The retry prompt must show the model both its bad response and the verifier traceback, and ask for <think> reasoning."""
     # Step 1: Validate input parameters, operational preconditions, and state
     problem = CodingProblem("p1", "Write solve().", "def verify(response): return False")
 
@@ -118,6 +124,7 @@ def test_build_correction_prompt_includes_traceback():
 
 
 def test_code_scrape_docstring_parsing_feeds_prompt_formatting():
+    """The AST scraper in generate_code_sft_dataset captures docstring, argument string and return annotation for a function, and build_user_prompt then embeds the description and file path (cross-tool integration of the two generators)."""
     # Step 1: Validate input parameters, operational preconditions, and state
     source = '''
 def add(a: int, b: int) -> int:

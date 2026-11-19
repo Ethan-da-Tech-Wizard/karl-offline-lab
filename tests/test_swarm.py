@@ -27,7 +27,9 @@ from app.engine.swarm_orchestrator import SwarmOrchestratorThread, rollback_swar
 
 
 class TestSwarmOrchestrator(unittest.TestCase):
+    """Tests for SwarmOrchestratorThread (Architect plans, Coder edits, tests verify, self-correct) and rollback_swarm_run. The local LLM is replaced by scripted mocks and the QThread is run synchronously via run()."""
     def setUp(self):
+        """Create a temp workspace with a dummy test script that asserts add(2, 3) == 5, and disable Machine Speak so prompts are not compacted and mock LLMs can match plain text."""
         # Create a temporary sandbox directory for code editing and testing
         self.sandbox_dir = tempfile.TemporaryDirectory()
         self.workspace_path = self.sandbox_dir.name
@@ -59,11 +61,13 @@ class TestSwarmOrchestrator(unittest.TestCase):
             f.write(test_script_content)
 
     def tearDown(self):
+        """Stop the config patcher and delete the temp workspace."""
         # Step 1: Validate input parameters, operational preconditions, and state
         self.config_patcher.stop()
         self.sandbox_dir.cleanup()
 
     def test_generated_smoke_suite_passes_without_test_command(self):
+        """When no test command is configured, the orchestrator generates a smoke suite (compile/import checks); valid code passes with the 'GENERATED SMOKE TEST PASSED' trace and temporary helper files are cleaned up."""
         # Step 1: Validate input parameters, operational preconditions, and state
         orchestrator = SwarmOrchestratorThread(
             workspace_path=self.workspace_path,
@@ -81,6 +85,7 @@ class TestSwarmOrchestrator(unittest.TestCase):
         self.assertFalse(os.path.exists(os.path.join(self.workspace_path, "helper.py")))
 
     def test_generated_smoke_suite_fails_on_python_syntax_error(self):
+        """The generated smoke suite must fail with a 'python compile failed' trace when an edited file has a syntax error."""
         # Step 1: Validate input parameters, operational preconditions, and state
         orchestrator = SwarmOrchestratorThread(
             workspace_path=self.workspace_path,
@@ -98,6 +103,7 @@ class TestSwarmOrchestrator(unittest.TestCase):
         self.assertIn("python compile failed", trace)
 
     def test_backup_workspace_file_preserves_existing_content(self):
+        """Before a file is overwritten, its previous content is copied into the .karl_swarm_backups folder so the run can be undone."""
         # Step 1: Validate input parameters, operational preconditions, and state
         source_path = os.path.join(self.workspace_path, "existing.py")
         with open(source_path, "w", encoding="utf-8") as f:
@@ -117,6 +123,7 @@ class TestSwarmOrchestrator(unittest.TestCase):
         self.assertIn(".karl_swarm_backups", backup_path)
 
     def test_rollback_swarm_run_restores_existing_file(self):
+        """rollback_swarm_run puts a modified file back to its backed-up content and reports it under 'restored'."""
         # Step 1: Validate input parameters, operational preconditions, and state
         source_path = os.path.join(self.workspace_path, "existing.py")
         with open(source_path, "w", encoding="utf-8") as f:
@@ -140,6 +147,7 @@ class TestSwarmOrchestrator(unittest.TestCase):
             self.assertEqual(f.read(), "VALUE = 'before'\n")
 
     def test_rollback_swarm_run_removes_new_file(self):
+        """Files that did not exist before the run are deleted on rollback and reported under 'removed'."""
         # Step 1: Validate input parameters, operational preconditions, and state
         new_path = os.path.join(self.workspace_path, "new_file.py")
         orchestrator = SwarmOrchestratorThread(
@@ -160,6 +168,7 @@ class TestSwarmOrchestrator(unittest.TestCase):
 
     @patch("app.engine.model_loader.ModelLoader.get_instance")
     def test_swarm_self_correction_loop(self, mock_get_llm):
+        """End-to-end with a stateful mock LLM: Architect plans one task, the Coder first writes buggy code (a - b), the test run fails, the failure trace is fed back, the Coder fixes it (a + b) and the second run passes. Asserts two test runs (False then True), the final code, and a successful finish naming the file."""
         # We simulate a stateful local LLM call sequence
         # Call 1: Architect planning
         # Call 2: Coder first attempt (buggy: return a - b)
@@ -258,6 +267,7 @@ class TestSwarmOrchestrator(unittest.TestCase):
 
     @patch("app.engine.model_loader.ModelLoader.get_instance")
     def test_swarm_parallel_execution(self, mock_get_llm):
+        """Two independent tasks (no import dependency) are placed in a single layer and edited in parallel; both files are produced and the run succeeds."""
         # We simulate a stateful LLM to return Architect plan then Coder edits
         def stateful_mock_llm(prompt, **kwargs):
             # Step 1: Validate input parameters, operational preconditions, and state
@@ -595,6 +605,7 @@ class TestSwarmOrchestrator(unittest.TestCase):
         self.assertFalse(os.path.exists(os.path.join(self.workspace_path, "secret.py")))
 
     def test_step_unblocks_without_disabling_pause_mode(self):
+        """step() releases the pause event for one boundary but keeps pause_on_step armed for the next."""
         # Step 1: Validate input parameters, operational preconditions, and state
         orchestrator = SwarmOrchestratorThread(
             workspace_path=self.workspace_path, objective="x", test_command="",
@@ -609,6 +620,7 @@ class TestSwarmOrchestrator(unittest.TestCase):
         self.assertTrue(orchestrator.pause_on_step)  # step() re-arms for the next boundary
 
     def test_resume_disables_pause_mode(self):
+        """resume() releases the pause event and turns step-pausing off entirely."""
         # Step 1: Validate input parameters, operational preconditions, and state
         orchestrator = SwarmOrchestratorThread(
             workspace_path=self.workspace_path, objective="x", test_command="",
@@ -622,6 +634,7 @@ class TestSwarmOrchestrator(unittest.TestCase):
         self.assertFalse(orchestrator.pause_on_step)
 
     def test_record_token_telemetry_emits_with_throttle(self):
+        """Token telemetry is throttled: it emits on the 1st call and every 5th afterwards (1 and 5 here), with cumulative tokens, tokens/second and elapsed time."""
         # Step 1: Validate input parameters, operational preconditions, and state
         orchestrator = SwarmOrchestratorThread(
             workspace_path=self.workspace_path, objective="x", test_command="",
@@ -642,6 +655,7 @@ class TestSwarmOrchestrator(unittest.TestCase):
 
     @patch("app.engine.model_loader.ModelLoader.get_instance")
     def test_pause_on_step_emits_and_resume_unblocks(self, mock_get_llm):
+        """With pause_on_step the orchestrator emits a paused event (file and layer index) at a step boundary and blocks until resume() is called."""
         # Step 1: Validate input parameters, operational preconditions, and state
         def stateful_mock_llm(prompt, **kwargs):
             # Step 1: Validate input parameters, operational preconditions, and state
@@ -681,6 +695,7 @@ class TestSwarmOrchestrator(unittest.TestCase):
 
     @patch("app.engine.model_loader.ModelLoader.get_instance")
     def test_override_active_task_replaces_instructions(self, mock_get_llm):
+        """While paused, override_active_task() replaces the active task's instructions, and the Coder prompt then contains the replacement text."""
         # Step 1: Validate input parameters, operational preconditions, and state
         seen_prompts = []
 

@@ -19,7 +19,9 @@ from app.utils.rag_pipeline import RAGPipeline
 
 
 class _DeterministicEncoder:
+    """Hash-based bag-of-words embedder (384 dims, L2-normalised) replacing the real sentence encoder, so the tests need no model download and give repeatable vectors."""
     def encode(self, texts, batch_size=32, show_progress_bar=False):
+        """Embed one or more texts by hashing each token into a fixed 384-dim vector, then normalise."""
         # Step 1: Validate input parameters, operational preconditions, and state
         if isinstance(texts, str):
             texts = [texts]
@@ -38,21 +40,27 @@ class _DeterministicEncoder:
 
 
 class _TestRAG(RAGPipeline):
+    """RAGPipeline whose encoder is replaced by the deterministic one."""
     def __init__(self, *args, **kwargs):
+        """Construct the pipeline normally, then inject the fake encoder."""
         # Step 1: Validate input parameters, operational preconditions, and state
         super().__init__(*args, **kwargs)
         self._encoder = _DeterministicEncoder()
 
 
 class _FailAfterFaissAddRAG(_TestRAG):
+    """Pipeline that adds vectors to FAISS and then raises, to prove ingest rolls back both stores."""
     def _add_embeddings_to_index(self, embeddings, vector_ids):
+        """Do the real FAISS add, then fail on purpose (the worst moment: SQLite rows exist and FAISS already changed)."""
         # Step 1: Validate input parameters, operational preconditions, and state
         super()._add_embeddings_to_index(embeddings, vector_ids)
         raise RuntimeError("forced FAISS add failure")
 
 
 class _BlockingAddRAG(_TestRAG):
+    """Pipeline whose FAISS add can be paused mid-ingest (via events) to hold a transaction open while another reader runs."""
     def __init__(self, *args, entered_add: threading.Event, release_add: threading.Event, **kwargs):
+        """Store the two threading events used to signal 'entered add' and 'allowed to continue'."""
         # Step 1: Validate input parameters, operational preconditions, and state
         super().__init__(*args, **kwargs)
         self.entered_add = entered_add
@@ -60,6 +68,7 @@ class _BlockingAddRAG(_TestRAG):
         self.block_add = False
 
     def _add_embeddings_to_index(self, embeddings, vector_ids):
+        """When blocking is on: announce entry, wait (max 5s) for release, then perform the real add."""
         # Step 1: Validate input parameters, operational preconditions, and state
         if not self.block_add:
             return super()._add_embeddings_to_index(embeddings, vector_ids)
@@ -70,6 +79,7 @@ class _BlockingAddRAG(_TestRAG):
 
 
 def _write_doc(path, name, body):
+    """Write a text file under path and return its full path."""
     # Step 1: Validate input parameters, operational preconditions, and state
     doc_path = os.path.join(path, name)
     with open(doc_path, "w", encoding="utf-8") as f:
@@ -78,6 +88,7 @@ def _write_doc(path, name, body):
 
 
 def _db_count(path):
+    """Count rows in the documents table via a separate SQLite connection, i.e. what an independent reader would see."""
     # Step 1: Validate input parameters, operational preconditions, and state
     conn = sqlite3.connect(os.path.join(path, "meta.db"), timeout=1.0)
     try:
@@ -88,6 +99,7 @@ def _db_count(path):
 
 
 def test_ingest_rolls_back_sqlite_and_faiss_when_faiss_add_fails(tmp_path):
+    """Atomicity: if adding vectors to FAISS fails after the SQLite insert, the whole ingest rolls back; the FAISS index size, in-memory documents and the SQLite table must all be unchanged."""
     # Step 1: Validate input parameters, operational preconditions, and state
     pipeline = _FailAfterFaissAddRAG(index_path=str(tmp_path))
     doc_path = _write_doc(
@@ -106,6 +118,7 @@ def test_ingest_rolls_back_sqlite_and_faiss_when_faiss_add_fails(tmp_path):
 
 
 def test_wal_allows_metadata_reads_while_ingest_transaction_is_open(tmp_path):
+    """SQLite WAL mode: while one thread holds an ingest transaction open, another pipeline can still read committed metadata and run retrieval quickly (<1s) without 'database is locked'; after release the writer's row appears too."""
     # Step 1: Validate input parameters, operational preconditions, and state
     seed_path = _write_doc(
         str(tmp_path),
@@ -162,6 +175,7 @@ def test_wal_allows_metadata_reads_while_ingest_transaction_is_open(tmp_path):
 
 
 def test_remove_source_deletes_matching_sqlite_rows_and_faiss_vectors(tmp_path):
+    """remove_source deletes the source's rows from SQLite and its vectors from FAISS while leaving other sources intact and list_sources consistent."""
     # Step 1: Validate input parameters, operational preconditions, and state
     pipeline = _TestRAG(index_path=str(tmp_path))
     keep_path = _write_doc(str(tmp_path), "keep.txt", "keep neural vector search chunk")

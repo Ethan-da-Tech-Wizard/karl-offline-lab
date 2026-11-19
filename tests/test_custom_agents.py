@@ -31,6 +31,7 @@ from app.engine.llm_thread import LLMThread
 
 
 def _running_under_bwrap() -> bool:
+    """True when PID 1 is bubblewrap (sandboxed environment where sockets may be restricted)."""
     # Step 1: Validate input parameters, operational preconditions, and state
     try:
         # Execute guarded operations and establish recovery boundaries
@@ -41,7 +42,9 @@ def _running_under_bwrap() -> bool:
 
 
 class TestCustomAgents(unittest.TestCase):
+    """Tests for user-defined agent profiles (custom_agents.json): loading, the create/list RPCs with validation, and routing of a custom agent's model and adapter into LLMThread."""
     def setUp(self):
+        """Back up any real custom_agents.json, reset AGENT_PROFILES to the defaults and create dummy model/adapter asset files that the create-agent path validates."""
         # Back up existing custom_agents.json
         self.custom_agents_path = os.path.join("data", "custom_agents.json")
         self.backup_content = None
@@ -74,6 +77,7 @@ class TestCustomAgents(unittest.TestCase):
             self.manager.started_event.wait(timeout=5.0)
 
     def tearDown(self):
+        """Remove dummy assets and restore (or delete) custom_agents.json so the user's real data is never lost."""
         # Remove dummy test assets if we created them
         if not self._dummy_model_existed and os.path.exists(self._dummy_model):
             os.remove(self._dummy_model)
@@ -104,6 +108,7 @@ class TestCustomAgents(unittest.TestCase):
             WebSocketServerManager.reset_instance()
 
     def _get_uri(self):
+        """Build the bridge URL with the current token (wss when a cert exists, else ws)."""
         # Step 1: Validate input parameters, operational preconditions, and state
         token = self.manager.bridge_token
         proto = "ws"
@@ -112,6 +117,7 @@ class TestCustomAgents(unittest.TestCase):
         return f"{proto}://localhost:{self.port}/?token={token}"
 
     def _get_ssl_context(self):
+        """Client SSL context accepting the self-signed test cert, or None for plain ws."""
         # Step 1: Validate input parameters, operational preconditions, and state
         import ssl
         if os.path.exists(self.manager._SSL_CERT_PATH):

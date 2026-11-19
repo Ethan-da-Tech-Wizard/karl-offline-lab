@@ -33,16 +33,20 @@ import curate_code_datasets as curate  # noqa: E402
 
 
 class TestGenerateCodeSftDataset(unittest.TestCase):
+    """Tests for the codebase-scrape generator tools/generate_code_sft_dataset.py using throwaway directory trees."""
     def setUp(self):
+        """Create a temp directory to hold fake source trees."""
         # Step 1: Validate input parameters, operational preconditions, and state
         self._tmp = tempfile.TemporaryDirectory()
         self.root = Path(self._tmp.name)
 
     def tearDown(self):
+        """Delete the temp directory."""
         # Step 1: Validate input parameters, operational preconditions, and state
         self._tmp.cleanup()
 
     def _write(self, relpath: str, content: str) -> Path:
+        """Write a dedented source file at a relative path (creating parent folders) and return its path."""
         # Step 1: Validate input parameters, operational preconditions, and state
         path = self.root / relpath
         path.parent.mkdir(parents=True, exist_ok=True)
@@ -50,6 +54,7 @@ class TestGenerateCodeSftDataset(unittest.TestCase):
         return path
 
     def test_crawl_extracts_function_class_and_method(self):
+        """One module yields function, class and method rows; every assistant code block parses on its own (regression check for method dedenting) and the user prompt contains typed args and the return annotation."""
         # Step 1: Validate input parameters, operational preconditions, and state
         self._write("pkg/mod.py", '''
             def add(a: int, b: int = 0) -> int:
@@ -88,6 +93,7 @@ class TestGenerateCodeSftDataset(unittest.TestCase):
         self.assertIn("It should return: int.", user_prompt)
 
     def test_ignores_venv_and_test_directories(self):
+        """venv and test directories are not crawled, so third-party or test code never becomes training data."""
         # Step 1: Validate input parameters, operational preconditions, and state
         self._write("pkg/real.py", "def keep():\n    return 1\n")
         self._write("pkg/venv/skip.py", "def skip():\n    return 2\n")
@@ -99,6 +105,7 @@ class TestGenerateCodeSftDataset(unittest.TestCase):
         self.assertEqual({row["qualname"] for row in rows}, {"keep"})
 
     def test_skips_files_with_syntax_errors(self):
+        """A file that fails to parse is counted as skipped and produces no rows; the crawl continues."""
         # Step 1: Validate input parameters, operational preconditions, and state
         self._write("pkg/broken.py", "def broken(:\n    pass\n")
 
@@ -110,23 +117,29 @@ class TestGenerateCodeSftDataset(unittest.TestCase):
 
 
 class TestCurateAndMergeDatasets(unittest.TestCase):
+    """Tests for the quality gates and merging in tools/curate_code_datasets.py."""
     def test_is_syntactically_valid_accepts_fenced_valid_code(self):
+        """Valid Python inside a ```python fence passes the syntax gate."""
         # Step 1: Validate input parameters, operational preconditions, and state
         self.assertTrue(curate.is_syntactically_valid("```python\ndef ok():\n    return 1\n```"))
 
     def test_is_syntactically_valid_rejects_broken_code(self):
+        """A fenced snippet with a syntax error is rejected."""
         # Step 1: Validate input parameters, operational preconditions, and state
         self.assertFalse(curate.is_syntactically_valid("```python\ndef broken(:\n```"))
 
     def test_is_syntactically_valid_rejects_non_code_response(self):
+        """Prose with no code is not valid Python and is rejected; only code answers belong in the code dataset."""
         # Step 1: Validate input parameters, operational preconditions, and state
         self.assertFalse(curate.is_syntactically_valid("Here is the code:\n"))
 
     def test_estimate_tokens_uses_char_length_heuristic(self):
+        """Token estimate is len/4 (400 chars -> 100) so no tokenizer is needed."""
         # Step 1: Validate input parameters, operational preconditions, and state
         self.assertEqual(curate.estimate_tokens("a" * 400), 100)
 
     def test_passes_quality_checks_rejects_oversized_prompt(self):
+        """A row whose estimated tokens exceed max_tokens is rejected."""
         # Step 1: Validate input parameters, operational preconditions, and state
         row = {
             "messages": [
@@ -138,6 +151,7 @@ class TestCurateAndMergeDatasets(unittest.TestCase):
         self.assertFalse(curate.passes_quality_checks(row, max_tokens=100))
 
     def test_passes_quality_checks_accepts_small_valid_row(self):
+        """A small row with valid assistant code passes."""
         # Step 1: Validate input parameters, operational preconditions, and state
         row = {
             "messages": [
@@ -149,6 +163,7 @@ class TestCurateAndMergeDatasets(unittest.TestCase):
         self.assertTrue(curate.passes_quality_checks(row, max_tokens=100))
 
     def test_merge_datasets_filters_invalid_and_oversized_then_shuffles(self):
+        """merge_datasets counts rows per source, drops invalid-syntax and oversized rows, writes only the 'messages' key, and keeps the valid rows (order is shuffled)."""
         # Step 1: Validate input parameters, operational preconditions, and state
         with tempfile.TemporaryDirectory() as tmp:
             tmp_path = Path(tmp)
@@ -199,6 +214,7 @@ class TestCurateAndMergeDatasets(unittest.TestCase):
             self.assertEqual(set(out_rows[0].keys()), {"messages"})
 
     def test_merge_datasets_includes_scraped_library_sft_when_present(self):
+        """A scraped_library_sft.jsonl next to the curated file is merged in automatically and reported as scraped_library_total."""
         # Step 1: Validate input parameters, operational preconditions, and state
         with tempfile.TemporaryDirectory() as tmp:
             tmp_path = Path(tmp)
@@ -240,6 +256,7 @@ class TestCurateAndMergeDatasets(unittest.TestCase):
             self.assertTrue(any("def pandas_read_csv()" in b for b in bodies))
 
     def test_merge_datasets_scraped_library_sft_optional(self):
+        """The scraped-library file is optional: when absent, merging works and reports zero for it."""
         # No scraped_library_sft.jsonl on disk at all — merge should proceed
         # exactly as before, just with scraped_library_total == 0.
         with tempfile.TemporaryDirectory() as tmp:
@@ -256,6 +273,7 @@ class TestCurateAndMergeDatasets(unittest.TestCase):
             self.assertEqual(stats["combined_total"], 0)
 
     def test_merge_datasets_missing_files_produce_empty_output(self):
+        """If no input files exist the merge succeeds with zero rows instead of raising."""
         # Step 1: Validate input parameters, operational preconditions, and state
         with tempfile.TemporaryDirectory() as tmp:
             tmp_path = Path(tmp)

@@ -33,6 +33,7 @@ pytestmark = [pytest.mark.integration, pytest.mark.websocket]
 
 
 def _running_under_bwrap() -> bool:
+    """True when PID 1 is bubblewrap, i.e. the tests run inside a sandbox where local sockets or system calls may be restricted (used to skip such cases)."""
     # Step 1: Validate input parameters, operational preconditions, and state
     try:
         # Execute guarded operations and establish recovery boundaries
@@ -43,20 +44,25 @@ def _running_under_bwrap() -> bool:
 
 
 class FakeBridgeRAG:
+    """In-memory stand-in for RAGPipeline: stores ingested chunks in a list and answers retrieval by simple lookup, so knowledge-base RPCs can be tested without FAISS, SQLite or an embedding model."""
     def __init__(self):
+        """Start with an empty document list."""
         # Step 1: Validate input parameters, operational preconditions, and state
         self.documents = []
 
     def _load_index(self):
+        """No-op replacement for loading a persisted index."""
         # Step 1: Validate input parameters, operational preconditions, and state
         return None
 
     @property
     def total_chunks(self):
+        """Number of stored chunks."""
         # Step 1: Validate input parameters, operational preconditions, and state
         return len(self.documents)
 
     def ingest_file(self, filepath, chunk_size=200, overlap=50):
+        """Store a file's content as one chunk and return how many chunks were added."""
         # Step 1: Validate input parameters, operational preconditions, and state
         filename = os.path.basename(filepath)
         with open(filepath, "r", encoding="utf-8", errors="ignore") as f:
@@ -70,6 +76,7 @@ class FakeBridgeRAG:
         return 1
 
     def retrieve(self, query, top_k=3, source_filter=None, threshold=0.0):
+        """Return chunk texts for a query (fake matching)."""
         # Step 1: Validate input parameters, operational preconditions, and state
         results = self.retrieve_with_metadata(query, top_k=top_k, source_filter=source_filter)
         if threshold > 0:
@@ -77,6 +84,7 @@ class FakeBridgeRAG:
         return [r["text"] for r in results]
 
     def retrieve_with_metadata(self, query, top_k=3, source_filter=None):
+        """Return chunk dicts with source file and distance, like the real pipeline."""
         # Step 1: Validate input parameters, operational preconditions, and state
         results = []
         for idx, doc in enumerate(self.documents):
@@ -93,7 +101,9 @@ class FakeBridgeRAG:
 
 
 class TestWebSocketBridge(unittest.TestCase):
+    """Integration tests that start the real WebSocketServerManager on a test port and drive it with a websockets client: RPC methods, notifications, token auth and rotation. Qt events are pumped by a spinner task because signals cross threads."""
     def setUp(self):
+        """Create a QCoreApplication, start the bridge server on port 8081 (a test-only port) and prepare a sandbox directory with a trivially passing test script."""
         # Step 1: Validate input parameters, operational preconditions, and state
         if _running_under_bwrap():
             self.skipTest("Codex sandbox blocks reliable localhost WebSocket tests")
@@ -116,12 +126,14 @@ class TestWebSocketBridge(unittest.TestCase):
             f.write("import sys\nsys.dont_write_bytecode = True\nsys.exit(0)\n")
 
     def tearDown(self):
+        """Remove the sandbox and reset the server singleton so the next test starts clean."""
         # Step 1: Validate input parameters, operational preconditions, and state
         self.sandbox_dir.cleanup()
         # Clean shutdown and reset the singleton
         WebSocketServerManager.reset_instance()
 
     def _get_uri(self):
+        """Build the client URL with the live bridge token, using wss when a TLS cert exists and ws otherwise."""
         # Step 1: Validate input parameters, operational preconditions, and state
         token = self.manager.bridge_token
         proto = "ws"
@@ -130,6 +142,7 @@ class TestWebSocketBridge(unittest.TestCase):
         return f"{proto}://localhost:{self.port}/?token={token}"
 
     def _get_ssl_context(self):
+        """Client SSL context that accepts the self-signed test certificate, or None for plain ws."""
         # Step 1: Validate input parameters, operational preconditions, and state
         import ssl
         if os.path.exists(self.manager._SSL_CERT_PATH):
@@ -140,6 +153,7 @@ class TestWebSocketBridge(unittest.TestCase):
         return None
 
     def test_runtime_status_rpc(self):
+        """The runtime_status RPC returns bridge port, idle runtime state and model/adapter/system sections."""
         # Step 1: Validate input parameters, operational preconditions, and state
         async def run_client():
             # Step 1: Validate input parameters, operational preconditions, and state
@@ -171,6 +185,7 @@ class TestWebSocketBridge(unittest.TestCase):
             loop.close()
 
     def test_model_registry_rpc(self):
+        """The model registry RPCs list known model files and let a client change the active model; the response reflects the new selection."""
         # Step 1: Validate input parameters, operational preconditions, and state
         active_path = os.path.join("data", "active_model.json")
         model_dir = os.path.join("data", "models")
@@ -230,6 +245,7 @@ class TestWebSocketBridge(unittest.TestCase):
                 pass
 
     def test_prompt_pair_rpc(self):
+        """Prompt pairs (system A / system B) can be saved, listed, fetched and deleted through RPC."""
         # Step 1: Validate input parameters, operational preconditions, and state
         pair_dir = os.path.join("data", "prompt_pairs")
         pair_name = "websocket_pair_test"
@@ -303,6 +319,7 @@ class TestWebSocketBridge(unittest.TestCase):
                 pass
 
     def test_knowledge_base_rpc(self):
+        """Knowledge-base RPCs: initial stats are empty, an ingest starts asynchronously and emits progress and finished notifications, and a search returns the ingested chunk with a close distance."""
         # Step 1: Validate input parameters, operational preconditions, and state
         self.manager.rag = FakeBridgeRAG()
         doc_path = os.path.join(self.workspace_path, "notes.md")
@@ -380,6 +397,7 @@ class TestWebSocketBridge(unittest.TestCase):
 
     @patch("app.engine.model_loader.ModelLoader.get_instance")
     def test_websocket_bridge_flow(self, mock_get_llm):
+        """Full swarm run over the bridge with a mocked LLM: the submit RPC answers 'started', then task_plan_created, file_edited and finished_swarm notifications are broadcast to the client."""
         # Mock LLM to return simple JSON plan and script contents
         def mock_llm(prompt, **kwargs):
             # Step 1: Validate input parameters, operational preconditions, and state
@@ -470,6 +488,7 @@ class TestWebSocketBridge(unittest.TestCase):
 
     @patch("app.engine.model_loader.ModelLoader.get_instance")
     def test_websocket_chat_flow(self, mock_get_llm):
+        """Chat over the bridge: the RPC answers 'started' and streamed thought tokens, response tokens and a chat_finished notification arrive."""
         # Step 1: Validate input parameters, operational preconditions, and state
         def mock_llm_stream(prompt, **kwargs):
             # Step 1: Validate input parameters, operational preconditions, and state
@@ -557,6 +576,7 @@ class TestWebSocketBridge(unittest.TestCase):
             loop.close()
 
     def test_status_bar_reflection(self):
+        """The GUI status bar shows 'VS Code: listening' while the bridge is up and 'VS Code: offline' after the server instance is reset."""
         # Step 1: Validate input parameters, operational preconditions, and state
         from app.ui.widgets.status_bar import StatusBar
 
@@ -575,6 +595,7 @@ class TestWebSocketBridge(unittest.TestCase):
         self.assertEqual(status_bar._vscode_lbl.text(), "VS Code: offline")
 
     def test_token_connection_success(self):
+        """A client presenting the valid bridge token can connect and make an RPC."""
         # Step 1: Validate input parameters, operational preconditions, and state
         async def run_client():
             # Step 1: Validate input parameters, operational preconditions, and state
@@ -588,6 +609,7 @@ class TestWebSocketBridge(unittest.TestCase):
 
     @patch("time.time")
     def test_token_expiry_fail(self, mock_time):
+        """A token older than its lifetime (13 hours in the faked clock) is rejected: the server closes the connection with code 4001."""
         # 1. Set current time to a fixed point
         now = 1700000000.0
         mock_time.return_value = now
@@ -627,6 +649,7 @@ class TestWebSocketBridge(unittest.TestCase):
 
     @patch("time.time")
     def test_token_rotation_on_disk(self, mock_time):
+        """After the token expires, a connection attempt triggers rotation: a new token is written to disk with the new creation time."""
         # 1. Start at a fixed time
         now = 1700000000.0
         mock_time.return_value = now

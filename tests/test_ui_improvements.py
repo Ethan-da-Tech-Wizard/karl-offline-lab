@@ -17,7 +17,9 @@ import pytest
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 class TestUIImprovements(unittest.TestCase):
+    """Smoke/behaviour tests for recent GUI features: theme generation, codex library, workbench docks, swarm studio, agentic chat history and system-config search. Needs PyQt6, so it only runs where the GUI stack is installed."""
     def test_theme_qss_generation(self):
+        """The generated Qt stylesheet is non-trivial and has every {placeholder} (accent, bg_deep, ...) substituted; a leftover brace would mean broken styling."""
         # Step 1: Validate input parameters, operational preconditions, and state
         from app.ui.themes import THEMES, get_theme_stylesheet
         for theme_name in THEMES.keys():
@@ -30,6 +32,7 @@ class TestUIImprovements(unittest.TestCase):
             self.assertNotIn("{bg_deep}", qss)
 
     def test_theme_config_read_write(self):
+        """Colour helpers produce exact values (darken_hex_color, _tint_hex_color), custom palettes override accent/background keys, and a warm tone shift changes the base palette."""
         # Step 1: Validate input parameters, operational preconditions, and state
         from app.ui.themes import darken_hex_color, _tint_hex_color, get_theme_colors
         
@@ -53,6 +56,7 @@ class TestUIImprovements(unittest.TestCase):
     @pytest.mark.integration
     @pytest.mark.model
     def test_codex_library_loading_and_search(self):
+        """The Docs workspace loads the default codex library (AI Steering, Python, Docker, FastAPI), search filters the visible list, and selecting a topic renders its content on demand."""
         # Step 1: Validate input parameters, operational preconditions, and state
         from tests.conftest import embedding_model_available
         if not embedding_model_available():
@@ -96,6 +100,7 @@ class TestUIImprovements(unittest.TestCase):
         self.assertIn("ownership", rendered_html)
 
     def test_workbench_docks(self):
+        """The Workbench is a QMainWindow with a central widget plus sessions and reasoning docks and the branch/token status labels."""
         # Step 1: Validate input parameters, operational preconditions, and state
         from app.state import AppState
         from app.ui.workspaces.workbench import WorkbenchWorkspace
@@ -119,6 +124,7 @@ class TestUIImprovements(unittest.TestCase):
         self.assertTrue(hasattr(workbench, "_token_remaining_lbl"))
 
     def test_swarm_studio_constructs(self):
+        """The Swarm Studio workspace builds with its layers tree, task table and traceback browser."""
         # Step 1: Validate input parameters, operational preconditions, and state
         from app.state import AppState
         from app.ui.workspaces.swarm_studio import SwarmStudioWorkspace
@@ -132,6 +138,7 @@ class TestUIImprovements(unittest.TestCase):
         self.assertTrue(hasattr(workspace, "_traceback_browser"))
 
     def test_agentic_loop_persists_only_final_assistant_answer(self):
+        """After an agentic multi-iteration run only the final assistant answer is stored in the active chat history; the internal 'Iteration N' prompts must not leak into the saved conversation."""
         # Step 1: Validate input parameters, operational preconditions, and state
         from app.state import AppState
         from app.ui.workspaces.workbench import WorkbenchWorkspace
@@ -169,6 +176,7 @@ class TestUIImprovements(unittest.TestCase):
             self.assertNotIn("Iteration", "\n".join(msg["content"] for msg in active))
 
     def test_system_config_features(self):
+        """System Config: settings search hides non-matching rows and restores them when cleared, the preflight diagnostic text reports an adapter mismatch, and the model/adapter lists are cached."""
         # Step 1: Validate input parameters, operational preconditions, and state
         from app.state import AppState
         from app.ui.workspaces.system_config import SystemConfigWorkspace
@@ -205,6 +213,7 @@ class TestUIImprovements(unittest.TestCase):
     @pytest.mark.integration
     @pytest.mark.model
     def test_codex_rag_features(self):
+        """Codex search uses its own FAISS index (codex_index.faiss, separate from the document index), is populated with chunks, and a selected codex topic is injected into the chat input as a '[Codex: Topic]' block."""
         # Step 1: Validate input parameters, operational preconditions, and state
         from tests.conftest import embedding_model_available
         if not embedding_model_available():
