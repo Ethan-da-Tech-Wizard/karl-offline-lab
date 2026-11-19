@@ -7,6 +7,15 @@
 #          returns structured findings to the UI.
 # ==============================================================================
 
+"""
+Qt worker thread that analyzes one stored image (OCR, then vision) off the GUI thread.
+
+The thread reads an ImageRecord from the ImageStore, runs Tesseract OCR and/or
+the vision analyzer depending on ``mode``, writes results back to the store,
+and reports progress through Qt signals. All errors are turned into the
+``error`` signal; nothing is raised into the Qt event loop.
+"""
+
 from __future__ import annotations
 
 from PyQt6.QtCore import QThread, pyqtSignal
@@ -16,6 +25,12 @@ from app.vision.vision_analyzer import VisionAnalyzer
 
 
 class ImageAnalysisThread(QThread):
+    # Signals are the only safe way to hand results back to the GUI thread.
+    # The ``object`` payloads carry OcrResult / VisionResult / ImageRecord instances.
+    """Run OCR and/or vision analysis for a single image id in the background.
+
+    Modes: "ocr_only", "ocr_vision" (default) and "vision_only".
+    """
     progress = pyqtSignal(str)
     ocr_done = pyqtSignal(str, object)  # image_id, OcrResult
     vision_done = pyqtSignal(str, object)  # image_id, VisionResult
@@ -32,6 +47,7 @@ class ImageAnalysisThread(QThread):
         parent=None,
     ):
         # Step 1: Validate input parameters, operational preconditions, and state
+        """Store the image store, target image id, OCR language, analysis mode and optional prompt."""
         super().__init__(parent)
         self.image_store = image_store
         self.image_id = image_id
@@ -41,12 +57,18 @@ class ImageAnalysisThread(QThread):
 
     def run(self):
         # Step 1: Validate input parameters, operational preconditions, and state
+        """Thread body: OCR (if the mode asks for it), then vision analysis, then emit ``done``.
+
+        Each stage persists its result immediately so partial work survives a later failure.
+        """
         try:
             # Execute guarded operations and establish recovery boundaries
             record = self.image_store.get(self.image_id)
+            # Prefer the OCR-normalized copy; fall back to the original file.
             image_path = record.processed_path or record.original_path
 
             ocr = record.ocr
+            # Stage 1: OCR.
             if self.mode in {"ocr_only", "ocr_vision"}:
                 self.progress.emit("running OCR")
                 ocr = TesseractOcrEngine().analyze(image_path, lang=self.lang)
@@ -55,6 +77,8 @@ class ImageAnalysisThread(QThread):
                 record = updated
                 self.ocr_done.emit(self.image_id, ocr)
 
+            # Stage 2: vision/heuristic analysis (all modes reach here, but the analyzer itself
+            # skips the model for "ocr_only").
             if self.mode in {"ocr_only", "ocr_vision", "vision_only"}:
                 self.progress.emit("running vision analysis")
                 vision, suggestion = VisionAnalyzer().analyze_record(
@@ -67,6 +91,8 @@ class ImageAnalysisThread(QThread):
                     "vision": vision.to_dict(),
                     "tags": suggestion.tags,
                 }
+                # Only overwrite the kind when it was never set, or when the heuristics found a
+                # high-value kind (error / code screenshot); this avoids clobbering a user-chosen kind.
                 if record.kind == "unknown" or suggestion.kind in {"error", "code_screenshot"}:
                     fields["kind"] = suggestion.kind
                 updated = self.image_store.update_analysis(self.image_id, **fields)

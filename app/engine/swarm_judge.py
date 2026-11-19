@@ -45,6 +45,9 @@ from typing import Any
 
 logger = logging.getLogger("karl.swarm_judge")
 
+# Scoring weights. The syntax penalty is huge so any candidate that does not parse
+# loses to any that does; the other weights are tuned to be comparable (a lint
+# issue costs 4, each changed diff line 0.02, perfect API alignment gains 40).
 _WEIGHT_SYNTAX_FAIL = -1000.0
 _WEIGHT_LINT = -4.0
 _WEIGHT_DIFF = -0.02
@@ -53,6 +56,10 @@ _WEIGHT_LENGTH_FLOOR = -50.0  # penalize suspiciously tiny/empty output
 
 
 def _check_syntax(filepath: str, content: str) -> tuple[bool, str]:
+    """Return (ok, error_message) for a candidate; only .py (ast) and .json are really checked.
+
+    Other file types are assumed valid because no parser is available for them.
+    """
     # Step 1: Validate input parameters, operational preconditions, and state
     if filepath.endswith(".py"):
         try:
@@ -72,6 +79,11 @@ def _check_syntax(filepath: str, content: str) -> tuple[bool, str]:
 
 
 def _lint_violation_count(filepath: str, content: str) -> int:
+    """Count pyflakes output lines for Python content; 0 for non-Python, empty or failed runs.
+
+    The code is written to a temp file (pyflakes needs a path). Linter problems
+    never fail scoring: they just count as zero violations.
+    """
     # Step 1: Validate input parameters, operational preconditions, and state
     if not filepath.endswith(".py") or not content.strip():
         return 0
@@ -80,6 +92,7 @@ def _lint_violation_count(filepath: str, content: str) -> int:
         with tempfile.NamedTemporaryFile("w", suffix=".py", delete=False, encoding="utf-8") as tf:
             tf.write(content)
             tmp_path = tf.name
+        # 10s timeout so one pathological candidate cannot stall the swarm.
         result = subprocess.run(
             ["python3", "-m", "pyflakes", tmp_path],
             capture_output=True, text=True, timeout=10,
@@ -89,6 +102,8 @@ def _lint_violation_count(filepath: str, content: str) -> int:
     except Exception as exc:
         logger.debug("Judge lint check failed (non-fatal): %s", exc)
         return 0
+    # Always remove the temp file. If NamedTemporaryFile itself failed, tmp_path is
+    # undefined and the NameError is swallowed by this inner try/except.
     finally:
         try:
             # Execute guarded operations and establish recovery boundaries
@@ -98,6 +113,10 @@ def _lint_violation_count(filepath: str, content: str) -> int:
 
 
 def _diff_size(original: str, candidate: str) -> int:
+    """Count added/removed lines between original and candidate (unified diff, headers excluded).
+
+    A brand-new file (empty original) has size 0 so creation is not penalized.
+    """
     # Step 1: Validate input parameters, operational preconditions, and state
     if not original:
         return 0
@@ -119,6 +138,7 @@ def _signature_alignment(content: str, known_names: set[str]) -> float:
     called = set(re.findall(r"\b([a-zA-Z_][a-zA-Z0-9_]*)\s*\(", content))
     # Ignore Python builtins/keywords-as-calls and very short/common names —
     # they're not meaningful signals either way.
+    # Short names (3 chars or fewer) are too common (e.g. "len", "str") to be useful evidence.
     called = {c for c in called if len(c) > 3}
     if not called:
         return 1.0
@@ -136,6 +156,7 @@ def score_candidate(
     """Score a single candidate. Returns a breakdown dict with 'total_score'."""
     # Step 1: Validate input parameters, operational preconditions, and state
     syntax_ok, syntax_error = _check_syntax(filepath, content)
+    # Skip lint when the file does not even parse; the syntax penalty already dominates.
     lint_violations = _lint_violation_count(filepath, content) if syntax_ok else 0
     diff_size = _diff_size(original_content, content)
     alignment = _signature_alignment(content, known_names or set())
@@ -146,6 +167,7 @@ def score_candidate(
     total += lint_violations * _WEIGHT_LINT
     total += diff_size * _WEIGHT_DIFF
     total += alignment * _WEIGHT_SIGNATURE
+    # Near-empty output is almost certainly a failed generation.
     if len(content.strip()) < 5:
         total += _WEIGHT_LENGTH_FLOOR
 
@@ -180,5 +202,6 @@ def select_winner(
         score_candidate(filepath, c, original_content=original_content, known_names=known_names)
         for c in candidates
     ]
+    # Key is (score, -index): for equal scores the smaller index compares larger, so it wins.
     best_index = max(range(len(scores)), key=lambda i: (scores[i]["total_score"], -i))
     return best_index, scores[best_index], scores

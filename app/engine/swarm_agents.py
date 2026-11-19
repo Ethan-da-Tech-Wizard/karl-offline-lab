@@ -28,6 +28,7 @@ from core.default_prompts import SWARM_ARCHITECT_SYSTEM_PROMPT, SWARM_CODER_SYST
 logger = logging.getLogger("karl.swarm_agents")
 
 
+# Single message returned to the model whenever a tool is refused for leaving the workspace.
 _SECURITY_BLOCK_MSG = "ERROR: Security Block: Path traversal outside workspace boundary is prohibited."
 
 
@@ -42,10 +43,13 @@ def _safe_workspace_path(workspace_path: str, rel: str) -> str | None:
         os.path.realpath(workspace/evil) == /etc/passwd  → blocked
     """
     # Step 1: Validate input parameters, operational preconditions, and state
+    # An empty path would resolve to the workspace root itself; treat it as invalid.
     if not rel:
         return None
+    # realpath resolves symlinks on BOTH sides, so a link inside the workspace pointing outside is caught.
     ws_real = os.path.realpath(workspace_path)
     target = os.path.realpath(os.path.join(ws_real, rel))
+    # The trailing os.sep stops "/work/foo" from matching a sibling like "/work/foobar".
     if target == ws_real or target.startswith(ws_real + os.sep):
         return target
     return None
@@ -55,12 +59,14 @@ def _safe_workspace_path(workspace_path: str, rel: str) -> str | None:
 # Tools are registered here so both CoderAgent and external callers can extend
 # the dispatch table. Each value is (executor_fn, description_for_prompt).
 
+# name -> (function(workspace_path, args) -> str, prompt description). Filled by @register_tool.
 _TOOL_REGISTRY: dict[str, tuple[Callable, str]] = {}
 
 def register_tool(name: str, description: str):
     """Decorator to register a tool function in the global tool registry."""
     # Step 1: Validate input parameters, operational preconditions, and state
     def decorator(fn):
+        """Store ``fn`` under the tool name and return it unchanged."""
         # Step 1: Validate input parameters, operational preconditions, and state
         _TOOL_REGISTRY[name] = (fn, description)
         return fn
@@ -70,6 +76,7 @@ def get_tool_schema_block(allowed_tools: set[str] | None = None) -> str:
     """Returns the tool schema XML block to inject into coder prompts."""
     # Step 1: Validate input parameters, operational preconditions, and state
     lines = ["<tools>"]
+    # Skip tools the current agent profile is not allowed to use, so the model never sees them.
     for name, (_, desc) in _TOOL_REGISTRY.items():
         # Iterate over items, evaluate loop invariant, and update progress
         if allowed_tools is not None and name not in allowed_tools:
@@ -81,11 +88,17 @@ def get_tool_schema_block(allowed_tools: set[str] | None = None) -> str:
 
 @register_tool("write_file", "write_file(path, content) — overwrite a workspace file. path is relative to workspace root.")
 def _tool_write_file(workspace_path: str, args: dict) -> str:
+    """Tool: overwrite a file inside the workspace and report the line count.
+
+    Markdown fences around the content are removed (models often add them), and
+    paths outside the workspace are refused.
+    """
     # Step 1: Validate input parameters, operational preconditions, and state
     import pathlib
     rel = args.get("path", "")
     content = args.get("content", "")
     
+    # Drop an opening ```lang line and a closing ``` so only the code is saved.
     # Strip markdown code blocks if the model wrapped the content in them
     content = content.strip()
     if content.startswith("```"):
@@ -100,12 +113,14 @@ def _tool_write_file(workspace_path: str, args: dict) -> str:
         logger.warning("SECURITY ALERT: path traversal blocked in write_file. rel=%r workspace=%r", rel, workspace_path)
         return _SECURITY_BLOCK_MSG
     full = pathlib.Path(target)
+    # Create missing parent folders so the model can add new files.
     full.parent.mkdir(parents=True, exist_ok=True)
     full.write_text(content, encoding="utf-8")
     return f"OK: wrote {len(content.splitlines())} lines to {rel}"
 
 @register_tool("read_file", "read_file(path) — read current contents of a workspace file.")
 def _tool_read_file(workspace_path: str, args: dict) -> str:
+    """Tool: return up to 6000 characters of a workspace file (or an ERROR string)."""
     # Step 1: Validate input parameters, operational preconditions, and state
     import pathlib
     rel = args.get("path", "")
@@ -124,6 +139,7 @@ def _tool_read_file(workspace_path: str, args: dict) -> str:
 
 @register_tool("grep_workspace", "grep_workspace(pattern) — find lines matching regex pattern across all .py files in workspace.")
 def _tool_grep_workspace(workspace_path: str, args: dict) -> str:
+    """Tool: regex search over workspace .py files; at most 40 matches are returned."""
     # Step 1: Validate input parameters, operational preconditions, and state
     import pathlib
     import re as _re
@@ -138,6 +154,7 @@ def _tool_grep_workspace(workspace_path: str, args: dict) -> str:
     results = []
     for f in pathlib.Path(workspace_path).rglob("*.py"):
         # Iterate over items, evaluate loop invariant, and update progress
+        # Skip version-control, virtualenv and cache folders: they are huge and irrelevant.
         if ".git" in f.parts or "venv" in f.parts or "__pycache__" in f.parts:
             continue
         try:
@@ -146,6 +163,8 @@ def _tool_grep_workspace(workspace_path: str, args: dict) -> str:
                 # Iterate over items, evaluate loop invariant, and update progress
                 if compiled.search(line):
                     results.append(f"{f.relative_to(workspace_path)}:{i}: {line.rstrip()}")
+                    # Cap output to keep the tool result small in the model's context.
+                    # NOTE: this only stops the inner per-file loop, so the total can exceed 40 across files.
                     if len(results) >= 40:
                         break
         except Exception:
@@ -154,6 +173,11 @@ def _tool_grep_workspace(workspace_path: str, args: dict) -> str:
 
 @register_tool("shell_run", "shell_run(command) — run a shell command in the workspace directory. Returns stdout+stderr. Timeout 15s.")
 def _tool_shell_run(workspace_path: str, args: dict) -> str:
+    """Tool: run an arbitrary shell command in the workspace (15s timeout, output cut to 3000 chars).
+
+    WARNING: shell=True with model-written text and no sandbox; the command can
+    access anything the user can.
+    """
     # Step 1: Validate input parameters, operational preconditions, and state
     cmd = args.get("command", "")
     if not cmd:
@@ -173,6 +197,7 @@ def _tool_shell_run(workspace_path: str, args: dict) -> str:
 
 @register_tool("lint_python", "lint_python(path) — run pyflakes on a Python file and return violations.")
 def _tool_lint_python(workspace_path: str, args: dict) -> str:
+    """Tool: run pyflakes on one workspace file and return its output."""
     # Step 1: Validate input parameters, operational preconditions, and state
     import pathlib
     rel = args.get("path", "")
@@ -196,7 +221,9 @@ def _tool_lint_python(workspace_path: str, args: dict) -> str:
 
 
 class BaseSwarmAgent:
+    """Shared plumbing for agents that call the local LLM with a fixed system prompt."""
     def __init__(self, system_prompt: str, temperature: float = 0.2, max_tokens: int = 2048):
+        """Store the system prompt and default sampling settings."""
         # Step 1: Validate input parameters, operational preconditions, and state
         self.system_prompt = system_prompt
         self.temperature = temperature
@@ -224,6 +251,7 @@ class BaseSwarmAgent:
             max_tokens=self.max_tokens,
             temperature=self.temperature,
             top_p=0.95,
+            # Stop at ChatML boundaries so the model does not invent the next turn.
             stop=["<|im_end|>", "<|im_start|>"],
             repeat_penalty=1.1,
         )
@@ -233,13 +261,19 @@ class BaseSwarmAgent:
 # ── Architect Agent ───────────────────────────────────────────────────────────
 
 class ArchitectAgent(BaseSwarmAgent):
+    """Planner: turns an objective plus file contents into a JSON task plan."""
     SYSTEM_PROMPT = SWARM_ARCHITECT_SYSTEM_PROMPT
 
     def __init__(self):
+        """Low temperature (0.1) for stable, parseable JSON."""
         # Step 1: Validate input parameters, operational preconditions, and state
         super().__init__(self.SYSTEM_PROMPT, temperature=0.1, max_tokens=1536)
 
     def create_plan(self, objective: str, files_context: Dict[str, str]) -> Dict[str, Any]:
+        """Ask the model for a JSON plan {"explanation", "tasks": [...]}.
+
+        If the reply is not valid JSON, return an empty task list with the raw text in the explanation.
+        """
         # Step 1: Validate input parameters, operational preconditions, and state
         context_str = ""
         for path, content in files_context.items():
@@ -259,6 +293,7 @@ class ArchitectAgent(BaseSwarmAgent):
             # Execute guarded operations and establish recovery boundaries
             return json.loads(cleaned)
         except json.JSONDecodeError:
+            # Never raise on bad model output; the orchestrator can handle an empty plan.
             # Fallback if model did not return valid JSON
             return {
                 "explanation": f"Failed to parse JSON plan from model. Raw output: {cleaned[:200]}",
@@ -269,9 +304,11 @@ class ArchitectAgent(BaseSwarmAgent):
 def extract_python_code(raw_text: str) -> Optional[str]:
     """Extract python/code block from raw response, excluding diff blocks."""
     # Step 1: Validate input parameters, operational preconditions, and state
+    # Prefer an explicit python/py block first.
     match = re.search(r"```(?:python|py)?\n(.*?)\n```", raw_text, re.DOTALL | re.IGNORECASE)
     if match:
         return match.group(1).strip()
+    # Otherwise take any fenced block except a diff.
     match_any = re.search(r"```(?!\s*diff)(?:[a-zA-Z0-9+#-]+)?\n(.*?)\n```", raw_text, re.DOTALL | re.IGNORECASE)
     if match_any:
         return match_any.group(1).strip()
@@ -281,6 +318,7 @@ def extract_python_code(raw_text: str) -> Optional[str]:
 def apply_search_replace(current_content: str, raw_text: str) -> str:
     """Find and apply all search-replace blocks (<<<<<<< SEARCH ... ======= ... >>>>>>> REPLACE)"""
     # Step 1: Validate input parameters, operational preconditions, and state
+    # Aider-style blocks: <<<<<<< SEARCH / ======= / >>>>>>> REPLACE.
     blocks = re.findall(
         r"<<<<<<<\s*SEARCH\n(.*?)\n=======\n(.*?)\n>>>>>>>\s*REPLACE",
         raw_text,
@@ -294,6 +332,7 @@ def apply_search_replace(current_content: str, raw_text: str) -> str:
         # Iterate over items, evaluate loop invariant, and update progress
         search_str = search.strip()
         replace_str = replace.strip()
+        # An empty SEARCH means "append" (or "create" when the file is empty).
         if not search_str:
             if not new_content.strip():
                 new_content = replace_str
@@ -306,6 +345,7 @@ def apply_search_replace(current_content: str, raw_text: str) -> str:
                 if not new_content.strip():
                     new_content = replace_str
                 else:
+                    # Behaves like the exact branch above (search was already stripped); kept as a defensive path.
                     # Loose whitespace fallback
                     new_content = new_content.replace(search.strip(), replace_str)
     return new_content
@@ -348,11 +388,14 @@ def parse_reasoning_and_tool(raw_text: str) -> tuple[Optional[str], Optional[str
 # ── Coder Agent ───────────────────────────────────────────────────────────────
 
 class CoderAgent(BaseSwarmAgent):
+    """Writer: edits one file by looping over tool calls (read, write, lint) until done."""
     SYSTEM_PROMPT = SWARM_CODER_SYSTEM_PROMPT
 
     def __init__(self):
+        """Moderate temperature (0.3) and a large token budget for whole-file output."""
         # Step 1: Validate input parameters, operational preconditions, and state
         super().__init__(self.SYSTEM_PROMPT, temperature=0.3, max_tokens=4096)
+        # None means every registered tool is allowed.
         self.allowed_tools: set[str] | None = None
 
     def generate(self, task: dict, workspace_context: dict,
@@ -381,6 +424,7 @@ class CoderAgent(BaseSwarmAgent):
             files the Architect actually planned to touch.
         """
         # Step 1: Validate input parameters, operational preconditions, and state
+        # Shared model singleton; loads it if needed.
         llm = ModelLoader.get_instance()
         temperature = self.temperature if temperature_override is None else temperature_override
         tool_schema = get_tool_schema_block(self.allowed_tools)
@@ -388,11 +432,13 @@ class CoderAgent(BaseSwarmAgent):
         try:
             # Execute guarded operations and establish recovery boundaries
             memory = CodebaseMemory(workspace_path)
+            # Re-index the workspace on every call so signatures reflect the latest files.
             memory.build_index()
             memory_reference = memory.query_memory(keywords_from_task(task))
         except Exception as exc:
             logger.debug("CodebaseMemory lookup failed: %s", exc)
 
+        # Only the first 8 context files, truncated to 800 characters each, to protect the context window.
         # Build initial prompt
         context_snippet = "\n".join(
             f"--- {k} ---\n{v[:800]}" for k, v in list(workspace_context.items())[:8]
@@ -416,6 +462,7 @@ class CoderAgent(BaseSwarmAgent):
             "<tool_call name='TOOL_NAME'>\n"
             "  param_name: value\n"
             "</tool_call>\n\n"
+            # NOTE: the doubled "_call" looks like a typo, and the parser below only recognizes <tool_call ...>.
             "To finish: <tool_call_call name='done'></tool_call_call>"
             f"{memory_block}"
             f"{swarm_memory_block}"
@@ -433,10 +480,13 @@ class CoderAgent(BaseSwarmAgent):
             )}
         ]
 
+        # Last file content the model wrote; returned as the result.
         written_content = ""
 
+        # At most 8 model turns per task, a hard stop against endless tool loops.
         for _turn in range(8):
             # Iterate over items, evaluate loop invariant, and update progress
+            # Pull any human guidance typed while the swarm runs and add it to the conversation.
             if guidance_getter:
                 for guidance_msg in guidance_getter():
                     # Iterate over items, evaluate loop invariant, and update progress
@@ -446,15 +496,18 @@ class CoderAgent(BaseSwarmAgent):
                     })
 
             # Build prompt and generate
+            # Redundant: the same name is already imported at module level.
             from core.interaction_loop import build_prompt
             prompt_text = build_prompt(system, messages[1:])
 
             raw = ""
+            # Streaming path (live tokens to the UI) with a non-streaming retry if streaming raises.
             if token_callback:
                 try:
                     # Execute guarded operations and establish recovery boundaries
                     res = llm(prompt_text, max_tokens=self.max_tokens,
                               temperature=temperature, stream=True,
+                              # Stop right after a tool call closes so the tool can run before the model continues.
                               stop=["</tool_call>", "<|im_end|>", "<|im_start|>"], echo=False,
                               repeat_penalty=1.1)
                     if hasattr(res, "__iter__") and not isinstance(res, dict):
@@ -486,14 +539,18 @@ class CoderAgent(BaseSwarmAgent):
                     raw = res["choices"][0]["text"]
                 else:
                     raw = str(res)
+            # Keep the model's reply in history so later turns see what it already did.
             messages.append({"role": "assistant", "content": raw})
     
+            # Format: <tool_call name='TOOL'>key: value lines</tool_call>.
             # Parse tool calls from raw output
             tool_calls = re.findall(
                 r"<tool_call name='([^']+)'>(.*?)</tool_call>",
                 raw, re.DOTALL
             )
 
+            # No tool calls: on the first turn treat the reply itself as the answer (search/replace blocks,
+            # a code block, or plain text), then stop.
             if not tool_calls:
                 if _turn == 0:
                     if "<<<<<<< SEARCH" in raw:
@@ -525,6 +582,7 @@ class CoderAgent(BaseSwarmAgent):
                     done_called = True
                     break
 
+                # Same key: value parser as tool_executor; large free-text keys take the rest of the body.
                 # Robust YAML-like parser
                 args = {}
                 lines = tool_body.splitlines()
@@ -562,11 +620,13 @@ class CoderAgent(BaseSwarmAgent):
                     else:
                         i += 1
 
+                # Order of checks: profile permission, then known tool, then drift guard for writes.
                 if self.allowed_tools is not None and tool_name not in self.allowed_tools:
                     result_text = f"ERROR: tool '{tool_name}' is disabled for this agent profile."
                 elif tool_name in _TOOL_REGISTRY:
                     executor, _ = _TOOL_REGISTRY[tool_name]
                     blocked_path = None
+                    # Drift guard: only files the architect planned may be written.
                     if tool_name == "write_file" and allowed_paths is not None:
                         rel = args.get("path", "").strip().replace("\\", "/").lstrip("/")
                         if rel not in allowed_paths:
@@ -585,6 +645,7 @@ class CoderAgent(BaseSwarmAgent):
                         except Exception as ex:
                             result_text = f"ERROR: tool raised exception: {ex}"
 
+                        # Remember the last written content so it can be returned to the orchestrator.
                         # Capture written content for return value
                         if tool_name == "write_file":
                             written_content = args.get("content", "")
@@ -593,12 +654,14 @@ class CoderAgent(BaseSwarmAgent):
     
                 tool_results.append(f"<tool_result name='{tool_name}'>\n{result_text}\n</tool_result>")
     
+            # The model signalled completion.
             if done_called:
                 break
 
             if tool_results:
                 messages.append({"role": "user", "content": "\n".join(tool_results)})
 
+        # Fall back to a placeholder comment so callers always get a string.
         return written_content or f"# CoderAgent completed task: {task['filepath']}"
 
     def edit_file(
@@ -608,6 +671,7 @@ class CoderAgent(BaseSwarmAgent):
         instructions: str,
         test_failure_trace: Optional[str] = None
     ) -> str:
+        """Convenience wrapper: edit ``filepath`` with ``instructions``, optionally mentioning a previous test failure."""
         # Step 1: Validate input parameters, operational preconditions, and state
         task = {"filepath": filepath, "instructions": instructions}
         workspace_context = {filepath: current_content}
@@ -625,6 +689,7 @@ class TesterAgent:
     """
 
     def __init__(self, workspace_path: str):
+        """``workspace_path`` is the working directory for test commands."""
         # Step 1: Validate input parameters, operational preconditions, and state
         self.workspace_path = workspace_path
 
@@ -641,6 +706,7 @@ class TesterAgent:
             # Execute guarded operations and establish recovery boundaries
             res = subprocess.run(
                 test_cmd,
+                # The command comes from the task/config, not from the model, and is run through the shell.
                 shell=True,
                 cwd=self.workspace_path,
                 capture_output=True,
@@ -658,6 +724,8 @@ class TesterAgent:
                 tb_idx = -1
                 for idx, line in enumerate(lines):
                     # Iterate over items, evaluate loop invariant, and update progress
+                    # NOTE: Python prints "Traceback (most recent call last):", which matches neither string here,
+                    # so the 20-line tail fallback is what is normally used.
                     if "Traceback (most recent call first):" in line or "Traceback (recent call last):" in line:
                         tb_idx = idx
                         break
@@ -665,6 +733,7 @@ class TesterAgent:
                     error_trace = "\n".join(lines[tb_idx:])
                 else:
                     # Capture the last 20 lines of log as trace
+                    # Last 20 lines usually contain the failing assertion or error.
                     error_trace = "\n".join(lines[-20:])
 
             return {

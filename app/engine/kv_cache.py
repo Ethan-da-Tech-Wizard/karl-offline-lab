@@ -21,6 +21,7 @@ from typing import Any
 
 logger = logging.getLogger("karl.kv_cache")
 
+# Relative to the process working directory; one JSON object per generation.
 _KV_CACHE_LOG = "data/logs/traces/kv_cache.jsonl"
 
 
@@ -38,13 +39,18 @@ def kv_cache_stats(llm: Any, prompt: str) -> dict[str, Any]:
     # Step 1: Validate input parameters, operational preconditions, and state
     try:
         # Execute guarded operations and establish recovery boundaries
+        # No cache attached means every prompt is evaluated from scratch.
         cache = getattr(llm, "cache", None)
         if cache is None:
             return {"cache_enabled": False}
 
+        # Lazy import: llama_cpp is only present when a local model is in use.
         from llama_cpp import Llama as _Llama
 
+        # Tokenize exactly as generation will, so the prefix comparison matches the real cache keys.
         prompt_tokens = tuple(llm.tokenize(prompt.encode("utf-8")))
+        # Uses a private llama-cpp cache method; it may break if llama-cpp-python changes, which is why
+        # the whole function is wrapped in a try/except below.
         prefix_key = cache._find_longest_prefix_key(prompt_tokens)
         if prefix_key is None:
             return {
@@ -53,6 +59,7 @@ def kv_cache_stats(llm: Any, prompt: str) -> dict[str, Any]:
                 "tokens_from_cache": 0,
                 "tokens_to_eval": len(prompt_tokens),
             }
+        # Number of leading tokens shared with the cached sequence; those need no re-evaluation.
         hit_len = _Llama.longest_token_prefix(prefix_key, prompt_tokens)
         return {
             "cache_enabled": True,
@@ -74,8 +81,10 @@ def log_cache_stats(stats: dict[str, Any], ts: str) -> None:
     # Step 1: Validate input parameters, operational preconditions, and state
     try:
         # Execute guarded operations and establish recovery boundaries
+        # Create the log folder on first use.
         os.makedirs(os.path.dirname(_KV_CACHE_LOG), exist_ok=True)
         entry: dict[str, Any] = {"ts": ts, **stats}
+        # Append mode keeps history across runs; JSONL lets tools tail/grep it.
         with open(_KV_CACHE_LOG, "a", encoding="utf-8") as fh:
             fh.write(json.dumps(entry, ensure_ascii=False) + "\n")
     except Exception:

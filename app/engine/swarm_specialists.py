@@ -32,6 +32,8 @@ from typing import Any
 
 # ── Task classification ─────────────────────────────────────────────────────
 
+# Word lists that decide which reviewers a task needs; matching is on the task's
+# file path and instructions, not on the code itself.
 _SECURITY_TERMS = re.compile(
     r"\b(auth|password|secret|token|crypto|encrypt|decrypt|sql|subprocess|"
     r"eval|exec|pickle|shell|jwt|session|login|permission|credential|"
@@ -59,6 +61,8 @@ def classify_task(task: dict[str, Any]) -> list[str]:
 
 # ── Security auditor ─────────────────────────────────────────────────────────
 
+# Each entry: (regex, human-readable concern, risk weight 0-1). Regexes are heuristics and
+# can false-positive (e.g. a pattern inside a comment or string).
 _DANGEROUS_PATTERNS: list[tuple[re.Pattern, str, float]] = [
     (re.compile(r"\beval\s*\("), "Use of eval() on potentially untrusted input", 0.6),
     (re.compile(r"\bexec\s*\("), "Use of exec() on potentially untrusted input", 0.6),
@@ -77,6 +81,7 @@ class SecurityAuditorAgent:
     """Regex-based scan for common insecure patterns. LLM-free, instant."""
 
     def review(self, filepath: str, content: str) -> dict[str, Any]:
+        """Scan ``content`` and return concerns, the highest matching risk weight and a verdict."""
         # Step 1: Validate input parameters, operational preconditions, and state
         concerns = []
         risk = 0.0
@@ -84,7 +89,9 @@ class SecurityAuditorAgent:
             # Iterate over items, evaluate loop invariant, and update progress
             if pattern.search(content):
                 concerns.append(message)
+                # Risk is the worst single finding, not a sum, so many minor issues do not escalate to "revise".
                 risk = max(risk, weight)
+        # 0.5 is the gate: below it the file is approved with concerns just reported.
         verdict = "revise" if risk >= 0.5 else "approve"
         return {
             "specialist": "security",
@@ -101,6 +108,7 @@ class PerformanceAuditorAgent:
     """AST-based scan for common performance smells. Advisory only."""
 
     def review(self, filepath: str, content: str) -> dict[str, Any]:
+        """Parse Python content and report performance smells; non-Python or unparsable files yield none."""
         # Step 1: Validate input parameters, operational preconditions, and state
         concerns: list[str] = []
         if filepath.endswith(".py"):
@@ -110,6 +118,7 @@ class PerformanceAuditorAgent:
                 concerns.extend(self._scan(tree))
             except SyntaxError:
                 pass
+        # Each concern adds 0.2, capped at 1.0.
         risk = min(1.0, 0.2 * len(concerns))
         return {
             "specialist": "performance",
@@ -120,11 +129,13 @@ class PerformanceAuditorAgent:
         }
 
     def _scan(self, tree: ast.AST) -> list[str]:
+        """Walk the AST and collect at most 8 performance concerns."""
         # Step 1: Validate input parameters, operational preconditions, and state
         concerns = []
         for node in ast.walk(tree):
             # Iterate over items, evaluate loop invariant, and update progress
             if isinstance(node, (ast.For, ast.While)):
+                # A loop containing another loop anywhere inside it (ast.walk is recursive).
                 nested = [
                     n for n in ast.walk(node)
                     if isinstance(n, (ast.For, ast.While)) and n is not node
@@ -133,6 +144,7 @@ class PerformanceAuditorAgent:
                     concerns.append(
                         f"Nested loop at line {getattr(node, 'lineno', '?')} — likely O(n^2) or worse"
                     )
+            # Any "+=" is reported (even on numbers), so this check is noisy by design.
             if isinstance(node, ast.AugAssign) and isinstance(node.op, ast.Add):
                 concerns.append(
                     f"String/list accumulation via += at line {getattr(node, 'lineno', '?')} "
@@ -148,9 +160,11 @@ class CriticAgent:
     markers, and overlong functions. Advisory only — never blocks a run.
     """
 
+    # Functions longer than this many lines are flagged.
     _MAX_FUNCTION_LINES = 120
 
     def review(self, filepath: str, content: str) -> dict[str, Any]:
+        """Return concerns and a verdict ("revise" when risk >= 0.6, i.e. 4 or more concerns)."""
         # Step 1: Validate input parameters, operational preconditions, and state
         concerns: list[str] = []
         if "TODO" in content or "FIXME" in content or "XXX" in content:
@@ -164,6 +178,7 @@ class CriticAgent:
             except SyntaxError:
                 concerns.append("Could not parse for deep review (syntax error should already be gating)")
 
+        # Each concern adds 0.15, capped at 1.0.
         risk = min(1.0, 0.15 * len(concerns))
         return {
             "specialist": "critic",
@@ -174,6 +189,7 @@ class CriticAgent:
         }
 
     def _scan(self, tree: ast.AST) -> list[str]:
+        """Walk the AST for silent bare excepts and over-long functions (at most 8 results)."""
         # Step 1: Validate input parameters, operational preconditions, and state
         concerns = []
         for node in ast.walk(tree):

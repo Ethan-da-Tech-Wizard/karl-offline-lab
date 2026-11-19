@@ -22,7 +22,13 @@ from PyQt6.QtCore import QThread, pyqtSignal
 from app.engine.mini_transformer import MiniGPT, CharTokenizer
 
 class MiniTrainThread(QThread):
+    """Trains a small character-level GPT (MiniGPT) in the background.
+
+    Signals: loss(step, val_loss), progress(step, total, sample_text),
+    done(save_dir), error(message) and log(text) for the UI console.
+    """
     # Signals for communicating with UI
+    # Signals are how the worker reports to the GUI thread safely.
     loss = pyqtSignal(int, float)            # step, loss_val
     progress = pyqtSignal(int, int, str)     # step, total_steps, text_sample
     done = pyqtSignal(str)                   # adapter/model folder path
@@ -35,6 +41,10 @@ class MiniTrainThread(QThread):
         config: dict,
         save_dir: str = "data/mini_gpt"
     ):
+        """``dataset_text`` is the raw training corpus, ``config`` a dict of hyperparameters
+        (batch_size, block_size, n_embd, n_heads, n_layers, dropout, lr, max_iters, ...),
+        ``save_dir`` where weights/config/tokenizer are written.
+        """
         # Step 1: Validate input parameters, operational preconditions, and state
         super().__init__()
         self.dataset_text = dataset_text
@@ -43,15 +53,18 @@ class MiniTrainThread(QThread):
         self._stop_requested = False
 
     def stop(self):
+        """Ask the training loop to stop at the next step (cooperative; the partial model is still saved)."""
         # Step 1: Validate input parameters, operational preconditions, and state
         self._stop_requested = True
 
     def run(self):
+        """Thread body: tokenize, build the model, train with AdamW, log/sample periodically, then save."""
         # Step 1: Validate input parameters, operational preconditions, and state
         try:
             # Execute guarded operations and establish recovery boundaries
             self.log.emit("Initializing MiniGPT Trainer...")
             
+            # Every setting has a default, so an empty config still trains a tiny model.
             # 1. Hyperparameters
             batch_size = self.config.get("batch_size", 32)
             block_size = self.config.get("block_size", 64)
@@ -65,12 +78,14 @@ class MiniTrainThread(QThread):
             sample_interval = self.config.get("sample_interval", 100)
 
             # Device configuration
+            # Use a CUDA GPU if present, otherwise CPU (no MPS handling here).
             device = "cuda" if torch.cuda.is_available() else "cpu"
             self.log.emit(f"Using device: {device.upper()}")
 
             # 2. Tokenizer
             self.log.emit("Fitting tokenizer...")
             tokenizer = CharTokenizer()
+            # The vocabulary is built from the dataset itself (one id per distinct character).
             tokenizer.fit(self.dataset_text)
             vocab_size = tokenizer.vocab_size
             self.log.emit(f"Dataset Vocabulary Size: {vocab_size} characters")
@@ -79,10 +94,12 @@ class MiniTrainThread(QThread):
             data = torch.tensor(tokenizer.encode(self.dataset_text), dtype=torch.long)
             
             # Split train / val
+            # 90/10 train/validation split; validation loss shows whether the model overfits.
             n = int(0.9 * len(data))
             train_data = data[:n]
             val_data = data[n:]
             
+            # get_batch needs at least block_size+1 characters to cut input/target pairs.
             if len(train_data) <= block_size:
                 raise ValueError(f"Dataset is too short! Must be longer than block size ({block_size}).")
 
@@ -103,9 +120,11 @@ class MiniTrainThread(QThread):
             self.log.emit(f"Model Parameters: {param_count:,}")
 
             # Optimizer
+            # AdamW is the standard optimizer for transformers.
             optimizer = torch.optim.AdamW(model.parameters(), lr=learning_rate)
 
             # Batch helper
+            # Random windows: y is x shifted by one character, so the model learns next-character prediction.
             def get_batch(split):
                 # Step 1: Validate input parameters, operational preconditions, and state
                 split_data = train_data if split == 'train' else val_data
@@ -116,6 +135,7 @@ class MiniTrainThread(QThread):
                 return x, y
 
             # Validation loss helper
+            # No gradients needed for evaluation; this makes it faster and saves memory.
             @torch.no_grad()
             def estimate_loss():
                 # Step 1: Validate input parameters, operational preconditions, and state
@@ -123,6 +143,7 @@ class MiniTrainThread(QThread):
                 model.eval()
                 for split in ['train', 'val']:
                     # Iterate over items, evaluate loop invariant, and update progress
+                    # Average 10 random batches per split to smooth out noise.
                     losses = torch.zeros(10)
                     for k in range(10):
                         # Iterate over items, evaluate loop invariant, and update progress
@@ -135,6 +156,7 @@ class MiniTrainThread(QThread):
 
             self.log.emit("Starting training loop...")
             
+            # Runs max_iters + 1 steps so the final step also triggers the periodic evaluation/sample.
             for step in range(max_iters + 1):
                 # Iterate over items, evaluate loop invariant, and update progress
                 if self._stop_requested:
@@ -146,6 +168,7 @@ class MiniTrainThread(QThread):
                 logits, loss = model(xb, yb)
                 
                 # Backpropagation
+                # set_to_none frees gradient memory instead of filling it with zeros.
                 optimizer.zero_grad(set_to_none=True)
                 loss.backward()
                 optimizer.step()
@@ -160,6 +183,7 @@ class MiniTrainThread(QThread):
                 if step % sample_interval == 0:
                     model.eval()
                     # Feed a newline character as the start context
+                    # Start generation from token id 0 (the first sorted character in the vocabulary, often newline).
                     context = torch.zeros((1, 1), dtype=torch.long, device=device)
                     # Generate 150 characters
                     gen_ids = model.generate(context, max_new_tokens=150, temperature=0.8, top_k=20)[0].tolist()
@@ -168,6 +192,7 @@ class MiniTrainThread(QThread):
 
                     self.progress.emit(step, max_iters, sample_text)
 
+            # Three files form a loadable checkpoint: weights.pt, config.json (architecture) and tokenizer.json.
             # 4. Save model weights, tokenizer, and config
             os.makedirs(self.save_dir, exist_ok=True)
             
@@ -198,6 +223,7 @@ class MiniTrainThread(QThread):
             self.log.emit(f"Model saved successfully to {self.save_dir}")
             self.done.emit(self.save_dir)
 
+        # Print the traceback to the console for debugging, but give the UI just the message.
         except Exception as e:
             import traceback
             traceback.print_exc()

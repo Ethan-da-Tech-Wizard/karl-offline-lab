@@ -1,3 +1,12 @@
+# ==============================================================================
+# Program: vision_model_loader.py
+# Programmer: Ethan-da-Tech-Wizard
+# Last Modified: November 18, 2026
+# Purpose: Core utility providing vision model loader capabilities.
+#          Implements data structures and algorithms supporting offline
+#          introspection and model execution.
+# ==============================================================================
+
 """
 Loads and runs a local multimodal (image + text) GGUF model through llama-cpp-python.
 
@@ -7,14 +16,6 @@ The last-used model id is remembered in data/active_vision_model.json.
 Everything is local; if llama_cpp or the files are missing, describe_image()
 returns a VisionResult explaining why rather than raising.
 """
-# ==============================================================================
-# Program: vision_model_loader.py
-# Programmer: Ethan-da-Tech-Wizard
-# Last Modified: November 18, 2026
-# Purpose: Core utility providing vision model loader capabilities.
-#          Implements data structures and algorithms supporting offline
-#          introspection and model execution.
-# ==============================================================================
 
 from __future__ import annotations
 

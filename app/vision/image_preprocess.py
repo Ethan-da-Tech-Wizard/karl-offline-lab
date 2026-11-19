@@ -1,10 +1,3 @@
-"""
-Image preprocessing helpers for the offline vision pipeline.
-
-All helpers use Qt's QImage (already a dependency of the desktop app) so no
-extra imaging library such as Pillow is needed. Each helper decodes the file
-itself and fails loudly if Qt cannot read it.
-"""
 # ==============================================================================
 # Program: image_preprocess.py
 # Programmer: Ethan-da-Tech-Wizard
@@ -13,6 +6,14 @@ itself and fails loudly if Qt cannot read it.
 #          Implements data structures and algorithms supporting offline
 #          introspection and model execution.
 # ==============================================================================
+
+"""
+Image preprocessing helpers for the offline vision pipeline.
+
+All helpers use Qt's QImage (already a dependency of the desktop app) so no
+extra imaging library such as Pillow is needed. Each helper decodes the file
+itself and fails loudly if Qt cannot read it.
+"""
 
 from __future__ import annotations
 

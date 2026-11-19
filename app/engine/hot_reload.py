@@ -7,6 +7,14 @@
 #          refreshing them in memory.
 # ==============================================================================
 
+"""
+Safe live-reload helper for "hackable" modules.
+
+compile_and_reload() reloads a module only after py_compile proves the saved
+file is valid, so an edit with a typo never replaces the working code. Outcomes
+are reported both through an optional notice callback and Qt signals.
+"""
+
 from __future__ import annotations
 
 import importlib
@@ -19,11 +27,13 @@ from PyQt6.QtCore import QObject, pyqtSignal
 
 
 class HotReloadSignals(QObject):
+    """Qt signals announcing reload results to the UI."""
     reload_success = pyqtSignal(str)          # label
     reload_failed = pyqtSignal(str, str)     # label, traceback_str
 
 
 # Global signals instance
+# Single shared instance so any widget can connect to reload events.
 signals = HotReloadSignals()
 
 
@@ -39,6 +49,7 @@ def compile_and_reload(
     active and surface a clear notice instead of failing generation mid-run.
     """
     # Step 1: Validate input parameters, operational preconditions, and state
+    # Default logger name is karl.hot_reload.
     log = logger or logging.getLogger("karl.hot_reload")
     path = getattr(module, "__file__", None)
     if not path:
@@ -50,6 +61,7 @@ def compile_and_reload(
 
     try:
         # Execute guarded operations and establish recovery boundaries
+        # Syntax gate: a failed compile means we never call importlib.reload on bad source.
         py_compile.compile(path, doraise=True)
     except py_compile.PyCompileError as exc:
         tb_str = traceback.format_exc()
@@ -63,6 +75,7 @@ def compile_and_reload(
 
     try:
         # Execute guarded operations and establish recovery boundaries
+        # Second gate: the file compiled but may still fail at import time (bad import, runtime error).
         reloaded = importlib.reload(module)
     except Exception:
         tb_str = traceback.format_exc()

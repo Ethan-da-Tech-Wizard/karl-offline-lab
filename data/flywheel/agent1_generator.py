@@ -1,3 +1,12 @@
+# ==============================================================================
+# Program: agent1_generator.py
+# Programmer: Ethan-da-Tech-Wizard
+# Last Modified: November 18, 2026
+# Purpose: Flywheel Agent-1 problem generator.
+#          Proposes novel programming challenges, edge-case unit tests, and
+#          problem specifications.
+# ==============================================================================
+
 """
 Flywheel Agent 1: generates practice problems with machine-checkable answers.
 
@@ -9,14 +18,6 @@ into data/flywheel/queue for Agent 3 (the curator) to consume.
 
 Run as a script: python agent1_generator.py [--limit N] [--infinite] ...
 """
-# ==============================================================================
-# Program: agent1_generator.py
-# Programmer: Ethan-da-Tech-Wizard
-# Last Modified: November 18, 2026
-# Purpose: Flywheel Agent-1 problem generator.
-#          Proposes novel programming challenges, edge-case unit tests, and
-#          problem specifications.
-# ==============================================================================
 
 import os
 import sys

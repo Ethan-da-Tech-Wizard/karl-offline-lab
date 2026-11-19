@@ -25,6 +25,7 @@ from PyQt6.QtCore import Qt, QThread
 from app.engine.agentic_thread import AgenticThread
 from app.engine.llm_thread import LLMThread
 
+# Logger name karl.inference_service; logs one line per generation start.
 logger = logging.getLogger("karl.inference_service")
 
 
@@ -38,8 +39,10 @@ class InferenceService:
     """
 
     def __init__(self, state) -> None:
+        """``state`` is the shared AppState (kept for later use by the service)."""
         # Step 1: Validate input parameters, operational preconditions, and state
         self._state = state
+        # See the note: this set is what keeps running QThreads alive.
         # Strong references keep threads alive until ``finished`` fires.
         # Without this set, Qt garbage-collects the QThread before its
         # llama-cpp-python destructor runs, causing hard crashes.
@@ -115,8 +118,11 @@ class InferenceService:
             additional signals or call ``request_stop()`` on the handle.
         """
         # Step 1: Validate input parameters, operational preconditions, and state
+        # Agentic mode can be requested by argument or by the hyperparameter flag.
         use_agentic = agentic or bool(hyperparams.get("agentic_loop_enabled", False))
 
+        # Both thread classes take the same core inputs; lists are copied so the caller's
+        # history/chunks cannot be mutated by the worker thread.
         thread: LLMThread | AgenticThread
         if use_agentic:
             thread = AgenticThread(
@@ -142,6 +148,8 @@ class InferenceService:
             )
 
         # ── Token callbacks ───────────────────────────────────────────────────
+        # Callbacks are optional; only connect the signals the caller cares about.
+        # ``connection_type`` decides which thread the slot runs on.
         if on_thought_token_cb is not None:
             thread.new_thought_token.connect(on_thought_token_cb, connection_type)
 
@@ -157,13 +165,17 @@ class InferenceService:
         # ── Normalised finished callback ──────────────────────────────────────
         # Both thread types emit different signals on completion; the service
         # normalises them to a single (thought, response, diagnostics) shape.
+        # AgenticThread ends with loop_finished(total) while LLMThread emits generation_finished
+        # with five values; adapt both to on_finished_cb(thought, response, diagnostics).
         if on_finished_cb is not None:
             if use_agentic:
+                # Bind the thread to a local name so the nested function does not depend on later rebinding.
                 _t = thread  # capture for the closure
 
                 def _agentic_done(total: int) -> None:
                     # Step 1: Validate input parameters, operational preconditions, and state
                     history = getattr(_t, "chat_history", [])
+                    # The agentic thread has no separate return value, so read the last assistant message from its history.
                     response = ""
                     if history and history[-1].get("role") == "assistant":
                         response = history[-1].get("content", "")
@@ -191,6 +203,7 @@ class InferenceService:
             lambda: self._active_threads.discard(thread),
             Qt.ConnectionType.DirectConnection,
         )
+        # Qt frees the C++ object only after the thread has fully stopped.
         thread.finished.connect(thread.deleteLater)
 
         logger.info(
@@ -201,5 +214,6 @@ class InferenceService:
             adapter_name,
             len(prompt),
         )
+        # Start only after all signals are connected so no early signal is missed.
         thread.start()
         return thread

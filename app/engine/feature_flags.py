@@ -58,6 +58,7 @@ class FeatureFlagStore:
 
     def __init__(self, path: str = FLAGS_FILE) -> None:
         # Step 1: Validate input parameters, operational preconditions, and state
+        """Load flags from ``path``, creating the file with defaults on first run."""
         self._path = path
         # Start from the compiled defaults then overlay the persisted values.
         self._flags: dict[str, bool] = dict(self.DEFAULTS)
@@ -67,7 +68,9 @@ class FeatureFlagStore:
 
     def _load(self) -> None:
         # Step 1: Validate input parameters, operational preconditions, and state
+        """Read the file, keeping only registered boolean flags; anything invalid resets to defaults."""
         if not os.path.exists(self._path):
+            # Persist the defaults so users have a file to inspect/edit.
             self._save()   # write defaults on first run
             return
         try:
@@ -80,6 +83,7 @@ class FeatureFlagStore:
             for key, default in self.DEFAULTS.items():
                 # Iterate over items, evaluate loop invariant, and update progress
                 raw = data.get(key)
+                # Non-boolean values (e.g. the string "false") are ignored in favour of the default.
                 self._flags[key] = bool(raw) if isinstance(raw, bool) else default
             logger.debug("Feature flags loaded from %s: %s", self._path, self._flags)
         except Exception as exc:
@@ -89,6 +93,7 @@ class FeatureFlagStore:
 
     def _save(self) -> None:
         # Step 1: Validate input parameters, operational preconditions, and state
+        """Write all flags to disk; failures are logged, never raised."""
         try:
             # Execute guarded operations and establish recovery boundaries
             os.makedirs(os.path.dirname(self._path) or ".", exist_ok=True)
@@ -124,6 +129,7 @@ class FeatureFlagStore:
             # Iterate over items, evaluate loop invariant, and update progress
             self._flags[flag] = False
         self._save()
+        # Class-level so other modules can read it without a store reference.
         FeatureFlagStore.safe_mode_active = True
         logger.warning(
             "Safe Mode activated — experimental flags disabled: %s",
@@ -183,6 +189,7 @@ def run_boot_guard(
       boot will be detected next time.  Returns ``False``.
     """
     # Step 1: Validate input parameters, operational preconditions, and state
+    # A lock left over from last boot means that boot never reached "window rendered".
     if check_boot_lock(lock_path):
         logger.critical(
             "Boot lock detected (%s). Previous initialization crashed. "
@@ -192,5 +199,6 @@ def run_boot_guard(
         store.enter_safe_mode()
         return True
 
+    # Arm the guard for this boot; release_boot_lock() removes it once the UI is up.
     create_boot_lock(lock_path)
     return False

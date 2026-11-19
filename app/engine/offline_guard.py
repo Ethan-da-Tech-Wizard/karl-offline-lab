@@ -19,6 +19,8 @@ from urllib.parse import urlparse
 
 logger = logging.getLogger("karl.offline_guard")
 
+# Module state: whether install() ran, the HF env-var bookkeeping, and the
+# original functions saved before they are monkey-patched.
 _INSTALLED = False
 _HF_OFFLINE_VARS = ("TRANSFORMERS_OFFLINE", "HF_DATASETS_OFFLINE", "HF_HUB_OFFLINE")
 _hf_vars_applied: bool = False
@@ -29,6 +31,7 @@ _ORIGINAL_HTTPX_REQUEST = None
 _ORIGINAL_HTTPX_CLIENT_REQUEST = None
 _ORIGINAL_HTTPX_ASYNC_CLIENT_REQUEST = None
 
+# Hosts treated as "this machine". Private LAN addresses are NOT in this list.
 _LOCAL_HOSTS = {
     "",
     "localhost",
@@ -43,6 +46,7 @@ class OfflineNetworkError(RuntimeError):
 
 
 def _truthy(value: object) -> bool:
+    """True for "1", "true", "yes" or "on" (case-insensitive)."""
     # Step 1: Validate input parameters, operational preconditions, and state
     return str(value).strip().lower() in {"1", "true", "yes", "on"}
 
@@ -54,6 +58,7 @@ def online_execution_enabled() -> bool:
         return True
     try:
         # Execute guarded operations and establish recovery boundaries
+        # Lazy import: config_store may import this module indirectly.
         from app.engine import config_store
 
         return bool(config_store.get_ui_config().get("online_execution_enabled", False))
@@ -63,6 +68,7 @@ def online_execution_enabled() -> bool:
 
 
 def _is_local_url(url: object) -> bool:
+    """True for file paths, relative URLs and URLs whose host is in _LOCAL_HOSTS."""
     # Step 1: Validate input parameters, operational preconditions, and state
     parsed = urlparse(str(url))
     if parsed.scheme in {"", "file"}:
@@ -96,6 +102,7 @@ def install() -> None:
     global _ORIGINAL_HTTPX_CLIENT_REQUEST
     global _ORIGINAL_HTTPX_ASYNC_CLIENT_REQUEST
 
+    # Set the flag before patching so concurrent/repeated calls never double-wrap the functions.
     if _INSTALLED:
         return
     _INSTALLED = True
@@ -104,6 +111,7 @@ def install() -> None:
         # Execute guarded operations and establish recovery boundaries
         import requests
 
+        # requests.get/post/etc. all funnel through Session.request, so one patch covers them.
         _ORIGINAL_REQUESTS_REQUEST = requests.sessions.Session.request
 
         def guarded_requests_request(session, method, url, *args, **kwargs):
@@ -135,6 +143,7 @@ def install() -> None:
         # Execute guarded operations and establish recovery boundaries
         import httpx
 
+        # httpx has three entry points (module function, Client, AsyncClient); all three are wrapped.
         _ORIGINAL_HTTPX_REQUEST = httpx.request
         _ORIGINAL_HTTPX_CLIENT_REQUEST = httpx.Client.request
         _ORIGINAL_HTTPX_ASYNC_CLIENT_REQUEST = httpx.AsyncClient.request
@@ -184,6 +193,7 @@ def apply_for_current_config() -> None:
             if not _hf_vars_applied:
                 for var in _HF_OFFLINE_VARS:
                     # Iterate over items, evaluate loop invariant, and update progress
+                    # setdefault keeps any value the user already exported.
                     os.environ.setdefault(var, "1")
                 _hf_vars_applied = True
                 logger.info(
