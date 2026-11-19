@@ -288,3 +288,22 @@ if __name__ == "__main__":
     test_cryptographic_memory_zeroing()
     test_decrypted_payload_cleanup()
     print("All trace logger unit tests PASSED!")
+
+
+def test_log_generation_rate_limits_retention_sweep():
+    """log_generation used to run a full retention sweep on every call; it now sweeps at most once per interval."""
+    from unittest.mock import patch
+    temp_dir = tempfile.mkdtemp()
+    try:
+        with patch("app.engine.config_store.get_ui_config", return_value={"log_retention_days": 30}):
+            logger = TraceLogger(log_dir=temp_dir, archive_dir=os.path.join(temp_dir, "archive"))
+            sweeps = []
+            logger.prune_logs = lambda: sweeps.append(1)
+            for _ in range(3):
+                logger.log_generation("p", {}, "o", "", "r", 0.1)
+            assert sweeps == [], "no sweep expected within the interval"
+            logger._last_sweep -= logger.RETENTION_SWEEP_INTERVAL_SEC + 1
+            logger.log_generation("p", {}, "o", "", "r", 0.1)
+            assert sweeps == [1]
+    finally:
+        shutil.rmtree(temp_dir)
