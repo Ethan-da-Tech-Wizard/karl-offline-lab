@@ -94,6 +94,8 @@ _CRITICAL_DEPS = {"PyQt6", "llama_cpp"}
 def _metadata_version(name: str) -> str | None:
     """Look up an installed version through package metadata, trying common name variants (underscore/hyphen, -cpu, -gpu builds).
     """
+    # Distribution names often differ from import names (e.g. llama_cpp_python vs llama-cpp-python, or
+    # torch built as a -cpu variant), so a single exact lookup would report "unknown" for installed packages.
     for candidate in (name, name.replace("_", "-"),
                       name + "-cpu", name + "-gpu"):
         try:
@@ -154,12 +156,17 @@ def check_hardware() -> dict[str, Any]:
     cpu_flags: dict[str, bool | None] = {}
     if plat == "Linux":
         flags = _linux_cpu_flags()
+        # AVX-512 is a family of extensions; "avx512f" (foundation) is the one every AVX-512 CPU has,
+        # so it is the right single flag to test for "AVX-512 capable".
         cpu_flags = {
             "avx2":   "avx2"    in flags,
             "avx512": "avx512f" in flags,
             "fma":    "fma"     in flags,
         }
     elif plat == "Darwin":
+        # Apple Silicon reports none of these (they are x86 features), so False there means "not x86",
+        # not a broken install; Metal below is the relevant accelerator.
+        # Note the "_0" suffix: macOS exposes AVX2 under hw.optional.avx2_0, not hw.optional.avx2.
         cpu_flags = {
             "avx2":   _macos_sysctl("hw.optional.avx2_0") == "1",
             "avx512": _macos_sysctl("hw.optional.avx512f") == "1",
@@ -182,6 +189,7 @@ def check_hardware() -> dict[str, Any]:
             "device":         torch.cuda.get_device_name(0) if cuda_ok else None,
             "driver_version": torch.version.cuda if cuda_ok else None,
         }
+        # Older torch builds have no backends.mps attribute at all, so probe for it before calling.
         metal_ok = (
             hasattr(torch.backends, "mps") and torch.backends.mps.is_available()
         )
@@ -234,6 +242,8 @@ def check_models() -> dict[str, Any]:
 
     for filename in gguf_files:
         path = os.path.join(models_dir, filename)
+        # A file can vanish or be unreadable between listdir and stat (e.g. a download being replaced);
+        # report size 0 and let the magic check below flag it instead of aborting the whole audit.
         try:
             size_bytes = os.path.getsize(path)
         except OSError:
@@ -267,6 +277,8 @@ def check_port(port: int = 8080) -> dict[str, Any]:
     """
     try:
         with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+            # SO_REUSEADDR lets the bind succeed over a socket lingering in TIME_WAIT after a recent
+            # restart, which would otherwise be misreported as "port in use". A live listener still fails.
             s.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
             s.bind(("127.0.0.1", port))
         return {"port": port, "status": "ok",   "message": f"port {port} is free"}
