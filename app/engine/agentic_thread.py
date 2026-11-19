@@ -824,6 +824,8 @@ class AgenticThread(QThread):
             # Main loop: one iteration = generate -> log -> store response -> ask
             # core.agentic_loop.should_continue() -> inject build_next_prompt() as the next user turn.
             iteration = 0
+            # Only the previous iteration is remembered: the repetition check below looks for a loop of
+            # period one (the model answering the same thing twice), not longer cycles.
             previous_response = ""
 
             global _thermal_suspended
@@ -845,10 +847,14 @@ class AgenticThread(QThread):
                 # ─────────────────────────────────────────────────────────────────
 
                 # Build and emit iteration header
+                # Iteration numbers shown to the user are 1-based, while the `iteration` counter passed to
+                # signals and the loop module stays 0-based, matching the raw-log file names.
                 self.new_thought_token.emit(f"\n{'='*40}\n[AGENTIC LOOP — Iteration {iteration + 1}]\n{'='*40}\n")
                 self.new_chat_token.emit(f"\n[Iteration {iteration + 1}]\n")
 
                 # Inject RAG context into system prompt if present
+                # Rebuilt from the original every iteration so the RAG text is injected exactly once and
+                # never accumulates across loop turns.
                 system_prompt = self.system_prompt
                 context_str = "(No context retrieved.)"
                 if self.retrieved_chunks:
@@ -859,6 +865,8 @@ class AgenticThread(QThread):
                         system_prompt += "\n\nRetrieved Context:\n" + context_str
 
                 # Trim history to fit context before building prompt
+                # Trimming returns a copy: self.chat_history keeps the full transcript for the UI/logs while
+                # only the trimmed view is sent to the model.
                 trimmed_history = self._trim_history(self.chat_history, system_prompt, llm)
                 prompt, trimmed_history, system_prompt, prompt_tokens, _prompt_budget = (
                     self._build_prompt_with_context_budget(llm, system_prompt, trimmed_history)
@@ -867,6 +875,8 @@ class AgenticThread(QThread):
                 # Emit context budget stats for the HUD
                 try:
                     # Execute guarded operations and establish recovery boundaries
+                    # The HUD stats are best-effort; a tokenizer error here must never abort generation, hence
+                    # the broad except below.
                     hist_tokens = sum(self._message_token_count(llm, m) for m in trimmed_history)
                     rag_tokens  = self._token_count(llm, context_str) if self.retrieved_chunks else 0
                     sys_tokens  = self._token_count(llm, system_prompt)
@@ -875,8 +885,11 @@ class AgenticThread(QThread):
                     pass
 
                 # Per-iteration timing: prefill = until the first token, generation = after it.
+                # perf_counter is monotonic, so these timings survive wall-clock changes (NTP, sleep).
                 start = time.perf_counter()
                 # M7: open raw archive file for this iteration
+                # One raw token file per iteration, named with a microsecond timestamp, so concurrent or
+                # rapid iterations never overwrite each other and a crash still leaves the partial output.
                 os.makedirs(RAW_LOG_DIR, exist_ok=True)
                 ts = datetime.now(timezone.utc).strftime("%Y%m%d_%H%M%S_%f")
                 raw_log_path = os.path.join(RAW_LOG_DIR, f"agentic_{ts}_iter{iteration}.tokens")
@@ -887,11 +900,14 @@ class AgenticThread(QThread):
                 end = time.perf_counter()
 
                 prefill_time = (first_token_time - start) if first_token_time is not None else (end - start)
+                # Floor avoids ZeroDivisionError when the first token arrives in the same clock tick.
                 if prefill_time <= 0:
                     prefill_time = 0.001
                 prefill_tps = prompt_tokens / prefill_time
 
                 generation_time = (end - first_token_time) if first_token_time is not None else 0.0
+                # Counted by re-tokenizing the raw text rather than counting streamed chunks, because a
+                # chunk is not always exactly one token.
                 generation_tokens = len(llm.tokenize(raw.encode('utf-8'), add_bos=False))
                 if generation_time <= 0:
                     generation_tps = generation_tokens / 0.001 if generation_tokens > 0 else 0.0
@@ -918,6 +934,7 @@ class AgenticThread(QThread):
                 if self._stop_requested:
                     break
 
+                # Temperature is sampled after generation, so it reflects the load this iteration caused.
                 gpu_temp = _get_gpu_temp()
                 throttle_reasons = []
                 try:
@@ -927,11 +944,14 @@ class AgenticThread(QThread):
                         # Iterate over items, evaluate loop invariant, and update progress
                         for alert in gpu.get("alerts", []):
                             # Iterate over items, evaluate loop invariant, and update progress
+                            # De-duplicated so a multi-GPU box with the same alert on every card logs it once.
                             if alert not in throttle_reasons:
                                 throttle_reasons.append(alert)
                 except Exception:
                     pass
 
+                # Recorded in the trace log so slow iterations can be explained by deliberate cooling pauses
+                # rather than a slow model.
                 cooling_duration = 0.0
                 # Post-iteration cooldown: >=98 C waits 15 s, >=95 C waits 5 s; >=100 C aborts.
                 # ── Multi-Stage Thermal Cooldown ──────────────────────────────────
@@ -946,6 +966,8 @@ class AgenticThread(QThread):
                         self.status_update.emit(
                             f"GPU temperature critical ({gpu_temp:.1f}°C). Cooling down for 15s...", True
                         )
+                        # 150 x 0.1 s = the 15 s cooldown, in short sleeps so a stop request is honoured within
+                        # ~0.1 s instead of after the whole wait.
                         for _ in range(150):
                             # Iterate over items, evaluate loop invariant, and update progress
                             if self._stop_requested:
@@ -957,6 +979,7 @@ class AgenticThread(QThread):
                         self.status_update.emit(
                             f"GPU temperature hot ({gpu_temp:.1f}°C). Cooling down for 5s...", True
                         )
+                        # 50 x 0.1 s = 5 s, again polling the stop flag.
                         for _ in range(50):
                             # Iterate over items, evaluate loop invariant, and update progress
                             if self._stop_requested:
@@ -986,9 +1009,13 @@ class AgenticThread(QThread):
                 )
 
                 # Store only the response — not the think block — to keep context lean
+                # Only the visible response is kept: replaying earlier <think> blocks would burn context on
+                # reasoning the model does not need to see again.
                 self.chat_history.append({"role": "assistant", "content": response})
 
                 self.iteration_finished.emit(iteration, thought, response, diagnostics)
+                # Duplicate of the Qt signal above for non-UI consumers (websocket clients, watchers) that
+                # cannot connect to Qt signals.
                 EventBroker.get_instance().publish("iteration:finished", {
                     "iteration": iteration,
                     "thought": thought,
@@ -996,6 +1023,8 @@ class AgenticThread(QThread):
                     "diagnostics": diagnostics
                 })
 
+                # Incremented before the stop checks so should_continue() receives the number of COMPLETED
+                # iterations, and loop_finished reports the same count.
                 iteration += 1
 
                 # Hot-reload stop condition and check it
@@ -1011,6 +1040,8 @@ class AgenticThread(QThread):
                 if not core.agentic_loop.should_continue(iteration, response):
                     break
 
+                # Guards against a model that ignores build_next_prompt() and repeats itself until the
+                # iteration cap; this ends the loop earlier and saves compute.
                 if self._is_repetitive_response(previous_response, response):
                     self.new_thought_token.emit(
                         "\n[Agentic loop stopped: latest response repeated the previous iteration.]\n"
@@ -1020,8 +1051,12 @@ class AgenticThread(QThread):
 
                 # Build next user turn and inject it
                 next_prompt_content = core.agentic_loop.build_next_prompt(response, iteration)
+                # The follow-up is appended as a user turn so the next iteration sees a normal chat
+                # alternation (user, assistant, user, ...).
                 self.chat_history.append({"role": "user", "content": next_prompt_content})
 
+            # Reached on normal completion and on a user stop; errors skip this and go to the except
+            # handlers, which emit error_occurred and mark the supervisor task as failed instead.
             self.loop_finished.emit(iteration)
             EventBroker.get_instance().publish("loop:finished", {
                 "total_iterations": iteration
