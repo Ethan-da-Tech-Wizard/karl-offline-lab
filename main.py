@@ -15,6 +15,10 @@ All library noise is suppressed here, before any third-party import runs.
 """
 
 # ── 1. Environment variables ──────────────────────────────────────────────────
+# Ordering matters in this file: environment variables and warning filters must be
+# set BEFORE torch / faiss / sentence-transformers are imported, because those
+# libraries read them at import time. Do not reorder the sections below.
+# PYTORCH_ALLOC_CONF is set first because the CUDA allocator reads it on first use.
 import os
 
 # Harden CUDA memory management against fragmentation
@@ -24,6 +28,8 @@ import sys
 import io
 import multiprocessing
 
+# Force fully offline operation: no model downloads, no telemetry, no progress bars.
+# TOKENIZERS_PARALLELISM=false avoids fork-related deadlock warnings from HF tokenizers.
 # Silence HuggingFace network calls and telemetry
 os.environ["HF_HUB_OFFLINE"]               = "1"
 os.environ["HF_HUB_DISABLE_TELEMETRY"]    = "1"
@@ -42,8 +48,10 @@ warnings.filterwarnings("ignore")
 # warning filters run. We swap stderr for /dev/null at the file-descriptor level
 # for the duration of the heavy imports, then restore it.
 
+# Used as `with _NullFD():` around the heavy imports below.
 class _NullFD:
     """Context manager: redirects fd 2 (stderr) to os.devnull at C level."""
+    # dup the real stderr so it can be restored, then point fd 2 at /dev/null.
     def __enter__(self):
         # Step 1: Validate input parameters, operational preconditions, and state
         self._orig_fd2 = os.dup(2)          # save real stderr fd
@@ -53,12 +61,15 @@ class _NullFD:
 
     def __exit__(self, *_):
         # Step 1: Validate input parameters, operational preconditions, and state
+        # Restore the original stderr and close both temporary descriptors.
         os.dup2(self._orig_fd2, 2)           # restore real stderr
         os.close(self._orig_fd2)
         os.close(self._devnull)
 
 
 with _NullFD():
+    # All noisy imports go here -- their C-level stderr goes to /dev/null
+    # (imported only for their side effects: warm the import cache and trigger one-time init quietly).
     # All noisy imports go here -- their C-level stderr goes to /dev/null
     import torch          # noqa: F401  (triggers triton + cpp warnings)
     import faiss          # noqa: F401
@@ -67,6 +78,8 @@ with _NullFD():
 # ── 4. Python-level logging: mute library loggers ─────────────────────────────
 import logging
 
+# Raise third-party loggers to CRITICAL and stop propagation so only Karl's own
+# log records reach the console.
 for _name in [
     "torch", "torch.distributed",
     "torch.distributed.elastic.multiprocessing.redirects",
@@ -80,6 +93,8 @@ for _name in [
     _log.propagate = False
 
 # Silence absl (used by torch internally for the "W0523..." lines)
+# (absl is optional, hence the try/except.)
+# Silence absl (used by torch internally for the "W0523..." lines)
 try:
     # Execute guarded operations and establish recovery boundaries
     import absl.logging as _absl_log
@@ -91,6 +106,8 @@ except Exception:
 # ── 4b. Karl's own logger ──────────────────────────────────────────────────────
 # Every module logs through a child of the "karl" logger
 # (logging.getLogger("karl.<module>")). Set KARL_DEBUG=1 for verbose output.
+# CorrelationFilter stamps each record with a per-request correlation id (see
+# app/utils/correlation_logger.py); the handler format below prints it.
 from app.utils.correlation_logger import CorrelationFilter
 
 _karl_log = logging.getLogger("karl")
@@ -104,6 +121,7 @@ _karl_log.addHandler(_karl_handler)
 _karl_log.propagate = False
 
 # ── 5. Application ────────────────────────────────────────────────────────────
+# Qt and the main window are imported only after logging/env setup above.
 from PyQt6.QtWidgets import QApplication
 from PyQt6.QtGui import QIcon
 from app.ui.main_window import MainWindow
@@ -124,6 +142,8 @@ def _run_headless() -> int:
     extension talks to Karl through WSS and no desktop UI should be spawned.
     """
     # Step 1: Validate input parameters, operational preconditions, and state
+    # Headless mode: signal handlers set an Event so SIGINT/SIGTERM shut the bridge
+    # down cleanly (used by Docker/Kubernetes, which send SIGTERM).
     import signal
     import threading
 
@@ -140,6 +160,8 @@ def _run_headless() -> int:
     signal.signal(signal.SIGINT, stop)
     signal.signal(signal.SIGTERM, stop)
 
+    # Start the bridge and wait (<= 15 s) for the bind attempt to finish; the manager
+    # sets started_event even on failure, so check `server` to detect a failed bind.
     manager = WebSocketServerManager.get_instance(port=port)
     manager.started_event.wait(timeout=15.0)
 
@@ -159,8 +181,13 @@ def _run_headless() -> int:
 
 def main():
     # Step 1: Validate input parameters, operational preconditions, and state
+    # Refuse to run as root/admin (see core/security.py) before doing anything else.
     _assert_not_privileged()
 
+    # ── Feature flags & boot guard ────────────────────────────────────────────
+    # CLI maintenance commands below (--diagnose, --generate-key, --revoke, --safe-mode,
+    # --enable-flag, --headless) are handled before any window is created; the
+    # first four exit the process when done.
     # ── Feature flags & boot guard ────────────────────────────────────────────
     # Imported here (inside main) so the module-level noise-suppression above
     # runs before any Karl sub-module is imported.
@@ -171,6 +198,8 @@ def main():
         from app.utils.diagnostics import run_diagnostics
         sys.exit(run_diagnostics())
 
+    # --generate-key --scope <role>: mint a scoped bridge token (roles map to scope
+    # lists in ROLE_SCOPES), store it, print it once, and exit.
     if "--generate-key" in sys.argv:
         from app.utils.keychain_manager import ROLE_SCOPES, add_scoped_token
         import uuid as _uuid
@@ -196,6 +225,8 @@ def main():
         print(f"[Karl --generate-key] Scopes: {scopes}")
         sys.exit(0)
 
+    # --revoke: delete the on-disk token file and keychain entry, and force-close
+    # live connections if a server exists in this process.
     if "--revoke" in sys.argv:
         token_path = "data/bridge_token.json"
         if os.path.exists(token_path):
@@ -239,6 +270,7 @@ def main():
             print(f"[Karl --enable-flag] Unknown flag: {exc}")
             sys.exit(1)
 
+    # Headless mode: bridge only, no Qt window.
     if "--headless" in sys.argv or os.environ.get("KARL_HEADLESS") == "1":
         sys.exit(_run_headless())
 
@@ -247,6 +279,7 @@ def main():
     if "--safe-mode" not in sys.argv:
         run_boot_guard(_flags)
 
+    # Normal desktop startup: create the Qt app, icon and base stylesheet, then the main window.
     app = QApplication(sys.argv)
     app.setApplicationName("Karl")
     icon_path = os.path.join(os.path.dirname(__file__), "oss/vss_extension/media/icon.png")
@@ -255,12 +288,15 @@ def main():
 
     # Minimal inline base stylesheet (pure ASCII, no file read).
     # Full theme applied by MainWindow after init.
+    # Imported lazily so themes (and Qt widgets) load after the noise suppression above.
     from app.ui.themes import stylesheet
     app.setStyleSheet(stylesheet())
 
     window = MainWindow()
     window.show()
     
+    # app.exec() blocks until the window closes; the bridge token is then revoked so a
+    # stale token cannot be reused after the app exits.
     code = app.exec()
     
     try:
