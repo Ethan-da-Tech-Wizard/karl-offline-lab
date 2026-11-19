@@ -29,6 +29,7 @@ pytestmark = [pytest.mark.integration]
 
 
 def _running_under_bwrap() -> bool:
+    """True when PID 1 is bubblewrap (sandboxed run where subprocess/IPC may be restricted)."""
     # Step 1: Validate input parameters, operational preconditions, and state
     try:
         # Execute guarded operations and establish recovery boundaries
@@ -39,7 +40,9 @@ def _running_under_bwrap() -> bool:
 
 
 class TestMCPClient(unittest.TestCase):
+    """Integration test for the MCP client manager against a local mock MCP server subprocess (tests/mock_mcp_server.py)."""
     def setUp(self):
+        """Write a temporary MCP config file pointing at the mock server run with the current Python interpreter."""
         # Create a temporary config file pointing to mock_mcp_server.py
         self.temp_dir = tempfile.TemporaryDirectory()
         self.config_path = os.path.join(self.temp_dir.name, "mcp_config.json")
@@ -63,12 +66,14 @@ class TestMCPClient(unittest.TestCase):
             json.dump(config_data, f)
 
     def tearDown(self):
+        """Delete the temp config and make sure any running MCP client manager is stopped and cleared."""
         # Clean up temporary files
         self.temp_dir.cleanup()
         # Ensure any active client manager instance is stopped and cleared
         MCPClientManager.reset_instance()
 
     def test_mcp_client_lifecycle_and_tools(self):
+        """Full lifecycle: start servers, list the two tools (hello, get_version), call each and check the returned text ('Hello, TestUser!' and '1.0.0'), then shut down leaving no servers."""
         # Step 1: Validate input parameters, operational preconditions, and state
         if _running_under_bwrap():
             pytest.skip("Codex sandbox blocks the mock MCP stdio handshake")

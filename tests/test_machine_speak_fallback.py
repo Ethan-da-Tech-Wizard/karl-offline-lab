@@ -35,6 +35,7 @@ from app.engine.streaming_parser import StreamingThoughtParser
 
 
 def _make_parser():
+    """Build a StreamingThoughtParser that starts inside a thought and collects thought and chat callbacks into lists (events disabled); returns (parser, thoughts, chats)."""
     # Step 1: Validate input parameters, operational preconditions, and state
     thoughts, chats = [], []
     parser = StreamingThoughtParser(
@@ -47,11 +48,13 @@ def _make_parser():
 
 
 def test_default_is_off_in_config_store():
+    """Machine Speak (compact trace output) defaults to off in the UI config, since small models often produce malformed compact JSON."""
     # Step 1: Validate input parameters, operational preconditions, and state
     assert config_store.UI_CONFIG_DEFAULTS["enable_machine_speak"] is False
 
 
 def test_well_formed_compact_trace_still_decompacts_normally():
+    """A well-formed compact trace is still decompacted into the thought and the chat answer (happy path unaffected by the fallback changes)."""
     # Sanity check the happy path is unaffected by the fallback changes.
     buffer = (
         '{"$":"karl.trace.compact.v1","d":{"tk":"reasoning here",'
@@ -64,6 +67,7 @@ def test_well_formed_compact_trace_still_decompacts_normally():
 
 
 def test_malformed_compact_trace_salvages_response_instead_of_leaking_json():
+    """A compact trace that is invalid JSON (e.g. an unescaped quote) but brace-balanced has its response salvaged, so the user sees the answer rather than raw 'karl.trace.compact.v1' JSON."""
     # Unescaped double quote inside the "r" value breaks json.loads() even
     # though the buffer is brace-balanced -- this is the exact shape of
     # output that reproduced the bug against a live 1.5B model.
@@ -80,6 +84,7 @@ def test_malformed_compact_trace_salvages_response_instead_of_leaking_json():
 
 
 def test_malformed_compact_trace_with_no_salvageable_fields_falls_back():
+    """When nothing can be salvaged the emitter returns False without emitting; the caller then passes the raw text through."""
     # Step 1: Validate input parameters, operational preconditions, and state
     buffer = '{"$":"karl.trace.compact.v1","d":{"p":"broken \\ unterminated'
     parser, thoughts, chats = _make_parser()
@@ -91,6 +96,7 @@ def test_malformed_compact_trace_with_no_salvageable_fields_falls_back():
 
 
 def test_unrelated_json_output_is_not_treated_as_a_compact_trace():
+    """Ordinary JSON that the model was asked to produce is not mistaken for a failed compact trace; it is left for the normal raw-text path."""
     # A model asked to produce real JSON that happens to start with '{' and
     # isn't valid JSON for some other reason must not be mistaken for a
     # failed compact trace -- no marker, no salvage attempt, clean passthrough
@@ -103,6 +109,7 @@ def test_unrelated_json_output_is_not_treated_as_a_compact_trace():
 
 
 def test_salvage_helper_handles_escaped_quotes_and_newlines():
+    """The salvage helper decodes escaped quotes and newlines in the recovered thought and response."""
     # Step 1: Validate input parameters, operational preconditions, and state
     thought, response = llm_salvage(
         '{"$":"karl.trace.compact.v1","d":{"tk":"line one\\nline two",'
@@ -113,6 +120,7 @@ def test_salvage_helper_handles_escaped_quotes_and_newlines():
 
 
 def test_agentic_thread_mirrors_llm_thread_behavior():
+    """AgenticThread has its own copy of the parser fallback and must behave identically to LLMThread (a fix in one must be mirrored in the other)."""
     # AGENTS.md gotcha: the streaming parser (and this fallback) is
     # duplicated across both threads; any fix must land identically in both.
     buffer = (

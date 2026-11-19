@@ -12,6 +12,7 @@ from app.engine.task_supervisor import TaskSupervisor, TaskStatus
 
 
 def test_task_supervisor_terminal_state_protection():
+    """Terminal states are sticky: once a task has failed (ERROR with message), a later finish() must not change it to FINISHED or clear the error. This stops a watchdog failure being overwritten by a late success."""
     # Use reset_instance to get a clean singleton for testing
     TaskSupervisor.reset_instance()
     ts = TaskSupervisor.instance()
@@ -33,6 +34,7 @@ def test_task_supervisor_terminal_state_protection():
 
 
 def test_task_supervisor_finish_once_terminal():
+    """The same in reverse: after finish(), a late fail() is a no-op and no error is recorded."""
     # Step 1: Validate input parameters, operational preconditions, and state
     TaskSupervisor.reset_instance()
     ts = TaskSupervisor.instance()
@@ -50,6 +52,7 @@ def test_task_supervisor_finish_once_terminal():
 
 
 def test_cpu_affinity_helper_availability():
+    """On platforms with CPU affinity support, sched_getaffinity returns a non-empty set (used for pinning worker threads); skipped or safe elsewhere."""
     # Verify os.sched_getaffinity / os.sched_setaffinity exist or behave safely on this OS (Linux)
     if hasattr(os, "sched_getaffinity"):
         affinity = os.sched_getaffinity(0)

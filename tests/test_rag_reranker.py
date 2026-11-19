@@ -37,6 +37,7 @@ class _DeterministicEncoder:
     """Hash-based encoder: identical inputs → identical vectors, no model file."""
 
     def encode(self, texts, batch_size: int = 32, show_progress_bar: bool = False):
+        """Embed texts by hashing tokens into a fixed 384-dim L2-normalised vector."""
         # Step 1: Validate input parameters, operational preconditions, and state
         if isinstance(texts, str):
             texts = [texts]
@@ -55,6 +56,7 @@ class _DeterministicEncoder:
 
 
 def _make_pipeline(index_path: str) -> RAGPipeline:
+    """Create a RAGPipeline on the given index path with the deterministic encoder injected."""
     # Step 1: Validate input parameters, operational preconditions, and state
     rag = RAGPipeline(index_path=index_path)
     rag._encoder = _DeterministicEncoder()
@@ -65,6 +67,7 @@ def _make_pipeline(index_path: str) -> RAGPipeline:
 
 @pytest.fixture
 def tmp_dir():
+    """Fixture: temporary directory removed after the test."""
     # Step 1: Validate input parameters, operational preconditions, and state
     d = tempfile.mkdtemp()
     yield d
@@ -73,6 +76,7 @@ def tmp_dir():
 
 @pytest.fixture
 def rag(tmp_dir):
+    """Fixture: a RAG pipeline using the temp directory."""
     # Step 1: Validate input parameters, operational preconditions, and state
     return _make_pipeline(tmp_dir)
 
@@ -106,6 +110,7 @@ _QUERY = "artificial intelligence research applications"
 
 
 def _ingest_all(rag: RAGPipeline) -> None:
+    """Ingest each of the five test documents as its own source."""
     # Step 1: Validate input parameters, operational preconditions, and state
     for key, (text, _score) in _DOCS.items():
         # Iterate over items, evaluate loop invariant, and update progress
@@ -117,6 +122,7 @@ def _make_reranker_mock() -> MagicMock:
 
     # Step 1: Validate input parameters, operational preconditions, and state
     def _predict(pairs: list[tuple[str, str]]) -> np.ndarray:
+        """Score each (query, chunk) pair by looking up the document keyword found in the chunk text, so reranker ordering is fully predetermined."""
         # Step 1: Validate input parameters, operational preconditions, and state
         scores = []
         for _query, text in pairs:
@@ -260,6 +266,7 @@ def test_reranker_pool_limited_by_rerank_candidates(rag):
 
     mock = MagicMock()
     def _predict(pairs):
+        """Record how many pairs predict() received and return zero scores."""
         # Step 1: Validate input parameters, operational preconditions, and state
         received_sizes.append(len(pairs))
         return np.zeros(len(pairs), dtype="float32")

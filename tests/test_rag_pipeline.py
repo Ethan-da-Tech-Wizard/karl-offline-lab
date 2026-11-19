@@ -21,7 +21,9 @@ from app.utils.rag_pipeline import RAGPipeline
 
 
 class _DeterministicEncoder:
+    """Hash-based bag-of-words encoder (no model download) giving repeatable vectors."""
     def encode(self, texts, batch_size=32, show_progress_bar=False):
+        """Embed texts by hashing each token into a fixed-size vector and L2-normalising."""
         # Step 1: Validate input parameters, operational preconditions, and state
         if isinstance(texts, str):
             texts = [texts]
@@ -40,13 +42,16 @@ class _DeterministicEncoder:
 
 
 class _SlowParseRAG(RAGPipeline):
+    """RAGPipeline whose file parsing sleeps a little per file, to simulate slow parsing so parallel ingestion has something to speed up."""
     def __init__(self, *args, delay=0.01, **kwargs):
+        """Create the pipeline, inject the deterministic encoder and store the per-file delay."""
         # Step 1: Validate input parameters, operational preconditions, and state
         super().__init__(*args, **kwargs)
         self._encoder = _DeterministicEncoder()
         self.delay = delay
 
     def _chunks_from_file(self, filepath: str, chunk_size: int, overlap: int):
+        """Sleep for the delay, then read and chunk the file."""
         # Step 1: Validate input parameters, operational preconditions, and state
         time.sleep(self.delay)
         with open(filepath, "r", encoding="utf-8") as f:
@@ -226,6 +231,7 @@ def test_rag_pipeline_attribution():
 
 
 def test_parallel_batch_ingestion_benchmark_100_mock_python_files():
+    """Ingesting 100 slow-to-parse files in parallel produces the same index size and document count as sequential ingestion and is at least 4x faster."""
     # Step 1: Validate input parameters, operational preconditions, and state
     temp_dir = tempfile.mkdtemp()
     seq_dir = tempfile.mkdtemp()
@@ -265,6 +271,7 @@ def test_parallel_batch_ingestion_benchmark_100_mock_python_files():
 
 
 def test_parallel_batch_ingestion_matches_sequential_index_results():
+    """Parallel ingestion is deterministic: documents, source files, retrieval chunk ids and distances are identical to a sequential run, so parallelism does not change results."""
     # Step 1: Validate input parameters, operational preconditions, and state
     temp_dir = tempfile.mkdtemp()
     seq_dir = tempfile.mkdtemp()

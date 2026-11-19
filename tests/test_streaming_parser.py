@@ -11,6 +11,7 @@ from app.engine.streaming_parser import StreamingThoughtParser
 
 
 def test_streaming_parser_handles_split_close_tag():
+    """A </think> split across stream chunks is held back until complete; nothing is emitted early, then the thought and answer are separated correctly."""
     # Step 1: Validate input parameters, operational preconditions, and state
     thought_tokens = []
     chat_tokens = []
@@ -32,6 +33,7 @@ def test_streaming_parser_handles_split_close_tag():
 
 
 def test_streaming_parser_can_defer_answer_after_think_close():
+    """With defer_after_think_close the parser reports the think block closed but keeps the post-think text pending until flushed."""
     # Step 1: Validate input parameters, operational preconditions, and state
     thought_tokens = []
     chat_tokens = []
@@ -55,6 +57,7 @@ def test_streaming_parser_can_defer_answer_after_think_close():
 
 
 def test_streaming_parser_detects_adapter_think_block_after_chat_prefix():
+    """An adapter that emits some chat text before opening <think> is still parsed: the prefix and the answer form the response and the block becomes the thought."""
     # Step 1: Validate input parameters, operational preconditions, and state
     thought_tokens = []
     chat_tokens = []

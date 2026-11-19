@@ -24,6 +24,7 @@ import app.utils.trace_logger as tl
 from app.utils.trace_logger import TraceLogger
 
 def test_schema_fields():
+    """A logged generation has exactly the documented schema (model, adapter, workflow, template, hyperparams, timing breakdown with tokens/second figures, thinking, response, rag chunks, feedback), and update_feedback changes feedback to 'thumbs_up'."""
     # Step 1: Validate input parameters, operational preconditions, and state
     print("Testing TraceLogger schema fields...")
     temp_dir = tempfile.mkdtemp()
@@ -102,6 +103,7 @@ def test_schema_fields():
         shutil.rmtree(temp_dir)
 
 def test_file_rotation():
+    """When the log file exceeds the (shrunk) size limit the next entry goes to a new rotated file and both files keep their records."""
     # Step 1: Validate input parameters, operational preconditions, and state
     print("Testing TraceLogger rotation logic...")
     temp_dir = tempfile.mkdtemp()
@@ -141,6 +143,7 @@ def test_file_rotation():
         shutil.rmtree(temp_dir)
 
 def test_log_pruning():
+    """Pruning deletes log files older than log_retention_days and keeps recent ones."""
     # Step 1: Validate input parameters, operational preconditions, and state
     import time
     from unittest.mock import patch
@@ -184,6 +187,7 @@ def test_cryptographic_memory_zeroing():
     original_zero = TraceLogger._zero_bytes
 
     def intercepting_zero(ba: bytearray) -> None:
+        """Wrap the zeroing helper to capture each bytearray before it is zeroed, so the test can verify afterwards that every byte became 0."""
         # Capture the bytearray reference BEFORE the real zeroing runs so we
         # can inspect the same object (in-place mutation) after the call.
         captured.append(ba)
