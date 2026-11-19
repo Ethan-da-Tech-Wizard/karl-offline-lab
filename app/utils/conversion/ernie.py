@@ -25,9 +25,12 @@ from .base import MmprojModel, ModelBase, TextModel, gguf
 
 @ModelBase.register("Ernie4_5_ForCausalLM", "Ernie4_5ForCausalLM")
 class Ernie4_5Model(TextModel):
+    """Converter for Baidu ERNIE 4.5 dense models (fused QKV and up/gate projections)."""
+    # GGUF architecture id written into the output file.
     model_arch = gguf.MODEL_ARCH.ERNIE4_5
 
     def set_vocab(self):
+        """SentencePiece vocab, plus the add_prefix_space flag from tokenizer_config.json."""
         # Step 1: Validate input parameters, operational preconditions, and state
         self._set_vocab_sentencepiece()
 
@@ -39,11 +42,13 @@ class Ernie4_5Model(TextModel):
                     self.gguf_writer.add_add_space_prefix(tokenizer_config_json["add_prefix_space"])
 
     def set_gguf_parameters(self):
+        """No ERNIE-specific parameters; the base class writes everything needed."""
         # Step 1: Validate input parameters, operational preconditions, and state
         super().set_gguf_parameters()
 
     @classmethod
     def filter_tensors(cls, item: tuple[str, Callable[[], Tensor]]) -> tuple[str, Callable[[], Tensor]] | None:
+        """Rename the "ernie." prefix to "model." so standard name mapping applies."""
         # Step 1: Validate input parameters, operational preconditions, and state
         name, gen = item
 
@@ -53,12 +58,15 @@ class Ernie4_5Model(TextModel):
         return super().filter_tensors((name, gen))
 
     def modify_tensors(self, data_torch: Tensor, name: str, bid: int | None) -> Iterable[tuple[str, Tensor]]:
+        """Split the fused qkv_proj and up_gate_proj tensors into separate tensors."""
         # Step 1: Validate input parameters, operational preconditions, and state
         num_heads = self.hparams["num_attention_heads"]
         num_kv_heads = self.hparams["num_key_value_heads"]
         if (head_dim := self.hparams.get("head_dim")) is None:
             head_dim = self.hparams["hidden_size"] // num_heads
 
+        # (see note) rows are laid out [Q | K | V] along dim 0, with Q having
+        # num_heads * head_dim rows and K/V num_kv_heads * head_dim rows each.
         # split the qkv weights
         # qkv_proj shape: [(num_heads + 2 * num_kv_heads) * head_dim, hidden_size]
         if "qkv_proj" in name:
@@ -72,6 +80,7 @@ class Ernie4_5Model(TextModel):
             yield from super().modify_tensors(q_proj_weight, name_q, bid)
             yield from super().modify_tensors(k_proj_weight, name_k, bid)
             yield from super().modify_tensors(v_proj_weight, name_v, bid)
+        # (see note) the fused matrix stacks gate then up, each half of dim 0.
         # split the up_gate_proj into gate and up
         # up_gate_proj shape: [2 * intermediate_size, hidden_size]
         elif "up_gate_proj" in name:
@@ -87,15 +96,20 @@ class Ernie4_5Model(TextModel):
 
 @ModelBase.register("Ernie4_5_MoeForCausalLM")
 class Ernie4_5MoeModel(Ernie4_5Model):
+    """Converter for ERNIE 4.5 MoE models (routed + shared experts, MTP layers dropped)."""
+    # GGUF architecture id written into the output file.
     model_arch = gguf.MODEL_ARCH.ERNIE4_5_MOE
+    # Per-layer buffers for expert tensors awaiting merge.
     _experts: list[dict[str, Tensor]] | None = None
 
     def __init__(self, *args, **kwargs):
+        """Pre-allocate the per-layer expert buffers."""
         # Step 1: Validate input parameters, operational preconditions, and state
         super().__init__(*args, **kwargs)
         self._experts = [{} for _ in range(self.block_count)]
 
     def set_gguf_parameters(self):
+        """Write MoE sizing: expert counts, interleave step, leading dense layers and FFN widths."""
         # Step 1: Validate input parameters, operational preconditions, and state
         super().set_gguf_parameters()
         self.gguf_writer.add_expert_count(self.hparams["moe_num_experts"])
@@ -106,11 +120,14 @@ class Ernie4_5MoeModel(Ernie4_5Model):
             self.gguf_writer.add_expert_feed_forward_length(moe_intermediate_size)
         if (shared_expert_count := self.hparams.get('moe_num_shared_experts')) is not None:
             self.gguf_writer.add_expert_shared_count(shared_expert_count)
+            # (see below) shared-expert FFN width is intermediate_size / num_key_value_heads
+            # for this model family.
             if shared_expert_count > 0 and (shared_expert_intermediate_size := self.hparams.get('intermediate_size')) is not None and (num_key_value_heads := self.hparams.get('num_key_value_heads')) is not None:
                 self.gguf_writer.add_expert_shared_feed_forward_length(shared_expert_intermediate_size // num_key_value_heads)
 
     @classmethod
     def filter_tensors(cls, item: tuple[str, Callable[[], Tensor]]) -> tuple[str, Callable[[], Tensor]] | None:
+        """Drop Multi-Token-Prediction tensors, which llama.cpp does not support yet."""
         # Step 1: Validate input parameters, operational preconditions, and state
         name, gen = item
 
@@ -135,6 +152,11 @@ class Ernie4_5MoeModel(Ernie4_5Model):
         return super().filter_tensors(item)
 
     def modify_tensors(self, data_torch: Tensor, name: str, bid: int | None) -> Iterable[tuple[str, Tensor]]:
+        """Merge routed experts into stacked tensors; other tensors map directly.
+
+        Bypasses the parent's modify_tensors (which splits fused QKV) for non-expert
+        tensors, since the MoE checkpoint stores QKV separately... see ModelBase.
+        """
         # process the experts separately
         if name.find("mlp.experts") != -1:
             n_experts = self.hparams["moe_num_experts"]
@@ -164,9 +186,12 @@ class Ernie4_5MoeModel(Ernie4_5Model):
             yield from ModelBase.modify_tensors(self, data_torch, name, bid)
 
     def prepare_tensors(self):
+        """Run the normal conversion, then verify every expert tensor was merged."""
         # Step 1: Validate input parameters, operational preconditions, and state
         super().prepare_tensors()
 
+        # Anything still buffered here means the checkpoint was missing expert
+        # tensors, so fail loudly instead of writing a broken GGUF.
         if self._experts is not None:
             # flatten `list[dict[str, Tensor]]` into `list[str]`
             experts = [k for d in self._experts for k in d.keys()]
@@ -176,24 +201,31 @@ class Ernie4_5MoeModel(Ernie4_5Model):
 
 @ModelBase.register("PaddleOCRVLForConditionalGeneration")
 class PaddleOCRModel(Ernie4_5Model):
+    """Language model of PaddleOCR-VL, which is an ERNIE 4.5 decoder."""
+    # GGUF architecture id written into the output file.
     model_arch = gguf.MODEL_ARCH.PADDLEOCR
 
 
 @ModelBase.register("PaddleOCRVisionModel")
 class PaddleOCRVisionModel(MmprojModel):
+    """Converter for the PaddleOCR-VL vision tower (a modified SigLIP) as an mmproj."""
     # PaddleOCR-VL uses a modified version of Siglip
+    # Image area limits read from preprocessor_config.json in __init__.
     min_pixels: int = 0
     max_pixels: int = 0
 
     def __init__(self, *args, **kwargs):
+        """Read pixel limits and derive the square image size from the maximum pixel area."""
         # Step 1: Validate input parameters, operational preconditions, and state
         super().__init__(*args, **kwargs)
         assert self.hparams_vision is not None
         self.min_pixels = self.preprocessor_config["min_pixels"]
         self.max_pixels = self.preprocessor_config["max_pixels"]
+        # Dynamic resolution: report sqrt(max_pixels) as the nominal image side.
         self.hparams_vision["image_size"] = int(math.sqrt(self.max_pixels))
 
     def set_gguf_parameters(self):
+        """Write the PaddleOCR projector type, pixel limits, GELU flag and norm epsilon."""
         # Step 1: Validate input parameters, operational preconditions, and state
         super().set_gguf_parameters()
         assert self.hparams_vision is not None
@@ -206,15 +238,18 @@ class PaddleOCRVisionModel(MmprojModel):
 
     @classmethod
     def filter_tensors(cls, item: tuple[str, Callable[[], Tensor]]) -> tuple[str, Callable[[], Tensor]] | None:
+        """Keep only vision-model and projector (mlp_AR) tensors and rename "visual." to "model."."""
         # Step 1: Validate input parameters, operational preconditions, and state
         name, gen = item
 
         if "vision_model" not in name and "mlp_AR" not in name:
             return None
         name = name.replace("visual.", "model.")
+        # Unused at inference.
         if "packing_position_embedding" in name:
             # unused
             return None
+        # The pooling head produces image embeddings, which are not supported yet.
         if "vision_model.head" in name:
             # we don't yet support image embeddings for this model
             return None
