@@ -263,7 +263,7 @@ class ChatView(QTextBrowser):
             f'background: {bg_raised}; border: 1px solid {border}; border-radius: 4px; '
             f'font-family: \'JetBrains Mono\', monospace; font-size: 8.5pt;">'
             f'<div style="color: {accent}; font-weight: bold; margin-bottom: 6px; letter-spacing: 1.5px;">📊 GENERATION DIAGNOSTICS</div>'
-            f'<div style="color: {text_hi}; margin-bottom: 4px;"><b>Model:</b> {model} (n_ctx={n_ctx})</div>'
+            f'<div style="color: {text_hi}; margin-bottom: 4px;"><b>Model:</b> {_escape(str(model))} (n_ctx={n_ctx})</div>'
             f'<div style="color: {text_hi}; margin-bottom: 4px;">'
             f'<b>Prompt:</b> {diag.get("prompt_tokens", 0)} tokens '
             f'<span style="color: {text_lo};">(prefill: {diag.get("prefill_time", 0):.2f}s @ {diag.get("prefill_tps", 0):.1f} t/s)</span>'

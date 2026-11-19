@@ -8,6 +8,7 @@
 # ==============================================================================
 
 import logging
+import html
 import os
 import re
 from PyQt6.QtWidgets import (
@@ -316,7 +317,7 @@ class DocsWorkspace(QWidget):
         else:
             self._browser.setHtml(
                 f"<div style='font-family:{MONO}; font-size:10pt; color:#9090A8; line-height:1.5; padding:8px;'>"
-                f"No results found for query: <i>{text}</i>"
+                f"No results found for query: <i>{html.escape(text)}</i>"
                 f"</div>"
             )
 
@@ -337,7 +338,7 @@ class DocsWorkspace(QWidget):
         if not item_data:
             self._browser.setHtml(
                 f"<div style='font-family:{MONO}; font-size:10pt; color:#9090A8; line-height:1.5; padding:8px;'>"
-                f"No guide found for: <i>{text}</i>"
+                f"No guide found for: <i>{html.escape(text)}</i>"
                 f"</div>"
             )
             self._toc_list.clear()
