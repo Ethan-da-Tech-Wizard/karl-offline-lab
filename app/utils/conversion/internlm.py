@@ -65,11 +65,13 @@ class InternLM2Model(TextModel):
         vocab_size = self.hparams.get('vocab_size', tokenizer.vocab_size())
 
         # Convert every id; type flags are checked in priority order unknown > control > unused > byte.
+        # Iterating to the config vocab_size (not tokenizer.vocab_size()) makes the token list match the embedding rows; this assumes the SentencePiece model covers all ids.
         for token_id in range(vocab_size):
             piece = tokenizer.IdToPiece(token_id)
             text = piece.encode("utf-8")
             score = tokenizer.GetScore(token_id)
             # A raw NUL would look like an empty string to the C++ side; use a placeholder emoji.
+            # SentencePiece models for InternLM2 contain a literal NUL piece; llama.cpp stores token text as C strings, where NUL would terminate the string and make the token look empty.
             if text == b"\x00":
                 # (TODO): fixme
                 # Hack here and replace the \x00 characters.
@@ -185,6 +187,7 @@ class InternLM2Model(TextModel):
         q_per_kv = num_heads // num_kv_heads
         head_dim = n_embd // num_heads
         # One group per KV head; each group holds q_per_kv query heads, then one K and one V.
+        # wqkv is interleaved per KV group (grouped-query layout): for each KV head the rows are its q_per_kv query heads followed by one K and one V, not three contiguous Q/K/V blocks.
         num_groups = num_heads // q_per_kv
 
         if bid is not None and f"model.layers.{bid}.attention.wqkv" in name:
@@ -196,6 +199,7 @@ class InternLM2Model(TextModel):
 
             # Q and K additionally need the rotary un-permutation.
             # The model weights of q and k equire additional reshape.
+            # InternLM2 stores Q/K in the HF-Llama rotary layout, so the same permutation Llama conversion uses is applied to match llama.cpp's expected RoPE pairing; K uses the KV head count.
             q = LlamaModel.permute(q.reshape((-1, q.shape[-1])), num_heads, num_heads)
             k = LlamaModel.permute(k.reshape((-1, k.shape[-1])), num_heads, num_kv_heads)
             v = v.reshape((-1, v.shape[-1]))
