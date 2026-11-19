@@ -679,13 +679,11 @@ class _ModelCompareThread(QThread):
 
     # ── helpers ───────────────────────────────────────────────────────────────
 
-    # NOTE: the annotation and docstring promise four values but the function returns
-    # three (gen_count, gen_tps, think_sec); the caller unpacks three.
-    def _stream(self, llm, prompt: str, token_signal: pyqtSignal) -> tuple[int, float, float, int]:
+    def _stream(self, llm, prompt: str, token_signal: pyqtSignal) -> tuple[int, float, float]:
         """
         Run one streaming inference pass.
 
-        Returns (gen_tokens, gen_tps, thinking_time_secs, n_ctx_used).
+        Returns (gen_tokens, gen_tps, thinking_time_secs).
         thinking_time_secs is the wall-clock seconds from generation start
         until the first ``</think>`` tag is observed in the output stream.
         """
@@ -1468,16 +1466,21 @@ class PromptLabWorkspace(QWidget):
     # tokenizer input and index 2 the comparison prompt.
     def focus_primary_input(self) -> bool:
         # Step 1: Validate input parameters, operational preconditions, and state
-        if self._main_tabs.currentIndex() == 0:
+        # Tab order: 0 playground, 1 diff, 2 tokenizer, 3 comparison, 4 optimize.
+        idx = self._main_tabs.currentIndex()
+        if idx == 0:
             self._col_a._user_edit.setFocus()
             return True
-        if self._main_tabs.currentIndex() == 1:
+        if idx == 2:
             self._tok_input.setFocus()
             return True
-        if self._main_tabs.currentIndex() == 2:
+        if idx == 3:
             self._cmp_user.setFocus()
             return True
-        self._pair_search.setFocus()
+        if idx == 4:
+            self._pair_search.setFocus()
+            return True
+        # The diff tab has no text input, so there is nothing to focus.
         return True
 
     def _run_column(self, label: str, _user_text: str):
