@@ -9,6 +9,14 @@
 
 """Inference safety tests for model locking, stream cleanup, and offline mode."""
 
+# What is under test: the safety rules around the native llama.cpp model (app/engine/model_loader.py), the generation
+# threads (llm_thread.py, agentic_thread.py) and the offline guard (offline_guard.py).
+#   * The model is a process-wide singleton; swapping or freeing it while a generation streams would crash the native library,
+#     so ModelLoader keeps an active-generation counter and a lock flag and refuses unsafe changes with RuntimeError.
+#   * Streaming generators wrap native iterators that must be closed on cancel, or the C++ side keeps running.
+#   * Karl is offline-first: external HTTP must fail loudly unless KARL_ONLINE_EXECUTION is set.
+# No real model is loaded: ModelLoader class attributes are set by hand and restored in `finally`, and the "llama"
+# objects are tiny fakes. Run: python -m pytest tests/test_inference_safety.py -q
 from __future__ import annotations
 
 import io
@@ -21,11 +29,16 @@ def test_model_reset_blocked_during_active_generation():
     """ModelLoader.reset_instance() must refuse (RuntimeError) while a generation is active; freeing the model under a running stream would crash the native library."""
     from app.engine.model_loader import ModelLoader
 
+    # ModelLoader state is class-level (shared by every test in the process), so each test saves the values it touches and
+    # restores them in `finally`; otherwise one failing test would leave the loader "locked" for all the others.
     original_count = ModelLoader._active_generation_count
     original_locked = ModelLoader._instance_locked
     try:
+        # Simulate "one generation is streaming right now" without starting one.
         ModelLoader._active_generation_count = 1
         ModelLoader._instance_locked = True
+
+        # The message is part of the contract: the UI shows it to the user, so the test matches on text rather than just the type.
         with pytest.raises(RuntimeError, match="Cannot reset ModelLoader while inference is active"):
             ModelLoader.reset_instance()
     finally:
@@ -44,6 +57,7 @@ def test_model_reload_or_adapter_change_blocked_during_active_generation():
     original_adapter = getattr(ModelLoader, "_active_adapter", None)
     original_offloaded = getattr(ModelLoader, "_adapter_offloaded", False)
     try:
+        # A dummy object stands in for the loaded Llama so get_instance() believes a model is already resident.
         ModelLoader._instance = object()
         ModelLoader._model_path = "data/models/current.gguf"
         ModelLoader._active_adapter = None
@@ -52,10 +66,12 @@ def test_model_reload_or_adapter_change_blocked_during_active_generation():
         ModelLoader._instance_locked = True
 
         with pytest.raises(RuntimeError, match="Cannot reload model or change adapter"):
+            # Different path than the resident model = a reload request; it must be refused while the counter is above zero.
             ModelLoader.get_instance(model_path="data/models/other.gguf")
 
         with pytest.raises(RuntimeError, match="Cannot reload model or change adapter"):
             ModelLoader.get_instance(
+                # Same model path but a new adapter is the second forbidden case (adapters are applied to the live model).
                 model_path="data/models/current.gguf",
                 adapter_name="new-adapter",
             )
@@ -83,8 +99,11 @@ def test_failed_acquire_does_not_release_existing_generation():
         ModelLoader._instance_locked = True
 
         with pytest.raises(RuntimeError, match="Cannot reload model or change adapter"):
+            # acquire_instance increments the counter only after it has decided the request is allowed; a refusal must leave the
+            # counters of the running generation untouched, which the asserts below check.
             ModelLoader.acquire_instance(model_path="data/models/other.gguf")
 
+        # If the failed call had decremented or unlocked, the still-running generation would lose its protection.
         assert ModelLoader._active_generation_count == 1
         assert ModelLoader._instance_locked is True
     finally:
@@ -98,6 +117,7 @@ def test_offline_guard_blocks_external_http_by_default(monkeypatch):
     """The offline guard raises OfflineNetworkError for external URLs by default; Karl is offline-first."""
     from app.engine.offline_guard import OfflineNetworkError, assert_online_allowed
 
+    # Remove the opt-in variable so the test checks the default (blocked) behaviour whatever the developer's shell has set.
     monkeypatch.delenv("KARL_ONLINE_EXECUTION", raising=False)
     with pytest.raises(OfflineNetworkError):
         assert_online_allowed("https://huggingface.co/models", operation="test request")
@@ -108,6 +128,8 @@ def test_offline_guard_allows_localhost_by_default(monkeypatch):
     from app.engine.offline_guard import assert_online_allowed
 
     monkeypatch.delenv("KARL_ONLINE_EXECUTION", raising=False)
+
+    # Loopback hosts are exempt because the WebSocket bridge and local tools talk over localhost.
     assert_online_allowed("http://127.0.0.1:8080/status", operation="local test request")
     assert_online_allowed("ws://localhost:8080", operation="local websocket")
 
@@ -116,6 +138,7 @@ def test_offline_guard_env_allows_external(monkeypatch):
     """An explicit environment opt-in lifts the block on external hosts."""
     from app.engine.offline_guard import assert_online_allowed
 
+    # The explicit opt-in used by the download scripts; monkeypatch restores the environment afterwards.
     monkeypatch.setenv("KARL_ONLINE_EXECUTION", "1")
     assert_online_allowed("https://huggingface.co/models", operation="test request")
 
@@ -127,6 +150,7 @@ def test_requests_external_call_is_blocked_before_network(monkeypatch):
 
     monkeypatch.delenv("KARL_ONLINE_EXECUTION", raising=False)
     with pytest.raises(OfflineNetworkError):
+        # The tiny timeout is a safety net: if the guard failed, the call would still end quickly instead of hanging the suite.
         requests.get("https://huggingface.co/models", timeout=0.01)
 
 
@@ -134,6 +158,7 @@ def test_agentic_stream_generator_closes_on_cancel():
     """When an agentic generation is cancelled the stream generator is closed, releasing the native llama iterator."""
     from app.engine.agentic_thread import AgenticThread
 
+    # Fake of the iterator llama-cpp returns for stream=True: it yields chunk dicts and has close() like a generator.
     class FakeStream:
         """Fake token stream that records close()."""
         def __init__(self):
@@ -142,6 +167,7 @@ def test_agentic_stream_generator_closes_on_cancel():
 
         def __iter__(self):
             """Yield a single chunk."""
+            # Chunk shape copied from llama-cpp-python's completion stream (choices[0].text and finish_reason).
             yield {"choices": [{"text": "ignored", "finish_reason": None}]}
 
         def close(self):
@@ -158,6 +184,7 @@ def test_agentic_stream_generator_closes_on_cancel():
             """Return the fake stream."""
             return self.stream
 
+        # The thread tokenizes text to count tokens; returning one token is enough for these assertions.
         def tokenize(self, data, add_bos=False):
             """Trivial tokenizer (one token per byte)."""
             return [1]
@@ -168,10 +195,13 @@ def test_agentic_stream_generator_closes_on_cancel():
         initial_history=[],
         hyperparams={"max_tokens": 8},
     )
+
+    # The stop flag is set before generation starts, so the very first chunk triggers the cancellation path.
     thread.request_stop()
 
     thread._run_single_generation(llm, "prompt", io.StringIO())
 
+    # Closing matters because the native iterator holds GPU/CPU state until it is closed or exhausted.
     assert llm.stream.closed
 
 
@@ -210,6 +240,7 @@ def test_agentic_adapter_direct_answer_routes_to_chat_tokens():
 
     original_adapter = getattr(ModelLoader, "_active_adapter", None)
     try:
+        # With an adapter loaded the model may answer without <think> tags; the thread must then treat the text as the answer.
         ModelLoader._active_adapter = "test-adapter"
         llm = FakeLLM()
         thread = AgenticThread(
@@ -229,6 +260,8 @@ def test_agentic_adapter_direct_answer_routes_to_chat_tokens():
         assert first_token_time is not None
         assert thought == ""
         assert response == "Direct answer."
+
+        # Nothing may appear in the reasoning pane: that would show answer text as chain-of-thought.
         assert thought_tokens == []
         assert chat_tokens == ["Direct answer."]
         assert llm.stream.closed
@@ -245,10 +278,14 @@ def test_agentic_repetition_guard_detects_near_duplicate_responses():
         initial_history=[],
         hyperparams={"max_tokens": 8},
     )
+
+    # Identical text three times: an obvious loop the agentic thread should detect and stop.
     previous = "This answer repeats the same planning details and conclusion. " * 3
     current = "This answer repeats the same planning details and conclusion. " * 3
 
     assert thread._is_repetitive_response(previous, current)
+
+    # Negative case: a legitimately different answer must not be flagged, or the agent would be cut off early.
     assert not thread._is_repetitive_response(previous, "Short but different.")
 
 
@@ -261,6 +298,8 @@ def test_llm_thread_request_stop_sets_flag():
         chat_history=[],
         hyperparams={"max_tokens": 8},
     )
+
+    # The flag starts False so a fresh thread is never born cancelled.
     assert not thread._stop_requested
     thread.request_stop()
     assert thread._stop_requested
@@ -282,6 +321,8 @@ def test_llm_thread_stop_flag_prevents_generation():
             close_calls.append(True)
 
     # Verify the finally-close pattern directly without running the full thread.
+    # This test reproduces the try/finally pattern from the generation loop directly (without running the full thread) to prove
+    # that a cancellation `break` still calls close().
     finish_reason = "stop"
     stop_requested = True
     stream = FakeStream()
@@ -303,6 +344,7 @@ def test_active_generation_count_increments_and_decrements():
     """acquire/release adjust the active-generation counter and the loader is locked exactly while the count is above zero (nested generations count)."""
     from app.engine.model_loader import ModelLoader
 
+    # Counts are nested: two overlapping generations need two unlock calls before the model may be changed.
     original_count = ModelLoader._active_generation_count
     original_locked = ModelLoader._instance_locked
     try:
