@@ -34,12 +34,18 @@ from app.utils.swarm_agent_profiles import (
 logger = logging.getLogger("karl.agent_profile_studio")
 
 
+# Editing flow: pick a profile in the list -> fields load into the form ->
+# Save validates the ID and writes via save_agent_profile(). Built-in profiles
+# have a read-only ID so their key cannot be renamed.
 class AgentProfileStudioWorkspace(QWidget):
     """Visual workspace for managing and synchronizing swarm agent profiles."""
 
+    # Emitted with the profile id after a successful save so other views (e.g. the
+    # swarm studio) can refresh their role lists.
     profile_saved = pyqtSignal(str)  # Emits profile name when saved
 
     def __init__(self, state: Any, parent: QWidget | None = None):
+        """Build the UI and load profiles from disk. `state` is the shared AppState."""
         # Step 1: Validate input parameters, operational preconditions, and state
         super().__init__(parent)
         self._state = state
@@ -49,11 +55,13 @@ class AgentProfileStudioWorkspace(QWidget):
         self._load_profiles()
 
     def _init_ui(self):
+        """Create the left profile list and the right-hand editor form (2:1 width ratio)."""
         # Step 1: Validate input parameters, operational preconditions, and state
         layout = QHBoxLayout(self)
         layout.setContentsMargins(12, 12, 12, 12)
         layout.setSpacing(12)
 
+        # Profile list plus the 'New Specialist' button.
         # Left panel: list of profiles
         left_panel = QWidget()
         left_layout = QVBoxLayout(left_panel)
@@ -70,6 +78,7 @@ class AgentProfileStudioWorkspace(QWidget):
         
         layout.addWidget(left_panel, 1)
 
+        # Editor: identity fields, generation parameters, permissions, buttons.
         # Right panel: Profile Editor
         self._editor_panel = QGroupBox("Profile Editor")
         editor_layout = QVBoxLayout(self._editor_panel)
@@ -89,12 +98,15 @@ class AgentProfileStudioWorkspace(QWidget):
         self._prompt_input.setPlaceholderText("Instructions for the model guiding this role...")
         form_layout.addRow("System Instructions:", self._prompt_input)
 
+        # Temperature range 0-2 in 0.1 steps (typical sampling range).
         self._temp_spin = QDoubleSpinBox()
         self._temp_spin.setRange(0.0, 2.0)
         self._temp_spin.setSingleStep(0.1)
         self._temp_spin.setValue(0.7)
         form_layout.addRow("Temperature:", self._temp_spin)
 
+        # Despite the 'Max Tokens Limit' label this is stored as `context_limit`
+        # in the profile (see _on_save_profile).
         self._tokens_spin = QSpinBox()
         self._tokens_spin.setRange(256, 8192)
         self._tokens_spin.setSingleStep(256)
@@ -103,6 +115,8 @@ class AgentProfileStudioWorkspace(QWidget):
 
         editor_layout.addLayout(form_layout)
 
+        # Each checkbox maps to a tool key in the profile's `tools` dict; see
+        # _permission_checkboxes. They gate what the specialist agent may do in a swarm run.
         # Permissions Group
         perm_group = QGroupBox("Allowed Specialist Permissions")
         perm_layout = QVBoxLayout(perm_group)
@@ -117,6 +131,7 @@ class AgentProfileStudioWorkspace(QWidget):
         perm_layout.addWidget(self._chk_rag)
         editor_layout.addWidget(perm_group)
 
+        # Revert reloads the stored profile; Save validates and persists.
         # Save/Revert Buttons
         btn_layout = QHBoxLayout()
         self._btn_revert = QPushButton("Revert")
@@ -130,6 +145,8 @@ class AgentProfileStudioWorkspace(QWidget):
         editor_layout.addLayout(btn_layout)
         layout.addWidget(self._editor_panel, 2)
 
+    # Block list signals while repopulating, otherwise every addItem/clear would
+    # fire _on_profile_selected and reload the form repeatedly.
     def _load_profiles(self):
         """Loads profiles from JSON and populates the list widget."""
         # Step 1: Validate input parameters, operational preconditions, and state
@@ -145,6 +162,8 @@ class AgentProfileStudioWorkspace(QWidget):
         if self._list_widget.count() > 0:
             self._list_widget.setCurrentRow(0)
 
+    # The profile id is kept in the item's data (role 256 == Qt.UserRole) because
+    # the displayed label is 'icon name' and cannot be used as a key.
     def _on_profile_selected(self, index: int):
         """Populates form controls with the selected profile settings."""
         # Step 1: Validate input parameters, operational preconditions, and state
@@ -155,6 +174,9 @@ class AgentProfileStudioWorkspace(QWidget):
         self._current_id = profile_id
         self._load_profile_into_form(profile_id)
 
+    # New profiles start with the ID editable, empty text and no permissions
+    # (least privilege). Temperature defaults to 0.2 here, unlike the 0.7 initial
+    # value of the spin box.
     def _on_new_profile(self):
         """Clears the editor form to create a new profile configuration."""
         # Step 1: Validate input parameters, operational preconditions, and state
@@ -171,6 +193,7 @@ class AgentProfileStudioWorkspace(QWidget):
             # Iterate over items, evaluate loop invariant, and update progress
             checkbox.setChecked(False)
 
+    # Revert means: reload the stored profile if one is selected, else blank form.
     def _on_revert_profile(self):
         """Discards current unsaved edits in the editor panel."""
         # Step 1: Validate input parameters, operational preconditions, and state
@@ -179,6 +202,8 @@ class AgentProfileStudioWorkspace(QWidget):
         else:
             self._on_new_profile()
 
+    # Validation: the ID must match PROFILE_ID_RE (starts with a letter; letters,
+    # digits, '_' or '-'). Missing name/icon fall back to the ID / its first letter.
     def _on_save_profile(self):
         """Serializes current editor values and saves to JSON."""
         # Step 1: Validate input parameters, operational preconditions, and state
@@ -199,10 +224,12 @@ class AgentProfileStudioWorkspace(QWidget):
         }
         try:
             # Execute guarded operations and establish recovery boundaries
+            # Any storage error is shown to the user rather than raised from a slot.
             saved = save_agent_profile(profile_id, profile)
         except Exception as exc:
             QMessageBox.warning(self, "Agent Profiles", f"Failed to save profile: {exc}")
             return
+        # Reload the list (sorted order may change), then re-select the saved row.
         self._profiles[profile_id] = saved
         self._current_id = profile_id
         self._load_profiles()
@@ -214,6 +241,7 @@ class AgentProfileStudioWorkspace(QWidget):
         self.profile_saved.emit(profile_id)
 
     def _permission_checkboxes(self) -> dict[str, QCheckBox]:
+        """Map profile `tools` keys to their checkboxes (single source of truth for load/save)."""
         # Step 1: Validate input parameters, operational preconditions, and state
         return {
             "read_files": self._chk_read,
@@ -223,6 +251,11 @@ class AgentProfileStudioWorkspace(QWidget):
         }
 
     def _load_profile_into_form(self, profile_id: str):
+        """Fill every editor control from the stored profile `profile_id`.
+
+        Built-in profiles get a read-only ID field; missing values use safe defaults
+        (temperature 0.2, limit 2048, no permissions).
+        """
         # Step 1: Validate input parameters, operational preconditions, and state
         profile = self._profiles.get(profile_id)
         if not profile:
