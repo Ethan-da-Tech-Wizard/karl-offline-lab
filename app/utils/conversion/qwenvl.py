@@ -7,6 +7,19 @@
 #          and writes compliant GGUF data structures for llama.cpp.
 # ==============================================================================
 
+"""HuggingFace-to-GGUF conversion support for the 'qwenvl' model family.
+
+Converter classes here are generally registered with ModelBase under HF architecture names;
+they write GGUF metadata (set_gguf_parameters), the vocabulary (set_vocab)
+and remap or reshape tensors (modify_tensors) for llama.cpp.
+
+Classes:
+  Qwen2VLModel - Text converter for Qwen2-VL / Qwen2.5-VL / Qwen2.5-Omni (multimodal RoPE).
+  Qwen2VLVisionModel - Vision (mmproj) converter for Qwen2-VL and Qwen2.5-VL.
+  Qwen25AudioModel - Audio encoder converter (Whisper-like) for Qwen2.5-Omni and Qwen3-Omni audio towers.
+  Qwen25OmniModel - Combined vision + audio mmproj converter for Qwen2.5-Omni.
+"""
+
 from __future__ import annotations
 
 from typing import Any, Callable, Iterable, TYPE_CHECKING

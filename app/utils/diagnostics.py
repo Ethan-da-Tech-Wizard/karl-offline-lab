@@ -40,14 +40,19 @@ import sys
 from datetime import datetime, timezone
 from typing import Any
 
+# Where the machine-readable report is written, and the 4-byte magic every valid GGUF file starts with.
 _REPORT_PATH = "data/logs/diagnostics_report.json"
 _GGUF_MAGIC = b"GGUF"
 
+# Colours are used only when stdout is a terminal, so piped or logged output stays plain text.
 # ── ANSI helpers ──────────────────────────────────────────────────────────────
+# Evaluated once at import time.
 _USE_ANSI = sys.stdout.isatty()
 
 
 def _c(code: str, s: str) -> str:
+    """Wrap s in an ANSI escape sequence (code) when colour output is enabled, else return it unchanged.
+    """
     # Step 1: Validate input parameters, operational preconditions, and state
     return f"\033[{code}m{s}\033[0m" if _USE_ANSI else s
 
@@ -66,18 +71,22 @@ def _bold(s: str) -> str:   return _c("1", s)
 def _dim(s: str) -> str:    return _c("2", s)
 
 
+# _green/_red/_yellow/_cyan/_bold/_dim are one-line wrappers around _c.
+# Pre-coloured status badges used by the table rows.
 _OK   = _green("[OK  ]")
 _WARN = _yellow("[WARN]")
 _FAIL = _red("[FAIL]")
 
 
 def _row(badge: str, label: str, detail: str = "") -> str:
+    """Format one table row: badge, label padded to 30 columns, then optional detail."""
     # Step 1: Validate input parameters, operational preconditions, and state
     return f"  {badge} {label:<30} {detail}".rstrip()
 
 
 # ── 1. Dependency Audit ───────────────────────────────────────────────────────
 
+# Packages to audit: (display name, module to import, attribute holding its version).
 _PACKAGES: list[tuple[str, str, str]] = [
     # (display_name, importable_module,   version_attr_on_module)
     ("PyQt6",                "PyQt6.QtCore",          "PYQT_VERSION_STR"),
@@ -86,10 +95,13 @@ _PACKAGES: list[tuple[str, str, str]] = [
     ("faiss",                "faiss",                 "__version__"),
 ]
 
+# Only these packages cause a failing exit code when missing; others (e.g. faiss) just warn.
 _CRITICAL_DEPS = {"PyQt6", "llama_cpp"}
 
 
 def _metadata_version(name: str) -> str | None:
+    """Look up an installed version through package metadata, trying common name variants (underscore/hyphen, -cpu, -gpu builds).
+    """
     # Step 1: Validate input parameters, operational preconditions, and state
     for candidate in (name, name.replace("_", "-"),
                       name + "-cpu", name + "-gpu"):
@@ -103,6 +115,8 @@ def _metadata_version(name: str) -> str | None:
 
 
 def check_dependencies() -> dict[str, Any]:
+    """Try importing each audited package; return per-package status and version or the import error.
+    """
     # Step 1: Validate input parameters, operational preconditions, and state
     results: dict[str, Any] = {}
     for display, module_path, attr in _PACKAGES:
@@ -110,6 +124,7 @@ def check_dependencies() -> dict[str, Any]:
         try:
             # Execute guarded operations and establish recovery boundaries
             mod = importlib.import_module(module_path)
+            # Prefer the module's own version attribute, then package metadata, else 'unknown'.
             version = getattr(mod, attr, None) or _metadata_version(display) or "unknown"
             results[display] = {"status": "ok", "version": str(version)}
         except ImportError as exc:
@@ -120,6 +135,7 @@ def check_dependencies() -> dict[str, Any]:
 # ── 2. Hardware Capability Scout ─────────────────────────────────────────────
 
 def _linux_cpu_flags() -> set[str]:
+    """Return the CPU feature flags listed in /proc/cpuinfo (empty set if unavailable)."""
     # Step 1: Validate input parameters, operational preconditions, and state
     try:
         # Execute guarded operations and establish recovery boundaries
@@ -134,6 +150,7 @@ def _linux_cpu_flags() -> set[str]:
 
 
 def _macos_sysctl(key: str) -> str:
+    """Return the output of `sysctl -n key`, or '' on any failure (3 second timeout)."""
     # Step 1: Validate input parameters, operational preconditions, and state
     try:
         # Execute guarded operations and establish recovery boundaries
@@ -147,6 +164,8 @@ def _macos_sysctl(key: str) -> str:
 
 
 def check_hardware() -> dict[str, Any]:
+    """Detect CPU SIMD support (AVX2/AVX-512/FMA) and GPU backends (CUDA, Metal) visible to PyTorch.
+    """
     # Step 1: Validate input parameters, operational preconditions, and state
     plat = platform.system()
     result: dict[str, Any] = {"platform": plat}
@@ -167,6 +186,7 @@ def check_hardware() -> dict[str, Any]:
             "fma":    _macos_sysctl("hw.optional.fma")    == "1",
         }
     else:
+        # Windows would need a cpuid query; report None (unknown) rather than a false negative.
         # Windows: would need cpuid; skip gracefully
         cpu_flags = {"avx2": None, "avx512": None, "fma": None}
     result["cpu_flags"] = cpu_flags
@@ -175,6 +195,7 @@ def check_hardware() -> dict[str, Any]:
     gpu_info: dict[str, Any] = {}
     try:
         # Execute guarded operations and establish recovery boundaries
+        # Imported here, not at module level, so diagnostics still run when torch is not installed.
         import torch  # noqa: PLC0415
         cuda_ok = torch.cuda.is_available()
         gpu_info["torch_cuda"] = {
@@ -196,6 +217,7 @@ def check_hardware() -> dict[str, Any]:
 # ── 3. Model Verification ─────────────────────────────────────────────────────
 
 def _read_active_filename() -> str | None:
+    """Return the active model filename from data/active_model.json, or None."""
     # Step 1: Validate input parameters, operational preconditions, and state
     try:
         # Execute guarded operations and establish recovery boundaries
@@ -206,6 +228,8 @@ def _read_active_filename() -> str | None:
 
 
 def _gguf_magic_ok(path: str) -> bool:
+    """True if the file begins with the GGUF magic bytes (a cheap corruption check, not a full parse).
+    """
     # Step 1: Validate input parameters, operational preconditions, and state
     try:
         # Execute guarded operations and establish recovery boundaries
@@ -216,6 +240,8 @@ def _gguf_magic_ok(path: str) -> bool:
 
 
 def check_models() -> dict[str, Any]:
+    """Inspect data/models/: list GGUF files with size and magic check, and confirm the active model exists.
+    """
     # Step 1: Validate input parameters, operational preconditions, and state
     models_dir = "data/models"
     active_filename = _read_active_filename()
@@ -265,6 +291,8 @@ def check_models() -> dict[str, Any]:
 # ── 4. Network Port Audit ─────────────────────────────────────────────────────
 
 def check_port(port: int = 8080) -> dict[str, Any]:
+    """Check whether a local TCP port can be bound (i.e. is free). Binding rather than connecting avoids touching any service already running there.
+    """
     # Step 1: Validate input parameters, operational preconditions, and state
     try:
         # Execute guarded operations and establish recovery boundaries
@@ -292,6 +320,7 @@ def _render(report: dict[str, Any]) -> bool:
     print(_bold("  Karl Startup Diagnostics"))
     print(header_bar)
 
+    # Only missing critical dependencies, a missing active model and corrupt GGUF files are critical.
     critical_failures: list[str] = []
 
     # ── Dependencies ─────────────────────────────────────────────────────────
@@ -412,6 +441,7 @@ def run_diagnostics() -> int:
             "dependencies": check_dependencies(),
             "hardware":     check_hardware(),
             "models":       check_models(),
+            # 8080 matches the default WebSocket port named in the module docstring.
             "network":      check_port(8080),
         },
     }
@@ -421,6 +451,7 @@ def run_diagnostics() -> int:
 
     try:
         # Execute guarded operations and establish recovery boundaries
+        # Failure to write the report is reported to stderr but does not change the exit code.
         os.makedirs(os.path.dirname(_REPORT_PATH), exist_ok=True)
         with open(_REPORT_PATH, "w", encoding="utf-8") as fh:
             json.dump(report, fh, indent=2, ensure_ascii=False)

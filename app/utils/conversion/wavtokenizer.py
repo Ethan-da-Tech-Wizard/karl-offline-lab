@@ -7,6 +7,16 @@
 #          and writes compliant GGUF data structures for llama.cpp.
 # ==============================================================================
 
+"""HuggingFace-to-GGUF conversion support for the 'wavtokenizer' model family.
+
+Converter classes here are generally registered with ModelBase under HF architecture names;
+they write GGUF metadata (set_gguf_parameters), the vocabulary (set_vocab)
+and remap or reshape tensors (modify_tensors) for llama.cpp.
+
+Classes:
+  WavTokenizerDecModel - Converter for the WavTokenizer decoder (audio codec: PosNet + ConvNeXt blocks).
+"""
+
 from __future__ import annotations
 
 from typing import Callable, TYPE_CHECKING

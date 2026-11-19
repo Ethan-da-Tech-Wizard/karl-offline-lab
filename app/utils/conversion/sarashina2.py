@@ -7,6 +7,17 @@
 #          and writes compliant GGUF data structures for llama.cpp.
 # ==============================================================================
 
+"""HuggingFace-to-GGUF conversion support for the 'sarashina2' model family.
+
+Converter classes here are generally registered with ModelBase under HF architecture names;
+they write GGUF metadata (set_gguf_parameters), the vocabulary (set_vocab)
+and remap or reshape tensors (modify_tensors) for llama.cpp.
+
+Classes:
+  Sarashina2VLTextModel - Text converter for Sarashina2-Vision (llama architecture under an 'llm.' prefix).
+  Sarashina2VLVisionModel - Vision converter for Sarashina2-Vision, which reuses the Qwen2-VL tower.
+"""
+
 from __future__ import annotations
 
 from typing import Callable, TYPE_CHECKING

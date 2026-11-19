@@ -7,6 +7,27 @@
 #          and writes compliant GGUF data structures for llama.cpp.
 # ==============================================================================
 
+"""HuggingFace-to-GGUF conversion support for the 'qwen' model family.
+
+Converter classes here are generally registered with ModelBase under HF architecture names;
+they write GGUF metadata (set_gguf_parameters), the vocabulary (set_vocab)
+and remap or reshape tensors (modify_tensors) for llama.cpp.
+
+Classes:
+  QwenModel - Converter for the original Qwen (v1, QWenLMHeadModel) with its tiktoken-style tokenizer.
+  Qwen2Model - Converter for Qwen2 and the many models sharing its architecture (audio, OCR, KORMo variants).
+  Qwen2MoeModel - Converter for Qwen2-MoE; merges per-expert tensors into stacked 3D tensors.
+  Qwen3Model - Converter for Qwen3, including Qwen3 reranker models (classification head from yes/no tokens).
+  Qwen3MoeModel - Converter for Qwen3-MoE.
+  Qwen3NextModel - Converter for Qwen3-Next: hybrid full attention and gated-delta-net linear attention with MoE.
+  RND1Model - Converter for RND1 (bidirectional MoE diffusion-style model built on Qwen2-MoE).
+  _LinearAttentionVReorderBase - Shared base for Qwen3.5-family models; reorders linear-attention V heads for ggml broadcasting.
+  _Qwen35MRopeMixin - Mixin that guarantees rope dimension sections are written for Qwen3.5 interleaved MRoPE.
+  _Qwen35MtpMixin - Shared MTP wiring for Qwen3.5/3.6 text variants. The HF config carries
+  Qwen3_5TextModel - Qwen3.5 dense text model with MTP, MRoPE defaults and V-head reordering.
+  Qwen3_5MoeTextModel - Qwen3.5 MoE text model with MTP, MRoPE defaults and V-head reordering.
+"""
+
 from __future__ import annotations
 
 from typing import Any, Callable, Iterable, TYPE_CHECKING

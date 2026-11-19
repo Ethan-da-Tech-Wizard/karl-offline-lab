@@ -7,6 +7,17 @@
 #          and writes compliant GGUF data structures for llama.cpp.
 # ==============================================================================
 
+"""HuggingFace-to-GGUF conversion support for the 'mistral' model family.
+
+Converter classes here are generally registered with ModelBase under HF architecture names;
+they write GGUF metadata (set_gguf_parameters), the vocabulary (set_vocab)
+and remap or reshape tensors (modify_tensors) for llama.cpp.
+
+Classes:
+  MistralModel - Converter for native Mistral-format checkpoints (params.json + consolidated weights).
+  MistralMoeModel - Converter for Mistral MoE checkpoints, reusing the DeepseekV2 logic via key remapping.
+"""
+
 from __future__ import annotations
 
 from pathlib import Path
@@ -157,7 +168,6 @@ class MistralMoeModel(DeepseekV2Model):
         # ref: https://github.com/vllm-project/vllm/blob/b294e28db2c5dee61bc25157664edcada8b90b31/vllm/transformers_utils/configs/mistral.py
         # remap hparams from Mistral MoE format to DeepseekV2 format
         # we do this way to be able to reuse DeepseekV2Model set_gguf_parameters logic
-        # ref: https://github.com/vllm-project/vllm/blob/b294e28db2c5dee61bc25157664edcada8b90b31/vllm/transformers_utils/configs/mistral.py
         config = self.hparams
         # Mistral key -> HF key
         config_mapping = {

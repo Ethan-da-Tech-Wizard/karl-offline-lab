@@ -7,6 +7,19 @@
 #          and writes compliant GGUF data structures for llama.cpp.
 # ==============================================================================
 
+"""HuggingFace-to-GGUF conversion support for the 'minicpm' model family.
+
+Converter classes here are generally registered with ModelBase under HF architecture names;
+they write GGUF metadata (set_gguf_parameters), the vocabulary (set_vocab)
+and remap or reshape tensors (modify_tensors) for llama.cpp.
+
+Classes:
+  MiniCPMModel - Converter for MiniCPM (llama-like dense model with extra scaling factors).
+  MiniCPM3Model - Converter for MiniCPM3, which uses DeepSeek-style latent (MLA) attention.
+  MiniCPMV4_6TextModel - Language-model half of MiniCPM-V 4.6 (Qwen3.5 hybrid-attention text tower).
+  MiniCPMV4_6VisionModel - Vision (mmproj) half of MiniCPM-V 4.6: SigLIP body plus ViT and final mergers.
+"""
+
 from __future__ import annotations
 
 from typing import Callable, Iterable, TYPE_CHECKING

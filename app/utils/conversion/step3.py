@@ -7,6 +7,18 @@
 #          and writes compliant GGUF data structures for llama.cpp.
 # ==============================================================================
 
+"""HuggingFace-to-GGUF conversion support for the 'step3' model family.
+
+Converter classes here are generally registered with ModelBase under HF architecture names;
+they write GGUF metadata (set_gguf_parameters), the vocabulary (set_vocab)
+and remap or reshape tensors (modify_tensors) for llama.cpp.
+
+Classes:
+  Step3VLVisionModel - Vision (mmproj) converter for Step3-VL; validated only for the Step3-VL-10B configuration.
+  Step3VLTextModel - Text converter for Step3-VL; the language model is a plain Qwen3.
+  Step35Model - Converter for Step-3.5 MoE with per-layer sliding-window/full attention and shared experts.
+"""
+
 from __future__ import annotations
 
 import math

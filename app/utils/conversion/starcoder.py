@@ -7,6 +7,17 @@
 #          and writes compliant GGUF data structures for llama.cpp.
 # ==============================================================================
 
+"""HuggingFace-to-GGUF conversion support for the 'starcoder' model family.
+
+Converter classes here are generally registered with ModelBase under HF architecture names;
+they write GGUF metadata (set_gguf_parameters), the vocabulary (set_vocab)
+and remap or reshape tensors (modify_tensors) for llama.cpp.
+
+Classes:
+  StarCoderModel - Converter for StarCoder (GPT-BigCode, multi-query attention).
+  StarCoder2Model - Converter for StarCoder2; the base class handles everything.
+"""
+
 from __future__ import annotations
 
 from .base import ModelBase, TextModel, gguf

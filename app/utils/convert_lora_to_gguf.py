@@ -10,6 +10,13 @@
 # ==============================================================================
 
 
+"""Convert a Hugging Face PEFT LoRA adapter to a GGUF adapter file for llama.cpp.
+
+Classes:
+  PartialLoraTensor - Holds the A and B halves of one LoRA pair while the checkpoint is scanned (either may arrive first).
+  LoraTorchTensor - Lazy low-rank tensor representing the weight delta W = B @ A.
+"""
+
 from __future__ import annotations
 
 from dataclasses import dataclass
@@ -534,10 +541,6 @@ if __name__ == '__main__':
                     # the invocation string includes the "<|start_of_turn|>"
                     # token, but the adapters themselves were trained to
                     # activate _after_ that first token, so we drop it here.
-                    # NOTE: There's an off-by-one with the older aLoRAs where
-                    # the invocation string includes the "<|start_of_turn|>"
-                    # token, but the adapters themselves were trained to
-                    # activate _after_ that first token, so we drop it here.
                     alora_invocation_tokens = tokenizer(invocation_string)["input_ids"][1:]  # ty: ignore[call-non-callable]
                 if alora_invocation_tokens:
                     logger.debug("GGUF KV: %s = %s", gguf.Keys.Adapter.ALORA_INVOCATION_TOKENS, alora_invocation_tokens)
@@ -579,7 +582,6 @@ if __name__ == '__main__':
                         if ".base_layer.weight" in name:
                             continue
                         # mergekit-extract-lora add these layernorm to the adapter, we need to keep them
-                        # mergekit-extract-lora add these layernorm to the adapter, we need to keep them
                         if "_layernorm" in name or ".norm" in name:
                             yield (base_name, tensor)
                             continue
@@ -617,7 +619,6 @@ if __name__ == '__main__':
                 # some archs may have the same tensor for lm_head and output (tie word embeddings)
                 # in this case, adapters targeting lm_head will fail when using llama-export-lora
                 # therefore, we ignore them for now
-                # see: https://github.com/ggml-org/llama.cpp/issues/9065
                 if name == "lm_head.weight" and len(dest) == 0:
                     raise ValueError("lm_head is present in adapter, but is ignored in base model")
                 for dest_name, dest_data in dest:
