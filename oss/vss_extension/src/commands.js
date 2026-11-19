@@ -27,6 +27,8 @@ const { execGit } = require('./gitOps');
 const WORKFLOW_REGISTRY = {
     // Code-selection workflows (open the chat tab).
     fixSelection: {
+        // Despite the id, the title and prompt say "Refactor": the id is kept stable because
+        // package.json commands and saved keybindings refer to it.
         id: 'fixSelection',
         title: 'Refactor Selection',
         description: 'Refactor code selection for clarity, safety, and maintainability.',
@@ -46,6 +48,8 @@ const WORKFLOW_REGISTRY = {
     },
     // File-level workflows (open the swarm tab): they send the whole active file.
     generateTests: {
+        // Whole-file workflows go to the swarm tab because they may touch more than one file,
+        // unlike the selection workflows which stay in single-turn chat.
         id: 'generateTests',
         title: 'Generate Tests',
         description: 'Generate unit tests for the active file.',
@@ -71,6 +75,8 @@ const WORKFLOW_REGISTRY = {
     },
     // Git workflows: ``code`` is filled with git output instead of editor text.
     reviewStagedDiff: {
+        // The three diff-review workflows differ only in the git command run in buildWorkflowContext()
+        // (--staged, plain, HEAD); the prompt text just labels which diff the model is looking at.
         id: 'reviewStagedDiff',
         title: 'Review Staged Diff',
         description: 'Review the staged git diff.',
@@ -95,6 +101,8 @@ const WORKFLOW_REGISTRY = {
         promptBuilder: (context) => `Review the combined git diff (all modified files):\n\n${context.code}\n\nObjective: ${context.objective}`
     },
     generateCommitMessage: {
+        // Reuses the staged diff on purpose: a commit message must describe exactly what will be
+        // committed, not unstaged edits.
         id: 'generateCommitMessage',
         title: 'Generate Commit Message',
         description: 'Generate a conventional commit message from staged changes.',
@@ -103,6 +111,8 @@ const WORKFLOW_REGISTRY = {
         promptBuilder: (context) => `Generate a conventional commit message from this staged diff:\n\n${context.code}\n\nObjective: ${context.objective}`
     },
     branchSummary: {
+        // Has no diff to review, so buildWorkflowContext() assembles branch/status/log text instead and
+        // skips the "empty diff" check.
         id: 'branchSummary',
         title: 'Summarize Git Branch',
         description: 'Summarize the current branch status and commits.',
@@ -112,6 +122,7 @@ const WORKFLOW_REGISTRY = {
     },
     // Diagnostics workflows: ``code`` is a JSON summary of the editor's problems.
     explainDiagnostics: {
+        // No requiresFile flag: workspace-wide diagnostics are valid with no editor open.
         id: 'explainDiagnostics',
         title: 'Explain Diagnostics',
         description: 'Explain all workspace diagnostics.',
@@ -135,6 +146,9 @@ const WORKFLOW_REGISTRY = {
         promptBuilder: (context) => `Question about the workspace:\n\nObjective: ${context.objective}`
     },
     createImplementationPlan: {
+        // No requiresFile/requiresSelection flag, so buildWorkflowContext() gathers no code for this
+        // workflow: ${context.code} below is empty and only the user's objective carries the request,
+        // despite the "selected files" wording.
         id: 'createImplementationPlan',
         title: 'Create Implementation Plan',
         description: 'Create an implementation plan from selected files.',
@@ -143,6 +157,8 @@ const WORKFLOW_REGISTRY = {
     },
     // Special case: runWorkflow() sends the selection to knowledge-base search instead of a chat prompt.
     searchKbSelection: {
+        // Needs both flags because the query text is the selection; runWorkflow() special-cases this id
+        // so nothing is sent to the model.
         id: 'searchKbSelection',
         title: 'Search KB',
         description: 'Search the Knowledge Base for selected text.',
@@ -153,6 +169,8 @@ const WORKFLOW_REGISTRY = {
     },
     // Vision workflows: ``filepath`` is an image file chosen by the user.
     analyzeImage: {
+        // The prompt references the image by path: the webview/engine reads the file itself, so no
+        // image bytes travel through this extension.
         id: 'analyzeImage',
         title: 'Analyze Image',
         description: 'Analyze an image using Karl Vision.',
@@ -190,7 +208,10 @@ function currentWorkspacePath(fallbackFile) {
 function groupedDiagnostics(currentFileOnly = false) {
     // Step 1: Initialize function scope and validate execution context
     // Remember the active file so currentFileOnly can filter to it.
+    // Computed once, outside the loop, because getDiagnostics() can return thousands of entries.
     const activeFile = vscode.window.activeTextEditor ? vscode.window.activeTextEditor.document.uri.fsPath : '';
+    // A Map keeps files in the order VS Code reports them; converted to a plain object at the end
+    // so the result serialises with JSON.stringify.
     const groups = new Map();
     const counts = { error: 0, warning: 0, info: 0, hint: 0 };
     // Index = VS Code DiagnosticSeverity (0 Error, 1 Warning, 2 Information, 3 Hint).
@@ -221,6 +242,8 @@ function groupedDiagnostics(currentFileOnly = false) {
  * @returns {Promise<void>}
  */
 async function revealKarlPanel(sidebarProvider) {
+    // The id is the container id declared in package.json (viewsContainers); executing it opens
+    // the activity-bar view and creates the webview if it was never shown.
     await vscode.commands.executeCommand('workbench.view.extension.karl-swarm');
     // The webview may not exist yet; wait until it reports ready before posting messages to it.
     await sidebarProvider.waitForWebview();
@@ -238,12 +261,15 @@ async function runWorkflow(sidebarProvider, workflow, customUri = null) {
     const context = await buildWorkflowContext(workflow, sidebarProvider, customUri);
     if (!context) return;
 
+    // finalCode starts as the full text and may be replaced by a bounded head/tail version below.
     let finalCode = context.code;
     let isTruncated = false;
     let isSummary = false;
     const originalChars = finalCode.length;
 
     // Large payloads: let the user choose between the full text and a head/tail summary.
+    // 30k characters is the point where the prompt is likely to crowd out a small local model's
+    // context; the hard 70k cap lives in packageContext().
     if (originalChars > 30000) {
         const selection = await vscode.window.showWarningMessage(
             `The packaged context is large (${originalChars} characters). How would you like to proceed?`,
@@ -310,6 +336,8 @@ async function runWorkflow(sidebarProvider, workflow, customUri = null) {
  */
 async function runWorkflowById(sidebarProvider, workflowId, _payload = {}) {
     // Unknown ids are ignored silently.
+    // The registry is a plain object, so inherited keys like "constructor" would also be
+    // found here; ids come from package.json commands, not user input, which keeps that harmless.
     const workflow = WORKFLOW_REGISTRY[workflowId];
     if (workflow) {
         await runWorkflow(sidebarProvider, workflow);
@@ -337,6 +365,8 @@ async function buildWorkflowContext(workflow, sidebarProvider, customUri = null)
             vscode.window.showErrorMessage('No active text editor found.');
             return null;
         }
+        // Only the selection (not the whole file) is sent so the model's attention stays on the
+        // code the user actually highlighted.
         const selection = editor.selection;
         code = editor.document.getText(selection);
         if (!code.trim()) {
@@ -380,6 +410,8 @@ async function buildWorkflowContext(workflow, sidebarProvider, customUri = null)
         try {
             // generateCommitMessage deliberately reuses the staged diff.
             if (workflow.id === 'reviewStagedDiff' || workflow.id === 'generateCommitMessage') {
+                // execGit takes an argument array and runs git without a shell, so file names or branch names
+                // cannot be interpreted as shell syntax.
                 code = await execGit(['diff', '--staged'], workspacePath);
             } else if (workflow.id === 'reviewUnstagedDiff') {
                 code = await execGit(['diff'], workspacePath);
@@ -420,6 +452,8 @@ async function buildWorkflowContext(workflow, sidebarProvider, customUri = null)
     // Vision workflows: use the given/open file, else ask the user to pick an image.
     if (workflow.id === 'analyzeImage' || workflow.id === 'reviewScreenshotError') {
         let pathFromUri = customUri && customUri.fsPath;
+        // Falling back to the active editor lets "Analyze Image" work on an image tab that is open
+        // in VS Code's built-in image preview.
         if (!pathFromUri && editor) {
             pathFromUri = editor.document.uri.fsPath;
         }
@@ -445,6 +479,8 @@ async function buildWorkflowContext(workflow, sidebarProvider, customUri = null)
     // Workflows in this list ask the user what to do and pre-fill a sensible default.
     const needsPrompt = [
         'fixSelection', 'explainSelection', 'generateTests', 'reviewActiveFile',
+        // Git and diagnostics workflows are not in this list because their objective is fixed by
+        // the prompt template; only workflows where the user's intent varies ask for input.
         'sendCurrentFileToSwarm', 'createImplementationPlan', 'askWorkspace',
         'analyzeImage', 'reviewScreenshotError'
     ].includes(workflow.id);
@@ -477,6 +513,7 @@ async function buildWorkflowContext(workflow, sidebarProvider, customUri = null)
  */
 async function sendActiveFileToKb(sidebarProvider, uri) {
     // Explorer context menu supplies a URI; otherwise use the active editor's file.
+    // `uri` is only passed by the explorer context menu; command-palette calls pass nothing.
     const selectedPath = uri && uri.fsPath ? uri.fsPath : null;
     const editor = vscode.window.activeTextEditor;
     const filePath = selectedPath || (editor ? editor.document.uri.fsPath : '');
@@ -499,6 +536,7 @@ async function sendActiveFileToKb(sidebarProvider, uri) {
  */
 async function sendWorkspaceFolderToKb(sidebarProvider, uri) {
     // Prefer the folder right-clicked in the explorer, else the workspace root.
+    // Same convention as sendActiveFileToKb: explorer menu passes a URI, palette does not.
     const workspacePath = uri && uri.fsPath ? uri.fsPath : currentWorkspacePath('');
     if (!workspacePath) {
         vscode.window.showWarningMessage('Open a workspace before ingesting a folder.');
