@@ -529,7 +529,7 @@ class VectorProjectionWidget(QFrame):
                 # Hovered document point math
                 x = hp["x"]
                 y = hp["y"]
-                qx, qy = self.query_point[0], self.query_point[1] if self.query_point else (0.0, 0.0)
+                qx, qy = (self.query_point[0], self.query_point[1]) if self.query_point else (0.0, 0.0)
                 
                 # Math calculations
                 dot_prod = x * qx + y * qy
@@ -1731,9 +1731,8 @@ class KnowledgeBaseWorkspace(QWidget):
                         "similarity": 0.0,
                         "text": doc
                     })
-                    # (Note: this call is indented inside the loop, so it runs once per document
-                    # with the list built so far; only the final call matters.)
-                    self._sandbox_projection.set_documents(doc_points)
+                # Push the points once, after the loop has built the full list.
+                self._sandbox_projection.set_documents(doc_points)
             else:
                 self._sandbox_projection.query_point = None
                 self._sandbox_projection.set_documents([])
