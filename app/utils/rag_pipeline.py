@@ -18,6 +18,16 @@ Changes from original:
   - Retrieval eval metrics: hit@k and reciprocal rank
 """
 
+# Where this module sits
+#   * AppState creates the shared RAGPipeline; the Knowledge Base workspace ingests through it, Workbench/Swarm chat retrieve
+#     from it, and the WebSocket bridge (websocket_server.py) reuses the same instance for the VS Code extension.
+#   * Data layout (per namespace): data/vector_db/index.faiss (vectors) + meta.db (SQLite rows: text, source file, chunk id).
+#     The two stores are linked by vector_id, so they must always change together; _load_index() warns when they drift.
+#   * Retrieval modes: dense (FAISS L2), sparse (TF-IDF cosine) and hybrid (Reciprocal Rank Fusion, optional cross-encoder rerank).
+#   * Heavy imports (faiss, sentence-transformers) are required; the encoder itself loads lazily on first use.
+# Known limits: the flat L2 index is exact but O(n) per query; FAISS cannot roll back, so write failures restore an in-memory
+# clone; the on-disk index file is flushed on a background thread and can briefly lag the database (see _wait_for_index_flush).
+# Tests: tests/test_rag_pipeline.py, test_rag_pipeline_fixes.py, test_rag_reranker.py.
 import logging
 import json
 import os
@@ -32,6 +42,8 @@ from typing import Callable
 # Third-party: faiss (vector index) and numpy (vectors); PyMuPDF and python-docx read documents.
 import faiss
 import numpy as np
+
+# Optional-name import: both spellings expose the same API, so downstream code uses `fitz` either way.
 try:
     # Newer PyMuPDF releases import as 'pymupdf'; older ones only provide 'fitz'. Either gives the same API.
     import pymupdf as fitz
@@ -48,9 +60,11 @@ logger = logging.getLogger("karl.rag")
 
 # Sentinel distinguishing "not yet attempted" (None) from "attempted and failed".
 # Stored in self._reranker after a failed load so we don't retry on every call.
+# A unique object() compares only by identity, so it can never be confused with a real model instance.
 _RERANKER_UNAVAILABLE = object()
 
 # File types the ingester will read; everything else is silently skipped.
+# Must stay in sync with WebSocketServerManager._kb_supported_extensions and the Knowledge Base file picker filters.
 _SUPPORTED_EXTENSIONS = {".pdf", ".docx", ".txt", ".md", ".py", ".csv"}
 
 
@@ -58,6 +72,8 @@ _SUPPORTED_EXTENSIONS = {".pdf", ".docx", ".txt", ".md", ".py", ".csv"}
 class _ParsedFile:
     """Result of parsing one file in a worker thread: its chunks, or the error that stopped it.
     """
+    # Fields: index = position in the input list (used to restore order after parallel parsing); source_file = base name stored in
+    # the database; error = message when parsing failed (chunks is then empty).
     index: int
     path: str
     source_file: str
@@ -66,6 +82,7 @@ class _ParsedFile:
 
 
 # Embedding sizes of common SentenceTransformer models, keyed by model name without the org prefix.
+# Vector sizes come from each model's published card; the number must match the encoder or FAISS rejects the vectors.
 _KNOWN_EMBEDDING_DIMS = {
     "all-MiniLM-L6-v2": 384,
     "all-MiniLM-L12-v2": 384,
@@ -89,6 +106,7 @@ class RAGPipeline:
     index under data/vector_db, and retrieves by dense, sparse (TF-IDF) or hybrid
     (rank fusion with optional cross-encoder reranking) search.
     """
+    # Class-level defaults only; __init__ rebinds both per instance so several namespaces can coexist.
     INDEX_FILE = "data/vector_db/index.faiss"
     META_DB = "data/vector_db/meta.db"
 
@@ -109,6 +127,8 @@ class RAGPipeline:
         """
         self.model_name = model_name
         self._encoder = None
+
+        # Tri-state: None = never tried, the sentinel = tried and failed, otherwise the loaded CrossEncoder.
         self._reranker = None     # None = not yet attempted; _RERANKER_UNAVAILABLE = load failed
         self.index_path = index_path
         self.namespace = namespace
@@ -121,17 +141,22 @@ class RAGPipeline:
             self.META_DB = os.path.join(index_path, "meta.db")
         self.contextual_headers = contextual_headers
 
+        # Created before any file is opened: SQLite and FAISS both fail if the directory is missing.
         os.makedirs(self.index_path, exist_ok=True)
 
         # The index must be created before the (slow) encoder loads, so the dimension comes from a table of
         # well-known models; unknown models default to 384 and are corrected once the encoder reports its size.
         self.dimension = _KNOWN_EMBEDDING_DIMS.get(model_name.split("/")[-1], 384)
+
+        # Starts empty; _load_index() at the end of __init__ replaces it when a persisted index exists.
         self.index = self._new_index()
 
         # In-memory copy of the metadata rows, kept for the UI and for sparse/exact-match search.
         # Each entry mirrors the SQLite row shape and remains for UI compatibility.
         self.documents: list[dict] = []
         # Serializes mutations of the in-memory index and documents list across writer threads.
+        # Protects the in-memory index and documents list. SQLite has its own write lock, so both are taken in a fixed order
+        # (_write_lock, then the DB transaction) to avoid deadlocks.
         self._write_lock = threading.Lock()
 
         # Dedicated background thread that serializes the slow part of a
@@ -145,6 +170,8 @@ class RAGPipeline:
         # _add_chunks_to_index()/remove_source().
         # Dedicated background thread that serializes the slow part of a
         # write — faiss.write_index()+os.replace() — in strict submission
+        # One consumer thread means disk writes happen in exactly the order writers submitted them, so an older snapshot can
+        # never overwrite a newer one.
         self._index_flush_queue: "queue.Queue" = queue.Queue()
         self._index_flush_thread = threading.Thread(
             target=self._index_flush_worker,
@@ -155,11 +182,13 @@ class RAGPipeline:
 
         # Bootstrap: single direct connection to create the schema, then hand off
         # all subsequent concurrent writes to the pool.
+        # This direct connection is only for schema creation and single-threaded reads; concurrent writers use the pool.
         self._conn = self._connect_db()
         self._init_db()
         self._pool = SQLiteConnectionPool(self.META_DB)
 
         # Load persisted index if it exists
+        # Last step: everything it needs (locks, pool, flush thread) exists by now.
         self._load_index()
 
     def _new_index(self):
@@ -170,8 +199,14 @@ class RAGPipeline:
     def _connect_db(self) -> sqlite3.Connection:
         """Open the metadata database in autocommit mode with WAL journaling so reads do not block writes.
         """
+        # isolation_level=None disables Python's implicit transactions so BEGIN/COMMIT in this class are explicit.
+        # check_same_thread=False allows the connection to be used from the worker threads.
         conn = sqlite3.connect(self.META_DB, timeout=30.0, isolation_level=None, check_same_thread=False)
+
+        # Rows behave like dicts, which _fetch_documents turns into plain dicts for the UI.
         conn.row_factory = sqlite3.Row
+
+        # WAL lets searches read while an ingest writes; synchronous=NORMAL trades a tiny crash-durability window for speed.
         conn.execute("PRAGMA journal_mode=WAL;")
         conn.execute("PRAGMA synchronous=NORMAL;")
         conn.execute("PRAGMA foreign_keys=ON;")
@@ -192,6 +227,7 @@ class RAGPipeline:
             """
         )
         self._conn.execute(
+            # Speeds up per-source queries and deletes (remove_source) on large corpora.
             "CREATE INDEX IF NOT EXISTS idx_documents_source_file ON documents(source_file)"
         )
         self._conn.execute(
@@ -220,6 +256,8 @@ class RAGPipeline:
         """Return the next unused vector id (one past the largest id in the database or in memory).
         """
         active_conn = conn or self._conn
+
+        # The database is authoritative for committed ids; memory covers transient (save=False) chunks not yet in SQLite.
         db_max = int(
             active_conn.execute(
                 "SELECT COALESCE(MAX(vector_id), -1) FROM documents"
@@ -236,6 +274,7 @@ class RAGPipeline:
     def _add_embeddings_to_index(self, embeddings: np.ndarray, vector_ids: list[int]):
         """Add embeddings to the FAISS index under explicit vector ids."""
         # IndexIDMap only accepts int64 ids and float32 vectors; other dtypes raise or silently reinterpret memory.
+        # Converting here keeps every caller from repeating the dtype handling.
         ids = np.asarray(vector_ids, dtype="int64")
         self.index.add_with_ids(np.asarray(embeddings, dtype="float32"), ids)
 
@@ -245,6 +284,8 @@ class RAGPipeline:
         active_index = index or self.index
         # The temp file sits next to the target so os.replace stays on one filesystem, where rename is atomic.
         tmp_path = f"{self.INDEX_FILE}.tmp"
+
+        # Written to a temp file first: a crash mid-write leaves the old complete index.faiss in place.
         faiss.write_index(active_index, tmp_path)
         os.replace(tmp_path, self.INDEX_FILE)
 
@@ -253,10 +294,13 @@ class RAGPipeline:
         time, in the exact order they were submitted (a single consumer
         thread makes ordering automatic — no extra locking needed)."""
         while True:
+            # Blocks until work arrives; the loop exits only on the None sentinel.
             job = self._index_flush_queue.get()
             if job is None:  # shutdown sentinel
                 self._index_flush_queue.task_done()
                 return
+
+            # `result` is a dict filled in by this thread so the waiting writer can read success or the exception after done_event fires.
             index_snapshot, done_event, result = job
             try:
                 self._write_index_atomic(index_snapshot)
@@ -277,6 +321,7 @@ class RAGPipeline:
         returns (e.g. a subsequent writer), and the background thread reads
         the snapshot outside of _write_lock.
         """
+        # One event per submission lets each writer wait only for its own flush, not for later ones.
         done_event = threading.Event()
         result: dict = {}
         self._index_flush_queue.put((index_snapshot, done_event, result))
@@ -298,6 +343,8 @@ class RAGPipeline:
         fully serializing on every ingest/remove call.
         """
         done_event, result = flush_job
+
+        # Raises in the writer's thread if the flush failed (see the docstring for the consistency trade-off).
         done_event.wait()
         if not result.get("ok"):
             raise result.get("error") or RuntimeError("Index flush failed")
@@ -308,12 +355,16 @@ class RAGPipeline:
         legacy_file = self._legacy_metadata_file()
         if not os.path.exists(legacy_file):
             return
+
+        # Migration runs only into an empty table, so it can never duplicate rows that were already imported.
         existing = self._conn.execute("SELECT COUNT(*) FROM documents").fetchone()[0]
         if existing:
             return
         try:
             with open(legacy_file, "r", encoding="utf-8") as f:
                 legacy_docs = json.load(f)
+
+            # All legacy rows are imported in one transaction: either everything migrates or nothing does.
             self._conn.execute("BEGIN IMMEDIATE")
             for idx, doc in enumerate(legacy_docs):
                 vector_id = int(doc.get("vector_id", doc.get("chunk_id", idx)))
@@ -338,11 +389,13 @@ class RAGPipeline:
     def _ensure_id_index(self, loaded_index):
         """Return an ID-mapped index, wrapping a legacy plain index and re-adding its vectors under sequential ids.
         """
+        # IndexIDMap objects have add_with_ids; a plain IndexFlat from an older version does not.
         if hasattr(loaded_index, "add_with_ids"):
             return loaded_index
         wrapped = self._new_index()
         if loaded_index.ntotal:
             try:
+                # Legacy plain indexes assigned ids 0..n-1 implicitly, so re-adding under arange keeps them matching old metadata.
                 vectors = np.vstack(
                     [loaded_index.reconstruct(i) for i in range(loaded_index.ntotal)]
                 ).astype("float32")
@@ -362,6 +415,7 @@ class RAGPipeline:
             # Model loading prints progress to stdout/stderr; redirect it so it does not clutter the app console.
             _sink = io.StringIO()
             with contextlib.redirect_stdout(_sink), contextlib.redirect_stderr(_sink):
+                # First access downloads or loads the model (seconds); HF_HUB_OFFLINE=1 (set in main.py) forces it to use the local cache.
                 self._encoder = SentenceTransformer(self.model_name)
             # Trust the model over the lookup table: if the size differs, an empty index is rebuilt at the right
             # size; a populated one cannot be converted, so warn that rebuild_index() is needed.
@@ -394,6 +448,7 @@ class RAGPipeline:
             import io
             import contextlib
             try:
+                # Optional component: hybrid search still works (RRF order) when the cross-encoder weights are not cached.
                 from sentence_transformers import CrossEncoder
                 _sink = io.StringIO()
                 with contextlib.redirect_stdout(_sink), contextlib.redirect_stderr(_sink):
@@ -413,14 +468,17 @@ class RAGPipeline:
     def preload_encoder(self):
         """Load the embedding model now (instead of on the first query) to avoid a delay later.
         """
+        # Property access triggers the lazy load; assigning to `_` shows the value is intentionally unused.
         _ = self.encoder
 
     # ── Persistence ───────────────────────────────────────────────────────────
 
     def _load_index(self):
         """Load FAISS index and SQLite metadata from disk if they exist."""
+        # Runs on every load but is a no-op once the SQLite table has rows.
         self._migrate_legacy_metadata()
         try:
+            # Reloaded from SQLite every time so edits made by another process show up.
             self.documents = self._fetch_documents()
             if os.path.exists(self.INDEX_FILE):
                 self.index = self._ensure_id_index(faiss.read_index(self.INDEX_FILE))
@@ -449,6 +507,7 @@ class RAGPipeline:
 
     def clear_index(self):
         """Wipe the in-memory index and delete persisted files."""
+        # Clearing takes both locks so no ingest can interleave between deleting rows and replacing the index.
         with self._write_lock:
             with self._pool.get_connection() as conn:
                 conn.execute("BEGIN IMMEDIATE")
@@ -456,6 +515,8 @@ class RAGPipeline:
                 conn.commit()
             self.index = self._new_index()
             self.documents = []
+
+        # The .tmp file is removed too, in case a flush was interrupted.
         for path in (self.INDEX_FILE, f"{self.INDEX_FILE}.tmp"):
             if os.path.exists(path):
                 os.remove(path)
@@ -469,6 +530,7 @@ class RAGPipeline:
         text = ""
         try:
             if ext == ".pdf":
+                # PDF text is extracted page by page; scanned PDFs without a text layer yield empty strings (no OCR here).
                 doc = fitz.open(filepath)
                 for page in doc:
                     text += page.get_text() + "\n"
@@ -477,6 +539,7 @@ class RAGPipeline:
                 for para in doc.paragraphs:
                     text += para.text + "\n"
             else:
+                # errors="ignore" drops undecodable bytes instead of failing the whole file.
                 with open(filepath, "r", encoding="utf-8", errors="ignore") as f:
                     text = f.read()
         except Exception as e:
@@ -491,10 +554,12 @@ class RAGPipeline:
         The window advances by chunk_size - overlap words, so overlap must be
         smaller than chunk_size.
         """
+        # Chunking is by whitespace-separated words, a cheap approximation of tokens that needs no tokenizer.
         words = text.split()
         chunks = []
         # range() with a step <= 0 raises (or never advances), so clamp the step to at least one word
         # when the caller passes overlap >= chunk_size.
+        # Overlap keeps sentences that straddle a boundary retrievable from both neighbouring chunks.
         step = max(1, chunk_size - overlap)
         for i in range(0, len(words), step):
             chunk = " ".join(words[i : i + chunk_size])
@@ -509,6 +574,8 @@ class RAGPipeline:
         """
         try:
             import psutil
+
+            # Physical cores: parsing is CPU/disk bound and hyper-threads add little.
             physical = psutil.cpu_count(logical=False)
         except Exception:
             physical = None
@@ -517,6 +584,7 @@ class RAGPipeline:
     def _iter_supported_files(self, path: str, recursive: bool = True) -> list[str]:
         """List supported files under a file or directory path (sorted, symlinks not followed during the walk).
         """
+        # realpath resolves symlinks so the stored source names and duplicates checks refer to real files.
         expanded = os.path.realpath(os.path.expanduser(path))
         if os.path.isfile(expanded):
             ext = os.path.splitext(expanded)[1].lower()
@@ -526,6 +594,7 @@ class RAGPipeline:
 
         files: list[str] = []
         if recursive:
+            # followlinks=False prevents symlink loops and escapes from the chosen folder.
             for root, dirs, names in os.walk(expanded, followlinks=False):
                 # Prune dependency/VCS/cache folders in place so os.walk does not descend into them.
                 dirs[:] = [
@@ -554,6 +623,8 @@ class RAGPipeline:
             chunks = []
             with open(filepath, "r", encoding="utf-8", errors="ignore") as f:
                 reader = csv.reader(f)
+
+                # next(..., None) tolerates empty CSV files.
                 header = next(reader, None)
                 for row in reader:
                     if not row:
@@ -583,6 +654,7 @@ class RAGPipeline:
     ) -> _ParsedFile:
         """Parse one file into a _ParsedFile, capturing any error instead of raising (runs in a worker thread).
         """
+        # Only the base name is stored, so the index does not leak the user's directory layout.
         source_file = os.path.basename(filepath)
         try:
             chunks = self._chunks_from_file(filepath, chunk_size, overlap)
@@ -614,6 +686,7 @@ class RAGPipeline:
                     show_progress_bar=False,
                 )
             # Some encoders do not accept the extra keyword arguments; retry with defaults.
+            # Fallback for custom or older encoder objects that lack batch_size/show_progress_bar parameters.
             except TypeError:
                 encoded = self.encoder.encode(batch)
             vectors.append(np.asarray(encoded, dtype="float32"))
@@ -634,6 +707,8 @@ class RAGPipeline:
         """
         if not chunk_records:
             return 0
+
+        # UTC ISO-8601 timestamp, shown by the Knowledge Base UI.
         ingested_at = ingested_at or time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
         with self._write_lock:
             start_id = self._next_vector_id()
@@ -658,6 +733,7 @@ class RAGPipeline:
                 for vid, (chunk_text, source_file) in zip(vector_ids, chunk_records)
             ]
             # Keep copies so a failure can restore the previous state (FAISS has no transaction support).
+            # Cloning copies every vector; acceptable for typical corpora and the only way to get rollback with FAISS.
             prior_index = faiss.clone_index(self.index)
             prior_documents = list(self.documents)
             flush_job = None
@@ -666,6 +742,8 @@ class RAGPipeline:
                     # IMMEDIATE takes the write lock up front, so two writers fail/wait at BEGIN instead of
                     # deadlocking halfway when both try to upgrade a read transaction.
                     conn.execute("BEGIN IMMEDIATE")
+
+                    # One batched INSERT per ingest is much faster than a statement per chunk.
                     conn.executemany(
                         "INSERT INTO documents(vector_id, text, source_file, chunk_id, ingested_at)"
                         " VALUES (?, ?, ?, ?, ?)",
@@ -685,6 +763,8 @@ class RAGPipeline:
                     index_snapshot = faiss.clone_index(self.index)
                     flush_job = self._submit_index_flush(index_snapshot)
                     conn.commit()
+
+                    # Re-read inside the transaction so in-memory rows carry the real SQLite ids.
                     self.documents = self._fetch_documents(conn)
                 except Exception:
                     conn.rollback()
@@ -714,6 +794,7 @@ class RAGPipeline:
         progress_cb receives (files_parsed, total_files, event_dict).
         Returns {files, errors, chunks_added, file_count, error_count}.
         """
+        # Normalised first so duplicates and symlinked paths are treated consistently.
         files = [os.path.realpath(os.path.expanduser(p)) for p in filepaths]
         files = [p for p in files if os.path.splitext(p)[1].lower() in _SUPPORTED_EXTENSIONS]
         total = len(files)
@@ -723,9 +804,12 @@ class RAGPipeline:
         max_workers = max_workers or self._default_worker_count()
         parsed_results: list[_ParsedFile] = []
         errors: list[dict] = []
+
+        # Protects the shared results list and counter that parse callbacks update from the as_completed loop.
         parsed_lock = threading.Lock()
         files_parsed = 0
 
+        # Initial "queued" event lets the UI show a progress bar before the first file finishes.
         if progress_cb:
             progress_cb(0, total, {"status": "queued", "filename": "", "queued": total})
 
@@ -735,6 +819,8 @@ class RAGPipeline:
                 pool.submit(self._parse_file_for_ingest, idx, filepath, chunk_size, overlap)
                 for idx, filepath in enumerate(files)
             ]
+
+            # as_completed yields in finish order, so progress updates are smooth even when one large file is slow.
             for future in as_completed(futures):
                 parsed = future.result()
                 with parsed_lock:
@@ -773,6 +859,8 @@ class RAGPipeline:
         # Embed everything in one pass so the encoder runs in batches across file boundaries.
         texts = [text for text, _source in chunk_records]
         embeddings = self._embed_texts_batched(texts, batch_size=batch_size)
+
+        # A single transactional write for the whole batch: all files land together or none do.
         added = self._add_chunks_to_index(chunk_records, embeddings, save=True)
         logger.info(
             "Batch-ingested %d chunks from %d/%d files (%d errors)",
@@ -835,6 +923,7 @@ class RAGPipeline:
         if not chunks:
             return 0
 
+        # Eval text is embedded the same way as real documents, so retrieval metrics are realistic.
         embeddings = self._embed_texts_batched(chunks, batch_size=32)
         self._add_chunks_to_index(
             [(chunk_text, source_name) for chunk_text in chunks],
@@ -849,6 +938,8 @@ class RAGPipeline:
         """Helper to identify if a chunk is part of the Table of Contents (pages 1 to 10)."""
         text = doc.get("text", "")
         import re
+
+        # Heuristic: chunks stamped "Page N of M" with N <= 10 are treated as front matter / table of contents.
         page_match = re.search(r"Page\s+(\d+)\s+of\s+\d+", text)
         if page_match:
             try:
@@ -882,6 +973,7 @@ class RAGPipeline:
             mode=mode,
         )
 
+        # Each result gets a 1-based rank and (optionally) a "[Source | Chunk]" header that helps the model cite its sources.
         formatted = []
         for i, r in enumerate(results):
             text = r["text"]
@@ -915,6 +1007,7 @@ class RAGPipeline:
     def _sparse_model(self):
         """Return a TfidfEmbedder fitted on the current corpus, refitting only when the corpus text changed."""
         # The key covers every chunk's text in order; add/remove/rebuild all change it, plain re-reads do not.
+        # Hashing the whole text tuple is O(corpus) but far cheaper than refitting TF-IDF on every query.
         key = hash(tuple(doc["text"] for doc in self.documents))
         cached = getattr(self, "_sparse_cache", None)
         if cached is not None and cached[0] == key:
@@ -942,6 +1035,8 @@ class RAGPipeline:
 
         # Document vectors are still computed per call: caching dense (docs x vocab) matrices would cost far more memory.
         q_vec = tfidf.transform(query)
+
+        # A query with no known vocabulary has a zero vector; cosine similarity would divide by zero, so return no hits.
         if len(q_vec) == 0 or np.linalg.norm(q_vec) == 0.0:
             return []
 
@@ -959,6 +1054,7 @@ class RAGPipeline:
                 })
 
         # Sort by similarity descending
+        # Highest cosine similarity first; only positive similarities were kept above.
         scored_docs.sort(key=lambda x: x["similarity"], reverse=True)
         
         # Add rank
@@ -989,6 +1085,7 @@ class RAGPipeline:
                                Ignored when use_reranker=False.
         """
         # When reranking, gather a larger initial pool; otherwise fetch just enough.
+        # Pool sizes: with a reranker a wider candidate list improves recall; each source list is over-fetched 2x below.
         n_pool  = rerank_candidates if use_reranker else top_k
         fetch_k = n_pool * 2   # over-fetch so RRF can surface the best overlaps
 
@@ -1002,6 +1099,7 @@ class RAGPipeline:
         # RRF: each result list contributes 1 / (rrf_constant + rank) per document, so chunks that appear
         # near the top of both lists win without needing comparable raw scores.
         # ── Reciprocal Rank Fusion ────────────────────────────────────────────
+        # Keys are chunk ids so the same chunk found by both retrievers is scored once with both contributions added.
         rrf_scores: dict[int, float] = {}
         docs_map:   dict[int, dict]  = {}
 
@@ -1016,6 +1114,7 @@ class RAGPipeline:
                 docs_map[cid] = doc
             rrf_scores[cid] = rrf_scores.get(cid, 0.0) + 1.0 / (rrf_constant + rank)
 
+        # Descending fused score gives the final hybrid order before the optional rerank.
         sorted_cids = sorted(rrf_scores, key=lambda x: rrf_scores[x], reverse=True)
         # The best possible fused score is a #1 rank in both lists; it is used to scale scores to a 0..1 distance.
         max_score   = 2.0 / (rrf_constant + 1)
@@ -1042,6 +1141,7 @@ class RAGPipeline:
 
         inputs = [(query, c["text"]) for c in pool]
         try:
+            # The cross-encoder reads (query, passage) pairs jointly, which is slower but more precise than embedding similarity.
             scores = reranker.predict(inputs)
         except Exception as exc:
             logger.warning("Reranker predict() failed (%s); falling back to RRF.", exc)
@@ -1069,6 +1169,7 @@ class RAGPipeline:
         Like retrieve() but returns full metadata dicts including distance scores.
         Supports dense, sparse, and hybrid retrieval.
         """
+        # An empty index cannot be searched (FAISS would return padding), so short-circuit.
         if self.index.ntotal == 0:
             return []
 
@@ -1090,6 +1191,7 @@ class RAGPipeline:
 
         # Alphanumeric ID matching: tokens that mix letters and digits (e.g. 'AB12') are treated as codes.
         # Alphanumeric ID matching
+        # 3-10 upper-case alphanumerics: matches product codes or course ids such as "AB12" typed by the user.
         id_tokens = re.findall(r"\b[A-Z0-9]{3,10}\b", query)
         for token in id_tokens:
             # Must contain both letters and numbers to be an ID/code
@@ -1107,6 +1209,7 @@ class RAGPipeline:
 
         # Section matching, e.g., "19.3", "19.5" (table-of-contents chunks are skipped so the real section wins).
         # Section matching, e.g., "19.3", "19.5"
+        # Section numbers like 19.3 are matched literally because embeddings treat numbers poorly.
         section_tokens = re.findall(r"\b\d{1,2}\.\d{1,2}(?:\.\d{1,2})?\b", query)
         for token in section_tokens:
             for doc in self.documents:
@@ -1123,6 +1226,7 @@ class RAGPipeline:
                         })
 
         # Chapter matching, e.g., "Chapter 20", "chapter 19", "ch 20"
+        # Chapter references are also matched literally; the spaced regexes tolerate PDFs that extract text as "C h a p t e r 2 0".
         chapter_matches = re.findall(r"\b(?:chapter|ch)\s+(\d{1,2})\b", query, re.IGNORECASE)
         for ch_num in chapter_matches:
             spaced_ch_pattern = r"\b" + r"\s*".join("chapter") + r"\s*" + r"\s*".join(ch_num) + r"\b"
@@ -1142,9 +1246,12 @@ class RAGPipeline:
 
         # Run vector search. With a source filter, over-fetch 5x because filtered-out hits would otherwise leave too few.
         # Run vector search
+        # FAISS requires float32; encode returns a (1, dimension) array for one query.
         query_vector = self.encoder.encode([query]).astype("float32")
         fetch_k = min(top_k * 5 if source_filter else top_k, self.index.ntotal)
         distances, indices = self.index.search(query_vector, fetch_k)
+
+        # Maps FAISS ids back to metadata rows in O(1) per hit.
         docs_by_vector_id = {int(doc.get("vector_id", doc.get("chunk_id", -1))): doc for doc in self.documents}
 
         results = list(exact_matches)
@@ -1162,6 +1269,7 @@ class RAGPipeline:
                 continue
             results.append({
                 **doc,
+                # Exact matches occupy the top ranks (0), so vector hits continue after them.
                 "rank": rank + len(exact_matches),
                 "distance": float(dist),
             })
