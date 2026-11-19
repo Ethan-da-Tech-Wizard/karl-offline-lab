@@ -1077,38 +1077,11 @@ class RAGPipeline:
                 results = [r for r in results if r["distance"] <= threshold]
             return results
 
-        # Hybrid Search: check if query wants to list/show all workers in a specific department.
-        # These rules are hardcoded for one document set (department names) and act as an exact-match shortcut.
-        # Hybrid Search: check if query wants to list/show all workers in a specific department
+        # Exact-match shortcuts (codes, section numbers, chapters) run before vector search so literal
+        # references win over fuzzy semantic matches. Corpus-specific rules (department names, handbook
+        # topics) were removed: they hijacked ordinary queries such as "how does IT work".
         exact_matches = []
         import re
-        
-        dept_match = None
-        for dept in ["IT", "Finance", "Admin", "EVS", "Marketing"]:
-            if re.search(r"\b" + re.escape(dept) + r"\b", query, re.IGNORECASE):
-                # Check for listing and counting indicator keywords
-                indicators = [
-                    "all", "list", "everyone", "who works", "workers in", "employees in", 
-                    "show me", "people in", "how many", "number of", "count", "people work", 
-                    "who is in", "who are in", "hwo", "how", "many", "worker", "workers", 
-                    "employee", "employees", "people", "person", "staff", "who", "show"
-                ]
-                if any(w in query.lower() for w in indicators):
-                    dept_match = dept
-                    break
-
-        if dept_match:
-            for doc in self.documents:
-                if source_filter and doc.get("source_file") != source_filter:
-                    continue
-                if re.search(r"\b" + re.escape(dept_match) + r"\b", doc["text"], re.IGNORECASE):
-                    exact_matches.append({
-                        **doc,
-                        "rank": 0,
-                        "distance": 0.0,
-                    })
-            if exact_matches:
-                return exact_matches
 
         # Alphanumeric ID matching: tokens that mix letters and digits (e.g. 'AB12') are treated as codes.
         # Alphanumeric ID matching
@@ -1161,33 +1134,6 @@ class RAGPipeline:
                             "rank": 0,
                             "distance": 0.0,
                         })
-
-        # Topic keyword matching: (topic phrase searched in documents, query keywords that trigger it).
-        # Topic keyword matching
-        topic_keywords = [
-            ("continuing obligations", ["continuing obligations", "obligation"]),
-            ("final pay", ["final pay"]),
-            ("return of company property", ["return of company property", "return of property"]),
-            ("morale officer", ["morale officer", "phil"]),
-            ("break room", ["break room", "kitchen"]),
-            ("traditions", ["traditions", "celebrations", "golden gherkin"]),
-            ("parking", ["parking", "gerald"]),
-            ("remote and hybrid work", ["remote work", "hybrid work", "telecommuting"]),
-        ]
-        for topic, keywords in topic_keywords:
-            if any(re.search(r"\b" + re.escape(kw) + r"\w*", query, re.IGNORECASE) for kw in keywords):
-                for doc in self.documents:
-                    if source_filter and doc.get("source_file") != source_filter:
-                        continue
-                    if self._is_toc_chunk(doc):
-                        continue
-                    if re.search(r"\b" + re.escape(topic) + r"\w*", doc["text"], re.IGNORECASE):
-                        if not any(e["chunk_id"] == doc["chunk_id"] for e in exact_matches):
-                            exact_matches.append({
-                                **doc,
-                                "rank": 0,
-                                "distance": 0.0,
-                            })
 
         # Run vector search. With a source filter, over-fetch 5x because filtered-out hits would otherwise leave too few.
         # Run vector search
