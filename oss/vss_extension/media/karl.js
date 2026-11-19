@@ -1484,10 +1484,10 @@ function renderSwarmRagResults(payload) {
     lastSwarmRagResults = results;
     $('swarmRagResults').innerHTML = results.length ? results.map((result, index) => {
         if (!result) result = {};
+        // Text is escaped (it is document content, untrusted) and cut to 1800 characters to keep the DOM small.
         return `
         <div class="result-card">
             <div class="result-meta">Rank ${escapeHtml(result.rank ?? index)} · ${escapeHtml(result.source_file || 'unknown')} · Chunk ${escapeHtml(result.chunk_id || '0')} · dist=${Number(result.distance || 0).toFixed(4)}</div>
-            // Text is escaped (it is document content, untrusted) and cut to 1800 characters to keep the DOM small.
             <pre>${escapeHtml(result.text || '').slice(0, 1800)}</pre>
             <div class="action-row compact-actions" style="margin-top:6px;">
                 <button data-idx="${index}" data-copy>Copy</button>
@@ -1634,11 +1634,11 @@ function _initChatInnerTabs() {
     const tabBar = document.createElement('div');
     tabBar.className = 'chat-inner-tabs';
     // data-inner-tab names the panel id to show; the click handler for these buttons is wired below.
+    // Thoughts toggle lives in the bar so it stays visible whichever panel is open.
     tabBar.innerHTML = `
         <button class="chat-inner-tab active" data-inner-tab="chatPanel">Chat</button>
         <button class="chat-inner-tab" data-inner-tab="reasoningPanel">Reasoning</button>
         <button class="chat-inner-tab" data-inner-tab="swarmPanel">Swarm</button>
-        // Thoughts toggle lives in the bar so it stays visible whichever panel is open.
         <button class="chat-toggle active" id="thoughtsVisToggle" title="Show / hide inline thought stream">◈ Thoughts</button>
     `;
 
@@ -1670,13 +1670,13 @@ function _initChatInnerTabs() {
     const swarmPanel = document.createElement('div');
     swarmPanel.id = 'swarmPanel';
     swarmPanel.className = 'chat-tab-panel';
+    // #swarmFeed receives timeline cards from the swarm notification handlers; data-swarm-empty marks
+    // the placeholder that is removed on the first event.
     swarmPanel.innerHTML = `
         <div style="margin-bottom:8px;">
             <div class="eyebrow">Swarm Progress Feed</div>
             <div style="color:var(--karl-muted);font-size:10px;margin-top:3px;">Real-time agent execution timeline</div>
         </div>
-        // #swarmFeed receives timeline cards from the swarm notification handlers; data-swarm-empty marks
-        // the placeholder that is removed on the first event.
         <div id="swarmFeed" class="swarm-feed">
             <div style="color:var(--karl-muted);padding:8px;font-size:11px;" data-swarm-empty>No swarm activity yet.</div>
         </div>
