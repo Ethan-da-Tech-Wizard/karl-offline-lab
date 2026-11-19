@@ -51,6 +51,14 @@ DEFAULT_DATASETS = {
 }
 
 
+def gpu_used_mb(gpu: dict) -> float:
+    """Used VRAM in MB for one hardware_scout gpu_list entry.
+
+    hardware_scout reports memory_free_mb/memory_total_mb only, so used = total - free.
+    """
+    return gpu["memory_total_mb"] - gpu["memory_free_mb"]
+
+
 def parse_args():
     """Define and parse the eval CLI flags (workflow, dataset, template, sampling limits, save/no-save, dry-run and the two --list-* options)."""
     # Step 1: Validate input parameters, operational preconditions, and state
@@ -232,7 +240,7 @@ def main():
             # Execute guarded operations and establish recovery boundaries
             profile = get_hardware_profile()
             gpus = profile.get("gpu_list", [])
-            return {g["id"]: g["memory_used_mb"] for g in gpus}
+            return {g["id"]: gpu_used_mb(g) for g in gpus}
         except Exception:
             return {}
 
