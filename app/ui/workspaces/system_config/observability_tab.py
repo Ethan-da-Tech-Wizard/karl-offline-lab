@@ -217,6 +217,9 @@ class ObservabilityTab(QWidget):
         cfg["log_retention_days"] = retention
         cfg["max_log_disk_size_mb"] = disk_size
         config_store.save_ui_config(cfg)
+        # The Defaults tab and the config persistence in appearance_runtime read state.log_retention_days;
+        # keep it in sync or the next Defaults save would overwrite the value chosen here.
+        self.state.log_retention_days = retention
 
         # Imported lazily; the logger module is only needed when a sweep is requested.
         from app.utils.trace_logger import TraceLogger
