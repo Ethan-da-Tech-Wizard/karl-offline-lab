@@ -1,3 +1,10 @@
+"""
+OCR via the locally installed Tesseract command-line program.
+
+Nothing is bundled or downloaded: if the ``tesseract`` executable is not on
+PATH the engine reports itself unavailable and analyze() returns an empty
+result carrying an error box instead of raising.
+"""
 # ==============================================================================
 # Program: ocr_engine.py
 # Programmer: Ethan-da-Tech-Wizard
@@ -18,16 +25,20 @@ from app.vision.schemas import OcrResult
 
 
 class TesseractOcrEngine:
+    """Thin wrapper that runs the tesseract CLI and converts its TSV output to OcrResult."""
     def __init__(self, executable: str = "tesseract"):
         # Step 1: Validate input parameters, operational preconditions, and state
+        """``executable`` may be a bare name (looked up on PATH) or a full path."""
         self.executable = executable
 
     def available(self) -> bool:
         # Step 1: Validate input parameters, operational preconditions, and state
+        """True if the tesseract executable can be found."""
         return shutil.which(self.executable) is not None
 
     def version(self) -> str | None:
         # Step 1: Validate input parameters, operational preconditions, and state
+        """Return the first line of ``tesseract --version`` or None if unavailable/failing."""
         if not self.available():
             return None
         try:
@@ -41,11 +52,17 @@ class TesseractOcrEngine:
             )
         except Exception:
             return None
+        # Some builds print the version banner on stderr, so fall back to it.
         first = (result.stdout or result.stderr or "").splitlines()
         return first[0].strip() if first else None
 
     def analyze(self, image_path: str, lang: str = "eng") -> OcrResult:
         # Step 1: Validate input parameters, operational preconditions, and state
+        """Run OCR on ``image_path`` in language ``lang`` and return an OcrResult.
+
+        Failures (missing binary, non-zero exit) are reported as an empty result with
+        an {"error": ...} entry in boxes so callers can show the reason.
+        """
         if not self.available():
             return OcrResult(
                 engine="tesseract",
@@ -55,6 +72,8 @@ class TesseractOcrEngine:
                 boxes=[{"error": "tesseract executable not found"}],
             )
 
+        # "tsv" output gives per-word boxes and confidences, not just plain text.
+        # A 60s timeout bounds very large images; TimeoutExpired is not caught here.
         result = subprocess.run(
             [self.executable, image_path, "stdout", "-l", lang, "tsv"],
             capture_output=True,
@@ -76,6 +95,11 @@ class TesseractOcrEngine:
 
     def _parse_tsv(self, raw: str, lang: str) -> OcrResult:
         # Step 1: Validate input parameters, operational preconditions, and state
+        """Convert tesseract TSV text into an OcrResult.
+
+        Rows with empty text (layout rows) are skipped. Confidence is the mean of the
+        non-negative word confidences, scaled from 0-100 to 0-1.
+        """
         reader = csv.DictReader(StringIO(raw), delimiter="\t")
         words = []
         boxes = []
@@ -88,9 +112,11 @@ class TesseractOcrEngine:
                 continue
             try:
                 # Execute guarded operations and establish recovery boundaries
+                # Tesseract uses -1 for rows without a confidence; treat bad values the same.
                 conf = float(row.get("conf", "-1"))
             except ValueError:
                 conf = -1.0
+            # Exclude -1 sentinel values from the average.
             if conf >= 0:
                 confidences.append(conf)
             words.append(text)
@@ -105,6 +131,7 @@ class TesseractOcrEngine:
                 "line": int(float(row.get("line_num", 0) or 0)),
             })
 
+        # Average over words that had a real confidence score.
         confidence = sum(confidences) / len(confidences) if confidences else 0.0
         return OcrResult(
             engine="tesseract",
