@@ -75,10 +75,9 @@ class ActiveLearner:
             return True # Need more samples to establish baseline
         accuracy = sum(1 for x in history if x) / len(history)
         
-        # Zone of Proximal Development: Focus where accuracy is between 30% and 70%
-        # Throttle generation on 95%+ (already mastered) or 5%- (too hard for current parameters)
-        # NOTE: the thresholds are 5% and 95%; the "30% to 70%" wording in the comment
-        # above describes the intended target zone, not the exact cut-offs used here.
+        # Zone of Proximal Development: keep generating for any topic whose accuracy is
+        # strictly between 5% and 95%. Throttle at 95%+ (already mastered) or 5%- (too
+        # hard for the current parameters); the cut-offs are deliberately wide.
         if accuracy >= 0.95 or accuracy <= 0.05:
             return False
         return True

@@ -498,9 +498,10 @@ def main():
         generator = _TOPIC_DISPATCH.get(topic)
         if generator is None:
             print(f"Unknown topic '{topic}', skipping.")
+            # Sleep so a persistently bad topic name cannot busy-loop the generator.
+            time.sleep(0.5)
             continue
 
-        # NOTE: an unknown topic above does "continue" with no sleep, so a bad topic name could busy-loop.
         task = generator()
         task["topic"] = topic
 
