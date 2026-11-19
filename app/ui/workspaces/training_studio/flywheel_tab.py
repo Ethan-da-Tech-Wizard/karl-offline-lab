@@ -176,11 +176,6 @@ class FlywheelTab(QWidget):
         # squeezed into the app's 760px minimum width clipped them to
         # unreadable fragments. Give each a floor and let the row scroll
         # horizontally at narrow widths instead of shrinking below it.
-        # Each card needs real width for its labels/buttons to stay readable
-        # (e.g. "Export SFT"/"Export DPO" buttons) -- 5 equal-stretch columns
-        # squeezed into the app's 760px minimum width clipped them to
-        # unreadable fragments. Give each a floor and let the row scroll
-        # horizontally at narrow widths instead of shrinking below it.
         for card in (self._fw_interactions, self._fw_feedback, self._fw_data, self._fw_eval, self._fw_export_card):
             # 240 px is the narrowest width at which the card labels and the two export buttons stay readable.
             card.setMinimumWidth(240)

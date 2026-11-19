@@ -589,13 +589,6 @@ class WorkbenchWorkspace(QMainWindow):
         # combo box next to it, which already has room to give. Qt's default
         # minimumSizeHint (based on the button's current text) is always
         # wide enough for whatever text it's showing, so leave it unset.
-        # No explicit minimum: a fixed 92px floor was narrower than "Load
-        # Model" actually needs, so when the row ran short on space (e.g. a
-        # session/reasoning dock open) the layout compressed the button to
-        # that floor and clipped the label instead of shrinking the model
-        # combo box next to it, which already has room to give. Qt's default
-        # minimumSizeHint (based on the button's current text) is always
-        # wide enough for whatever text it's showing, so leave it unset.
         self._header_load_model_btn.setMaximumWidth(150)
         self._header_load_model_btn.clicked.connect(self._load_header_selected_model)
         ml.addWidget(self._header_load_model_btn)
@@ -2390,10 +2383,6 @@ class WorkbenchWorkspace(QMainWindow):
         # symbol_to_qicon) rather than a live-repainting BaseSymbol widget,
         # so they need an explicit refresh here or they'd go stale-colored
         # after a theme switch.
-        # These icons are baked to a static QIcon at construction time (see
-        # symbol_to_qicon) rather than a live-repainting BaseSymbol widget,
-        # so they need an explicit refresh here or they'd go stale-colored
-        # after a theme switch.
         icon_size = QSize(14, 14)
         if hasattr(self, "_thumb_btn"):
             self._thumb_btn.setIcon(symbol_to_qicon(ThumbsUpIcon, self.state, color_role="green", size=14))
@@ -2709,8 +2698,6 @@ class WorkbenchWorkspace(QMainWindow):
         if not ok or not new_name.strip():
             return
 
-        # Strip any directory components the user typed (e.g. "../../foo.json")
-        # so the rename can never land outside sessions_dir.
         # Strip any directory components the user typed (e.g. "../../foo.json")
         # so the rename can never land outside sessions_dir.
         new_name = os.path.basename(new_name.strip())

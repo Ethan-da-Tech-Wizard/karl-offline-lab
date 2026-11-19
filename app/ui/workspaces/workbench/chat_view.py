@@ -141,11 +141,6 @@ class ChatView(QTextBrowser):
         # highlighted bar instead of a bubble). A single-cell <table
         # align="right"> is what Qt actually shrink-wraps to content, and it
         # still wraps naturally within the viewport for long messages.
-        # Qt's rich-text engine doesn't size `display:inline-block` to its
-        # content (it always rendered full-width, turning this into a flat
-        # highlighted bar instead of a bubble). A single-cell <table
-        # align="right"> is what Qt actually shrink-wraps to content, and it
-        # still wraps naturally within the viewport for long messages.
         return (
             f'<div style="margin:16px 0px 2px 80px; text-align:right;">'
             f'<span style="color:{text_lo};font-size:7.5pt;font-weight:bold;letter-spacing:1.5px;">'
