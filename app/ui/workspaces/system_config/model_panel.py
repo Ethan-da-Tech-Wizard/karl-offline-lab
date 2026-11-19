@@ -6,6 +6,9 @@
 #          Provides responsive layout controls, parameter adjustment surfaces,
 #          and visual feedback components within Karl's PyQt6 shell.
 # ==============================================================================
+# Model tab of the System workspace: active model and adapter selection,
+# speculative-decoding (draft model) controls, the scanned model list, and the
+# quantize form. Heavy loads run on ModelLoadThread so the UI never freezes.
 
 from __future__ import annotations
 
@@ -29,7 +32,9 @@ from .common import _hline, _row, _section
 logger = logging.getLogger("karl.system_config")
 
 class ModelPanelMixin:
+    """Mixin that builds the Model tab and implements model/adapter/draft load actions."""
     def _build_model_tab(self) -> QWidget:
+        """Build the scrollable Model tab with active model, adapter, speculative decoding, model list and quantize panels."""
         # Step 1: Validate input parameters, operational preconditions, and state
         w = QWidget()
         outer = QVBoxLayout(w)
@@ -77,6 +82,7 @@ class ModelPanelMixin:
         self._load_model_btn.clicked.connect(self._load_model)
         ap_layout.addWidget(self._load_model_btn)
 
+        # The circuit breaker stops repeated failing loads from freezing the app (see ModelLoader).
         # Circuit Breaker Status Row
         cb_row = QWidget()
         cbl = QHBoxLayout(cb_row)
@@ -113,6 +119,8 @@ class ModelPanelMixin:
         ap_layout.addWidget(adapter_row)
 
         ap_layout.addWidget(_hline())
+        # Speculative decoding: a small draft GGUF proposes tokens the base model verifies.
+        # The draft must share the base model's vocabulary.
         ap_layout.addWidget(_section("SPECULATIVE DECODING"))
 
         self._speculative_toggle = QCheckBox("Enable speculative drafting")
@@ -127,6 +135,7 @@ class ModelPanelMixin:
         spec_desc.setWordWrap(True)
         ap_layout.addWidget(spec_desc)
 
+        # Registry companion drafts are listed first (see _populate_draft_selector).
         self._draft_model_combo = QComboBox()
         self._draft_model_combo.setToolTip("Draft GGUF selector. Registry companion models appear first when configured.")
         self._draft_model_combo.currentTextChanged.connect(self._on_draft_combo_changed)
@@ -176,6 +185,7 @@ class ModelPanelMixin:
 
         layout.addWidget(active_panel)
 
+        # Cards below list .gguf files found under data/models; refreshed by "scan filesystem".
         # Available Models Panel
         available_panel = QWidget()
         available_panel.setObjectName("panel")
@@ -212,6 +222,7 @@ class ModelPanelMixin:
 
         layout.addWidget(available_panel)
 
+        # Quantize panel: shells out to the local llama-quantize binary (see quantization_panel).
         # ── Quantization Panel ────────────────────────────────────────────────
         quant_panel = QWidget()
         quant_panel.setObjectName("panel")
@@ -281,6 +292,7 @@ class ModelPanelMixin:
         qbr.addStretch()
         qp_layout.addWidget(quant_btn_row)
 
+        # Progress bar and status stay hidden/empty until a quantize job starts.
         # Progress bar (hidden until a job starts)
         self._quant_progress_bar = QProgressBar()
         self._quant_progress_bar.setRange(0, 100)
@@ -314,6 +326,8 @@ class ModelPanelMixin:
         on_error=None,
         on_finished=None,
     ):
+        """Start a background model load and wire its signals; return False if one is already running."""
+        # Imported here to keep module import light and avoid import cycles with the engine.
         # Step 1: Validate input parameters, operational preconditions, and state
         from app.engine.model_load_thread import ModelLoadThread
 
@@ -322,6 +336,7 @@ class ModelPanelMixin:
                 status_label.setText("model load already running")
             return False
 
+        # Disable every load-related control while a load runs so two loads cannot overlap.
         controls = [
             getattr(self, "_load_model_btn", None),
             getattr(self, "_load_speculative_btn", None),
@@ -346,6 +361,8 @@ class ModelPanelMixin:
             draft_model_path=draft_model_path,
         )
 
+        # Success handler: publish the new model/adapter to app state, then refresh every view
+        # that depends on it (scans, registry, path box, preflight checks).
         def handle_loaded(filename: str, loaded_adapter: str | None, draft_filename: str | None):
             # Step 1: Validate input parameters, operational preconditions, and state
             self.state.model_name = filename
@@ -358,6 +375,8 @@ class ModelPanelMixin:
             if hasattr(self, "_model_path_input"):
                 self._model_path_input.setText(os.path.join("data", "models", filename))
 
+            # When speculative was requested, verify the loader really enabled it; some
+            # llama-cpp-python versions ignore the draft argument.
             if speculative and status_label is not None:
                 from app.engine.model_loader import ModelLoader
                 if ModelLoader.is_speculative():
@@ -379,6 +398,7 @@ class ModelPanelMixin:
             if on_loaded is not None:
                 on_loaded(filename, loaded_adapter, draft_filename)
 
+        # Error handler: show inline when a status label exists, otherwise a modal dialog.
         def handle_error(msg: str):
             # Step 1: Validate input parameters, operational preconditions, and state
             if status_label is not None:
@@ -389,6 +409,7 @@ class ModelPanelMixin:
             if on_error is not None:
                 on_error(msg)
 
+        # Cleanup handler: re-enable controls and drop the thread reference whether the load succeeded or failed.
         def handle_finished():
             # Step 1: Validate input parameters, operational preconditions, and state
             for control in controls:
@@ -401,6 +422,7 @@ class ModelPanelMixin:
             if on_finished is not None:
                 on_finished()
 
+        # finished -> deleteLater frees the QThread once it has stopped.
         thread.loaded.connect(handle_loaded)
         thread.error.connect(handle_error)
         thread.finished.connect(handle_finished)
@@ -412,6 +434,7 @@ class ModelPanelMixin:
 
 
     def _browse_model(self):
+        """Pick a GGUF file from disk into the model path box."""
         # Step 1: Validate input parameters, operational preconditions, and state
         path, _ = QFileDialog.getOpenFileName(
             self, "Select GGUF model", "data/models", "GGUF (*.gguf);;All Files (*)"
@@ -421,6 +444,7 @@ class ModelPanelMixin:
 
 
     def _load_model(self):
+        """Validate the model path, refuse if inference is running, then load it in the background."""
         # Step 1: Validate input parameters, operational preconditions, and state
         path = self._model_path_input.text().strip()
         if not path:
@@ -430,6 +454,7 @@ class ModelPanelMixin:
             self._model_status.setText(f"file not found: {path}")
             return
 
+        # Reloading while a generation holds the model would break it, so the loader reports a lock.
         from app.engine.model_loader import ModelLoader
         if ModelLoader.is_instance_locked():
             self._model_status.setText(
@@ -441,6 +466,7 @@ class ModelPanelMixin:
 
 
     def _browse_draft_model(self):
+        """Pick a draft GGUF from disk and select it in the draft combo if it is a known model."""
         # Step 1: Validate input parameters, operational preconditions, and state
         path, _ = QFileDialog.getOpenFileName(
             self, "Select Draft GGUF model", "data/models", "GGUF (*.gguf);;All Files (*)"
@@ -454,6 +480,7 @@ class ModelPanelMixin:
 
 
     def _on_draft_combo_changed(self, text: str):
+        """Mirror the draft combo selection into the draft path box ("none" clears it)."""
         # Step 1: Validate input parameters, operational preconditions, and state
         if not text or text == "none":
             self._draft_model_input.clear()
@@ -462,7 +489,9 @@ class ModelPanelMixin:
 
 
     def _load_speculative(self):
+        """Validate paths and reload the base model with the chosen draft attached."""
         # Step 1: Validate input parameters, operational preconditions, and state
+        # Unchecked toggle means the user wants no draft, so this acts as a clear.
         if not self._speculative_toggle.isChecked():
             self._clear_draft_model()
             return
@@ -475,6 +504,7 @@ class ModelPanelMixin:
             self._draft_status.setText(f"File not found: {draft_path}")
             return
 
+        # Fall back to the persisted active model when the path box is empty or invalid.
         base_path = self._model_path_input.text().strip()
         if not base_path or not os.path.exists(base_path):
             from app.engine import config_store as _cs
@@ -490,6 +520,7 @@ class ModelPanelMixin:
 
 
     def _clear_draft_model(self):
+        """Reset the loader and persist "no draft", restoring plain inference."""
         # Step 1: Validate input parameters, operational preconditions, and state
         from app.engine.model_loader import ModelLoader
         from app.engine import config_store as _cs
@@ -508,6 +539,7 @@ class ModelPanelMixin:
 
 
     def _populate_draft_selector(self):
+        """Fill the draft selector with the registry companion first, then other local models."""
         # Step 1: Validate input parameters, operational preconditions, and state
         if not hasattr(self, "_draft_model_combo"):
             return
@@ -515,6 +547,7 @@ class ModelPanelMixin:
         active_name = self._get_active_model_name()
         companion = config_store.registry_draft_model_filename(active_name)
         draft_cfg = config_store.get_active_draft_model()
+        # Prefer the saved draft; otherwise the registry's companion for the active model.
         preferred = draft_cfg.get("filename") or companion
 
         candidates: list[str] = []
@@ -547,6 +580,7 @@ class ModelPanelMixin:
 
 
     def _scan_models(self, force=False):
+        """List data/models/*.gguf with sizes, caching the result unless force is set."""
         # Step 1: Validate input parameters, operational preconditions, and state
         models_dir = "data/models"
         if force or self._cached_models_list is None:
@@ -572,6 +606,7 @@ class ModelPanelMixin:
                 except Exception:
                     self._cached_models_list = []
 
+        # Empty result: show a hint and still refresh the draft selector.
         if not self._cached_models_list:
             if not os.path.exists(models_dir):
                 self._model_list.setHtml("<span style='color:#F05050;'>data/models/ not found</span>")
@@ -582,6 +617,7 @@ class ModelPanelMixin:
 
         active_name = self._get_active_model_name()
 
+        # Active model is highlighted; filenames are HTML-escaped because they come from disk.
         html_lines = []
         for item in self._cached_models_list:
             # Iterate over items, evaluate loop invariant, and update progress
@@ -610,7 +646,9 @@ class ModelPanelMixin:
 
 
     def _scan_adapters(self, force=False):
+        """List adapter directories (those containing a .gguf) and select the active one in the combo."""
         # Step 1: Validate input parameters, operational preconditions, and state
+        # Cached like the model scan; force=True rescans after loads or training.
         if force or self._cached_adapters_list is None:
             adapters_dir = "data/adapters"
             cached = []
@@ -634,6 +672,7 @@ class ModelPanelMixin:
             # Iterate over items, evaluate loop invariant, and update progress
             self._adapter_combo.addItem(d)
 
+        # "none" stands for no adapter.
         # Select active adapter
         active_adapter = self.state.adapter_name or "none"
         index = self._adapter_combo.findText(active_adapter)
@@ -642,8 +681,10 @@ class ModelPanelMixin:
 
 
     def _load_adapter(self):
+        """Switch the active LoRA adapter: reset the loader, update state, and persist the choice."""
         # Step 1: Validate input parameters, operational preconditions, and state
         from app.engine.model_loader import ModelLoader
+        # Refuse while a generation is running; the loaded model cannot be swapped under it.
         if ModelLoader.is_instance_locked():
             QMessageBox.warning(
                 self, "Karl — Inference Active",
@@ -655,10 +696,12 @@ class ModelPanelMixin:
         if adapter_name == "none":
             adapter_name = None
 
+        # Reset so the next get_instance() rebuilds the model with the new adapter.
         ModelLoader.reset_instance()
         self.state.adapter_name = adapter_name
         self.adapter_changed.emit(adapter_name or "")
         
+        # Persist alongside the existing active filename so only the adapter changes.
         # Save to active model configuration, preserving the active filename
         try:
             # Execute guarded operations and establish recovery boundaries
@@ -678,6 +721,7 @@ class ModelPanelMixin:
 
 
     def refresh_filesystem_cache(self):
+        """Rescan models and adapters and refresh registry, hardware and preflight views."""
         # Step 1: Validate input parameters, operational preconditions, and state
         self._scan_models(force=True)
         self._scan_adapters(force=True)
@@ -687,6 +731,7 @@ class ModelPanelMixin:
 
 
     def _reset_circuit_breaker(self):
+        """Force-close the loader's circuit breaker and update the status label."""
         # Step 1: Validate input parameters, operational preconditions, and state
         from app.engine.model_loader import ModelLoader
         ModelLoader.reset_circuit_breaker()

@@ -6,6 +6,8 @@
 #          Provides responsive layout controls, parameter adjustment surfaces,
 #          and visual feedback components within Karl's PyQt6 shell.
 # ==============================================================================
+# MCP tab of the System workspace: lists configured MCP (Model Context Protocol)
+# tool servers from the config store and lets the user add, remove or restart them.
 
 from __future__ import annotations
 
@@ -22,7 +24,9 @@ from .common import _section
 logger = logging.getLogger("karl.system_config")
 
 class McpPanelMixin:
+    """Mixin that builds the MCP tab and edits the MCP server configuration."""
     def _build_mcp_tab(self) -> QWidget:
+        """Build the MCP tab: server list, add form, action buttons and a connected-tools counter."""
         # Step 1: Validate input parameters, operational preconditions, and state
         w = QWidget()
         layout = QVBoxLayout(w)
@@ -88,15 +92,18 @@ class McpPanelMixin:
 
 
     def _refresh_mcp_display(self):
+        """Redraw the configured server list and the count of connected tools."""
         # Step 1: Validate input parameters, operational preconditions, and state
         cfg = config_store.get_mcp_config()
         servers = cfg.get("mcpServers", {})
         if not servers:
             self._mcp_server_list.setPlainText("No MCP servers configured.")
             return
+        # Each entry is shown as "name: command args" in a read-only browser.
         lines = [f"• {name}: {s.get('command', '')} {' '.join(s.get('args', []))}"
                  for name, s in servers.items()]
         self._mcp_server_list.setPlainText("\n".join(lines))
+        # The tool count comes from the live client; if it has not started yet, say so instead of failing.
         # Show connected tool count
         try:
             # Execute guarded operations and establish recovery boundaries
@@ -108,12 +115,14 @@ class McpPanelMixin:
 
 
     def _add_mcp_server(self):
+        """Validate the name and command fields, store the new server and refresh the list."""
         # Step 1: Validate input parameters, operational preconditions, and state
         name = self._mcp_name_input.text().strip()
         cmd_raw = self._mcp_cmd_input.text().strip()
         if not name or not cmd_raw:
             QMessageBox.warning(self, "MCP", "Server name and command are required.")
             return
+        # Naive whitespace split: arguments containing spaces are not supported here.
         parts = cmd_raw.split()
         command, args = parts[0], parts[1:]
         config_store.add_mcp_server(name, command, args)
@@ -123,6 +132,7 @@ class McpPanelMixin:
     
 
     def _remove_mcp_server(self):
+        """Ask for a server name and remove it from the saved configuration."""
         # Step 1: Validate input parameters, operational preconditions, and state
         name, ok = QInputDialog.getText(self, "Remove MCP Server", "Server name to remove:")
         if ok and name.strip():
@@ -132,10 +142,12 @@ class McpPanelMixin:
     
 
     def _restart_mcp_client(self):
+        """Recreate the MCP client so config changes take effect, then refresh the display."""
         # Step 1: Validate input parameters, operational preconditions, and state
         try:
             # Execute guarded operations and establish recovery boundaries
             from app.engine.mcp_client import MCPClientManager
+            # reset then get_instance builds a fresh manager; invalidate_cache drops stale tool schemas.
             MCPClientManager.reset_instance()
             mgr = MCPClientManager.get_instance()
             mgr.start()

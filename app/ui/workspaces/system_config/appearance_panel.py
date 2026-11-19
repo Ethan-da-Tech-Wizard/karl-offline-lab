@@ -6,6 +6,10 @@
 #          Provides responsive layout controls, parameter adjustment surfaces,
 #          and visual feedback components within Karl's PyQt6 shell.
 # ==============================================================================
+# Theme tab for the System workspace. This mixin builds the controls (preset,
+# accent override, layout density, glow/motion) plus a live preview card; the
+# runtime side that actually applies and persists settings lives in
+# appearance_runtime.py (AppearanceRuntimeMixin), which shares `self`.
 
 from __future__ import annotations
 
@@ -26,13 +30,16 @@ from .common import _hline, _row, _section
 logger = logging.getLogger("karl.system_config")
 
 class AppearancePanelMixin:
+    """Mixin that builds the Theme tab and keeps its controls in sync with app state."""
     def _build_theme_tab(self) -> QWidget:
+        """Build the Theme tab: scrollable controls on the left, palette swatches and a live preview card on the right."""
         # Step 1: Validate input parameters, operational preconditions, and state
         w = QWidget()
         layout = QHBoxLayout(w)
         layout.setContentsMargins(12, 12, 12, 12)
         layout.setSpacing(16)
 
+        # Controls are wrapped in a scroll area so the tab stays usable on small screens.
         # Left Column: Controls (scrollable in case of small screen)
         scroll = QScrollArea()
         scroll.setWidgetResizable(True)
@@ -50,6 +57,7 @@ class AppearancePanelMixin:
 
         ctrl_layout.addWidget(_section("VISUAL THEME PRESETS"))
 
+        # One entry per theme in THEMES; changing it re-applies the theme immediately.
         # Presets Combobox
         self._theme_preset_combo = QComboBox()
         for name in THEMES.keys():
@@ -58,6 +66,7 @@ class AppearancePanelMixin:
         self._theme_preset_combo.currentTextChanged.connect(self._on_preset_changed)
         ctrl_layout.addWidget(_row("Preset Palette", self._theme_preset_combo))
 
+        # Shows the selected preset's description text beneath the combo.
         # Preset Description
         self._preset_desc_lbl = QLabel("")
         self._preset_desc_lbl.setObjectName("lbl-muted")
@@ -68,6 +77,7 @@ class AppearancePanelMixin:
         ctrl_layout.addWidget(_hline())
         ctrl_layout.addWidget(_section("CUSTOM ACCENT OVERRIDE"))
 
+        # A custom accent overrides the preset accent; the swatch previews the active colour.
         # Custom Accent Picker Row
         self._custom_accent_btn = QPushButton("Pick Custom Accent...")
         self._custom_accent_btn.clicked.connect(self._pick_custom_accent)
@@ -94,6 +104,7 @@ class AppearancePanelMixin:
         ctrl_layout.addWidget(_hline())
         ctrl_layout.addWidget(_section("THEME GALLERY"))
 
+        # Gallery cards are filled in later by _update_theme_gallery().
         self._theme_gallery = QScrollArea()
         self._theme_gallery.setWidgetResizable(True)
         self._theme_gallery.setFrameShape(QFrame.Shape.NoFrame)
@@ -108,6 +119,7 @@ class AppearancePanelMixin:
         ctrl_layout.addWidget(_hline())
         ctrl_layout.addWidget(_section("LAYOUT DENSITY PRESETS"))
 
+        # Layout density names are persisted as-is and interpreted by the runtime mixin.
         # Layout density selector
         self._layout_preset_combo = QComboBox()
         self._layout_preset_combo.addItems([
@@ -133,6 +145,7 @@ class AppearancePanelMixin:
         self._glow_enabled_check.stateChanged.connect(self._on_control_changed)
         ctrl_layout.addWidget(_row("Edge Glow", self._glow_enabled_check))
 
+        # Sliders use integer 0..20 steps; the value is divided by 10 to give a 0.0x-2.0x multiplier.
         # Glow Strength Slider
         self._glow_strength_slider = QSlider(Qt.Orientation.Horizontal)
         self._glow_strength_slider.setRange(0, 20)
@@ -178,6 +191,7 @@ class AppearancePanelMixin:
         self._reduced_motion_check_app.stateChanged.connect(self._on_control_changed)
         ctrl_layout.addWidget(_row("Accessibility", self._reduced_motion_check_app))
 
+        # Save persists the current selection through config_store (see appearance_runtime).
         # Save & Apply Button
         apply_btn = QPushButton("Save Appearance Config")
         apply_btn.setObjectName("btn-primary")
@@ -189,6 +203,7 @@ class AppearancePanelMixin:
         scroll.setWidget(scroll_content)
         layout.addWidget(scroll, 3)
 
+        # Right column: shows the effect of the chosen settings without leaving the tab.
         # Right Column: Live Preview Card + Swatches
         preview_col = QWidget()
         pr_layout = QVBoxLayout(preview_col)
@@ -210,6 +225,7 @@ class AppearancePanelMixin:
         sp_layout.addWidget(self._swatches_container)
         pr_layout.addWidget(swatches_panel)
 
+        # TracingPanel is the same glowing panel used elsewhere, so glow/motion changes are visible here.
         # Live Preview Panel using TracingPanel
         self._preview_card = TracingPanel(self.state)
         self._preview_card.set_active(True)
@@ -224,6 +240,7 @@ class AppearancePanelMixin:
 
         layout.addWidget(preview_col, 2)
 
+        # Populate controls from the saved UI config last, after every widget exists.
         # Load active configuration if file exists
         self._load_active_appearance_config()
         
@@ -231,6 +248,7 @@ class AppearancePanelMixin:
 
 
     def _add_preview_elements(self, card_layout: QVBoxLayout):
+        """Fill the preview card with sample buttons, status icons and chat bubbles."""
         # Step 1: Validate input parameters, operational preconditions, and state
         title = QLabel("LIVE PREVIEW")
         title.setObjectName("section-header")
@@ -241,6 +259,7 @@ class AppearancePanelMixin:
         desc.setStyleSheet("font-size: 8pt; margin-bottom: 2px;")
         card_layout.addWidget(desc)
         
+        # Object names btn-primary / btn-secondary pick up the active QSS theme.
         # Primary & Secondary Buttons mockup
         btn_row = QWidget()
         br_layout = QHBoxLayout(btn_row)
@@ -261,6 +280,7 @@ class AppearancePanelMixin:
         br_layout.addWidget(btn_sec)
         card_layout.addWidget(btn_row)
         
+        # Icons are custom painted and take the shared state so they follow palette changes.
         # Success & Error badges using custom painted icons
         badge_row = QWidget()
         bg_layout = QHBoxLayout(badge_row)
@@ -293,6 +313,7 @@ class AppearancePanelMixin:
         bg_layout.addWidget(err_widget)
         card_layout.addWidget(badge_row)
         
+        # Fake conversation, including a collapsed think block, to preview chat styling.
         # Chat bubbles mockup
         chat_mockup = QWidget()
         cm_layout = QVBoxLayout(chat_mockup)
@@ -326,6 +347,7 @@ class AppearancePanelMixin:
 
 
     def _load_active_appearance_config(self):
+        """Load the persisted UI config into the controls without triggering change handlers."""
         # Step 1: Validate input parameters, operational preconditions, and state
         config = config_store.get_ui_config()
         theme_preset = config["theme_preset"]
@@ -337,12 +359,14 @@ class AppearancePanelMixin:
         glow_strength = config["glow_strength"]
         theme_mode = config.get("theme_mode", "midnight")
 
+        # Set the mode on state before touching widgets so dependent handlers see it.
         self.state.theme_mode = theme_mode
         if hasattr(self, "_theme_mode_combo"):
             self._theme_mode_combo.blockSignals(True)
             self._theme_mode_combo.setCurrentText(theme_mode)
             self._theme_mode_combo.blockSignals(False)
 
+        # blockSignals around every setter prevents each programmatic change from re-applying the theme.
         self._theme_preset_combo.blockSignals(True)
         idx = self._theme_preset_combo.findText(theme_preset)
         if idx >= 0:
@@ -373,14 +397,18 @@ class AppearancePanelMixin:
         self._animation_intensity_slider.blockSignals(False)
         self._animation_intensity_val_lbl.setText(f"{animation_intensity:.1f}x")
 
+        # Remember the accent separately; None means use the preset accent.
         self._active_custom_accent = custom_accent
         
+        # Now apply the whole config once with signals active again.
         # Initial updates
         self._update_accent_button_text()
         self._on_preset_changed()
 
 
     def _sync_appearance_controls_from_state(self):
+        """Refresh the controls from the live app state (used when the tab is shown)."""
+        # getattr with defaults because state may not yet have every appearance attribute set.
         # Step 1: Validate input parameters, operational preconditions, and state
         theme_preset = getattr(self.state, "theme_preset", "Karl Obsidian Core")
         layout_preset = getattr(self.state, "layout_preset", "Focused Workbench")
@@ -434,6 +462,7 @@ class AppearancePanelMixin:
 
 
     def _update_accent_button_text(self):
+        """Update the accent button label and preview swatch to show the override or the preset default."""
         # Step 1: Validate input parameters, operational preconditions, and state
         if self._active_custom_accent:
             self._custom_accent_btn.setText(f"Accent: {self._active_custom_accent}")
@@ -450,6 +479,7 @@ class AppearancePanelMixin:
 
 
     def _on_preset_changed(self):
+        """Handle a preset change: refresh description, accent preview, theme and gallery."""
         # Step 1: Validate input parameters, operational preconditions, and state
         preset_name = self._theme_preset_combo.currentText()
         preset_data = THEMES.get(preset_name, {})
@@ -460,6 +490,8 @@ class AppearancePanelMixin:
 
 
     def _pick_custom_accent(self):
+        """Open a colour dialog seeded with the current accent and apply the chosen colour."""
+        # Seed with the active override if any, otherwise the preset's own accent.
         # Step 1: Validate input parameters, operational preconditions, and state
         preset_name = self._theme_preset_combo.currentText()
         default_color = THEMES.get(preset_name, {}).get("accent", "#00C2FF")
@@ -467,6 +499,7 @@ class AppearancePanelMixin:
             default_color = self._active_custom_accent
             
         color = QColorDialog.getColor(QColor(default_color), self, "Select Custom Accent Color")
+        # isValid is False when the user cancels the dialog.
         if color.isValid():
             self._active_custom_accent = color.name().upper()
             self._update_accent_button_text()
@@ -474,6 +507,7 @@ class AppearancePanelMixin:
 
 
     def _reset_custom_accent(self):
+        """Clear the custom accent so the preset's own accent is used again."""
         # Step 1: Validate input parameters, operational preconditions, and state
         self._active_custom_accent = None
         self._update_accent_button_text()
