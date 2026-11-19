@@ -18,7 +18,6 @@ class ToastOverlay(QWidget):
     
     def __init__(self, parent: QWidget, message: str, duration_ms: int = 3000):
         """Build the label, opacity effect, fade animation and one-shot dismiss timer."""
-        # Step 1: Validate input parameters, operational preconditions, and state
         super().__init__(parent)
         self.setWindowFlags(Qt.WindowType.FramelessWindowHint | Qt.WindowType.ToolTip)
         self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground)
@@ -60,7 +59,6 @@ class ToastOverlay(QWidget):
 
     def show_toast(self):
         """Show the toast at the top centre of the parent and start the dismiss timer."""
-        # Step 1: Validate input parameters, operational preconditions, and state
         self.show()
         # Position at top center of parent
         if self.parentWidget():
@@ -77,7 +75,6 @@ class ToastOverlay(QWidget):
 
     def _fade_out(self):
         """Play the fade animation in reverse and close the widget when it finishes."""
-        # Step 1: Validate input parameters, operational preconditions, and state
         self._fade_anim.setDirection(QPropertyAnimation.Direction.Backward)
         self._fade_anim.finished.connect(self.close)
         self._fade_anim.start()

@@ -40,7 +40,6 @@ class InferenceService:
 
     def __init__(self, state) -> None:
         """``state`` is the shared AppState (kept for later use by the service)."""
-        # Step 1: Validate input parameters, operational preconditions, and state
         self._state = state
         # See the note: this set is what keeps running QThreads alive.
         # Strong references keep threads alive until ``finished`` fires.
@@ -117,7 +116,6 @@ class InferenceService:
             The *already-started* thread handle.  Callers may connect
             additional signals or call ``request_stop()`` on the handle.
         """
-        # Step 1: Validate input parameters, operational preconditions, and state
         # Agentic mode can be requested by argument or by the hyperparameter flag.
         use_agentic = agentic or bool(hyperparams.get("agentic_loop_enabled", False))
 
@@ -173,7 +171,6 @@ class InferenceService:
                 _t = thread  # capture for the closure
 
                 def _agentic_done(total: int) -> None:
-                    # Step 1: Validate input parameters, operational preconditions, and state
                     history = getattr(_t, "chat_history", [])
                     # The agentic thread has no separate return value, so read the last assistant message from its history.
                     response = ""
@@ -190,7 +187,6 @@ class InferenceService:
                     ended_in_thought: bool,
                     diagnostics: dict,
                 ) -> None:
-                    # Step 1: Validate input parameters, operational preconditions, and state
                     on_finished_cb(thought, response, diagnostics)
 
                 thread.generation_finished.connect(_llm_done, connection_type)

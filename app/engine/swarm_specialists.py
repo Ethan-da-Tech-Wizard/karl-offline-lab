@@ -49,7 +49,6 @@ _PERFORMANCE_TERMS = re.compile(
 
 def classify_task(task: dict[str, Any]) -> list[str]:
     """Return specialist tags relevant to *task* based on filepath + instructions."""
-    # Step 1: Validate input parameters, operational preconditions, and state
     text = f"{task.get('filepath', '')} {task.get('instructions', '')}"
     tags = []
     if _SECURITY_TERMS.search(text):
@@ -82,11 +81,9 @@ class SecurityAuditorAgent:
 
     def review(self, filepath: str, content: str) -> dict[str, Any]:
         """Scan ``content`` and return concerns, the highest matching risk weight and a verdict."""
-        # Step 1: Validate input parameters, operational preconditions, and state
         concerns = []
         risk = 0.0
         for pattern, message, weight in _DANGEROUS_PATTERNS:
-            # Iterate over items, evaluate loop invariant, and update progress
             if pattern.search(content):
                 concerns.append(message)
                 # Risk is the worst single finding, not a sum, so many minor issues do not escalate to "revise".
@@ -109,11 +106,9 @@ class PerformanceAuditorAgent:
 
     def review(self, filepath: str, content: str) -> dict[str, Any]:
         """Parse Python content and report performance smells; non-Python or unparsable files yield none."""
-        # Step 1: Validate input parameters, operational preconditions, and state
         concerns: list[str] = []
         if filepath.endswith(".py"):
             try:
-                # Execute guarded operations and establish recovery boundaries
                 tree = ast.parse(content)
                 concerns.extend(self._scan(tree))
             except SyntaxError:
@@ -130,10 +125,8 @@ class PerformanceAuditorAgent:
 
     def _scan(self, tree: ast.AST) -> list[str]:
         """Walk the AST and collect at most 8 performance concerns."""
-        # Step 1: Validate input parameters, operational preconditions, and state
         concerns = []
         for node in ast.walk(tree):
-            # Iterate over items, evaluate loop invariant, and update progress
             if isinstance(node, (ast.For, ast.While)):
                 # A loop containing another loop anywhere inside it (ast.walk is recursive).
                 nested = [
@@ -165,14 +158,12 @@ class CriticAgent:
 
     def review(self, filepath: str, content: str) -> dict[str, Any]:
         """Return concerns and a verdict ("revise" when risk >= 0.6, i.e. 4 or more concerns)."""
-        # Step 1: Validate input parameters, operational preconditions, and state
         concerns: list[str] = []
         if "TODO" in content or "FIXME" in content or "XXX" in content:
             concerns.append("Contains TODO/FIXME/XXX markers left in committed code")
 
         if filepath.endswith(".py"):
             try:
-                # Execute guarded operations and establish recovery boundaries
                 tree = ast.parse(content)
                 concerns.extend(self._scan(tree))
             except SyntaxError:
@@ -190,10 +181,8 @@ class CriticAgent:
 
     def _scan(self, tree: ast.AST) -> list[str]:
         """Walk the AST for silent bare excepts and over-long functions (at most 8 results)."""
-        # Step 1: Validate input parameters, operational preconditions, and state
         concerns = []
         for node in ast.walk(tree):
-            # Iterate over items, evaluate loop invariant, and update progress
             if isinstance(node, ast.ExceptHandler):
                 body_is_noop = len(node.body) == 1 and isinstance(node.body[0], ast.Pass)
                 if node.type is None and body_is_noop:

@@ -64,7 +64,6 @@ _SPECIAL_TOKEN_LEAK_RE = re.compile(
 
 
 def _strip_special_token_leaks(text: str) -> str:
-    # Step 1: Validate input parameters, operational preconditions, and state
     """Remove any ChatML control token (complete or one char short) from ``text``."""
     return _SPECIAL_TOKEN_LEAK_RE.sub("", text)
 
@@ -86,7 +85,6 @@ class StreamingThoughtParser:
         chat_cb: Callable[[str], None],
         publish_events: bool = True,
     ):
-        # Step 1: Validate input parameters, operational preconditions, and state
         """``in_thought`` sets the starting mode (True when the prompt already opened <think>).
 
         ``thought_cb`` / ``chat_cb`` receive cleaned text. ``publish_events`` also mirrors
@@ -101,7 +99,6 @@ class StreamingThoughtParser:
         self._publish_events = publish_events
 
     def feed(self, text: str, defer_after_think_close: bool = False) -> ParserFeedResult:
-        # Step 1: Validate input parameters, operational preconditions, and state
         """Add a chunk of model output and emit whatever is safe to emit.
 
         If ``defer_after_think_close`` is True, return right after </think> without
@@ -143,7 +140,6 @@ class StreamingThoughtParser:
         return ParserFeedResult(closed_think=closed_think)
 
     def flush(self) -> None:
-        # Step 1: Validate input parameters, operational preconditions, and state
         """Emit any buffered text (generation is over, so no tag can still complete)."""
         if not self.buffer:
             return
@@ -154,7 +150,6 @@ class StreamingThoughtParser:
         self.buffer = ""
 
     def _emit_thought(self, token: str) -> None:
-        # Step 1: Validate input parameters, operational preconditions, and state
         """Clean and deliver a piece of thought text; also accumulates parsed_thought."""
         token = _strip_special_token_leaks(token)
         if not token:
@@ -165,7 +160,6 @@ class StreamingThoughtParser:
         self.parsed_thought += token
 
     def _emit_chat(self, token: str) -> None:
-        # Step 1: Validate input parameters, operational preconditions, and state
         """Clean and deliver a piece of answer text; also accumulates parsed_response."""
         token = _strip_special_token_leaks(token)
         if not token:

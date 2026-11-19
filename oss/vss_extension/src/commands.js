@@ -192,7 +192,6 @@ const WORKFLOW_REGISTRY = {
  * @returns {string}
  */
 function currentWorkspacePath(fallbackFile) {
-    // Step 1: Initialize function scope and validate execution context
     // The first workspace folder is treated as the project root.
     if (vscode.workspace.workspaceFolders && vscode.workspace.workspaceFolders.length > 0) {
         return vscode.workspace.workspaceFolders[0].uri.fsPath;
@@ -206,7 +205,6 @@ function currentWorkspacePath(fallbackFile) {
  * @returns {{counts: {error: number, warning: number, info: number, hint: number}, files: Object<string, any[]>}}
  */
 function groupedDiagnostics(currentFileOnly = false) {
-    // Step 1: Initialize function scope and validate execution context
     // Remember the active file so currentFileOnly can filter to it.
     // Computed once, outside the loop, because getDiagnostics() can return thousands of entries.
     const activeFile = vscode.window.activeTextEditor ? vscode.window.activeTextEditor.document.uri.fsPath : '';

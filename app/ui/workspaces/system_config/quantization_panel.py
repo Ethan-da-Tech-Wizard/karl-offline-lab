@@ -30,7 +30,6 @@ class QuantizationPanelMixin:
     """Mixin with the browse/start/cancel/progress/error slots for GGUF quantization."""
     def _browse_quant_source(self):
         """Pick the source GGUF and suggest an output name of the form base-FORMAT.gguf if none is set."""
-        # Step 1: Validate input parameters, operational preconditions, and state
         path, _ = QFileDialog.getOpenFileName(
             self, "Select source GGUF", "data/models", "GGUF (*.gguf);;All Files (*)"
         )
@@ -47,7 +46,6 @@ class QuantizationPanelMixin:
 
     def _start_quantize(self):
         """Validate inputs and launch a QuantizerThread, wiring its signals to the progress UI."""
-        # Step 1: Validate input parameters, operational preconditions, and state
         # Only one quantization job at a time.
         if self._quantizer_thread and self._quantizer_thread.isRunning():
             QMessageBox.warning(self, "Quantization Running", "A quantization job is already in progress.")
@@ -101,7 +99,6 @@ class QuantizationPanelMixin:
 
     def _cancel_quantize(self):
         """After confirmation, ask the running quantize thread to cancel."""
-        # Step 1: Validate input parameters, operational preconditions, and state
         if self._quantizer_thread and self._quantizer_thread.isRunning():
             reply = QMessageBox.question(
                 self, "Cancel Quantization",
@@ -117,7 +114,6 @@ class QuantizationPanelMixin:
 
     def _on_quant_progress(self, pct: int):
         """Update the progress bar and status text with the percent complete."""
-        # Step 1: Validate input parameters, operational preconditions, and state
         self._quant_progress_bar.setValue(pct)
         self._quant_status_lbl.setText(f"Quantizing… {pct}%")
 
@@ -125,7 +121,6 @@ class QuantizationPanelMixin:
 
     def _on_quant_error(self, msg: str):
         """Reset the quantize controls and report the error (inline, truncated, and in a dialog)."""
-        # Step 1: Validate input parameters, operational preconditions, and state
         self._quant_progress_bar.setVisible(False)
         self._quant_btn.setEnabled(True)
         self._quant_cancel_btn.setEnabled(False)

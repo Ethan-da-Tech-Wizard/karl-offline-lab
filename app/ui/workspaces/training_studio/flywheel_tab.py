@@ -25,7 +25,6 @@ from app.ui.workspaces.training_studio.threads import _FlywheelStatsThread
 
 def _section(text: str) -> QLabel:
     """Return a QLabel styled as a section heading."""
-    # Step 1: Validate input parameters, operational preconditions, and state
     lbl = QLabel(text)
     lbl.setObjectName("section-header")
     return lbl
@@ -33,7 +32,6 @@ def _section(text: str) -> QLabel:
 
 def _hline() -> QFrame:
     """Return a horizontal rule used inside the cards."""
-    # Step 1: Validate input parameters, operational preconditions, and state
     f = QFrame()
     f.setFrameShape(QFrame.Shape.HLine)
     return f
@@ -43,7 +41,6 @@ class FlywheelTab(QWidget):
     """Tab widget showing flywheel statistic cards and an export preview."""
     def __init__(self, state, parent=None):
         """Store state and build the tab; statistics load later through load_stats()."""
-        # Step 1: Validate input parameters, operational preconditions, and state
         super().__init__(parent)
         self.state = state
         # Strong references to running stats threads, released when each one finishes.
@@ -52,7 +49,6 @@ class FlywheelTab(QWidget):
 
     def _build_ui(self):
         """Build the header, the pipeline caption and the row of five cards (interactions, feedback, data, eval, export)."""
-        # Step 1: Validate input parameters, operational preconditions, and state
         layout = QVBoxLayout(self)
         layout.setContentsMargins(12, 12, 12, 12)
         layout.setSpacing(12)
@@ -159,7 +155,6 @@ class FlywheelTab(QWidget):
         # unreadable fragments. Give each a floor and let the row scroll
         # horizontally at narrow widths instead of shrinking below it.
         for card in (self._fw_interactions, self._fw_feedback, self._fw_data, self._fw_eval, self._fw_export_card):
-            # Iterate over items, evaluate loop invariant, and update progress
             card.setMinimumWidth(240)
             cl.addWidget(card, 1)
 
@@ -179,7 +174,6 @@ class FlywheelTab(QWidget):
 
     def _flywheel_card(self, title: str, field_ids: list) -> QWidget:
         """Build one stat card whose rows are label/value pairs, registering each value label in self._fw_fields by id."""
-        # Step 1: Validate input parameters, operational preconditions, and state
         card = QFrame()
         card.setObjectName("panel")
         cl = QVBoxLayout(card)
@@ -194,7 +188,6 @@ class FlywheelTab(QWidget):
         # _fw_fields is shared across cards (created on first use) so stats can be applied by key later.
         self._fw_fields = getattr(self, "_fw_fields", {})
         for fid in field_ids:
-            # Iterate over items, evaluate loop invariant, and update progress
             row = QWidget()
             rl = QHBoxLayout(row)
             rl.setContentsMargins(0, 0, 0, 0)
@@ -215,7 +208,6 @@ class FlywheelTab(QWidget):
 
     def load_stats(self):
         """Start a background thread that computes the stats and re-enable Refresh when it finishes."""
-        # Step 1: Validate input parameters, operational preconditions, and state
         self._fw_status_lbl.setText("Loading stats...")
         self._flywheel_refresh_btn.setEnabled(False)
         t = _FlywheelStatsThread()
@@ -228,11 +220,9 @@ class FlywheelTab(QWidget):
 
     def _apply_flywheel_stats(self, stats: dict):
         """Write each statistic into its matching label and show the latest SFT export preview."""
-        # Step 1: Validate input parameters, operational preconditions, and state
         # Unknown keys in the stats dict are ignored, so the thread can add fields without breaking the UI.
         fields = getattr(self, "_fw_fields", {})
         for fid, val in stats.items():
-            # Iterate over items, evaluate loop invariant, and update progress
             if fid in fields:
                 fields[fid].setText(str(val))
 
@@ -244,22 +234,18 @@ class FlywheelTab(QWidget):
 
     def _flywheel_export_sft(self):
         """Export SFT data, then refresh the statistics so counts and preview update."""
-        # Step 1: Validate input parameters, operational preconditions, and state
         self._export("sft")
         self.load_stats()
 
     def _flywheel_export_dpo(self):
         """Export DPO data, then refresh the statistics."""
-        # Step 1: Validate input parameters, operational preconditions, and state
         self._export("dpo")
         self.load_stats()
 
     def _open_training_folder(self):
         """Open data/training in the system file browser (creating it if needed)."""
-        # Step 1: Validate input parameters, operational preconditions, and state
         import subprocess
         try:
-            # Execute guarded operations and establish recovery boundaries
             path = os.path.abspath("data/training")
             os.makedirs(path, exist_ok=True)
             # Each OS has a different "open in file manager" entry point.
@@ -274,9 +260,7 @@ class FlywheelTab(QWidget):
 
     def _flywheel_goto_eval(self):
         """Switch the main window to the Eval workspace (sidebar index 5)."""
-        # Step 1: Validate input parameters, operational preconditions, and state
         try:
-            # Execute guarded operations and establish recovery boundaries
             # The window() lookup keeps this tab decoupled from MainWindow; silently do nothing if the sidebar is absent.
             main_win = self.window()
             if hasattr(main_win, "_sidebar"):
@@ -287,17 +271,14 @@ class FlywheelTab(QWidget):
     def _export(self, mode: str):
         """Validate curated.jsonl, ask where to save, and export in the given mode ("sft" or "dpo")."""
         # Same preflight as ExportTab._export: non-empty file and each line has "messages" or "prompt".
-        # Step 1: Validate input parameters, operational preconditions, and state
         curated_file = "data/training/curated.jsonl"
         if not os.path.exists(curated_file) or os.path.getsize(curated_file) == 0:
             QMessageBox.warning(self, "Validation Failed", "The dataset is empty. Curate some examples first.")
             return
             
         try:
-            # Execute guarded operations and establish recovery boundaries
             with open(curated_file, "r") as f:
                 for line_idx, line in enumerate(f):
-                    # Iterate over items, evaluate loop invariant, and update progress
                     if not line.strip():
                         continue
                     obj = json.loads(line)
@@ -313,7 +294,6 @@ class FlywheelTab(QWidget):
         if not path:
             return
         try:
-            # Execute guarded operations and establish recovery boundaries
             if mode == "sft":
                 out_path = self.state.curator.export_unsloth(path)
                 count = sum(1 for line in open(out_path, "r", encoding="utf-8"))

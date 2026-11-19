@@ -17,7 +17,6 @@ const cp = require('child_process');
  * @returns {Promise<string>}
  */
 function execGit(args, cwd) {
-    // Step 1: Initialize function scope and validate execution context
     // Wrap the callback-style execFile API in a Promise so callers can use async/await.
     return new Promise((resolve, reject) => {
         // execFile (not exec) passes args as an array with no shell, so branch names or paths

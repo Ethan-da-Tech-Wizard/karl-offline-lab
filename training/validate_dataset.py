@@ -60,11 +60,9 @@ def _build_token_estimator(block_size_override: int | None) -> tuple:
     boundaries.  Falls back to the 4-chars-per-token heuristic when no model
     is loaded (or llama_cpp is unavailable), so the script always runs.
     """
-    # Step 1: Validate input parameters, operational preconditions, and state
     # Precedence: --block-size, then the loaded model's context limit, then the 2048 default.
     block_size = block_size_override or DEFAULT_BLOCK_SIZE
     try:
-        # Execute guarded operations and establish recovery boundaries
         from app.engine.model_loader import ModelLoader
         # Only use the real tokenizer if a model is already loaded; never trigger a multi-GB model
         # load just to validate a file.
@@ -74,9 +72,7 @@ def _build_token_estimator(block_size_override: int | None) -> tuple:
                 block_size = ModelLoader.context_limit() or DEFAULT_BLOCK_SIZE
 
             def _model_estimate(text: str) -> int:
-                # Step 1: Validate input parameters, operational preconditions, and state
                 try:
-                    # Execute guarded operations and establish recovery boundaries
                     return len(llm.tokenize(text.encode("utf-8", errors="replace")))
                 except Exception:
                     return max(1, len(text) // CHARS_PER_TOKEN)
@@ -87,7 +83,6 @@ def _build_token_estimator(block_size_override: int | None) -> tuple:
 
     def _heuristic_estimate(text: str) -> int:
         """Approximate token count (len/4, at least 1) used when no model tokenizer is available."""
-        # Step 1: Validate input parameters, operational preconditions, and state
         return max(1, len(text) // CHARS_PER_TOKEN)
 
     return _heuristic_estimate, block_size, False
@@ -97,7 +92,6 @@ def _build_token_estimator(block_size_override: int | None) -> tuple:
 
 def _detect_format(rec: dict) -> str:
     """Return 'dpo', 'sft', 'chat', or 'unknown'."""
-    # Step 1: Validate input parameters, operational preconditions, and state
     # Detection order matters: DPO and SFT are checked before 'messages' so mixed records are
     # classified by their training-specific keys.
     if "prompt" in rec and ("chosen" in rec or "rejected" in rec):
@@ -113,7 +107,6 @@ def _detect_format(rec: dict) -> str:
 
 def _record_text(rec: dict, fmt: str) -> str:
     """Concatenate all natural-language fields so we can estimate total tokens."""
-    # Step 1: Validate input parameters, operational preconditions, and state
     if fmt == "sft":
         return " ".join(filter(None, [
             str(rec.get("instruction", "")),
@@ -137,10 +130,8 @@ def _record_text(rec: dict, fmt: str) -> str:
 
 def _validate_sft(rec: dict, lineno: int) -> tuple[list[str], list[str]]:
     """Returns (schema_errors, empty_field_errors)."""
-    # Step 1: Validate input parameters, operational preconditions, and state
     schema, empty = [], []
     for key in ("instruction", "input", "output", "source", "timestamp"):
-        # Iterate over items, evaluate loop invariant, and update progress
         if key not in rec:
             schema.append(f"line {lineno}: missing key '{key}'")
     if not str(rec.get("instruction", "")).strip():
@@ -152,10 +143,8 @@ def _validate_sft(rec: dict, lineno: int) -> tuple[list[str], list[str]]:
 
 def _validate_dpo(rec: dict, lineno: int) -> tuple[list[str], list[str]]:
     """Returns (schema_errors, empty_field_errors)."""
-    # Step 1: Validate input parameters, operational preconditions, and state
     schema, empty = [], []
     for key in ("prompt", "chosen", "rejected"):
-        # Iterate over items, evaluate loop invariant, and update progress
         if key not in rec:
             schema.append(f"line {lineno}: missing key '{key}'")
     if not str(rec.get("prompt", "")).strip():
@@ -170,7 +159,6 @@ def _validate_dpo(rec: dict, lineno: int) -> tuple[list[str], list[str]]:
 
 def _validate_chat(rec: dict, lineno: int) -> tuple[list[str], list[str]]:
     """Returns (schema_errors, empty_field_errors)."""
-    # Step 1: Validate input parameters, operational preconditions, and state
     schema, empty = [], []
     messages = rec.get("messages")
     if not isinstance(messages, list) or not messages:
@@ -182,7 +170,6 @@ def _validate_chat(rec: dict, lineno: int) -> tuple[list[str], list[str]]:
             f"line {lineno}: messages must include 'user' and 'assistant' roles"
         )
     for m in messages:
-        # Iterate over items, evaluate loop invariant, and update progress
         if not str(m.get("content", "")).strip():
             empty.append(
                 f"line {lineno}: empty content in role '{m.get('role')}'"
@@ -194,24 +181,19 @@ def _validate_chat(rec: dict, lineno: int) -> tuple[list[str], list[str]]:
 
 def _pass(msg: str):
     """Print a success line."""
-    # Step 1: Validate input parameters, operational preconditions, and state
     print(f"  ✓  {msg}")
 
 def _fail(msg: str):
     """Print a failure line."""
-    # Step 1: Validate input parameters, operational preconditions, and state
     print(f"  ✗  FAIL: {msg}")
 
 def _info(msg: str):
     """Print an informational line."""
-    # Step 1: Validate input parameters, operational preconditions, and state
     print(f"  ·  {msg}")
 
 def _indent(lines: list[str], limit: int = 10):
     """Print up to `limit` detail lines under the previous message, then a '... and N more' summary line."""
-    # Step 1: Validate input parameters, operational preconditions, and state
     for line in lines[:limit]:
-        # Iterate over items, evaluate loop invariant, and update progress
         print(f"         {line}")
     if len(lines) > limit:
         print(f"         … and {len(lines) - limit} more")
@@ -233,7 +215,6 @@ _UNICODE_REPAIR_TABLE = str.maketrans({
 
 def _sanitize_text(s: str) -> str:
     """Replace smart quotes, NBSP, and trailing CR in a single string."""
-    # Step 1: Validate input parameters, operational preconditions, and state
     return s.translate(_UNICODE_REPAIR_TABLE).rstrip("\r")
 
 
@@ -242,12 +223,10 @@ def _sanitize_record(rec: dict) -> tuple[dict, bool]:
     Recursively walk all string values and apply _sanitize_text.
     Returns (cleaned_rec, changed) where changed=True if anything was modified.
     """
-    # Step 1: Validate input parameters, operational preconditions, and state
     changed = False
 
     def _walk(obj):
         """Recursively clean every string inside dicts/lists, recording in the enclosing 'changed' flag whether anything was altered."""
-        # Step 1: Validate input parameters, operational preconditions, and state
         nonlocal changed
         if isinstance(obj, str):
             cleaned = _sanitize_text(obj)
@@ -269,7 +248,6 @@ def _reasoning_guard(text: str) -> str:
     at the absolute end of the truncated string so the reasoning tag pair is
     always balanced after truncation.
     """
-    # Step 1: Validate input parameters, operational preconditions, and state
     if text.count("<think>") > text.count("</think>"):
         return text.rstrip() + "</think>"
     return text
@@ -277,7 +255,6 @@ def _reasoning_guard(text: str) -> str:
 
 def _truncate_text(text: str, max_chars: int) -> str:
     """Hard character truncation. Caller applies _reasoning_guard afterwards."""
-    # Step 1: Validate input parameters, operational preconditions, and state
     return text[:max_chars] if len(text) > max_chars else text
 
 
@@ -302,7 +279,6 @@ def _truncate_record(rec: dict, fmt: str, char_budget: int) -> dict:
       • _THINK_CLOSE_LEN chars are reserved per field so the reasoning guard
         cannot push the total over budget after it appends </think>.
     """
-    # Step 1: Validate input parameters, operational preconditions, and state
     rec = dict(rec)
 
     if fmt == "sft":
@@ -359,7 +335,6 @@ def _truncate_record(rec: dict, fmt: str, char_budget: int) -> dict:
     elif fmt == "chat":
         messages = [dict(m) for m in rec.get("messages", [])]
         for i in range(len(messages) - 1, -1, -1):
-            # Iterate over items, evaluate loop invariant, and update progress
             total = sum(len(str(m.get("content", ""))) for m in messages)
             if total <= char_budget:
                 break
@@ -380,7 +355,6 @@ def _repair_schema(rec: dict, fmt: str) -> tuple[dict, bool]:
     Returns (repaired_rec, should_drop).
     should_drop=True means the record is unfixable and must be omitted.
     """
-    # Step 1: Validate input parameters, operational preconditions, and state
     if fmt == "sft":
         if not str(rec.get("instruction", "")).strip():
             return rec, True
@@ -423,7 +397,6 @@ def _repair_schema(rec: dict, fmt: str) -> tuple[dict, bool]:
 
 def validate(path: str, block_size_override: int | None = None) -> bool:
     """Read-only pre-flight check of a JSONL dataset: file exists, every line parses, format-specific schema, empty or identical fields, and the token-length envelope. Prints a report and returns True only if no problem of any kind was found."""
-    # Step 1: Validate input parameters, operational preconditions, and state
     bar = "─" * 62
     print(f"\n{bar}")
     print(f"  Karl DPO/SFT Dataset Validator")
@@ -450,12 +423,10 @@ def validate(path: str, block_size_override: int | None = None) -> bool:
     json_errors: list[str] = []
     with open(path, "r", encoding="utf-8") as fh:
         for lineno, raw in enumerate(fh, 1):
-            # Iterate over items, evaluate loop invariant, and update progress
             raw = raw.strip()
             if not raw:
                 continue
             try:
-                # Execute guarded operations and establish recovery boundaries
                 records.append((lineno, json.loads(raw)))
             except json.JSONDecodeError as exc:
                 json_errors.append(f"line {lineno}: {exc.msg} (col {exc.colno})")
@@ -481,7 +452,6 @@ def validate(path: str, block_size_override: int | None = None) -> bool:
     total_tokens = 0
 
     for lineno, rec in records:
-        # Iterate over items, evaluate loop invariant, and update progress
         fmt = _detect_format(rec)
         format_counts[fmt] += 1
 
@@ -566,7 +536,6 @@ def _print_report(
     block_size: int,
 ):
     """Print the aggregate summary table for validate()."""
-    # Step 1: Validate input parameters, operational preconditions, and state
     bar = "─" * 62
     invalid_total = json_errors + schema_failures + empty_failures + length_overflows
     print(f"\n{bar}")
@@ -591,7 +560,6 @@ def repair(path: str, block_size_override: int | None = None) -> None:
     Sanitize, schema-repair, and truncate every record in *path* in-place.
     A .bak backup is written before any modifications are made.
     """
-    # Step 1: Validate input parameters, operational preconditions, and state
     bar = "─" * 62
     print(f"\n{bar}")
     print(f"  Karl Dataset Repair Mode")
@@ -626,12 +594,10 @@ def repair(path: str, block_size_override: int | None = None) -> None:
     json_dropped = 0
     with open(path, "r", encoding="utf-8") as fh:
         for lineno, raw in enumerate(fh, 1):
-            # Iterate over items, evaluate loop invariant, and update progress
             raw = raw.strip()
             if not raw:
                 continue
             try:
-                # Execute guarded operations and establish recovery boundaries
                 parsed.append((lineno, json.loads(raw)))
             except json.JSONDecodeError:
                 json_dropped += 1
@@ -671,7 +637,6 @@ def repair(path: str, block_size_override: int | None = None) -> None:
     # ── Write back ────────────────────────────────────────────────────────────
     with open(path, "w", encoding="utf-8") as fh:
         for rec in output_records:
-            # Iterate over items, evaluate loop invariant, and update progress
             fh.write(json.dumps(rec, ensure_ascii=False) + "\n")
 
     # ── Repair summary ────────────────────────────────────────────────────────
@@ -695,7 +660,6 @@ def repair(path: str, block_size_override: int | None = None) -> None:
 
 def install_git_hook():
     """Programmatically install a Git pre-commit hook that validates datasets."""
-    # Step 1: Validate input parameters, operational preconditions, and state
     git_dir = ".git"
     if not os.path.isdir(git_dir):
         # Check parent if we're in training/
@@ -746,7 +710,6 @@ exit 0
 """
 
     try:
-        # Execute guarded operations and establish recovery boundaries
         with open(hook_path, "w", encoding="utf-8") as f:
             f.write(hook_script)
         
@@ -767,7 +730,6 @@ exit 0
 
 def main():
     """CLI entry: install the git hook, or optionally repair in place and then validate. Exit code 0 when valid, 1 otherwise."""
-    # Step 1: Validate input parameters, operational preconditions, and state
     parser = argparse.ArgumentParser(
         description="Karl DPO/SFT training dataset pre-flight validator"
     )

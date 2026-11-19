@@ -24,18 +24,15 @@ class DatasetListModel(QAbstractListModel):
     """Minimal read-only list model that shows each example as a preformatted string."""
     def __init__(self, dataset_list=None):
         """Wrap the given list of display strings (empty by default)."""
-        # Step 1: Validate input parameters, operational preconditions, and state
         super().__init__()
         self._dataset = dataset_list or []
 
     def rowCount(self, parent=QModelIndex()):
         """Return the number of examples (Qt model API)."""
-        # Step 1: Validate input parameters, operational preconditions, and state
         return len(self._dataset)
 
     def data(self, index, role=Qt.ItemDataRole.DisplayRole):
         """Return the display string for a row; other roles are not provided (Qt model API)."""
-        # Step 1: Validate input parameters, operational preconditions, and state
         if not index.isValid():
             return None
         row = index.row()
@@ -46,14 +43,12 @@ class DatasetListModel(QAbstractListModel):
 
     def get_item(self, row):
         """Return the display string at the row, or None when out of range."""
-        # Step 1: Validate input parameters, operational preconditions, and state
         if 0 <= row < len(self._dataset):
             return self._dataset[row]
         return None
 
     def update_data(self, new_dataset):
         """Replace the whole list; begin/endResetModel tells attached views to redraw from scratch."""
-        # Step 1: Validate input parameters, operational preconditions, and state
         self.beginResetModel()
         self._dataset = new_dataset
         self.endResetModel()
@@ -61,7 +56,6 @@ class DatasetListModel(QAbstractListModel):
 
 def _section(text: str) -> QLabel:
     """Return a QLabel styled as a section heading."""
-    # Step 1: Validate input parameters, operational preconditions, and state
     lbl = QLabel(text)
     lbl.setObjectName("section-header")
     return lbl
@@ -79,16 +73,13 @@ class _MergeThread(QThread):
 
     def __init__(self, primary: str, incoming: str, parent=None):
         """Remember the local (primary) and incoming file paths to merge."""
-        # Step 1: Validate input parameters, operational preconditions, and state
         super().__init__(parent)
         self._primary = primary
         self._incoming = incoming
 
     def run(self):
         """Merge the incoming file into the primary dataset and emit the stats (or the error text)."""
-        # Step 1: Validate input parameters, operational preconditions, and state
         try:
-            # Execute guarded operations and establish recovery boundaries
             # Imported here so the merger module loads only when a merge is actually requested.
             from app.utils.dataset_merger import DatasetMerger
             stats = DatasetMerger.merge_files(self._primary, self._incoming)
@@ -106,7 +97,6 @@ class DatasetTab(QWidget):
 
     def __init__(self, state, parent=None):
         """Store state and build the tab; no merge thread or dialog exists yet."""
-        # Step 1: Validate input parameters, operational preconditions, and state
         super().__init__(parent)
         self.state = state
         self._merge_thread: _MergeThread | None = None
@@ -115,7 +105,6 @@ class DatasetTab(QWidget):
 
     def _build_ui(self):
         """Build the example list column (left) and the preview column (right)."""
-        # Step 1: Validate input parameters, operational preconditions, and state
         layout = QHBoxLayout(self)
         layout.setContentsMargins(8, 8, 8, 8)
         layout.setSpacing(10)
@@ -169,7 +158,6 @@ class DatasetTab(QWidget):
 
     def _on_row_changed(self, current, previous):
         """Slot for selection changes; forwards the new row to the preview renderer."""
-        # Step 1: Validate input parameters, operational preconditions, and state
         row = current.row()
         self._on_example_selected(row)
 
@@ -177,12 +165,10 @@ class DatasetTab(QWidget):
 
     def refresh(self):
         """Rebuild the list from the curator, one line per example with a source tag and a short user-prompt preview."""
-        # Step 1: Validate input parameters, operational preconditions, and state
         self._detail_view.clear()
         formatted_list = []
         # The list order equals get_all_examples() order, so row numbers map directly to curator indexes.
         for ex in self.state.curator.get_all_examples():
-            # Iterate over items, evaluate loop invariant, and update progress
             source = ex.get("source", "unknown")
             if source == "thumbs_up":
                 tag = "✓ positive"
@@ -196,7 +182,6 @@ class DatasetTab(QWidget):
             messages = ex.get("messages", [])
             user_text = ""
             for m in messages:
-                # Iterate over items, evaluate loop invariant, and update progress
                 if m.get("role") == "user":
                     user_text = m.get("content", "")
                     break
@@ -209,7 +194,6 @@ class DatasetTab(QWidget):
 
     def _on_example_selected(self, row: int):
         """Render the selected example as colour-coded role blocks in the preview pane."""
-        # Step 1: Validate input parameters, operational preconditions, and state
         if row < 0:
             return
         # Re-read from the curator rather than caching, so the preview always matches stored data.
@@ -230,7 +214,6 @@ class DatasetTab(QWidget):
         ]
 
         for msg in messages:
-            # Iterate over items, evaluate loop invariant, and update progress
             role = msg.get("role", "user").upper()
             content = msg.get("content", "")
 
@@ -256,7 +239,6 @@ class DatasetTab(QWidget):
 
     def _delete_selected(self):
         """After confirmation, delete the selected example and notify listeners."""
-        # Step 1: Validate input parameters, operational preconditions, and state
         row = self._example_list.currentIndex().row()
         if row < 0:
             return
@@ -274,7 +256,6 @@ class DatasetTab(QWidget):
     # Import needs the file dialog, a pre-flight check, and a background merge (below).
     def _import_team_traces(self):
         """Open file dialog → run merge in background → show summary."""
-        # Step 1: Validate input parameters, operational preconditions, and state
         # Only one merge at a time.
         if self._merge_thread and self._merge_thread.isRunning():
             QMessageBox.information(
@@ -329,7 +310,6 @@ class DatasetTab(QWidget):
 
     def _on_merge_finished(self, stats: dict):
         """Handle successful merge completion."""
-        # Step 1: Validate input parameters, operational preconditions, and state
         if self._progress_dialog:
             self._progress_dialog.close()
             self._progress_dialog = None
@@ -365,7 +345,6 @@ class DatasetTab(QWidget):
 
     def _on_merge_error(self, error_text: str):
         """Handle merge failure."""
-        # Step 1: Validate input parameters, operational preconditions, and state
         if self._progress_dialog:
             self._progress_dialog.close()
             self._progress_dialog = None

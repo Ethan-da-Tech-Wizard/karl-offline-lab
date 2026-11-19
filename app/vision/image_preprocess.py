@@ -26,7 +26,6 @@ from PyQt6.QtGui import QImage
 
 
 def image_info(path: str) -> dict:
-    # Step 1: Validate input parameters, operational preconditions, and state
     """Return the pixel width, height and on-disk byte size of the image at ``path``.
 
     Raises ValueError if Qt cannot decode the file (QImage.isNull() is Qt's
@@ -45,7 +44,6 @@ def image_info(path: str) -> dict:
 
 
 def make_thumbnail(src: str, dst: str, max_size: int = 512) -> None:
-    # Step 1: Validate input parameters, operational preconditions, and state
     """Write a downscaled copy of ``src`` to ``dst`` that fits inside max_size x max_size.
 
     Aspect ratio is preserved (KeepAspectRatio) and SmoothTransformation is used
@@ -69,7 +67,6 @@ def make_thumbnail(src: str, dst: str, max_size: int = 512) -> None:
 
 
 def prepare_for_ocr(src: str, dst: str) -> dict:
-    # Step 1: Validate input parameters, operational preconditions, and state
     """Normalize ``src`` to 32-bit RGB and save it to ``dst`` for the OCR engine.
 
     Converting to Format_RGB32 flattens exotic pixel formats (palette, alpha,

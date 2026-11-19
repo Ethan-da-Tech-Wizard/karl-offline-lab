@@ -32,7 +32,6 @@ class SafeMultiLangSandbox:
     """Executes TypeScript or Rust code blocks inside resource-bounded shell sandboxes."""
 
     def __init__(self, cpu_timeout_sec: float = 10.0, memory_limit_mb: int = 512):
-        # Step 1: Validate input parameters, operational preconditions, and state
         """Store limits. NOTE: neither limit is applied yet because the runners below are stubs."""
         self.cpu_timeout_sec = cpu_timeout_sec
         self.memory_limit_mb = memory_limit_mb
@@ -49,7 +48,6 @@ class SafeMultiLangSandbox:
         Returns:
             Tuple of (success_bool, stdout_stderr_log).
         """
-        # Step 1: Validate input parameters, operational preconditions, and state
         # Normalize so "TypeScript", " rust " etc. match.
         language = language.lower().strip()
         # Each run gets a throwaway directory that is deleted on exit, even on error.

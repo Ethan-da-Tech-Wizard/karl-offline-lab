@@ -61,7 +61,6 @@ class SystemConfigWorkspace(
     # State is the shared app state object (signals such as set_workbench_hyperparams).
     def __init__(self, state, parent=None):
         """Create system config tabs and start live hardware monitoring."""
-        # Step 1: Validate input parameters, operational preconditions, and state
         super().__init__(parent)
         self.state = state
         # Background-thread handles; kept so we can avoid starting duplicate jobs
@@ -89,7 +88,6 @@ class SystemConfigWorkspace(
 
     def showEvent(self, event):
         """Refresh scans, speculative-decoding state and hardware info whenever the tab becomes visible."""
-        # Step 1: Validate input parameters, operational preconditions, and state
         # force=False lets the scans reuse their cache when nothing changed on disk.
         super().showEvent(event)
         self._scan_models(force=False)
@@ -125,7 +123,6 @@ class SystemConfigWorkspace(
 
     def _build_ui(self):
         """Build the System title and tab set from mixin-provided panels."""
-        # Step 1: Validate input parameters, operational preconditions, and state
         root = QVBoxLayout(self)
         root.setContentsMargins(12, 12, 12, 12)
         root.setSpacing(12)
@@ -166,14 +163,12 @@ class SystemConfigWorkspace(
 
     def show_theme_tab(self):
         """Switch to the Theme tab, resyncing its controls from current app state first."""
-        # Step 1: Validate input parameters, operational preconditions, and state
         if hasattr(self, "_tabs") and hasattr(self, "_theme_tab"):
             self._sync_appearance_controls_from_state()
             self._tabs.setCurrentWidget(self._theme_tab)
 
     def show_defaults_tab(self):
         """Switch to the Defaults tab (index 2 in the tab order built in _build_ui)."""
-        # Step 1: Validate input parameters, operational preconditions, and state
         if hasattr(self, "_tabs"):
             self._tabs.setCurrentIndex(2)
 
@@ -181,7 +176,6 @@ class SystemConfigWorkspace(
 
     def _apply_defaults(self):
         """Publish the chosen generation defaults to the Workbench and confirm to the user."""
-        # Step 1: Validate input parameters, operational preconditions, and state
         from PyQt6.QtWidgets import QMessageBox
         temp = self._temp_spin.value()
         top_p = self._topp_spin.value()

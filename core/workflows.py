@@ -93,7 +93,6 @@ def get_workflow(name: str) -> dict:
     Raises:
         KeyError: If `name` is not in WORKFLOWS.
     """
-    # Step 1: Validate input parameters, operational preconditions, and state
     if name not in WORKFLOWS:
         available = ", ".join(WORKFLOWS.keys())
         raise KeyError(f"Unknown workflow '{name}'. Available: {available}")
@@ -102,7 +101,6 @@ def get_workflow(name: str) -> dict:
 
 def list_workflows() -> list[tuple[str, str]]:
     """Return [(name, label), ...] sorted by label for UI population."""
-    # Step 1: Validate input parameters, operational preconditions, and state
     return sorted(
         [(k, v["label"]) for k, v in WORKFLOWS.items()],
         key=lambda x: x[1]

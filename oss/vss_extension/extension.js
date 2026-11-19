@@ -29,7 +29,6 @@ const {
  * @returns {{ active_port: number, token: string, bound_at: string } | null}
  */
 function readServiceDiscovery() {
-    // Step 1: Initialize function scope and validate execution context
     const discoveryPath = path.join(os.homedir(), '.karl', 'service_discovery.json');
     try {
         const raw = fs.readFileSync(discoveryPath, 'utf8');
@@ -48,7 +47,6 @@ function readServiceDiscovery() {
  * @param {vscode.ExtensionContext} context
  */
 function activate(context) {
-    // Step 1: Initialize function scope and validate execution context
     const sidebarProvider = new KarlSidebarProvider(context);
 
     // The Python app writes ~/.karl/service_discovery.json; reading it lets the extension
@@ -114,7 +112,6 @@ function activate(context) {
      * @param {vscode.TextEditor | undefined} editor
      */
     function _getSelectionOrFile(editor) {
-        // Step 1: Initialize function scope and validate execution context
         if (!editor) return '';
         const sel = editor.selection;
         if (!sel.isEmpty) {
@@ -129,7 +126,6 @@ function activate(context) {
      * @param {object} payload extra fields merged into the message
      */
     function _sendToKarlWebview(command, payload) {
-        // Step 1: Initialize function scope and validate execution context
         if (provider && provider._view) {
             provider._view.webview.postMessage({ command, ...payload });
         } else {
@@ -545,7 +541,6 @@ print(completion, end="")
  * Called by VS Code on shutdown; disposables registered in activate() are cleaned up automatically.
  */
 function deactivate() {
-    // Step 1: Initialize function scope and validate execution context
     console.log('Karl extension deactivated.');
 }
 

@@ -35,7 +35,6 @@ _SHORTCUTS = [
 
 def _kbd(text: str, accent: str, border: str, bg_raised: str, text_hi: str) -> QLabel:
     """Render a key name as a styled kbd badge."""
-    # Step 1: Validate input parameters, operational preconditions, and state
     lbl = QLabel(text)
     lbl.setAlignment(Qt.AlignmentFlag.AlignCenter)
     lbl.setStyleSheet(f"""
@@ -64,7 +63,6 @@ class ShortcutsOverlay(QWidget):
 
     def __init__(self, parent: QWidget):
         """Create the hidden overlay as a child of `parent`, build its contents and position it."""
-        # Step 1: Validate input parameters, operational preconditions, and state
         super().__init__(parent)
         self.setObjectName("shortcuts-overlay")
         self.setAttribute(Qt.WidgetAttribute.WA_TransparentForMouseEvents, False)
@@ -82,10 +80,8 @@ class ShortcutsOverlay(QWidget):
         Theme colours are read from the parent's AppState when available; the
         hard-coded fallbacks keep the overlay usable if theming fails.
         """
-        # Step 1: Validate input parameters, operational preconditions, and state
         from app.ui.themes import get_theme_colors
         try:
-            # Execute guarded operations and establish recovery boundaries
             # Any failure (no state, unknown theme) just means fallback colours are used.
             colors = get_theme_colors(getattr(parent, "state", None))
         except Exception:
@@ -157,14 +153,12 @@ class ShortcutsOverlay(QWidget):
         # description right-aligned.
         # ── shortcut rows ─────────────────────────────────────────────────────
         for key_text, description in _SHORTCUTS:
-            # Iterate over items, evaluate loop invariant, and update progress
             row = QHBoxLayout()
             row.setSpacing(12)
             row.setContentsMargins(0, 0, 0, 0)
 
             kbd_parts = key_text.split(" + ")
             for i, part in enumerate(kbd_parts):
-                # Iterate over items, evaluate loop invariant, and update progress
                 row.addWidget(_kbd(part.strip(), accent, border, bg_raised, text_hi))
                 if i < len(kbd_parts) - 1:
                     plus = QLabel("+")
@@ -190,7 +184,6 @@ class ShortcutsOverlay(QWidget):
 
         Width is fixed at 340px; height follows the content but never below 300px.
         """
-        # Step 1: Validate input parameters, operational preconditions, and state
         parent = self.parent()
         if parent is None:
             return
@@ -207,14 +200,12 @@ class ShortcutsOverlay(QWidget):
 
     def show_overlay(self):
         """Reposition, raise above sibling widgets and show."""
-        # Step 1: Validate input parameters, operational preconditions, and state
         self._reposition()
         self.raise_()
         self.show()
 
     def toggle(self):
         """Hide the overlay if visible, otherwise show it."""
-        # Step 1: Validate input parameters, operational preconditions, and state
         if self.isVisible():
             self.hide()
         else:
@@ -224,7 +215,6 @@ class ShortcutsOverlay(QWidget):
 
     def eventFilter(self, obj, event):
         """Re-anchor the overlay whenever the filtered (parent) widget is resized."""
-        # Step 1: Validate input parameters, operational preconditions, and state
         if event.type() == QEvent.Type.Resize:
             self._reposition()
         return super().eventFilter(obj, event)

@@ -34,7 +34,6 @@ EXECUTION_DIR = os.path.join("data", "flywheel", "execution")
 
 def write_json_atomic(path: str, data: dict):
     """Write JSON data to a path atomically."""
-    # Step 1: Validate input parameters, operational preconditions, and state
     # Write to a temp file then os.replace so readers never see a half-written JSON.
     temp_path = f"{path}.tmp"
     with open(temp_path, "w", encoding="utf-8") as f:
@@ -43,12 +42,10 @@ def write_json_atomic(path: str, data: dict):
 
 def process_task(task_path: str, llm):
     """Run one queued task file through the local model and write an execution log for the verifier stage. Unreadable or statement-less tasks are deleted so they cannot block the queue; on a model error the task file is kept so it is retried by the main loop."""
-    # Step 1: Validate input parameters, operational preconditions, and state
     task_id_file = os.path.basename(task_path)
     logger.info("Processing task: %s", task_id_file)
     
     try:
-        # Execute guarded operations and establish recovery boundaries
         with open(task_path, "r", encoding="utf-8") as f:
             task = json.load(f)
     except Exception as e:
@@ -81,7 +78,6 @@ def process_task(task_path: str, llm):
             stop=["User:", "<think>"], # Safety stops
             stream=True
         ):
-            # Iterate over items, evaluate loop invariant, and update progress
             text = chunk["choices"][0]["text"]
             output_chunks.append(text)
             
@@ -119,15 +115,12 @@ def process_task(task_path: str, llm):
 
 def main():
     """Poll data/flywheel/queue forever, loading the model lazily on the first task and handling one task at a time, oldest filename first."""
-    # Step 1: Validate input parameters, operational preconditions, and state
     logger.info("Flywheel Runner (Agent 2) started. Watching %s", QUEUE_DIR)
     
     llm = None
     
     while True:
-        # Iterate over items, evaluate loop invariant, and update progress
         try:
-            # Execute guarded operations and establish recovery boundaries
             files = [f for f in os.listdir(QUEUE_DIR) if f.endswith(".json")]
             if not files:
                 time.sleep(1)

@@ -185,9 +185,7 @@ text.
 
 def _query_free_vram_mb() -> float:
     """Sum of free VRAM across all GPUs in MB; 0.0 if GPUtil is unavailable."""
-    # Step 1: Validate input parameters, operational preconditions, and state
     try:
-        # Execute guarded operations and establish recovery boundaries
         profile = get_hardware_profile()
         # Free memory (not "used") is what hardware_scout reports, so footprint is derived as a
         # difference of free memory before and after loading; unrelated GPU activity during the run
@@ -199,7 +197,6 @@ def _query_free_vram_mb() -> float:
 
 def _vram_used_since(free_before: float) -> float:
     """MB consumed relative to a prior free-memory baseline; 0.0 on failure."""
-    # Step 1: Validate input parameters, operational preconditions, and state
     free_now = _query_free_vram_mb()
     # Zero means "no GPU info", not "no memory used"; report 0.0 (unknown) rather than a
     # misleading difference.
@@ -212,7 +209,6 @@ def _vram_used_since(free_before: float) -> float:
 
 def _softmax(logits_slice) -> np.ndarray:
     """Numerically stable softmax over a flat sequence of float logits."""
-    # Step 1: Validate input parameters, operational preconditions, and state
     arr = np.asarray(logits_slice, dtype=np.float32)
     # Subtracting the max keeps exp() from overflowing without changing the softmax result.
     arr -= arr.max()          # shift for numerical stability before exp
@@ -236,7 +232,6 @@ def compute_perplexity(llm: Llama, eval_text: str, max_eval_tokens: int) -> floa
     # --- tokenise and trim ------------------------------------------------
     encoded_text = eval_text.encode("utf-8", errors="replace")
     try:
-        # Execute guarded operations and establish recovery boundaries
         tokens = llm.tokenize(encoded_text, add_bos=True)
     except Exception as exc:
         logger.warning("tokenize() failed: %s", exc)
@@ -258,7 +253,6 @@ def compute_perplexity(llm: Llama, eval_text: str, max_eval_tokens: int) -> floa
     # --- single forward pass ----------------------------------------------
     llm.reset()
     try:
-        # Execute guarded operations and establish recovery boundaries
         llm.eval(prefix)
     except Exception as exc:
         logger.warning("llm.eval() failed: %s", exc)
@@ -283,7 +277,6 @@ def compute_perplexity(llm: Llama, eval_text: str, max_eval_tokens: int) -> floa
     # --- NLL accumulation -------------------------------------------------
     nlls: list[float] = []
     for i, target_id in enumerate(targets):
-        # Iterate over items, evaluate loop invariant, and update progress
         start = i * n_vocab
         # Softmax is recomputed per position in float32; O(N * n_vocab) work, acceptable at the
         # default 512 tokens but slow for much larger --eval-tokens.
@@ -323,7 +316,6 @@ def measure_throughput(llm: Llama, gen_tokens: int) -> float:
     Generate *gen_tokens* tokens from a fixed seed prompt and return tok/s.
     Uses temperature=1.0 so the model exercises its full sampling path.
     """
-    # Step 1: Validate input parameters, operational preconditions, and state
     t0 = time.perf_counter()
     output = llm(
         _THROUGHPUT_SEED,
@@ -341,7 +333,6 @@ def measure_throughput(llm: Llama, gen_tokens: int) -> float:
     # Prefer the usage field; fall back to gen_tokens if unavailable.
     generated = gen_tokens
     try:
-        # Execute guarded operations and establish recovery boundaries
         generated = output["usage"]["completion_tokens"]
     except (KeyError, TypeError):
         pass
@@ -353,10 +344,8 @@ def measure_throughput(llm: Llama, gen_tokens: int) -> float:
 
 def _release_model(llm: Llama | None) -> None:
     """Close *llm* and release GPU/CPU memory as thoroughly as possible."""
-    # Step 1: Validate input parameters, operational preconditions, and state
     if llm is not None:
         try:
-            # Execute guarded operations and establish recovery boundaries
             llm.close()
         except Exception:
             pass
@@ -364,7 +353,6 @@ def _release_model(llm: Llama | None) -> None:
     # next model's free-VRAM baseline accurate instead of including leftovers.
     gc.collect()
     try:
-        # Execute guarded operations and establish recovery boundaries
         import torch
         if torch.cuda.is_available():
             torch.cuda.empty_cache()
@@ -383,7 +371,6 @@ def benchmark_model(
     Load *model_path* with logits_all=True, measure perplexity + throughput +
     VRAM, then unload cleanly.  Never raises — errors are returned in "error".
     """
-    # Step 1: Validate input parameters, operational preconditions, and state
     filename = os.path.basename(model_path)
     file_gb  = round(os.path.getsize(model_path) / (1024 ** 3), 3)
     # Leave two cores for the OS and this process.
@@ -406,7 +393,6 @@ def benchmark_model(
     llm: Llama | None = None
 
     try:
-        # Execute guarded operations and establish recovery boundaries
         print(f"    Loading …", end=" ", flush=True)
         llm = Llama(
             model_path=model_path,
@@ -458,13 +444,11 @@ def benchmark_model(
 
 def _fmt(value, spec: str, missing: str = "—") -> str:
     """Format a numeric cell, or return the placeholder when the measurement is missing (None)."""
-    # Step 1: Validate input parameters, operational preconditions, and state
     return missing if value is None else format(value, spec)
 
 
 def print_ascii_grid(results: list[dict]) -> None:
     """Print the per-model comparison table (size, perplexity, tokens/s, VRAM, status) and a legend; failed models get an indented error line."""
-    # Step 1: Validate input parameters, operational preconditions, and state
     bar = "═" * 82
     thin = "─" * 82
     print(f"\n{bar}")
@@ -476,7 +460,6 @@ def print_ascii_grid(results: list[dict]) -> None:
     )
     print(f"  {'─'*32}  {'─'*8}  {'─'*8}  {'─'*7}  {'─'*8}  {'─'*8}")
     for r in results:
-        # Iterate over items, evaluate loop invariant, and update progress
         name = r["filename"]
         if len(name) > 31:
             name = name[:28] + "..."
@@ -512,7 +495,6 @@ def run_benchmark(
     Writes the combined result to *report_path* as JSON.
     Returns the list of result dicts (empty list on directory error).
     """
-    # Step 1: Validate input parameters, operational preconditions, and state
     if not os.path.isdir(models_dir):
         print(f"ERROR: models directory not found: {models_dir}", file=sys.stderr)
         return []
@@ -537,7 +519,6 @@ def run_benchmark(
 
     results: list[dict] = []
     for idx, filename in enumerate(gguf_files, 1):
-        # Iterate over items, evaluate loop invariant, and update progress
         model_path = os.path.join(models_dir, filename)
         print(f"  [{idx}/{len(gguf_files)}] {filename}  ({os.path.getsize(model_path)/(1024**3):.2f} GB)")
         r = benchmark_model(model_path, eval_tokens, gen_tokens)
@@ -566,7 +547,6 @@ def run_benchmark(
 
 def main() -> None:
     """CLI entry. Exit status is 0 if at least one model was benchmarked and 1 when nothing ran (missing directory or no matching GGUF files)."""
-    # Step 1: Validate input parameters, operational preconditions, and state
     parser = argparse.ArgumentParser(
         description="Karl GGUF Quantization Perplexity & Throughput Benchmark",
         formatter_class=argparse.RawDescriptionHelpFormatter,

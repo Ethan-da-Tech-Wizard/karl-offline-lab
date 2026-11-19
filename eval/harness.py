@@ -57,9 +57,7 @@ def _run_model_worker(
     adapter_name: Optional[str],
 ) -> None:
     """Child-process eval worker. Results are returned through queue."""
-    # Step 1: Validate input parameters, operational preconditions, and state
     try:
-        # Execute guarded operations and establish recovery boundaries
         from app.engine.model_loader import ModelLoader
         from core.interaction_loop import build_prompt
         from core.cognitive_parser import parse_thought_stream
@@ -129,7 +127,6 @@ class EvalReport:
 
     def print_summary(self):
         """Print a human-readable summary table to stdout."""
-        # Step 1: Validate input parameters, operational preconditions, and state
         bar = "─" * 60
         print(f"\n{bar}")
         print(f"  Karl Eval Report")
@@ -148,7 +145,6 @@ class EvalReport:
         print(f"{bar}")
         print(f"  Per-case results:")
         for c in self.cases:
-            # Iterate over items, evaluate loop invariant, and update progress
             status = "✓" if c.grade.get("passed") else ("E" if c.error else "✗")
             score = c.grade.get("score", 0.0)
             print(f"  [{status}] {c.case_id:<20} score={score:.2f}  lat={c.latency_s:.1f}s")
@@ -173,22 +169,18 @@ class EvalHarness:
                           If None, RAG retrieval is skipped even when workflow
                           requires it (context falls back to case["context"]).
         """
-        # Step 1: Validate input parameters, operational preconditions, and state
         self.rag = rag_pipeline
         self._worker_target = _run_model_worker
 
     def _load_dataset(self, dataset_path: str) -> list[dict]:
         """Read the JSONL dataset, skipping blank and '#' comment lines. Malformed lines are reported on stderr and skipped rather than aborting the run."""
-        # Step 1: Validate input parameters, operational preconditions, and state
         cases = []
         with open(dataset_path, "r", encoding="utf-8") as f:
             for i, line in enumerate(f, 1):
-                # Iterate over items, evaluate loop invariant, and update progress
                 line = line.strip()
                 if not line or line.startswith("#"):
                     continue
                 try:
-                    # Execute guarded operations and establish recovery boundaries
                     cases.append(json.loads(line))
                 except json.JSONDecodeError as e:
                     print(f"  WARNING: skipping line {i} in {dataset_path}: {e}", file=sys.stderr)
@@ -199,7 +191,6 @@ class EvalHarness:
         Return context chunks for this case.
         Priority: RAG retrieval > context_file > inline context field.
         """
-        # Step 1: Validate input parameters, operational preconditions, and state
         top_k = workflow_cfg.get("rag_top_k", 3)
 
         # Priority 1: live retrieval, only when a pipeline was injected and the workflow wants chunks
@@ -227,7 +218,6 @@ class EvalHarness:
 
     def _build_system_prompt(self, template_name: str, context_chunks: list[str], case: dict) -> str:
         """Render the named prompt template with this case's context chunks, schema and code, using placeholder text when a field is absent."""
-        # Step 1: Validate input parameters, operational preconditions, and state
         rag_context = "\n\n".join(context_chunks) if context_chunks else "(No context retrieved.)"
         schema = case.get("schema", "(No schema specified.)")
         code = case.get("code", case.get("context", "(No code provided.)"))
@@ -245,7 +235,6 @@ class EvalHarness:
         Run a single generation. Returns (output_text, latency_seconds).
         Loads model via ModelLoader singleton — same instance as the UI.
         """
-        # Step 1: Validate input parameters, operational preconditions, and state
         from app.engine.model_loader import ModelLoader
         from core.interaction_loop import build_prompt
         from core.cognitive_parser import parse_thought_stream
@@ -291,7 +280,6 @@ class EvalHarness:
         terminated. Unit tests and debugging can opt out with
         ``hyperparams["eval_process_isolation"] = False``.
         """
-        # Step 1: Validate input parameters, operational preconditions, and state
         if hyperparams.get("eval_process_isolation", True) is False:
             return self._run_model(
                 system_prompt,
@@ -327,7 +315,6 @@ class EvalHarness:
             )
 
         try:
-            # Execute guarded operations and establish recovery boundaries
             # The child puts its result before exiting, so an empty queue means it died (crash, OOM).
             result = queue.get_nowait()
         except queue_mod.Empty:
@@ -342,7 +329,6 @@ class EvalHarness:
 
     def _grade(self, output: str, case: dict, context_chunks: list[str]) -> dict:
         """Dispatch to the case's grader (default keyword_hit), passing only the keyword arguments that grader understands, and return its {passed, score, detail} dict."""
-        # Step 1: Validate input parameters, operational preconditions, and state
         grader_name = case.get("grader", "keyword_hit")
         kwargs: dict = {}
 
@@ -389,7 +375,6 @@ class EvalHarness:
         Returns:
             EvalReport with per-case results and aggregate metrics.
         """
-        # Step 1: Validate input parameters, operational preconditions, and state
         from datetime import datetime, timezone
         from app.engine.model_loader import ModelLoader
 
@@ -398,7 +383,6 @@ class EvalHarness:
         if model_name:
             path_to_load = os.path.join("data", "models", model_name)
         try:
-            # Execute guarded operations and establish recovery boundaries
             llm = ModelLoader.get_instance(model_path=path_to_load, adapter_name=adapter_name)
             
             # Multi-GPU models can load fine but fail on the first real forward pass; a 1-token dummy
@@ -444,7 +428,6 @@ class EvalHarness:
         scores: list[float] = []
 
         for i, case in enumerate(cases, 1):
-            # Iterate over items, evaluate loop invariant, and update progress
             case_id = case.get("id", f"case_{i:03d}")
             if progress_cb:
                 progress_cb(i, len(cases))
@@ -468,9 +451,7 @@ class EvalHarness:
             # ─────────────────────────────────────────────────────────────────
 
             try:
-                # Execute guarded operations and establish recovery boundaries
                 try:
-                    # Execute guarded operations and establish recovery boundaries
                     output, latency = self._run_model_with_timeout(
                         system_prompt,
                         user_prompt,
@@ -492,7 +473,6 @@ class EvalHarness:
                 # Curate eval failures as SFT/DPO pairs
                 if not grade.get("passed"):
                     try:
-                        # Execute guarded operations and establish recovery boundaries
                         from app.utils.training_curator import save_example
                         expected_ans = case.get("expected", "")
                         if not isinstance(expected_ans, str):
@@ -566,7 +546,6 @@ class EvalHarness:
         # eval.
         # Persist last eval result for the Flywheel dashboard
         try:
-            # Execute guarded operations and establish recovery boundaries
             os.makedirs("data", exist_ok=True)
             summary = {
                 "score": report.pass_rate,
@@ -586,7 +565,6 @@ class EvalHarness:
 
     def save_report(self, report: EvalReport, output_dir: str = "eval/results") -> str:
         """Write report to a timestamped JSONL file. Returns the file path."""
-        # Step 1: Validate input parameters, operational preconditions, and state
         os.makedirs(output_dir, exist_ok=True)
         ts = report.timestamp.replace(":", "-").replace(".", "-")[:19]
         filename = f"{report.workflow}_{ts}.jsonl"
@@ -601,7 +579,6 @@ class EvalHarness:
             f.write(json.dumps({"type": "summary", **summary}) + "\n")
             # Per-case lines
             for case in report.cases:
-                # Iterate over items, evaluate loop invariant, and update progress
                 f.write(json.dumps({"type": "case", **asdict(case)}) + "\n")
 
         return path

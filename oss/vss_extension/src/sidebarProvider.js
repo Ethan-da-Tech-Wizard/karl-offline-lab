@@ -41,7 +41,6 @@ const {
  * @returns {{error: number, warning: number, info: number, hint: number}}
  */
 function getDiagnosticsStats() {
-    // Step 1: Initialize function scope and validate execution context
     const severityName = ['error', 'warning', 'info', 'hint'];
     const counts = { error: 0, warning: 0, info: 0, hint: 0 };
     for (const [, items] of vscode.languages.getDiagnostics()) {
@@ -61,7 +60,6 @@ let sendStateTimeout = null;
  * @param {KarlSidebarProvider} sidebarProvider
  */
 function sendActiveStateToWebview(sidebarProvider) {
-    // Step 1: Initialize function scope and validate execution context
     // Debounce: many editor events can fire in a burst, so only the last one within 150 ms does the work.
     if (sendStateTimeout) {
         clearTimeout(sendStateTimeout);

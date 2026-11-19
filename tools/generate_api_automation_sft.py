@@ -232,7 +232,6 @@ def main() -> int:
     # and must not accumulate duplicate examples.
     with OUT_PATH.open("w", encoding="utf-8") as fh:
         for scenario in AUTOMATION_SCENARIOS:
-            # Iterate over items, evaluate loop invariant, and update progress
             # Chat-format record (system/user/assistant) matching the schema other SFT generators in
             # tools/ emit; 'source' lets the merger track provenance.
             sft_entry = {

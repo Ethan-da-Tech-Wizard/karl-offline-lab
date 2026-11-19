@@ -20,7 +20,6 @@ class CommandPalette(QDialog):
 
         `main_window` supplies the actions (switch_workspace, start_new_workbench_session, ...).
         """
-        # Step 1: Validate input parameters, operational preconditions, and state
         super().__init__(parent or main_window)
         self.main_window = main_window
         # Frameless + translucent: the palette draws its own border via stylesheet.
@@ -88,10 +87,8 @@ class CommandPalette(QDialog):
 
     def _populate_list(self):
         """Fill the list with every command and select the first row."""
-        # Step 1: Validate input parameters, operational preconditions, and state
         self.list_widget.clear()
         for title, action in self._commands:
-            # Iterate over items, evaluate loop invariant, and update progress
             item = QListWidgetItem(title)
             # Store the callable on the item so execution does not depend on the title.
             item.setData(Qt.ItemDataRole.UserRole, action)
@@ -100,11 +97,9 @@ class CommandPalette(QDialog):
 
     def _filter_commands(self, text):
         """Show only commands whose title contains the typed text (case-insensitive)."""
-        # Step 1: Validate input parameters, operational preconditions, and state
         query = text.strip().lower()
         self.list_widget.clear()
         for title, action in self._commands:
-            # Iterate over items, evaluate loop invariant, and update progress
             if not query or query in title.lower():
                 item = QListWidgetItem(title)
                 item.setData(Qt.ItemDataRole.UserRole, action)
@@ -116,7 +111,6 @@ class CommandPalette(QDialog):
 
         Up/Down are handled manually because the QLineEdit would otherwise consume them.
         """
-        # Step 1: Validate input parameters, operational preconditions, and state
         if event.key() == Qt.Key.Key_Escape:
             self.reject()
         elif event.key() == Qt.Key.Key_Up:
@@ -141,7 +135,6 @@ class CommandPalette(QDialog):
         The dialog is accepted first so the action runs with the palette gone, since
         actions such as switching workspaces change focus.
         """
-        # Step 1: Validate input parameters, operational preconditions, and state
         curr_item = self.list_widget.currentItem()
         if not curr_item:
             return
@@ -153,7 +146,6 @@ class CommandPalette(QDialog):
         # Fallback to search list of commands if not set via filtering UserRole
         if not action:
             for t, act in self._commands:
-                # Iterate over items, evaluate loop invariant, and update progress
                 if t == title:
                     action = act
                     break
@@ -164,7 +156,6 @@ class CommandPalette(QDialog):
 
     def showEvent(self, event):
         """Place the palette near the top centre of the parent window when shown."""
-        # Step 1: Validate input parameters, operational preconditions, and state
         super().showEvent(event)
         # Position command palette at top center of main window
         if self.parentWidget():

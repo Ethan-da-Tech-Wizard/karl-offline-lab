@@ -41,7 +41,6 @@ def test_introspection_engine():
     # ------------------------------------------------------------------
     print("Initialising ModelLoader …")
     try:
-        # Execute guarded operations and establish recovery boundaries
         llm = ModelLoader.get_instance()
     except FileNotFoundError as exc:
         print(f"\nERROR: {exc}")

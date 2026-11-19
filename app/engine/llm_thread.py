@@ -72,7 +72,6 @@ def _clamp_max_tokens_to_context(
     context window, clamped down from configured_max_tokens. 0 means there's
     no usable room left and generation should stop instead of continuing."""
     # Remaining room = window - prompt - a small safety margin; never negative.
-    # Step 1: Validate input parameters, operational preconditions, and state
     remaining = context_budget - current_prompt_tokens - safety_margin
     return max(0, min(configured_max_tokens, remaining))
 
@@ -93,9 +92,7 @@ def _trim_memory() -> None:
     ignored) on non-glibc libc such as musl or macOS.
     """
     # malloc_trim only exists on glibc; any failure (macOS, musl, Windows) is ignored on purpose.
-    # Step 1: Validate input parameters, operational preconditions, and state
     try:
-        # Execute guarded operations and establish recovery boundaries
         import ctypes
         ctypes.CDLL("libc.so.6").malloc_trim(0)
     except Exception:
@@ -104,9 +101,7 @@ def _trim_memory() -> None:
 
 def _free_vram_mb() -> float | None:
     """Return the minimum free VRAM across all GPUs, or None if unavailable."""
-    # Step 1: Validate input parameters, operational preconditions, and state
     try:
-        # Execute guarded operations and establish recovery boundaries
         from core.hardware_scout import get_hardware_profile
         gpus = get_hardware_profile().get("gpu_list", [])
         if not gpus:
@@ -122,9 +117,7 @@ def _write_performance_telemetry(entry: dict) -> None:
     Rotates the log file to .1 when it reaches 5 MB to limit disk overhead.
     """
     # Telemetry is best-effort: logging problems must never break a generation.
-    # Step 1: Validate input parameters, operational preconditions, and state
     try:
-        # Execute guarded operations and establish recovery boundaries
         os.makedirs("data/logs", exist_ok=True)
         # Single-generation rotation: keep exactly one previous file (.1), replacing the older one.
         if os.path.exists(_PERF_LOG) and os.path.getsize(_PERF_LOG) >= _PERF_LOG_MAX_BYTES:
@@ -140,9 +133,7 @@ def _write_performance_telemetry(entry: dict) -> None:
 
 def _get_gpu_temp() -> float | None:
     """Return the hottest GPU temp across all NVML-monitored GPUs, or None."""
-    # Step 1: Validate input parameters, operational preconditions, and state
     try:
-        # Execute guarded operations and establish recovery boundaries
         from core.hardware_scout import get_hardware_profile
         temps = [
             g["temperature_c"]
@@ -158,13 +149,11 @@ def _get_gpu_temp() -> float | None:
 # i.e. the model has finished emitting one complete JSON object. Used to detect a
 # finished "compact trace" ("Machine Speak") reply while streaming.
 def _json_object_complete(text: str) -> bool:
-    # Step 1: Validate input parameters, operational preconditions, and state
     depth = 0
     in_string = False
     escaped = False
     started = False
     for ch in text.lstrip():
-        # Iterate over items, evaluate loop invariant, and update progress
         if not started:
             if ch != "{":
                 return False
@@ -202,17 +191,14 @@ def _salvage_compact_trace_fields(buffer: str) -> tuple[str, str]:
     ("thinking"/"response") field values directly so a malformed trace
     doesn't leak raw JSON scaffolding to the user as the chat response."""
 
-    # Step 1: Validate input parameters, operational preconditions, and state
     # Local helper: pull one JSON string value out of the buffer with a regex that
     # tolerates escaped characters, decoding it via json.loads when possible.
     def _extract(key: str) -> str:
-        # Step 1: Validate input parameters, operational preconditions, and state
         match = re.search(rf'"{re.escape(key)}"\s*:\s*"((?:\\.|[^"\\])*)"', buffer)
         if not match:
             return ""
         raw = match.group(1)
         try:
-            # Execute guarded operations and establish recovery boundaries
             return json.loads(f'"{raw}"')
         except Exception:
             return raw.replace('\\"', '"').replace("\\n", "\n")
@@ -224,13 +210,11 @@ def _salvage_compact_trace_fields(buffer: str) -> tuple[str, str]:
 
 
 def _emit_compacted_generation(buffer: str, parser: StreamingThoughtParser) -> bool:
-    # Step 1: Validate input parameters, operational preconditions, and state
     # Decode a finished compact-trace buffer and route its thought/response text to the
     # parser's emitters. Returns True when something was emitted, False to let the caller
     # fall back to raw passthrough (not a trace, or nothing recoverable).
     stripped = buffer.strip()
     try:
-        # Execute guarded operations and establish recovery boundaries
         trace = decompact_trace(stripped)
     except Exception as exc:
         if _COMPACT_TRACE_MARKER not in stripped:
@@ -313,7 +297,6 @@ class LLMThread(QThread):
                 profiles to use a different base model without changing the
                 global active-model selection.
         """
-        # Step 1: Validate input parameters, operational preconditions, and state
         super().__init__()
         self.system_prompt = system_prompt
         self.chat_history = chat_history
@@ -340,17 +323,14 @@ class LLMThread(QThread):
 
     def request_stop(self):
         """Request cooperative cancellation and stop the watchdog."""
-        # Step 1: Validate input parameters, operational preconditions, and state
         self._stop_requested = True
         self._watchdog_stop.set()
 
     # Called per token so the watchdog sees progress.
     def _mark_token_activity(self):
-        # Step 1: Validate input parameters, operational preconditions, and state
         self.last_token_timestamp = time.time()
 
     def _emit_watchdog_timeout(self):
-        # Step 1: Validate input parameters, operational preconditions, and state
         # Report the timeout to the UI only once even if several code paths notice it.
         if self._watchdog_error_emitted:
             return
@@ -358,13 +338,11 @@ class LLMThread(QThread):
         self.error_occurred.emit(_WATCHDOG_ERROR)
 
     def _cleanup_after_watchdog_timeout(self, llm=None):
-        # Step 1: Validate input parameters, operational preconditions, and state
         self._stop_requested = True
         self._watchdog_timed_out = True
         self._emit_watchdog_timeout()
         if self.task_id:
             try:
-                # Execute guarded operations and establish recovery boundaries
                 TaskSupervisor.instance().fail(self.task_id, _WATCHDOG_ERROR)
             except Exception:
                 pass
@@ -374,30 +352,25 @@ class LLMThread(QThread):
         close_fn = getattr(generator, "close", None)
         if callable(close_fn):
             try:
-                # Execute guarded operations and establish recovery boundaries
                 close_fn()
             except Exception:
                 pass
         reset_fn = getattr(llm, "reset", None)
         if callable(reset_fn):
             try:
-                # Execute guarded operations and establish recovery boundaries
                 reset_fn()
             except Exception:
                 pass
 
     def _start_watchdog(self, llm=None) -> threading.Thread:
-        # Step 1: Validate input parameters, operational preconditions, and state
         self._watchdog_stop.clear()
         self._watchdog_timed_out = False
         self._watchdog_error_emitted = False
         self._mark_token_activity()
 
         def _monitor():
-            # Step 1: Validate input parameters, operational preconditions, and state
             # Wake every 250 ms so stop requests and timeouts are noticed promptly.
             while not self._watchdog_stop.wait(0.25):
-                # Iterate over items, evaluate loop invariant, and update progress
                 if self._stop_requested:
                     return
                 if time.time() - self.last_token_timestamp > self.watchdog_timeout_seconds:
@@ -409,7 +382,6 @@ class LLMThread(QThread):
         return thread
 
     def _stop_watchdog(self, thread: threading.Thread | None):
-        # Step 1: Validate input parameters, operational preconditions, and state
         self._watchdog_stop.set()
         if thread and thread.is_alive():
             thread.join(timeout=1.0)
@@ -417,11 +389,9 @@ class LLMThread(QThread):
     def _token_count(self, llm, text: str) -> int:
         # Prefer the real tokenizer; older llama-cpp-python lacks add_bos, and if tokenizing
         # fails entirely fall back to a rough 3-chars-per-token estimate.
-        # Step 1: Validate input parameters, operational preconditions, and state
         if not text:
             return 0
         try:
-            # Execute guarded operations and establish recovery boundaries
             return len(llm.tokenize(text.encode("utf-8"), add_bos=False))
         except TypeError:
             return len(llm.tokenize(text.encode("utf-8")))
@@ -430,7 +400,6 @@ class LLMThread(QThread):
             return max(1, len(text) // 3)
 
     def _message_token_count(self, llm, msg) -> int:
-        # Step 1: Validate input parameters, operational preconditions, and state
         role = msg.get("role", "")
         content = msg.get("content", "")
         # Include light ChatML-style overhead so trimming tracks the built prompt
@@ -449,7 +418,6 @@ class LLMThread(QThread):
         # Find all assistant turns with think blocks, except the most recent one
         assistant_indices = []
         for i, msg in enumerate(history):
-            # Iterate over items, evaluate loop invariant, and update progress
             if msg.get("role") == "assistant" and "<think>" in msg.get("content", "") and "</think>" in msg.get("content", ""):
                 assistant_indices.append(i)
         
@@ -482,14 +450,12 @@ class LLMThread(QThread):
         3. Standard Trimming: drops oldest messages until history fits in the budget
         4. Always keeps message[0] (the seed)
         """
-        # Step 1: Validate input parameters, operational preconditions, and state
         # Budget for history = context window - reply reserve - system prompt (floor 256).
         context_budget = ModelLoader.context_limit()
         system_tokens = self._token_count(llm, system_prompt)
         history_token_limit = max(256, context_budget - _RESPONSE_RESERVE - system_tokens)
 
         def _cap(msg):
-            # Step 1: Validate input parameters, operational preconditions, and state
             content = msg.get("content", "")
             if len(content) > _MAX_MSG_CHARS:
                 # Keep the tail of an oversized message (the most recent text matters most).
@@ -508,7 +474,6 @@ class LLMThread(QThread):
         kept = []
         running = 0
         for msg in reversed(processed):
-            # Iterate over items, evaluate loop invariant, and update progress
             entry_len = self._message_token_count(llm, msg)
             if running + entry_len > history_token_limit and kept:
                 break
@@ -519,10 +484,8 @@ class LLMThread(QThread):
         return kept
 
     def _response_reserve(self) -> int:
-        # Step 1: Validate input parameters, operational preconditions, and state
         # Reserve is the requested max_tokens, bounded to [128, _RESPONSE_RESERVE].
         try:
-            # Execute guarded operations and establish recovery boundaries
             max_tokens = int(self.hyperparams.get("max_tokens", _RESPONSE_RESERVE))
         except Exception:
             max_tokens = _RESPONSE_RESERVE
@@ -537,7 +500,6 @@ class LLMThread(QThread):
         This final pass degrades oldest context first, then truncates the lone
         remaining message/system prompt only as a last resort.
         """
-        # Step 1: Validate input parameters, operational preconditions, and state
         # Final tokenizer-measured pass. Degradation order: drop oldest turns, then halve
         # the last remaining message, and only then truncate the system prompt/RAG text.
         budget = max(256, ModelLoader.context_limit() - self._response_reserve())
@@ -546,7 +508,6 @@ class LLMThread(QThread):
         changed = False
 
         def _compile():
-            # Step 1: Validate input parameters, operational preconditions, and state
             # The hot-reloadable prompt builder reads hyperparams via this module global.
             core.interaction_loop.ACTIVE_HYPERPARAMS = self.hyperparams
             prompt_text = core.interaction_loop.build_prompt(working_system, working_history)
@@ -555,7 +516,6 @@ class LLMThread(QThread):
         prompt, tokens = _compile()
 
         while working_history and tokens > budget:
-            # Iterate over items, evaluate loop invariant, and update progress
             if len(working_history) > 1:
                 working_history.pop(0)
                 changed = True
@@ -572,7 +532,6 @@ class LLMThread(QThread):
             prompt, tokens = _compile()
 
         while tokens > budget and len(working_system) > 512:
-            # Iterate over items, evaluate loop invariant, and update progress
             keep = max(512, len(working_system) // 2)
             working_system = (
                 working_system[:keep]
@@ -595,7 +554,6 @@ class LLMThread(QThread):
         CircuitBreakerOpenException is converted into error_occurred with the
         operator-facing circuit-breaker message.
         """
-        # Step 1: Validate input parameters, operational preconditions, and state
         # Register with the TaskSupervisor so the generation is visible/cancellable (a
         # caller may pre-assign task_id to track it under its own record).
         supervisor = TaskSupervisor.instance()
@@ -607,7 +565,6 @@ class LLMThread(QThread):
         # targets the calling thread specifically, preventing process-wide races.
         original_affinity = None
         try:
-            # Execute guarded operations and establish recovery boundaries
             import os
             import psutil
             if hasattr(os, "sched_getaffinity") and hasattr(os, "sched_setaffinity"):
@@ -640,7 +597,6 @@ class LLMThread(QThread):
 
         lock_held = False
         try:
-            # Execute guarded operations and establish recovery boundaries
             core.interaction_loop = compile_and_reload(
                 core.interaction_loop,
                 "core/interaction_loop.py",
@@ -686,7 +642,6 @@ class LLMThread(QThread):
 
             # Emit context budget stats for the HUD
             try:
-                # Execute guarded operations and establish recovery boundaries
                 hist_tokens = sum(self._message_token_count(llm, m) for m in trimmed_history)
                 rag_tokens  = self._token_count(llm, context_str) if self.retrieved_chunks else 0
                 sys_tokens  = self._token_count(llm, system_prompt)
@@ -815,9 +770,7 @@ class LLMThread(QThread):
 
                     try:
                         # Streaming guarded by the watchdog; the generator is always closed in `finally`.
-                        # Execute guarded operations and establish recovery boundaries
                         for chunk in response_generator:
-                            # Iterate over items, evaluate loop invariant, and update progress
                             if self._watchdog_timed_out or self._stop_requested:
                                 break
                             # Skip keep-alive/empty chunks emitted by llama.cpp.
@@ -930,7 +883,6 @@ class LLMThread(QThread):
                     if current_tokens_count > 0.8 * context_budget and parser.parsed_thought:
                         self.new_thought_token.emit("\n[Context full — compressing cognitive state...]\n")
                         try:
-                            # Execute guarded operations and establish recovery boundaries
                             compress_prompt = (
                                 "<|im_start|>system\n"
                                 "You are a cognitive compression tool. Summarize the reasoning steps, calculations, "
@@ -996,7 +948,6 @@ class LLMThread(QThread):
                 # without this check, a document containing a forged <tool_call>
                 # tag would get executed as an indirect prompt injection.
                 try:
-                    # Execute guarded operations and establish recovery boundaries
                     allowed_tools = {
                         (t.get("server_name", ""), t.get("name", ""))
                         for t in MCPClientManager.get_instance().list_tools()
@@ -1005,13 +956,11 @@ class LLMThread(QThread):
                     logger.warning("Could not fetch MCP tool allow-list: %s", exc)
                     allowed_tools = set()
                 while tool_turn < MAX_TOOL_TURNS:
-                    # Iterate over items, evaluate loop invariant, and update progress
                     all_calls = parse_tool_calls(parser.parsed_response + parser.parsed_thought)
                     # Filter to only calls we haven't executed yet, and only ones
                     # actually offered to the model this session.
                     calls = []
                     for c in all_calls:
-                        # Iterate over items, evaluate loop invariant, and update progress
                         if c["name"] != "done" and (c["server"], c["name"]) not in allowed_tools:
                             logger.warning(
                                 "Ignoring tool call not in offered tool set: server=%r name=%r",
@@ -1026,7 +975,6 @@ class LLMThread(QThread):
                     if not calls or all(c["name"] == "done" for c in calls):
                         break
                     for c in calls:
-                        # Iterate over items, evaluate loop invariant, and update progress
                         if c["name"] != "done":
                             self.tool_call_started.emit(c.get("server", ""), c["name"])
                     results = execute_tool_calls(calls)
@@ -1109,12 +1057,9 @@ class LLMThread(QThread):
             gpu_temp = _get_gpu_temp()
             throttle_reasons = []
             try:
-                # Execute guarded operations and establish recovery boundaries
                 from core.hardware_scout import get_hardware_profile
                 for gpu in get_hardware_profile().get("gpu_list", []):
-                    # Iterate over items, evaluate loop invariant, and update progress
                     for alert in gpu.get("alerts", []):
-                        # Iterate over items, evaluate loop invariant, and update progress
                         if alert not in throttle_reasons:
                             throttle_reasons.append(alert)
             except Exception:
@@ -1136,7 +1081,6 @@ class LLMThread(QThread):
                         f"GPU temperature critical ({gpu_temp:.1f}°C). Cooling down for 15s...", True
                     )
                     for _ in range(150):
-                        # Iterate over items, evaluate loop invariant, and update progress
                         if self._stop_requested:
                             break
                         time.sleep(0.1)
@@ -1147,7 +1091,6 @@ class LLMThread(QThread):
                         f"GPU temperature hot ({gpu_temp:.1f}°C). Cooling down for 5s...", True
                     )
                     for _ in range(50):
-                        # Iterate over items, evaluate loop invariant, and update progress
                         if self._stop_requested:
                             break
                         time.sleep(0.1)
@@ -1200,7 +1143,6 @@ class LLMThread(QThread):
             # Restore original CPU affinity
             if original_affinity:
                 try:
-                    # Execute guarded operations and establish recovery boundaries
                     import os
                     if hasattr(os, "sched_setaffinity"):
                         os.sched_setaffinity(0, original_affinity)

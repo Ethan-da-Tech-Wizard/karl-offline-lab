@@ -39,7 +39,6 @@ class SafePythonSandbox:
     network isolation.
     """
     def __init__(self, cpu_timeout_sec: float = 2.0, memory_limit_mb: int = 256):
-        # Step 1: Validate input parameters, operational preconditions, and state
         """Store the wall-clock timeout and memory cap; ``image`` is the Docker image used for runs."""
         self.cpu_timeout_sec = cpu_timeout_sec
         self.memory_limit_mb = memory_limit_mb
@@ -48,7 +47,6 @@ class SafePythonSandbox:
 
     def _is_docker_available(self) -> bool:
         """Checks if Docker is installed and the daemon is reachable."""
-        # Step 1: Validate input parameters, operational preconditions, and state
         try:
             # Check if docker command exists and can talk to the daemon
             # "docker info" fails when the daemon is stopped, which is exactly the case we must detect.
@@ -67,7 +65,6 @@ class SafePythonSandbox:
         Executes code + test suite in a restricted environment.
         Returns (passed, stdout/stderr traceback).
         """
-        # Step 1: Validate input parameters, operational preconditions, and state
         # Code and tests are concatenated into one script so a single exit code means "tests passed".
         full_script = f"{code}\n\n{test_code}"
         
@@ -155,7 +152,6 @@ class SafePythonSandbox:
         way to exfiltrate them or persist anything outside this process's
         lifetime. Host process visibility is also hidden (--unshare-pid).
         """
-        # Step 1: Validate input parameters, operational preconditions, and state
         cmd = [
             bwrap_path,
             # Whole host root read-only; fresh /proc, /dev and /tmp are layered on top.
@@ -184,7 +180,6 @@ class SafePythonSandbox:
         outright rather than silently downgrading to an unsandboxed
         subprocess.
         """
-        # Step 1: Validate input parameters, operational preconditions, and state
         # Without bwrap (and without Docker) we refuse to run, by design.
         bwrap_path = shutil.which("bwrap")
         if not bwrap_path:
@@ -211,9 +206,7 @@ class SafePythonSandbox:
             sandboxed interpreter — defense in depth alongside the namespace
             isolation bwrap itself provides.
             """
-            # Step 1: Validate input parameters, operational preconditions, and state
             try:
-                # Execute guarded operations and establish recovery boundaries
                 import resource
                 # Convert MB to Bytes
                 mem_limit = self.memory_limit_mb * 1024 * 1024
@@ -234,7 +227,6 @@ class SafePythonSandbox:
                 pass
 
         try:
-            # Execute guarded operations and establish recovery boundaries
             cmd = self._build_bwrap_cmd(bwrap_path, temp_name)
             # preexec_fn is Unix-only
             proc = subprocess.run(
@@ -258,7 +250,6 @@ class SafePythonSandbox:
             # Always clean up the temp script, even after timeouts or errors.
             if os.path.exists(temp_name):
                 try:
-                    # Execute guarded operations and establish recovery boundaries
                     os.remove(temp_name)
                 except OSError:
                     pass

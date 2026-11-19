@@ -58,7 +58,6 @@ HF_MODELS_DIR = ROOT_DIR / "data" / "hf_models"
 # Ensure dirs exist
 # Create the data directories at import time so later writes never fail on a fresh checkout.
 for d in [QUEUE_DIR, EXECUTION_DIR, TRAINING_DIR, ADAPTERS_DIR, HF_MODELS_DIR]:
-    # Iterate over items, evaluate loop invariant, and update progress
     d.mkdir(parents=True, exist_ok=True)
 
 # Add ROOT_DIR to path for internal imports
@@ -67,7 +66,6 @@ for d in [QUEUE_DIR, EXECUTION_DIR, TRAINING_DIR, ADAPTERS_DIR, HF_MODELS_DIR]:
 sys.path.insert(0, str(ROOT_DIR))
 
 try:
-    # Execute guarded operations and establish recovery boundaries
     # Core imports are wrapped so a broken install gives one clear log line and exit code 1 instead of
     # a traceback.
     from app.engine.model_loader import ModelLoader
@@ -82,7 +80,6 @@ except ImportError as err:
 
 def generate_tasks_for_topic(topic: str, count: int, llm) -> list[dict]:
     """Generates synthetic task specs (statements + python verifiers) for a topic using LLM."""
-    # Step 1: Validate input parameters, operational preconditions, and state
     logger.info("Generating %d synthetic tasks for topic: '%s'...", count, topic)
 
     # The generator is asked for the verifier as Python source inside JSON, which small models
@@ -119,7 +116,6 @@ Return ONLY the raw JSON list starting with [ and ending with ]. Do not include 
     prompt = f"User: {meta_prompt}\nAssistant: <think>\n"
 
     try:
-        # Execute guarded operations and establish recovery boundaries
         output_chunks = []
         for chunk in llm(
             prompt,
@@ -131,7 +127,6 @@ Return ONLY the raw JSON list starting with [ and ending with ]. Do not include 
             stop=["User:"],
             stream=True
         ):
-            # Iterate over items, evaluate loop invariant, and update progress
             text = chunk["choices"][0]["text"]
             output_chunks.append(text)
             
@@ -160,7 +155,6 @@ Return ONLY the raw JSON list starting with [ and ending with ]. Do not include 
             # Tasks from the model have no ids; add uuids so queue/dataset entries are traceable.
             # assign IDs
             for t in tasks:
-                # Iterate over items, evaluate loop invariant, and update progress
                 if "id" not in t:
                     t["id"] = str(uuid.uuid4())
             return tasks
@@ -178,11 +172,9 @@ Return ONLY the raw JSON list starting with [ and ending with ]. Do not include 
 # "Falling back" warning before trusting an adapter trained on them.
 def generate_fallback_tasks(topic: str, count: int) -> list[dict]:
     """Generates simple placeholder tasks if LLM task generation fails."""
-    # Step 1: Validate input parameters, operational preconditions, and state
     logger.info("Generating fallback local template tasks...")
     tasks = []
     for i in range(count):
-        # Iterate over items, evaluate loop invariant, and update progress
         tasks.append({
             "id": str(uuid.uuid4()),
             "category": topic,
@@ -207,7 +199,6 @@ def generate_fallback_tasks(topic: str, count: int) -> list[dict]:
 
 def solve_task(task: dict, llm) -> tuple[str, str]:
     """Queries LLM to solve the problem, returning (thought, response)."""
-    # Step 1: Validate input parameters, operational preconditions, and state
     problem = task.get("problem_statement", "")
     # Stop on "<think>" as well as "User:" (see the llm call below) so a second reasoning block
     # cannot start after the answer and get merged into the response.
@@ -224,7 +215,6 @@ def solve_task(task: dict, llm) -> tuple[str, str]:
         stop=["User:", "<think>"],
         stream=True
     ):
-        # Iterate over items, evaluate loop invariant, and update progress
         text = chunk["choices"][0]["text"]
         output_chunks.append(text)
         
@@ -235,7 +225,6 @@ def solve_task(task: dict, llm) -> tuple[str, str]:
 
 def verify_solution(task: dict, solution: str) -> tuple[bool, str]:
     """Runs verifier in a secure sandbox."""
-    # Step 1: Validate input parameters, operational preconditions, and state
     script = task.get("verification_script", "")
     if not script:
         return False, "No verification script found."
@@ -261,7 +250,6 @@ def verify_solution(task: dict, solution: str) -> tuple[bool, str]:
 
 def reflect_and_correct(task: dict, failed_thought: str, failed_response: str, traceback: str, llm) -> tuple[str, str, bool]:
     """Queries the model to correct its own error trace."""
-    # Step 1: Validate input parameters, operational preconditions, and state
     logger.info("Failed verification. Starting self-reflection debugger loop...")
     # (Read but currently unused in the correction prompt; the model is shown only its own failure and
     # traceback.)
@@ -290,7 +278,6 @@ def reflect_and_correct(task: dict, failed_thought: str, failed_response: str, t
         temperature=0.2,
         stream=True
     ):
-        # Iterate over items, evaluate loop invariant, and update progress
         text = chunk["choices"][0]["text"]
         output_chunks.append(text)
         
@@ -304,11 +291,9 @@ def reflect_and_correct(task: dict, failed_thought: str, failed_response: str, t
 
 def train_adapter(dataset_path: str, base_model_path: str, adapter_name: str, args):
     """Launches HuggingFace SFTTrainer on the dataset."""
-    # Step 1: Validate input parameters, operational preconditions, and state
     logger.info("Initializing SFT training on base model weights: %s...", base_model_path)
     
     try:
-        # Execute guarded operations and establish recovery boundaries
         import torch
         from datasets import load_dataset
         from transformers import AutoModelForCausalLM, AutoTokenizer, BitsAndBytesConfig
@@ -416,7 +401,6 @@ def train_adapter(dataset_path: str, base_model_path: str, adapter_name: str, ar
 
 def convert_adapter_to_gguf(base_model_path: str, adapter_name: str):
     """Runs conversion helper to compile LoRA adapter to GGUF."""
-    # Step 1: Validate input parameters, operational preconditions, and state
     adapter_path = ADAPTERS_DIR / adapter_name
     outfile = adapter_path / f"{adapter_name}.gguf"
     
@@ -508,7 +492,6 @@ def main():
     # 4. Process Loop (Solve, Verify, Reflect)
     verified_examples = []
     for index, task in enumerate(tasks, 1):
-        # Iterate over items, evaluate loop invariant, and update progress
         logger.info("--- Task %d/%d ---", index, len(tasks))
         print(f"Statement: {task['problem_statement'][:100]}...")
         
@@ -544,7 +527,6 @@ def main():
     dataset_file = TRAINING_DIR / f"auto_train_{args.adapter_name}.jsonl"
     with open(dataset_file, "w", encoding="utf-8") as f:
         for ex in verified_examples:
-            # Iterate over items, evaluate loop invariant, and update progress
             f.write(json.dumps(ex, ensure_ascii=False) + "\n")
 
     logger.info("Dataset curated successfully with %d examples: %s", len(verified_examples), dataset_file)

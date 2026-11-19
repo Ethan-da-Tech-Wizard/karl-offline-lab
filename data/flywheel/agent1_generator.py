@@ -53,14 +53,12 @@ _NGRAM_SIZE = 3
 
 
 def _ngrams(text: str, n: int = _NGRAM_SIZE) -> set:
-    # Step 1: Validate input parameters, operational preconditions, and state
     """Return the set of character n-grams of ``text`` (lower-cased); empty if shorter than n."""
     t = text.lower()
     return {t[i:i+n] for i in range(len(t) - n + 1)} if len(t) >= n else set()
 
 
 def _jaccard_ngram(a: str, b: str) -> float:
-    # Step 1: Validate input parameters, operational preconditions, and state
     """Jaccard similarity (|A and B| / |A or B|) of the character n-gram sets of two strings.
 
     Two empty strings are treated as identical (1.0).
@@ -77,20 +75,16 @@ def _is_duplicate(candidate: str) -> bool:
     # Cheap check first (memory) before touching the disk.
     # In-session cache
     for stmt in _recent_statements:
-        # Iterate over items, evaluate loop invariant, and update progress
         if _jaccard_ngram(candidate, stmt) > _SIMILARITY_THRESHOLD:
             return True
     # Also compare against queued-but-unprocessed tasks, so separate runs of
     # the generator do not enqueue near-identical problems. Unreadable files are ignored.
     # Existing queue files
     try:
-        # Execute guarded operations and establish recovery boundaries
         for fname in os.listdir(QUEUE_DIR):
-            # Iterate over items, evaluate loop invariant, and update progress
             if not fname.endswith(".json"):
                 continue
             try:
-                # Execute guarded operations and establish recovery boundaries
                 with open(os.path.join(QUEUE_DIR, fname), "r", encoding="utf-8") as f:
                     data = json.load(f)
                 stmt = data.get("problem_statement", "")
@@ -115,7 +109,6 @@ def generate_math_problem_3var():
     z = random.randint(2, 12)
     # Re-roll until all three values differ so the answer is unambiguous.
     while x == y or y == z or x == z:
-        # Iterate over items, evaluate loop invariant, and update progress
         y = random.randint(2, 12)
         z = random.randint(2, 12)
         
@@ -132,7 +125,6 @@ def generate_math_problem_3var():
     ]
     # Add minor randomness but keep them linearly independent
     for i in range(3):
-        # Iterate over items, evaluate loop invariant, and update progress
         coeffs[i] = [c + random.randint(0, 2) for c in coeffs[i]]
         
     # Compute the totals from the known solution, so the ground truth is exact by construction.
@@ -176,7 +168,6 @@ def verify(response):
     }
 
 def generate_coding_problem_extended(challenge_name: str | None = None):
-    # Step 1: Validate input parameters, operational preconditions, and state
     # Each challenge: name, prompt text, (input, expected) test cases and an optional custom checker
     # (for problems whose valid outputs are not unique, like anagram groups).
     """Pick one of the coding challenges (by name, else at random) and build a problem for it.
@@ -308,7 +299,6 @@ def verify(response):
     }
 
 def generate_symbolic_problem_extended():
-    # Step 1: Validate input parameters, operational preconditions, and state
     """Build either a 2x2 determinant or an n-choose-r committee problem (not currently in _TOPIC_DISPATCH)."""
     # Both sub-problems have a single integer answer, so one number-extraction verifier style
     # works for each. The pair is only reachable by calling this function directly; the topic
@@ -380,7 +370,6 @@ def generate_quadratic_problem():
     r2 = random.randint(-8, 8)
     # Distinct roots, otherwise the "x = r1 or x = r2" answer is degenerate.
     while r1 == r2:
-        # Iterate over items, evaluate loop invariant, and update progress
         r2 = random.randint(-8, 8)
     # Leading coefficient 1..3 keeps the expanded coefficients small enough for hand algebra.
     a = random.randint(1, 3)
@@ -390,7 +379,6 @@ def generate_quadratic_problem():
     c =  a *  r1 * r2
 
     def _fmt_term(coeff, var=""):
-        # Step 1: Validate input parameters, operational preconditions, and state
         """Format one polynomial term with sign and omit coefficients of 1; zero terms give ""."""
         if coeff == 0:
             return ""
@@ -455,7 +443,6 @@ _TOPIC_DISPATCH = {
 
 
 def main():
-    # Step 1: Validate input parameters, operational preconditions, and state
     """CLI loop: keep the queue topped up with unique tasks.
 
     Each iteration: throttle when the queue is full, ask the topic graph for the
@@ -491,7 +478,6 @@ def main():
 
         # Check queue size to prevent flooding
         try:
-            # Execute guarded operations and establish recovery boundaries
             queue_files = [f for f in os.listdir(QUEUE_DIR) if f.startswith("task_") and f.endswith(".json")]
         except Exception:
             queue_files = []
@@ -507,7 +493,6 @@ def main():
         
         # Check active learner's recommendation for ZPD throttling
         try:
-            # Execute guarded operations and establish recovery boundaries
             from data.flywheel.active_learner import ActiveLearner
             active_learner = ActiveLearner()
             if not active_learner.should_generate(topic):
@@ -556,7 +541,6 @@ def main():
         final_path = os.path.join(QUEUE_DIR, f"task_{task_id}.json")
 
         try:
-            # Execute guarded operations and establish recovery boundaries
             with open(temp_path, "w", encoding="utf-8") as f:
                 json.dump(task, f, indent=2)
             os.rename(temp_path, final_path)

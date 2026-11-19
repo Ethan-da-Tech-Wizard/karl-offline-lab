@@ -48,7 +48,6 @@ def compile_and_reload(
     If the user saves a broken file, keep the last successfully imported module
     active and surface a clear notice instead of failing generation mid-run.
     """
-    # Step 1: Validate input parameters, operational preconditions, and state
     # Default logger name is karl.hot_reload.
     log = logger or logging.getLogger("karl.hot_reload")
     path = getattr(module, "__file__", None)
@@ -60,7 +59,6 @@ def compile_and_reload(
         return module
 
     try:
-        # Execute guarded operations and establish recovery boundaries
         # Syntax gate: a failed compile means we never call importlib.reload on bad source.
         py_compile.compile(path, doraise=True)
     except py_compile.PyCompileError as exc:
@@ -74,7 +72,6 @@ def compile_and_reload(
         return module
 
     try:
-        # Execute guarded operations and establish recovery boundaries
         # Second gate: the file compiled but may still fail at import time (bad import, runtime error).
         reloaded = importlib.reload(module)
     except Exception:

@@ -27,7 +27,6 @@ def download_file(url, filepath):
         unit_divisor=1024,
     ) as bar:
         for data in response.iter_content(block_size):
-            # Iterate over items, evaluate loop invariant, and update progress
             size = file.write(data)
             bar.update(size)
 

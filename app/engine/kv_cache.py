@@ -36,9 +36,7 @@ def kv_cache_stats(llm: Any, prompt: str) -> dict[str, Any]:
     anything goes wrong the dict will contain ``{"cache_enabled": True,
     "cache_hit": None, "error": <message>}``.
     """
-    # Step 1: Validate input parameters, operational preconditions, and state
     try:
-        # Execute guarded operations and establish recovery boundaries
         # No cache attached means every prompt is evaluated from scratch.
         cache = getattr(llm, "cache", None)
         if cache is None:
@@ -78,9 +76,7 @@ def log_cache_stats(stats: dict[str, Any], ts: str) -> None:
 
     Silently swallows all I/O errors so it never disrupts inference.
     """
-    # Step 1: Validate input parameters, operational preconditions, and state
     try:
-        # Execute guarded operations and establish recovery boundaries
         # Create the log folder on first use.
         os.makedirs(os.path.dirname(_KV_CACHE_LOG), exist_ok=True)
         entry: dict[str, Any] = {"ts": ts, **stats}

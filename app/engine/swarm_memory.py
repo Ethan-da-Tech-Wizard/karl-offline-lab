@@ -48,12 +48,10 @@ _ERROR_CLASS_RE = re.compile(r"\b([A-Z][A-Za-z0-9]*(?:Error|Exception|Warning))\
 
 def _keywords(text: str, limit: int = 10) -> list[str]:
     """Extract up to ``limit`` distinct lower-case identifier-like words (3+ chars), minus stopwords."""
-    # Step 1: Validate input parameters, operational preconditions, and state
     words = re.findall(r"[A-Za-z_][A-Za-z0-9_]{2,}", text or "")
     seen: set[str] = set()
     out: list[str] = []
     for w in words:
-        # Iterate over items, evaluate loop invariant, and update progress
         key = w.lower()
         if key in _STOPWORDS or key in seen:
             continue
@@ -70,7 +68,6 @@ def fingerprint_failure(trace: str) -> str:
     differ, so recall matches "the same class of bug" rather than requiring
     byte-identical tracebacks.
     """
-    # Step 1: Validate input parameters, operational preconditions, and state
     if not trace:
         return "unknown_error"
     match = _ERROR_CLASS_RE.search(trace)
@@ -79,7 +76,6 @@ def fingerprint_failure(trace: str) -> str:
     # Use the first meaningful line (skipping the "Traceback" header) as the message part.
     first_line = ""
     for line in trace.splitlines():
-        # Iterate over items, evaluate loop invariant, and update progress
         line = line.strip()
         if line and not line.startswith("Traceback"):
             first_line = line
@@ -98,7 +94,6 @@ class SwarmMemory:
 
     def __init__(self, workspace_path: str, db_path: str | None = None):
         """Set up the store; nothing is read until first use (lazy load)."""
-        # Step 1: Validate input parameters, operational preconditions, and state
         self.workspace_path = workspace_path
         if db_path is None:
             # Scope memory per-workspace (by realpath hash) so unrelated
@@ -116,11 +111,9 @@ class SwarmMemory:
 
     def _load(self) -> None:
         """Load the JSON records once; missing or corrupt files start empty."""
-        # Step 1: Validate input parameters, operational preconditions, and state
         if self._loaded:
             return
         try:
-            # Execute guarded operations and establish recovery boundaries
             data = json.loads(self.db_path.read_text(encoding="utf-8"))
             if isinstance(data, list):
                 self._records = data
@@ -130,7 +123,6 @@ class SwarmMemory:
 
     def _persist(self) -> None:
         """Atomically write the newest 500 records (tmp file + replace) so the file cannot grow without bound."""
-        # Step 1: Validate input parameters, operational preconditions, and state
         self.db_path.parent.mkdir(parents=True, exist_ok=True)
         tmp = self.db_path.with_suffix(".json.tmp")
         tmp.write_text(json.dumps(self._records[-500:], indent=2, ensure_ascii=False), encoding="utf-8")
@@ -142,7 +134,6 @@ class SwarmMemory:
         """Store a failure fingerprint. Returns the fingerprint string so the
         caller can later link a successful fix back to it via record_success().
         """
-        # Step 1: Validate input parameters, operational preconditions, and state
         # Fingerprint outside the lock: it is pure computation.
         fp = fingerprint_failure(trace)
         with self._lock:
@@ -162,7 +153,6 @@ class SwarmMemory:
         """Link a successful outcome to the failure fingerprints it resolved,
         so future recall can surface 'here's what fixed this before'.
         """
-        # Step 1: Validate input parameters, operational preconditions, and state
         if not fingerprints:
             return
         with self._lock:
@@ -185,7 +175,6 @@ class SwarmMemory:
         known) relevant to a new task, or "" if nothing matches. Pure local
         keyword overlap — no LLM call.
         """
-        # Step 1: Validate input parameters, operational preconditions, and state
         with self._lock:
             self._load()
             records = list(self._records)
@@ -199,14 +188,11 @@ class SwarmMemory:
         # Index fixes by the fingerprint they resolved so each failure can show its latest fix.
         fixes_by_fp: dict[str, list[dict]] = {}
         for r in records:
-            # Iterate over items, evaluate loop invariant, and update progress
             if r.get("kind") == "fix":
                 for fp in r.get("resolves", []):
-                    # Iterate over items, evaluate loop invariant, and update progress
                     fixes_by_fp.setdefault(fp, []).append(r)
 
         def _score(rec: dict) -> int:
-            # Step 1: Validate input parameters, operational preconditions, and state
             return len(terms & set(rec.get("keywords", [])))
 
         scored = sorted(
@@ -221,7 +207,6 @@ class SwarmMemory:
         # Output is a short text block meant to be pasted into the Coder agent's prompt.
         lines = ["Known Past Failure Patterns on this codebase:"]
         for rec in scored:
-            # Iterate over items, evaluate loop invariant, and update progress
             fp = rec.get("fingerprint", "unknown")
             lines.append(f"- [{rec.get('filepath', '?')}] {fp}")
             fix = fixes_by_fp.get(fp)

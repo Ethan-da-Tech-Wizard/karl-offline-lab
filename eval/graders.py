@@ -31,7 +31,6 @@ def exact_match(output: str, expected: str) -> dict:
     Pass if output.strip() == expected.strip() (case-insensitive).
     Useful for short, deterministic answers (IDs, labels, yes/no).
     """
-    # Step 1: Validate input parameters, operational preconditions, and state
     clean_out = output.strip().lower()
     clean_exp = expected.strip().lower()
     passed = clean_out == clean_exp
@@ -58,7 +57,6 @@ def json_valid(output: str, schema_keys: list[str] | None = None) -> dict:
     cleaned = re.sub(r"```(?:json)?\s*", "", output).replace("```", "").strip()
 
     try:
-        # Execute guarded operations and establish recovery boundaries
         parsed = json.loads(cleaned)
     except json.JSONDecodeError as e:
         return {
@@ -114,7 +112,6 @@ def keyword_hit(output: str, keywords: list[str], require_all: bool = True) -> d
         keywords:    List of strings that must appear (case-insensitive).
         require_all: If True, ALL keywords must be present. If False, ANY one suffices.
     """
-    # Step 1: Validate input parameters, operational preconditions, and state
     output_lower = output.lower()
     hits = [kw for kw in keywords if kw.lower() in output_lower]
     misses = [kw for kw in keywords if kw.lower() not in output_lower]
@@ -158,7 +155,6 @@ def groundedness(output: str, context_chunks: list[str], min_overlap_words: int 
         passed: True if >= 60% of sentences are grounded OR refusal detected.
         score:  Fraction of sentences that are grounded.
     """
-    # Step 1: Validate input parameters, operational preconditions, and state
     NOT_IN_CONTEXT_MARKER = "NOT IN CONTEXT"
 
     if NOT_IN_CONTEXT_MARKER in output.upper():
@@ -178,7 +174,6 @@ def groundedness(output: str, context_chunks: list[str], min_overlap_words: int 
     # Tokenise context into a flat word set for cheap overlap check
     ctx_words = set()
     for chunk in context_chunks:
-        # Iterate over items, evaluate loop invariant, and update progress
         ctx_words.update(re.findall(r"\b\w+\b", chunk.lower()))
 
     # Split output into sentences (rough split on . ! ?)
@@ -188,7 +183,6 @@ def groundedness(output: str, context_chunks: list[str], min_overlap_words: int 
 
     grounded = 0
     for sentence in sentences:
-        # Iterate over items, evaluate loop invariant, and update progress
         sent_words = set(re.findall(r"\b\w+\b", sentence.lower()))
         # Ignore very short sentences (conjunctions, articles)
         if len(sent_words) < 4:
@@ -218,7 +212,6 @@ def not_in_context(output: str) -> dict:
     Inverse grader: passes when the model correctly refuses to answer.
     Used in eval cases where the expected answer is the refusal itself.
     """
-    # Step 1: Validate input parameters, operational preconditions, and state
     refused = "NOT IN CONTEXT" in output.upper()
     return {
         "passed": refused,
@@ -250,7 +243,6 @@ def run_grader(name: str, output: str, **kwargs) -> dict:
     Raises:
         KeyError: If grader name is not registered.
     """
-    # Step 1: Validate input parameters, operational preconditions, and state
     if name not in GRADER_REGISTRY:
         available = ", ".join(GRADER_REGISTRY.keys())
         raise KeyError(f"Unknown grader '{name}'. Available: {available}")

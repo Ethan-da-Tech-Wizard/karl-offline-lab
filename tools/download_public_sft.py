@@ -36,9 +36,7 @@ def is_python_code(text: str) -> bool:
     code_blocks = re.findall(r"```(?:python)?\s*\n(.*?)```", text, re.DOTALL)
     snippets = code_blocks if code_blocks else [text]
     for snippet in snippets:
-        # Iterate over items, evaluate loop invariant, and update progress
         try:
-            # Execute guarded operations and establish recovery boundaries
             ast.parse(snippet)
             return True
         except SyntaxError:
@@ -48,9 +46,7 @@ def is_python_code(text: str) -> bool:
 
 def main() -> int:
     """Download two public CodeAlpaca-style datasets via HuggingFace 'datasets', keep only Python-related, de-duplicated rows and write them as system/user/assistant SFT JSONL. Needs network access; returns 1 if 'datasets' is missing."""
-    # Step 1: Validate input parameters, operational preconditions, and state
     try:
-        # Execute guarded operations and establish recovery boundaries
         from datasets import load_dataset
     except ImportError:
         logger.error("HuggingFace 'datasets' library is not installed. Install requirements.txt first.")
@@ -68,10 +64,8 @@ def main() -> int:
 
     with OUT_PATH.open("w", encoding="utf-8") as fh:
         for ds_name, split_name, source_label in datasets_to_load:
-            # Iterate over items, evaluate loop invariant, and update progress
             logger.info("Downloading %s from HuggingFace...", ds_name)
             try:
-                # Execute guarded operations and establish recovery boundaries
                 dataset = load_dataset(ds_name, split=split_name)
             except Exception as exc:
                 # One unreachable dataset should not abort the other; skip it.
@@ -80,7 +74,6 @@ def main() -> int:
 
             logger.info("Filtering and formatting programming instructions from %s...", ds_name)
             for item in dataset:
-                # Iterate over items, evaluate loop invariant, and update progress
                 instruction = item.get("instruction", "")
                 input_context = item.get("input", "")
                 output = item.get("output", "")

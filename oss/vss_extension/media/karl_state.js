@@ -71,7 +71,6 @@ const $ = (id) => document.getElementById(id);
  * 1-second timer that refreshes the bridge status display.
  */
 function hydrate() {
-    // Step 1: Initialize function scope and validate execution context
     const persisted = boot.persisted || {};
     $('workspace').value = persisted.workspace || boot.workspaceFolder || '';
     $('bridgePort').value = persisted.port || boot.port || 8080;
@@ -116,7 +115,6 @@ function hydrate() {
  * Clearing the previous timer means a burst of changes (typing, sliders) sends only one message.
  */
 function persist() {
-    // Step 1: Initialize function scope and validate execution context
     clearTimeout(persistTimer);
     persistTimer = setTimeout(() => {
         vscode.postMessage({
@@ -148,7 +146,6 @@ function persist() {
  * Populate the theme and layout dropdowns from window.KARL_THEMES / KARL_LAYOUTS and draw the theme catalog.
  */
 function initializeAppearance() {
-    // Step 1: Initialize function scope and validate execution context
     $('themeSelect').innerHTML = window.KARL_THEMES.map(theme => {
         return `<option value="${escapeHtml(theme.id)}">${escapeHtml(theme.name)}</option>`;
     }).join('');
@@ -163,7 +160,6 @@ function initializeAppearance() {
  * @param {string} id
  */
 function themeById(id) {
-    // Step 1: Initialize function scope and validate execution context
     const themes = Array.isArray(window.KARL_THEMES) ? window.KARL_THEMES : [];
     return themes.find(theme => theme && theme.id === id) || themes[0] || { id: 'obsidian-core', vars: { '--karl-accent': '#00c2ff' }, name: 'Obsidian Core', description: '' };
 }
@@ -173,7 +169,6 @@ function themeById(id) {
  * @param {string} id
  */
 function layoutById(id) {
-    // Step 1: Initialize function scope and validate execution context
     const layouts = Array.isArray(window.KARL_LAYOUTS) ? window.KARL_LAYOUTS : [];
     return layouts.find(layout => layout && layout.id === id) || layouts[0] || { id: 'cockpit', name: 'Cockpit', description: '' };
 }
@@ -184,7 +179,6 @@ function layoutById(id) {
  * Setting CSS variables on the root element restyles everything that uses them.
  */
 function applyAppearance() {
-    // Step 1: Initialize function scope and validate execution context
     const theme = themeById($('themeSelect').value);
     const layout = layoutById($('layoutSelect').value);
     const vars = theme.vars || {};
@@ -238,7 +232,6 @@ function applyAppearance() {
  * @param {string} wsId
  */
 function switchWorkspace(wsId) {
-    // Step 1: Initialize function scope and validate execution context
     document.querySelectorAll('.workspace').forEach(section => section.classList.remove('active'));
     document.querySelectorAll('.tab').forEach(tab => tab.classList.toggle('active', tab.dataset.workspace === wsId));
     const section = $(`workspace-${wsId}`);

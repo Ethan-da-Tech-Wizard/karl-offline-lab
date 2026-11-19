@@ -28,22 +28,18 @@ from app.vision.schemas import OcrResult
 class TesseractOcrEngine:
     """Thin wrapper that runs the tesseract CLI and converts its TSV output to OcrResult."""
     def __init__(self, executable: str = "tesseract"):
-        # Step 1: Validate input parameters, operational preconditions, and state
         """``executable`` may be a bare name (looked up on PATH) or a full path."""
         self.executable = executable
 
     def available(self) -> bool:
-        # Step 1: Validate input parameters, operational preconditions, and state
         """True if the tesseract executable can be found."""
         return shutil.which(self.executable) is not None
 
     def version(self) -> str | None:
-        # Step 1: Validate input parameters, operational preconditions, and state
         """Return the first line of ``tesseract --version`` or None if unavailable/failing."""
         if not self.available():
             return None
         try:
-            # Execute guarded operations and establish recovery boundaries
             result = subprocess.run(
                 [self.executable, "--version"],
                 capture_output=True,
@@ -58,7 +54,6 @@ class TesseractOcrEngine:
         return first[0].strip() if first else None
 
     def analyze(self, image_path: str, lang: str = "eng") -> OcrResult:
-        # Step 1: Validate input parameters, operational preconditions, and state
         """Run OCR on ``image_path`` in language ``lang`` and return an OcrResult.
 
         Failures (missing binary, non-zero exit) are reported as an empty result with
@@ -95,7 +90,6 @@ class TesseractOcrEngine:
         return self._parse_tsv(result.stdout, lang)
 
     def _parse_tsv(self, raw: str, lang: str) -> OcrResult:
-        # Step 1: Validate input parameters, operational preconditions, and state
         """Convert tesseract TSV text into an OcrResult.
 
         Rows with empty text (layout rows) are skipped. Confidence is the mean of the
@@ -107,12 +101,10 @@ class TesseractOcrEngine:
         confidences = []
 
         for row in reader:
-            # Iterate over items, evaluate loop invariant, and update progress
             text = (row.get("text") or "").strip()
             if not text:
                 continue
             try:
-                # Execute guarded operations and establish recovery boundaries
                 # Tesseract uses -1 for rows without a confidence; treat bad values the same.
                 conf = float(row.get("conf", "-1"))
             except ValueError:

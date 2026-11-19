@@ -168,7 +168,6 @@ window.addEventListener('message', event => {
  * the clicked button's data-* attributes; this avoids adding and leaking handlers on every re-render.
  */
 function bindEvents() {
-    // Step 1: Initialize function scope and validate execution context
     document.querySelectorAll('.tab').forEach(btn => {
         btn.addEventListener('click', () => switchWorkspace(btn.dataset.workspace));
     });
@@ -525,7 +524,6 @@ function bindEvents() {
  * @param {any} data
  */
 function startWorkflow(workflowId, data) {
-    // Step 1: Initialize function scope and validate execution context
     activeWorkflowId = workflowId;
     $('taskMode').value = workflowId;
     $('workspace').value = data.workspace_path || '';
@@ -580,7 +578,6 @@ function startWorkflow(workflowId, data) {
  * Run the swarm on the typed objective, or on a default "review this workspace" objective if empty.
  */
 function askWorkspace() {
-    // Step 1: Initialize function scope and validate execution context
     const objective = $('objective').value.trim() || 'Review this workspace and identify the highest value next improvements.';
     $('objective').value = objective;
     runSwarm();
@@ -590,7 +587,6 @@ function askWorkspace() {
  * Start a swarm run, connecting to the bridge first if necessary (gives up after 8 seconds).
  */
 function connectAndRun() {
-    // Step 1: Initialize function scope and validate execution context
     if (isConnected()) {
         runSwarm();
         return;
@@ -616,7 +612,6 @@ function connectAndRun() {
  * (default 600 s), max loops (default 5), auto-steering and the three agent profiles are sent as hyperparams.
  */
 function runSwarm() {
-    // Step 1: Initialize function scope and validate execution context
     const objective = $('objective').value.trim();
     const workspace = $('workspace').value.trim();
     const testCommand = $('testCmd').value.trim();
@@ -658,7 +653,6 @@ function runSwarm() {
  * Ask the backend to stop the running swarm task (rpc id 2).
  */
 function stopSwarm() {
-    // Step 1: Initialize function scope and validate execution context
     rpc(2, 'stop_task');
 }
 
@@ -666,7 +660,6 @@ function stopSwarm() {
  * Request the available agent profiles from the backend (rpc id 70).
  */
 function loadAgentProfiles() {
-    // Step 1: Initialize function scope and validate execution context
     rpc(70, 'get_agent_profiles', {});
 }
 
@@ -674,7 +667,6 @@ function loadAgentProfiles() {
  * Fill all profile dropdowns, keeping the user's current choice or falling back to the architect/coder/tester defaults.
  */
 function renderAgentProfileOptions() {
-    // Step 1: Initialize function scope and validate execution context
     const entries = Object.entries(swarmAgentProfiles || {});
     const optionHtml = entries.map(([id, profile]) => {
         const label = `${profile.icon || ''} ${profile.name || id}`.trim();
@@ -703,7 +695,6 @@ function renderAgentProfileOptions() {
  * Copy the selected profile (name, icon, prompt, temperature, context limit...) into the edit form.
  */
 function renderSelectedAgentProfile() {
-    // Step 1: Initialize function scope and validate execution context
     const id = $('agentProfileSelect')?.value || '';
     const profile = swarmAgentProfiles[id] || null;
     if (!profile) {
@@ -734,7 +725,6 @@ function renderSelectedAgentProfile() {
  * a reload of all profiles (see handleRpcResult in karl_socket.js).
  */
 function saveSelectedAgentProfile() {
-    // Step 1: Initialize function scope and validate execution context
     const id = $('agentProfileSelect')?.value || '';
     if (!id) {
         vscode.postMessage({ command: 'show_error', text: 'Select an agent profile first.' });
@@ -764,7 +754,6 @@ function saveSelectedAgentProfile() {
 // Detail: replaces the plain label with a clickable header (token count + pulse dot) and makes the
 // text body collapsible by toggling max-height/padding.
 function _initThoughtsPanel() {
-    // Step 1: Initialize function scope and validate execution context
     const box = $('introspectionBox');
     const thoughts = $('introspectionThoughts');
     if (!box || !thoughts) return;
@@ -818,7 +807,6 @@ let _lastAssistantContent = '';
  * bubble that tokens will fill, then locks the send button until the reply finishes.
  */
 function sendChatMessage() {
-    // Step 1: Initialize function scope and validate execution context
     const input = $('chatInput');
     const text = input.value.trim();
     if (!text || !chatFinished) return;
@@ -856,7 +844,6 @@ function sendChatMessage() {
  * @param {string} token
  */
 function handleResponseToken(token) {
-    // Step 1: Initialize function scope and validate execution context
     _lastAssistantContent += token;
     currentResponseText += token;
     
@@ -891,7 +878,6 @@ function handleResponseToken(token) {
  * first code block of the answer to the host so the editor can apply it.
  */
 function handleChatFinished() {
-    // Step 1: Initialize function scope and validate execution context
     if (labRunning) {
         if (currentLabTarget === 'A') {
             currentLabTarget = 'B';
@@ -939,7 +925,6 @@ function handleChatFinished() {
  * Return the active conversation branch, creating one if none exists yet.
  */
 function activeBranch() {
-    // Step 1: Initialize function scope and validate execution context
     if (!activeBranchId) createConversationBranch();
     return conversationBranches.find(branch => branch.id === activeBranchId) || conversationBranches[0];
 }
@@ -949,7 +934,6 @@ function activeBranch() {
  * @param {string} [seedTitle]
  */
 function createConversationBranch(seedTitle = '') {
-    // Step 1: Initialize function scope and validate execution context
     const id = `branch-${Date.now()}-${Math.random().toString(16).slice(2)}`;
     const branch = {
         id,
@@ -967,7 +951,6 @@ function createConversationBranch(seedTitle = '') {
  * Fork the active branch, dropping its last turn (so the user can retry from just before the latest answer).
  */
 function branchFromLatest() {
-    // Step 1: Initialize function scope and validate execution context
     const current = activeBranch();
     const id = `branch-${Date.now()}-${Math.random().toString(16).slice(2)}`;
     const branch = {
@@ -991,7 +974,6 @@ function branchFromLatest() {
  * @param {string} assistant
  */
 function recordConversationTurn(user, assistant) {
-    // Step 1: Initialize function scope and validate execution context
     const prompt = String(user || '').trim();
     const response = String(assistant || '').trim();
     if (!prompt && !response) return;
@@ -1009,7 +991,6 @@ function recordConversationTurn(user, assistant) {
  * @param {any} edit
  */
 function addPendingEdit(edit) {
-    // Step 1: Initialize function scope and validate execution context
     if (!edit || !edit.id) return;
     pendingEdits.set(edit.id, edit);
     renderPendingEdits();
@@ -1021,7 +1002,6 @@ function addPendingEdit(edit) {
  * @param {string} status
  */
 function markPendingEdit(editId, status) {
-    // Step 1: Initialize function scope and validate execution context
     const edit = pendingEdits.get(editId);
     if (edit) {
         edit.status = status;
@@ -1036,7 +1016,6 @@ function markPendingEdit(editId, status) {
  * @param {string} status
  */
 function markPendingEditByPath(filepath, status) {
-    // Step 1: Initialize function scope and validate execution context
     if (!filepath) return;
     for (const [editId, edit] of pendingEdits.entries()) {
         if (edit.filepath === filepath && ['approved', 'submitted'].includes(edit.status)) {
@@ -1051,7 +1030,6 @@ function markPendingEditByPath(filepath, status) {
  * @param {any[]} runs
  */
 function renderSwarmRunHistory(runs) {
-    // Step 1: Initialize function scope and validate execution context
     swarmRunHistory = Array.isArray(runs) ? runs.slice(0, 5) : [];
     const select = $('swarmRunSelect');
     if (!select) return;
@@ -1073,7 +1051,6 @@ function renderSwarmRunHistory(runs) {
  * @param {string} state label used in the log line
  */
 function removePendingEdit(editId, state) {
-    // Step 1: Initialize function scope and validate execution context
     pendingEdits.delete(editId);
     renderPendingEdits();
     log(`[Changes] ${state} pending edit ${editId}.`);
@@ -1085,7 +1062,6 @@ function removePendingEdit(editId, state) {
  * Needs a user message and a live connection; a second click while running is ignored.
  */
 function runLab() {
-    // Step 1: Initialize function scope and validate execution context
     if (labRunning) return;
     if (!$('labUser').value.trim()) {
         vscode.postMessage({ command: 'show_error', text: 'Prompt Lab needs a user message.' });
@@ -1113,7 +1089,6 @@ function runLab() {
  * @param {string} userMsg
  */
 function sendLabMessage(target, systemPrompt, userMsg) {
-    // Step 1: Initialize function scope and validate execution context
     currentLabTarget = target;
     const params = hyperparams();
     params.system_prompt = systemPrompt;
@@ -1127,7 +1102,6 @@ function sendLabMessage(target, systemPrompt, userMsg) {
  * Render the diff of the two lab outputs.
  */
 function computeLabDiff() {
-    // Step 1: Initialize function scope and validate execution context
     renderLabDiff(labOutputA, labOutputB);
 }
 
@@ -1135,7 +1109,6 @@ function computeLabDiff() {
  * Ask the backend for the selected (or typed) saved prompt pair (rpc id 41).
  */
 function loadSelectedPromptPair() {
-    // Step 1: Initialize function scope and validate execution context
     const name = $('promptPairSelect').value || $('promptPairName').value.trim();
     if (name) rpc(41, 'get_prompt_pair', { name });
 }
@@ -1146,7 +1119,6 @@ function loadSelectedPromptPair() {
  * Both sides currently share the same user message and the same RAG/loop checkboxes.
  */
 function savePromptPair() {
-    // Step 1: Initialize function scope and validate execution context
     const name = $('promptPairName').value.trim();
     if (!name) {
         vscode.postMessage({ command: 'show_error', text: 'Prompt pair name is required.' });
@@ -1174,7 +1146,6 @@ function savePromptPair() {
  * Delete the selected (or typed) saved prompt pair (rpc id 43).
  */
 function deletePromptPair() {
-    // Step 1: Initialize function scope and validate execution context
     const name = $('promptPairSelect').value || $('promptPairName').value.trim();
     if (name) rpc(43, 'delete_prompt_pair', { name });
 }
@@ -1184,7 +1155,6 @@ function deletePromptPair() {
  * @param {any} result
  */
 function applyPromptPair(result) {
-    // Step 1: Initialize function scope and validate execution context
     if (!result || typeof result !== 'object') return;
     if (result.name) $('promptPairName').value = result.name;
     if (result.system_a !== undefined) $('labSysA').value = result.system_a;
@@ -1206,7 +1176,6 @@ function applyPromptPair(result) {
  * Add the path in the knowledge-base path box to the ingest queue (newest first, no duplicates, max 50).
  */
 function addKbQueuePath() {
-    // Step 1: Initialize function scope and validate execution context
     const ingestPath = $('kbPath').value.trim();
     if (!ingestPath) {
         vscode.postMessage({ command: 'show_error', text: 'Choose a file or folder before adding it to the queue.' });
@@ -1220,7 +1189,6 @@ function addKbQueuePath() {
  * Start processing the knowledge-base queue (adds the typed path first if the queue is empty).
  */
 function ingestKbQueue() {
-    // Step 1: Initialize function scope and validate execution context
     if (!kbQueue.length) {
         addKbQueuePath();
     }
@@ -1232,7 +1200,6 @@ function ingestKbQueue() {
  * Start ingesting the next queued path; clears the running flag when none are left.
  */
 function ingestNextQueuedPath() {
-    // Step 1: Initialize function scope and validate execution context
     const next = kbQueue.find(item => item.status === 'queued');
     if (!next) {
         kbQueueRunning = false;
@@ -1248,7 +1215,6 @@ function ingestNextQueuedPath() {
 }
 
 function markCurrentKbQueueDone(status) {
-    // Step 1: Initialize function scope and validate execution context
     const running = kbQueue.find(item => item.status === 'running');
     if (running) {
         running.status = status;
@@ -1257,7 +1223,6 @@ function markCurrentKbQueueDone(status) {
 }
 
 function ingestKbPath() {
-    // Step 1: Initialize function scope and validate execution context
     if (!isConnected()) {
         vscode.postMessage({ command: 'show_error', text: 'Karl is disconnected.' });
         return;
@@ -1284,7 +1249,6 @@ function ingestKbPath() {
 }
 
 function searchKb() {
-    // Step 1: Initialize function scope and validate execution context
     const query = $('kbQuery').value.trim();
     if (!query) {
         vscode.postMessage({ command: 'show_error', text: 'Enter a retrieval preview query.' });
@@ -1301,7 +1265,6 @@ function searchKb() {
 }
 
 function searchSwarmRag() {
-    // Step 1: Initialize function scope and validate execution context
     const query = $('swarmRagQuery').value.trim();
     if (!query) {
         vscode.postMessage({ command: 'show_error', text: 'Enter a search term.' });
@@ -1316,7 +1279,6 @@ function searchSwarmRag() {
 }
 
 function renderSwarmRagResults(payload) {
-    // Step 1: Initialize function scope and validate execution context
     if (!payload || typeof payload !== 'object') payload = {};
     const results = Array.isArray(payload.results) ? payload.results : [];
     lastSwarmRagResults = results;
@@ -1335,7 +1297,6 @@ function renderSwarmRagResults(payload) {
 }
 
 function requiresBridgeSupport(feature, method) {
-    // Step 1: Initialize function scope and validate execution context
     const text = `${feature} requires Karl bridge method "${method}". The VS Code workspace is ready, but this backend endpoint is not exposed by the current desktop bridge.`;
     vscode.postMessage({ command: 'show_error', text });
     if ($('trainingLog') && feature.toLowerCase().includes('training')) {
@@ -1350,12 +1311,10 @@ function requiresBridgeSupport(feature, method) {
 }
 
 function validateTrainingForm() {
-    // Step 1: Initialize function scope and validate execution context
     vscode.postMessage({ command: 'show_error', text: 'Training validation requires bridge support.' });
 }
 
 function rememberTask(workflowId, title, objective, filepath) {
-    // Step 1: Initialize function scope and validate execution context
     const text = String(objective || '').trim();
     if (!text) return;
     recentTasks = [
@@ -1367,14 +1326,12 @@ function rememberTask(workflowId, title, objective, filepath) {
 }
 
 function rememberKbQuery(query) {
-    // Step 1: Initialize function scope and validate execution context
     recentKbQueries = [query, ...recentKbQueries.filter(item => item !== query)].slice(0, 12);
     renderRecentKbQueries();
     persist();
 }
 
 function addTask(mode, objective) {
-    // Step 1: Initialize function scope and validate execution context
     const id = `task-${Date.now()}`;
     taskQueue.unshift({ id, mode, objective, status: 'running', at: new Date().toISOString() });
     renderTaskQueue();
@@ -1382,7 +1339,6 @@ function addTask(mode, objective) {
 }
 
 function finishActiveTask(status) {
-    // Step 1: Initialize function scope and validate execution context
     if (!activeTaskId) return;
     taskQueue = taskQueue.map(task => task.id === activeTaskId ? { ...task, status } : task);
     activeTaskId = '';
@@ -1390,7 +1346,6 @@ function finishActiveTask(status) {
 }
 
 function filterCodex() {
-    // Step 1: Initialize function scope and validate execution context
     const q = $('codexSearch').value.toLowerCase();
     $('codexList').querySelectorAll('.source-item').forEach(item => {
         item.style.display = item.innerText.toLowerCase().includes(q) ? 'grid' : 'none';
@@ -1398,7 +1353,6 @@ function filterCodex() {
 }
 
 function hyperparams() {
-    // Step 1: Initialize function scope and validate execution context
     return {
         temperature: Number($('karlTemp').value) || 0.7,
         top_p: Number($('karlTopP').value) || 0.95,
@@ -1416,11 +1370,9 @@ function hyperparams() {
 // Detail: a MutationObserver reacts to class changes on the status dot. While a reply is generating,
 // the "generating" state is left alone so the animation is not interrupted.
 function _initWsStateObserver() {
-    // Step 1: Initialize function scope and validate execution context
     const dot = $('statusDot');
     if (!dot) return;
     function _sync() {
-        // Step 1: Initialize function scope and validate execution context
         const state = [...dot.classList].find(c => c !== 'status-dot') || 'offline';
         if (document.body.dataset.wsState !== 'generating') {
             document.body.dataset.wsState = state;
@@ -1436,7 +1388,6 @@ function _initWsStateObserver() {
 // Detail: the Chat tab is restructured at run time (existing elements are moved into new panels), guarded by
 // a data attribute so it only happens once.
 function _initChatInnerTabs() {
-    // Step 1: Initialize function scope and validate execution context
     const chatSection = $('workspace-chat');
     if (!chatSection || chatSection.dataset.innerTabsReady) return;
     // Guard: never restructure the tab twice.
@@ -1522,7 +1473,6 @@ function _initChatInnerTabs() {
  * @param {string} panelId
  */
 function _switchChatInnerTab(panelId) {
-    // Step 1: Initialize function scope and validate execution context
     const panels = ['chatPanel', 'reasoningPanel', 'swarmPanel'];
     panels.forEach(id => {
         const el = $(id);
@@ -1541,7 +1491,6 @@ function _switchChatInnerTab(panelId) {
 // wrapping the existing #terminal, #trainingLog, #evalLog into panels.
 // Detail: existing log elements are moved into panels, guarded by a data attribute so it only happens once.
 function _initLogsSubtabs() {
-    // Step 1: Initialize function scope and validate execution context
     const logsSection = $('workspace-logs');
     if (!logsSection || logsSection.dataset.logsSubtabsReady) return;
     logsSection.dataset.logsSubtabsReady = '1';
@@ -1616,12 +1565,10 @@ let currentMiniStep = 0;
  * @returns {{vocabulary: {word: string, df: number, idf: number}[], vectors: Object<string, number>[]}}
  */
 function fitTfidfVectorizer(documents) {
-    // Step 1: Initialize function scope and validate execution context
     // Very small stop-word list; only meant to keep the demo output readable.
     const stopWords = new Set(["the", "a", "an", "and", "or", "but", "is", "are", "was", "were", "to", "of", "in", "on", "at", "for", "with", "by", "about", "as"]);
     
     function tokenize(text) {
-        // Step 1: Initialize function scope and validate execution context
         return text.toLowerCase()
             .split(/[^a-z0-9]+/)
             .filter(word => word.length >= 2 && !stopWords.has(word));
@@ -1685,7 +1632,6 @@ function fitTfidfVectorizer(documents) {
  * @param {string[]} docs
  */
 function renderVectorizerResults(vocabulary, vectors, docs) {
-    // Step 1: Initialize function scope and validate execution context
     const vocabBody = $('vocabTable').querySelector('tbody');
     vocabBody.innerHTML = '';
     
@@ -1724,7 +1670,6 @@ function renderVectorizerResults(vocabulary, vectors, docs) {
  * @param {string} msg
  */
 function handleInterceptedTelemetry(msg) {
-    // Step 1: Initialize function scope and validate execution context
     if (typeof msg !== 'string') return;
     
     const statusPanel = $('miniGptTrainingStatus');
@@ -1779,7 +1724,6 @@ function handleInterceptedTelemetry(msg) {
  * @param {number} lr
  */
 function startMiniGptSimulation(maxIters, lr) {
-    // Step 1: Initialize function scope and validate execution context
     if (miniGptSimTimer) {
         clearInterval(miniGptSimTimer);
     }
@@ -1798,7 +1742,6 @@ function startMiniGptSimulation(maxIters, lr) {
     ];
     
     function generateTypewriterTokens() {
-        // Step 1: Initialize function scope and validate execution context
         const wordCount = 10 + Math.floor(Math.random() * 15);
         const sentence = [];
         for (let i = 0; i < wordCount; i++) {
@@ -1839,7 +1782,6 @@ function startMiniGptSimulation(maxIters, lr) {
  * @param {number} loss
  */
 function updateMiniGptTelemetryUi(step, loss) {
-    // Step 1: Initialize function scope and validate execution context
     const stepEl = $('miniCurrentStep');
     const lossEl = $('miniCurrentLoss');
     if (stepEl) stepEl.innerText = step;
@@ -1863,7 +1805,6 @@ function updateMiniGptTelemetryUi(step, loss) {
  * @param {string} text
  */
 function streamTypewriterTokens(step, maxIters, text) {
-    // Step 1: Initialize function scope and validate execution context
     const container = $('miniTypewriterOutput');
     if (!container) return;
     
@@ -1891,7 +1832,6 @@ function streamTypewriterTokens(step, maxIters, text) {
  * "Start training" sends ``start_mini_train`` (rpc id 61) and starts the local animation.
  */
 function _initEducationalSandbox() {
-    // Step 1: Initialize function scope and validate execution context
     const fitBtn = $('fitVectorizerBtn');
     const trainBtn = $('startMiniGptBtn');
     
@@ -1966,7 +1906,6 @@ window.addEventListener('DOMContentLoaded', () => {
  * @param {{ reason?: string, message?: string, exitCode?: number|null, exitSignal?: string|null }} msg
  */
 function _renderCompletionDiagnostic(msg) {
-    // Step 1: Initialize function scope and validate execution context
     // Pick colours/text per crash type: SIGSEGV (warning, usually a CPU without AVX) or OOM kill (danger).
     const chatEl = $('chatMessages');
     if (!chatEl) return;

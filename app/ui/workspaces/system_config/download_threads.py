@@ -31,22 +31,18 @@ class QuantizationThread(QThread):
     log = pyqtSignal(str)
 
     def __init__(self, input_path: str, output_path: str, quant_format: str):
-        # Step 1: Validate input parameters, operational preconditions, and state
         super().__init__()
         self.input_path = input_path
         self.output_path = output_path
         self.quant_format = quant_format
 
     def run(self):
-        # Step 1: Validate input parameters, operational preconditions, and state
         try:
-            # Execute guarded operations and establish recovery boundaries
             self.log.emit(f"Starting quantization to {self.quant_format}...")
             # NOTE: this is a placeholder simulation (sleep loop), not a real GGUF requantization;
             # the real work is done by app.engine.quantizer_thread.QuantizerThread.
             # Simulation of quantization heavy-lift
             for i in range(1, 101):
-                # Iterate over items, evaluate loop invariant, and update progress
                 import time
                 time.sleep(0.06) 
                 self.progress.emit(i)
@@ -63,7 +59,6 @@ class QuantizationDialog(QDialog):
     """Modal dialog asking which quantization format to use for a model."""
     def __init__(self, model_name: str, parent=None):
         """Build the dialog for the named model with the supported formats listed."""
-        # Step 1: Validate input parameters, operational preconditions, and state
         super().__init__(parent)
         self.setWindowTitle(f"Quantize {model_name}")
         self.setMinimumWidth(380)
@@ -98,7 +93,6 @@ class QuantizationDialog(QDialog):
 
     def selected_format(self) -> str:
         """Return the format chosen in the combo box, for example Q4_K_M."""
-        # Step 1: Validate input parameters, operational preconditions, and state
         return self.format_combo.currentText()
 
 # ── download thread ───────────────────────────────────────────────────────────
@@ -114,7 +108,6 @@ class DownloadThread(QThread):
 
     def __init__(self, url: str, target_path: str):
         """Remember the source URL and destination path; start() runs the transfer."""
-        # Step 1: Validate input parameters, operational preconditions, and state
         super().__init__()
         self.url = url
         self.target_path = target_path
@@ -122,19 +115,16 @@ class DownloadThread(QThread):
 
     def cancel(self):
         """Ask the download to stop at the next chunk boundary."""
-        # Step 1: Validate input parameters, operational preconditions, and state
         self._is_cancelled = True
 
     def request_stop(self):
         """Alias of cancel() so the task supervisor can stop this thread through a common interface."""
-        # Step 1: Validate input parameters, operational preconditions, and state
         self.cancel()
 
     def run(self):
         """Download to a .tmp file, then atomically move it into place, reporting to the TaskSupervisor."""
         # Imports are local to keep this module cheap to import and avoid cycles; requests
         # is only needed when a download actually runs.
-        # Step 1: Validate input parameters, operational preconditions, and state
         from app.engine.task_supervisor import TaskSupervisor
         task_id = TaskSupervisor.instance().register(
             name=f"Download Model: {os.path.basename(self.target_path)}",
@@ -147,7 +137,6 @@ class DownloadThread(QThread):
         # Write to <target>.tmp first so a partial or failed download never replaces a good model file.
         tmp_path = self.target_path + ".tmp"
         try:
-            # Execute guarded operations and establish recovery boundaries
             self.log.emit("Connecting...")
             response = requests.get(self.url, stream=True, timeout=30)
             response.raise_for_status()
@@ -165,7 +154,6 @@ class DownloadThread(QThread):
             with open(tmp_path, "wb") as f:
                 # 1 MiB chunks balance progress granularity against per-chunk overhead.
                 for chunk in response.iter_content(chunk_size=1024 * 1024):
-                    # Iterate over items, evaluate loop invariant, and update progress
                     # Cancellation is checked per chunk, so it can lag by up to one chunk.
                     if self._is_cancelled:
                         self.log.emit("Download cancelled.")
@@ -195,7 +183,6 @@ class DownloadThread(QThread):
             if self._is_cancelled:
                 if os.path.exists(tmp_path):
                     try:
-                        # Execute guarded operations and establish recovery boundaries
                         os.remove(tmp_path)
                     except Exception:
                         pass
@@ -212,7 +199,6 @@ class DownloadThread(QThread):
         except Exception as e:
             if os.path.exists(tmp_path):
                 try:
-                    # Execute guarded operations and establish recovery boundaries
                     os.remove(tmp_path)
                 except Exception:
                     pass
