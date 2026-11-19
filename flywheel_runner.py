@@ -86,8 +86,10 @@ def process_task(task_path: str, llm):
             output_chunks.append(text)
             
         full_output = "".join(output_chunks)
-        # The parser detects the pre-seeded case itself (a </think> before any <think>).
-        thought, response = parse_thought_stream(full_output)
+        # The prompt already opened <think>, so say so explicitly: auto-detection only works
+        # when a </think> shows up, and output cut off mid-thought would otherwise be
+        # misfiled as the response.
+        thought, response = parse_thought_stream(full_output, start_in_thought=True)
         
         # Prepare execution log
         exec_id = str(uuid.uuid4())
