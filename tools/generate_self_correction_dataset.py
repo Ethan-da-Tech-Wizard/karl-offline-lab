@@ -37,6 +37,8 @@ from data.flywheel.executor_sandbox import SafePythonSandbox
 
 DEFAULT_OUTPUT = ROOT / "data" / "training" / "code" / "self_correction_sft.jsonl"
 # Matches ```python ... ``` (or bare ```) fences; non-greedy so only the first block is captured.
+# Only the first fence is used on purpose: models sometimes add a second block with example
+# usage, and including it would make the verified "solution" differ from what was checked.
 CODE_FENCE_RE = re.compile(r"```(?:python)?\s*([\s\S]*?)```", re.IGNORECASE)
 # Matches a complete <think> block; DOTALL-style [\s\S] is used so reasoning may span lines.
 THINK_RE = re.compile(r"<think>\s*([\s\S]*?)\s*</think>", re.IGNORECASE)
@@ -84,6 +86,8 @@ def code_diff(before: str, after: str) -> str:
 def normalize_problem_record(record: dict, fallback_id: str = "") -> CodingProblem | None:
     """Normalize JSONL/flywheel records into executable coding problems."""
     # Step 1: Validate input parameters, operational preconditions, and state
+    # Records come from two shapes: flywheel queue tasks (problem_statement + verification_script)
+    # and eval datasets (instruction/question variants). Accept the union so both feed one pipeline.
     verification_script = str(record.get("verification_script") or "")
     # Without a verifier a problem cannot be checked, so it can never yield a trustworthy trajectory;
     # drop it.
@@ -184,6 +188,8 @@ def build_correction_prompt(problem: CodingProblem, failed_response: str, traceb
 def verify_response(problem: CodingProblem, response: str, timeout: float = 5.0) -> tuple[bool, str]:
     """Run problem.verification_script in the restricted SafePythonSandbox with the model response passed to verify(). Returns (passed, trace). Exit code 0 = pass, 1 = verify returned falsy, 2 = verify raised."""
     # Step 1: Validate input parameters, operational preconditions, and state
+    # The verifier is model-adjacent code, so it runs in the restricted sandbox with tight CPU and
+    # memory limits rather than being exec()d in this process.
     sandbox = SafePythonSandbox(cpu_timeout_sec=timeout, memory_limit_mb=256)
     # Harness script run next to the verification script. The response is double json.dumps'd so it
     # embeds as a safe Python string literal regardless of quotes/newlines.
@@ -192,6 +198,8 @@ def verify_response(problem: CodingProblem, response: str, timeout: float = 5.0)
         f"_resp = _json.loads({json.dumps(json.dumps(response))})\n"
         "try:\n"
         "    _result = verify(_resp)\n"
+        # Three distinct exit codes (0 pass, 1 fail, 2 verifier crashed) let the traceback shown to
+        # the model distinguish "wrong answer" from "your verification script is broken".
         "    _sys.exit(0 if _result else 1)\n"
         "except Exception as _e:\n"
         "    print('verify() raised:', _e, file=_sys.stderr)\n"
@@ -236,7 +244,11 @@ def build_self_correction_row(problem: CodingProblem, attempts: list[dict]) -> d
     failed_attempts = [a for a in attempts[:-1] if not a["passed"]]
     final = attempts[-1]
     previous = failed_attempts[-1] if failed_attempts else attempts[0]
+    # The diff is computed on code blocks only, not prose: the explanation text always differs
+    # between attempts and would drown out the real fix in the training signal.
     diff = code_diff(previous["response"], final["response"])
+    # Prefer the <think> text embedded in the raw response; fall back to the parser-split thought
+    # for models whose think block was pre-seeded and so has no opening tag in the raw text.
     thought = extract_thought_block(final["raw"]) or final.get("thought", "")
     # Structured summary of the failure->fix hop; embedded as JSON in the assistant turn so the
     # student learns to articulate the correction.
@@ -261,6 +273,7 @@ def build_self_correction_row(problem: CodingProblem, attempts: list[dict]) -> d
         ],
         "origin": "self_correction_star",
         "problem_id": problem.problem_id,
+        # Kept so downstream filtering can weigh a 3-try repair differently from a 2-try one.
         "iterations": len(attempts),
     }
 
@@ -270,6 +283,8 @@ def run_problem(llm, problem: CodingProblem, max_attempts: int, max_tokens: int)
     # Step 1: Validate input parameters, operational preconditions, and state
     attempts: list[dict] = []
     user_prompt = build_initial_prompt(problem)
+    # Each failure feeds the previous response and its traceback into the next prompt, so the
+    # model always repairs its own latest attempt rather than starting over.
     for iteration in range(1, max_attempts + 1):
         # Iterate over items, evaluate loop invariant, and update progress
         thought, response = query_local_model(
@@ -292,6 +307,8 @@ def run_problem(llm, problem: CodingProblem, max_attempts: int, max_tokens: int)
         })
         if passed:
             # Keep only genuine corrections (fixed on 2nd/3rd attempt).
+            # Iteration 1 passes carry no correction signal, so they are dropped; iterations beyond 3
+            # are also dropped to keep the dataset to short, learnable repairs.
             if iteration in (2, 3):
                 return build_self_correction_row(problem, attempts)
             return None
@@ -317,6 +334,7 @@ def main() -> int:
 
     problems = list(iter_problem_records(args.dataset))
     if args.limit > 0:
+        # Applied after normalisation so --limit counts runnable problems, not raw records.
         problems = problems[:args.limit]
     if not problems:
         print("No executable coding problems found. Records need a verification_script.", file=sys.stderr)
@@ -326,6 +344,8 @@ def main() -> int:
     # unit tests.
     from app.engine.model_loader import ModelLoader
 
+    # get_instance() is used (not acquire_instance) because this is a single-process batch job
+    # with no UI generation competing for the model.
     llm = ModelLoader.get_instance()
     rows: list[dict] = []
     for idx, problem in enumerate(problems, 1):
@@ -345,6 +365,8 @@ def main() -> int:
 
     out_path = Path(args.out)
     out_path.parent.mkdir(parents=True, exist_ok=True)
+    # Rows are only written after the whole run, so an interrupted run leaves the previous file
+    # untouched until this point; a crash during the loop above loses that run's rows.
     with out_path.open("w", encoding="utf-8") as fh:
         for row in rows:
             # Iterate over items, evaluate loop invariant, and update progress
