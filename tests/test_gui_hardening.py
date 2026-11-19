@@ -14,48 +14,60 @@ from PyQt6.QtCore import Qt
 
 
 class _FakeMainWindow:
+    """Records which public MainWindow actions the command palette invokes (switch_workspace, new session, save, toggle RAG, run eval, open defaults, ...)."""
     def __init__(self):
+        """Start with an empty call log."""
         # Step 1: Validate input parameters, operational preconditions, and state
         self.calls = []
 
     def switch_workspace(self, index):
+        """Record a workspace switch."""
         # Step 1: Validate input parameters, operational preconditions, and state
         self.calls.append(("switch_workspace", index))
 
     def start_new_workbench_session(self):
+        """Record starting a new Workbench session."""
         # Step 1: Validate input parameters, operational preconditions, and state
         self.calls.append(("start_new_workbench_session",))
 
     def save_workbench_session(self):
+        """Record saving the Workbench session."""
         # Step 1: Validate input parameters, operational preconditions, and state
         self.calls.append(("save_workbench_session",))
 
     def toggle_workbench_rag(self):
+        """Record toggling RAG in the Workbench."""
         # Step 1: Validate input parameters, operational preconditions, and state
         self.calls.append(("toggle_workbench_rag",))
 
     def toggle_workbench_agentic_loop(self):
+        """Record toggling the agentic loop."""
         # Step 1: Validate input parameters, operational preconditions, and state
         self.calls.append(("toggle_workbench_agentic_loop",))
 
     def open_knowledge_ingest(self):
+        """Record opening the knowledge ingest dialog."""
         # Step 1: Validate input parameters, operational preconditions, and state
         self.calls.append(("open_knowledge_ingest",))
 
     def rebuild_knowledge_index(self):
+        """Record a knowledge index rebuild."""
         # Step 1: Validate input parameters, operational preconditions, and state
         self.calls.append(("rebuild_knowledge_index",))
 
     def run_eval_suite(self):
+        """Record running the eval suite."""
         # Step 1: Validate input parameters, operational preconditions, and state
         self.calls.append(("run_eval_suite",))
 
     def open_system_defaults(self):
+        """Record opening the System Config defaults tab."""
         # Step 1: Validate input parameters, operational preconditions, and state
         self.calls.append(("open_system_defaults",))
 
 
 def test_command_palette_uses_public_actions():
+    """The command palette must list and trigger public MainWindow actions only (e.g. 'System Config: Open Defaults Tab'), not private widgets; activating an item calls exactly the matching action."""
     # Step 1: Validate input parameters, operational preconditions, and state
     from app.ui.widgets.command_palette import CommandPalette
 
@@ -78,10 +90,12 @@ def test_command_palette_uses_public_actions():
 
 
 def test_prompt_column_ignores_run_when_thread_active():
+    """A prompt column ignores a Run request while its generation thread is still running, preventing overlapping runs."""
     # Step 1: Validate input parameters, operational preconditions, and state
     from app.ui.workspaces.prompt_lab import _PromptColumn
 
     class FakeThread:
+        """Thread double that always reports isRunning() True."""
         def isRunning(self):
             # Step 1: Validate input parameters, operational preconditions, and state
             return True
@@ -98,6 +112,7 @@ def test_prompt_column_ignores_run_when_thread_active():
 
 
 def test_prompt_lab_focus_primary_input_targets_active_editor():
+    """focus_primary_input() puts keyboard focus into the active column's user editor and returns True."""
     # Step 1: Validate input parameters, operational preconditions, and state
     from app.state import AppState
     from app.ui.workspaces.prompt_lab import PromptLabWorkspace
@@ -112,6 +127,7 @@ def test_prompt_lab_focus_primary_input_targets_active_editor():
 
 
 def test_log_decrypt_thread_unauthorized_without_entries():
+    """The log decrypt thread emits 'unauthorized' (and nothing else) when there are no entries, instead of crashing or leaking data."""
     # Step 1: Validate input parameters, operational preconditions, and state
     from app.ui.workspaces.flywheel_studio import _LogDecryptThread
 
@@ -125,6 +141,7 @@ def test_log_decrypt_thread_unauthorized_without_entries():
 
 
 def test_workspace_public_action_wrappers_exist():
+    """Each workspace exposes the public callable wrappers the command palette and shortcuts rely on (workbench toggles, ingest dialog, rebuild index, run_suite, show_defaults_tab)."""
     # Step 1: Validate input parameters, operational preconditions, and state
     from app.state import AppState
     from app.ui.workspaces.eval_suite import EvalSuiteWorkspace
@@ -176,26 +193,32 @@ class _FakeQThread:
     thread, so this test is deterministic and fast."""
 
     def __init__(self, running: bool = True):
+        """Remember whether the fake thread is 'running' and that wait() has not been called."""
         # Step 1: Validate input parameters, operational preconditions, and state
         self._running = running
         self.wait_called = False
 
     def isRunning(self):
+        """Report the simulated running state."""
         # Step 1: Validate input parameters, operational preconditions, and state
         return self._running
 
     def wait(self):
+        """Record the call and mark the thread as stopped."""
         # Step 1: Validate input parameters, operational preconditions, and state
         self.wait_called = True
         self._running = False
 
 
 class _FakeCloseEvent:
+    """Minimal QCloseEvent substitute recording whether accept() was called."""
     def __init__(self):
+        """Start with accepted=False."""
         # Step 1: Validate input parameters, operational preconditions, and state
         self.accepted = False
 
     def accept(self):
+        """Mark the close event as accepted."""
         # Step 1: Validate input parameters, operational preconditions, and state
         self.accepted = True
 
@@ -218,6 +241,7 @@ def _stub_close_teardown(monkeypatch):
 
 
 def test_close_event_waits_for_model_init_thread(monkeypatch):
+    """closeEvent must wait() for the model-init thread: a llama load cannot be interrupted and tearing down Qt objects under it would crash the process."""
     # Step 1: Validate input parameters, operational preconditions, and state
     from app.ui.main_window import MainWindow
 
@@ -293,6 +317,7 @@ def test_close_event_survives_active_kb_and_flywheel_threads(monkeypatch):
     # matching the pattern used for MainWindow construction in
     # test_watchdog.py -- keeps this test fast and focused.
     class _FakeWorkspace(QWidget):
+        """Cheap widget stand-in for every workspace not under test."""
         # Union of signals _connect_signals() wires up from _workbench and
         # _system -- both get replaced by this same stub class here, so it
         # needs to satisfy both call sites.

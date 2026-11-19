@@ -16,6 +16,7 @@ from app.utils import swarm_agent_profiles as profiles
 
 
 def test_load_agent_profiles_includes_normalized_defaults(tmp_path, monkeypatch):
+    """Loading profiles always includes the built-in architect, coder and tester with normalised fields (builtin flag, tool permissions)."""
     # Step 1: Validate input parameters, operational preconditions, and state
     monkeypatch.chdir(tmp_path)
 
@@ -28,6 +29,7 @@ def test_load_agent_profiles_includes_normalized_defaults(tmp_path, monkeypatch)
 
 
 def test_save_agent_profile_round_trips_and_clamps(tmp_path, monkeypatch):
+    """Saving a custom profile persists it, clamps out-of-range values (temperature capped at 2.0, context_limit floored at 256) and normalises tool permissions."""
     # Step 1: Validate input parameters, operational preconditions, and state
     monkeypatch.chdir(tmp_path)
 
@@ -54,6 +56,7 @@ def test_save_agent_profile_round_trips_and_clamps(tmp_path, monkeypatch):
 
 
 def test_save_agent_profile_rejects_invalid_id(tmp_path, monkeypatch):
+    """A profile id with illegal characters raises ValueError."""
     # Step 1: Validate input parameters, operational preconditions, and state
     monkeypatch.chdir(tmp_path)
 
@@ -62,6 +65,7 @@ def test_save_agent_profile_rejects_invalid_id(tmp_path, monkeypatch):
 
 
 def test_active_profile_map_resolves_role_overrides(tmp_path, monkeypatch):
+    """The active profile map lets a custom profile override a role (coder becomes 'Strict Coder') while other roles keep defaults."""
     # Step 1: Validate input parameters, operational preconditions, and state
     monkeypatch.chdir(tmp_path)
     profiles.save_agent_profile(
@@ -81,6 +85,7 @@ def test_active_profile_map_resolves_role_overrides(tmp_path, monkeypatch):
 
 
 def test_tool_schema_block_respects_allowed_tool_filter():
+    """The tool schema shown to a model lists only the tools its profile allows; write and shell tools are omitted for a read-only profile."""
     # Step 1: Validate input parameters, operational preconditions, and state
     schema = get_tool_schema_block({"read_file"})
 

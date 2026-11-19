@@ -17,7 +17,9 @@ from app.ui.workspaces.knowledge_base import KnowledgeBaseWorkspace
 from app.ui.workspaces.training_studio.dataset_tab import DatasetListModel
 
 class MockState:
+    """AppState double providing a fake training curator and fake RAG with just the fields the Training Studio / Knowledge workspace reads."""
     def __init__(self):
+        """Create the mock curator and RAG and attach them."""
         # Step 1: Validate input parameters, operational preconditions, and state
         class MockCurator:
             def __init__(self):
@@ -59,6 +61,7 @@ class MockState:
         self.rag_top_k = 3
 
 def test_dataset_list_model():
+    """The Qt list model starts empty, exposes rows and get_item(i) (None when out of range) and formats display text from the example."""
     # Step 1: Validate input parameters, operational preconditions, and state
     model = DatasetListModel()
     assert model.rowCount() == 0
@@ -78,6 +81,7 @@ def test_dataset_list_model():
     assert "test 1" in str(val)
 
 def test_drag_drop_filter():
+    """Dropping files on the workspace accepts only supported types: the .py file is queued and the .png is not, and the status label reports 'Queued 1 file(s) via Drag & Drop.'."""
     # Step 1: Validate input parameters, operational preconditions, and state
     state = MockState()
     # Instantiate workspace widget

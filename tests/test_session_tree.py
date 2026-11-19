@@ -20,6 +20,7 @@ from app.utils.session_tree import SessionNode, SessionTree
 # ---------------------------------------------------------------------------
 
 def test_node_defaults():
+    """A new SessionNode has the given role/content, a generated id, no children, no parent and no thought."""
     # Step 1: Validate input parameters, operational preconditions, and state
     node = SessionNode("user", "hello")
     assert node.role == "user"
@@ -31,6 +32,7 @@ def test_node_defaults():
 
 
 def test_node_add_child():
+    """add_child links both ways (parent.children and child.parent) and keeps the child's role."""
     # Step 1: Validate input parameters, operational preconditions, and state
     parent = SessionNode("user", "hi")
     child = parent.add_child("assistant", "hey")
@@ -40,6 +42,7 @@ def test_node_add_child():
 
 
 def test_node_to_from_dict_round_trip():
+    """A node and its children survive to_dict/from_dict including id, content and thought."""
     # Step 1: Validate input parameters, operational preconditions, and state
     parent = SessionNode("user", "question", node_id="u1")
     child = parent.add_child("assistant", "answer", node_id="a1")
@@ -56,6 +59,7 @@ def test_node_to_from_dict_round_trip():
 
 
 def test_node_attachments_round_trip():
+    """Attachments (e.g. image id/type) survive serialisation."""
     # Step 1: Validate input parameters, operational preconditions, and state
     node = SessionNode(
         "user",
@@ -73,6 +77,7 @@ def test_node_attachments_round_trip():
 # ---------------------------------------------------------------------------
 
 def test_tree_empty_on_init():
+    """A new SessionTree is empty and falsy (len 0)."""
     # Step 1: Validate input parameters, operational preconditions, and state
     tree = SessionTree()
     assert len(tree) == 0
@@ -80,6 +85,7 @@ def test_tree_empty_on_init():
 
 
 def test_tree_add_message():
+    """add_message appends under the current node, so two messages give an active path of user then assistant."""
     # Step 1: Validate input parameters, operational preconditions, and state
     tree = SessionTree()
     tree.add_message("user", "Hello")
@@ -91,6 +97,7 @@ def test_tree_add_message():
 
 
 def test_tree_active_path_content():
+    """The active path exposes dict messages with role, content, id and attachments, the shape the chat view and model prompt use."""
     # Step 1: Validate input parameters, operational preconditions, and state
     tree = SessionTree()
     tree.add_message("user", "Q1", attachments=[{"type": "image", "id": "abc"}])
@@ -133,6 +140,7 @@ def test_tree_branching():
 
 
 def test_tree_serialization_round_trip():
+    """A whole tree saved to a dict and restored keeps the current node and the active path."""
     # Step 1: Validate input parameters, operational preconditions, and state
     tree = SessionTree()
     tree.add_message("user", "ping")
@@ -150,6 +158,7 @@ def test_tree_serialization_round_trip():
 
 
 def test_tree_serialization_with_branch():
+    """Serialisation also preserves branches and which branch is active."""
     # Step 1: Validate input parameters, operational preconditions, and state
     tree = SessionTree()
     tree.add_message("user", "base")
@@ -169,6 +178,7 @@ def test_tree_serialization_with_branch():
 
 
 def test_tree_clear():
+    """clear() empties the tree."""
     # Step 1: Validate input parameters, operational preconditions, and state
     tree = SessionTree()
     tree.add_message("user", "hi")
@@ -178,6 +188,7 @@ def test_tree_clear():
 
 
 def test_tree_copy_is_independent():
+    """copy() returns an independent tree: adding to the copy leaves the original unchanged."""
     # Step 1: Validate input parameters, operational preconditions, and state
     tree = SessionTree()
     tree.add_message("user", "original")
@@ -189,6 +200,7 @@ def test_tree_copy_is_independent():
 
 
 def test_tree_duck_typing_len_iter():
+    """The tree behaves like a list of message dicts for len() and iteration so older list-based code keeps working."""
     # Step 1: Validate input parameters, operational preconditions, and state
     tree = SessionTree()
     tree.add_message("user", "a")
@@ -202,6 +214,7 @@ def test_tree_duck_typing_len_iter():
 
 
 def test_tree_getitem():
+    """Indexing (including negative) returns active-path messages like a list."""
     # Step 1: Validate input parameters, operational preconditions, and state
     tree = SessionTree()
     tree.add_message("user", "first")
@@ -212,6 +225,7 @@ def test_tree_getitem():
 
 
 def test_tree_append_dict():
+    """append(dict) is supported for list-style callers."""
     # Step 1: Validate input parameters, operational preconditions, and state
     tree = SessionTree()
     tree.append({"role": "user", "content": "via append"})
@@ -221,6 +235,7 @@ def test_tree_append_dict():
 
 
 def test_tree_append_invalid_raises():
+    """append() with something that is not a message dict raises TypeError."""
     # Step 1: Validate input parameters, operational preconditions, and state
     tree = SessionTree()
     try:
@@ -232,6 +247,7 @@ def test_tree_append_invalid_raises():
 
 
 def test_tree_update_current_node_content():
+    """The current node's content can be updated in place, used when streaming replaces a placeholder with the final answer."""
     # Step 1: Validate input parameters, operational preconditions, and state
     tree = SessionTree()
     tree.add_message("assistant", "draft")
@@ -265,6 +281,7 @@ def test_tree_nodes_map_consistency():
 
 
 def test_tree_stats_and_branch_label():
+    """Stats report message count, leaf count and depth for a branched tree, and the active branch label starts with the leaf's role."""
     # Step 1: Validate input parameters, operational preconditions, and state
     tree = SessionTree()
     user = tree.add_message("user", "base")
@@ -279,6 +296,7 @@ def test_tree_stats_and_branch_label():
 
 
 def test_branch_from_missing_returns_none():
+    """Branching from an unknown node id returns None and leaves the tree untouched."""
     # Step 1: Validate input parameters, operational preconditions, and state
     tree = SessionTree()
     assert tree.branch_from("missing", "user", "nope") is None
@@ -292,6 +310,7 @@ def test_branch_from_missing_returns_none():
 # ---------------------------------------------------------------------------
 
 def test_tree_save_strips_think_blocks(tmp_path, monkeypatch):
+    """Saving to disk removes <think> reasoning from stored messages, so private chain-of-thought is not persisted in session files."""
     # Step 1: Validate input parameters, operational preconditions, and state
     monkeypatch.setattr(SessionTree, "SESSIONS_DIR", str(tmp_path))
 
@@ -313,6 +332,7 @@ def test_tree_save_strips_think_blocks(tmp_path, monkeypatch):
 
 
 def test_tree_save_load_round_trip(tmp_path, monkeypatch):
+    """save() then load() restores the active path (roles and content) with thoughts dropped."""
     # Step 1: Validate input parameters, operational preconditions, and state
     monkeypatch.setattr(SessionTree, "SESSIONS_DIR", str(tmp_path))
 
@@ -331,6 +351,7 @@ def test_tree_save_load_round_trip(tmp_path, monkeypatch):
 
 
 def test_tree_list_sessions(tmp_path, monkeypatch):
+    """list_sessions() reports saved sessions with their id and a preview of the first user message."""
     # Step 1: Validate input parameters, operational preconditions, and state
     monkeypatch.setattr(SessionTree, "SESSIONS_DIR", str(tmp_path))
 
