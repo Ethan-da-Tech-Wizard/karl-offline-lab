@@ -1,3 +1,11 @@
+"""
+Plain dataclasses describing the records the vision subsystem stores.
+
+These are the on-disk / over-the-wire shapes for OCR output, vision-model
+output and the combined per-image record kept by image_store. Each class has
+from_dict (tolerant of missing keys, so older saved records still load) and
+to_dict (JSON-serializable) helpers.
+"""
 # ==============================================================================
 # Program: schemas.py
 # Programmer: Ethan-da-Tech-Wizard
@@ -15,6 +23,7 @@ from typing import Any
 
 @dataclass
 class OcrResult:
+    """Text extracted from an image by an OCR engine, plus confidence and word boxes."""
     engine: str = "none"
     language: str = "eng"
     text: str = ""
@@ -24,22 +33,27 @@ class OcrResult:
     @classmethod
     def from_dict(cls, data: dict[str, Any] | None) -> "OcrResult":
         # Step 1: Validate input parameters, operational preconditions, and state
+        # Accept None so callers can pass a record that has no OCR section yet.
+        """Build an OcrResult from a possibly-None dict, filling defaults for missing keys."""
         data = data or {}
         return cls(
             engine=data.get("engine", "none"),
             language=data.get("language", "eng"),
             text=data.get("text", ""),
+            # "or 0.0" guards against an explicit None stored in the JSON.
             confidence=float(data.get("confidence", 0.0) or 0.0),
             boxes=list(data.get("boxes", [])),
         )
 
     def to_dict(self) -> dict[str, Any]:
         # Step 1: Validate input parameters, operational preconditions, and state
+        """Return a plain nested dict suitable for json.dumps."""
         return asdict(self)
 
 
 @dataclass
 class VisionResult:
+    """Output of a vision/caption model: caption, layout summary, flags and detected objects."""
     engine: str = "none"
     model: str | None = None
     caption: str = ""
@@ -51,6 +65,7 @@ class VisionResult:
     @classmethod
     def from_dict(cls, data: dict[str, Any] | None) -> "VisionResult":
         # Step 1: Validate input parameters, operational preconditions, and state
+        """Build a VisionResult from a possibly-None dict, filling defaults for missing keys."""
         data = data or {}
         return cls(
             engine=data.get("engine", "none"),
@@ -64,11 +79,18 @@ class VisionResult:
 
     def to_dict(self) -> dict[str, Any]:
         # Step 1: Validate input parameters, operational preconditions, and state
+        """Return a plain nested dict suitable for json.dumps."""
         return asdict(self)
 
 
 @dataclass
 class ImageRecord:
+    """One stored image: file paths, hashes, OCR, vision output, user corrections and RAG index state.
+
+    The ``corrections`` dict holds human overrides (None means "not corrected")
+    so that the original model output is never lost. ``rag`` tracks whether the
+    image text has been added to the retrieval index.
+    """
     id: str
     created_at: str
     source: str
@@ -83,6 +105,8 @@ class ImageRecord:
     tags: list[str] = field(default_factory=list)
     ocr: OcrResult = field(default_factory=OcrResult)
     vision: VisionResult = field(default_factory=VisionResult)
+    # default_factory with lambda gives each record its own fresh dict (a shared
+    # mutable default would leak edits between records).
     corrections: dict[str, Any] = field(default_factory=lambda: {
         "ocr_text": None,
         "caption": None,
@@ -97,6 +121,10 @@ class ImageRecord:
     @classmethod
     def from_dict(cls, data: dict[str, Any]) -> "ImageRecord":
         # Step 1: Validate input parameters, operational preconditions, and state
+        """Rebuild an ImageRecord from stored JSON; only ``id`` is mandatory.
+
+        Nested ocr/vision dicts are converted back into their dataclasses.
+        """
         return cls(
             id=data["id"],
             created_at=data.get("created_at", ""),
@@ -118,7 +146,10 @@ class ImageRecord:
 
     def to_dict(self) -> dict[str, Any]:
         # Step 1: Validate input parameters, operational preconditions, and state
+        """Serialize to a JSON-ready dict."""
         data = asdict(self)
+        # asdict() already recurses, but we call to_dict explicitly so any custom
+        # to_dict logic on the nested types stays authoritative.
         data["ocr"] = self.ocr.to_dict()
         data["vision"] = self.vision.to_dict()
         return data
