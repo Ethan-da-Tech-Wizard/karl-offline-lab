@@ -25,7 +25,9 @@ from app.ui.workspaces.agent_profile_studio import AgentProfileStudioWorkspace
 
 
 class TestAgentProfileStudioWorkspace(unittest.TestCase):
+    """Widget tests for the Agent Profile Studio (list of swarm agent profiles with an editor form)."""
     def setUp(self):
+        """Redirect profile storage to a temp file and create the widget."""
         # Step 1: Validate input parameters, operational preconditions, and state
         self.app = QApplication.instance() or QApplication(sys.argv)
         self._tmp = tempfile.TemporaryDirectory()
@@ -36,11 +38,13 @@ class TestAgentProfileStudioWorkspace(unittest.TestCase):
         self._patcher.start()
 
     def tearDown(self):
+        """Stop patches and clean up."""
         # Step 1: Validate input parameters, operational preconditions, and state
         self._patcher.stop()
         self._tmp.cleanup()
 
     def test_loads_builtin_profiles_on_construction(self):
+        """The list shows the three built-in profiles and selects the architect first."""
         # Step 1: Validate input parameters, operational preconditions, and state
         widget = AgentProfileStudioWorkspace(None)
         self.assertEqual(widget._list_widget.count(), 3)
@@ -50,6 +54,7 @@ class TestAgentProfileStudioWorkspace(unittest.TestCase):
         widget.deleteLater()
 
     def test_selecting_a_profile_populates_the_form(self):
+        """Selecting a profile fills the name and prompt fields; built-in profiles have a read-only id."""
         # Step 1: Validate input parameters, operational preconditions, and state
         widget = AgentProfileStudioWorkspace(None)
         for row in range(widget._list_widget.count()):
@@ -64,6 +69,7 @@ class TestAgentProfileStudioWorkspace(unittest.TestCase):
         widget.deleteLater()
 
     def test_new_profile_clears_the_form(self):
+        """New Profile empties the form, makes the id editable and unchecks all tools."""
         # Step 1: Validate input parameters, operational preconditions, and state
         widget = AgentProfileStudioWorkspace(None)
         widget._on_new_profile()
@@ -76,6 +82,7 @@ class TestAgentProfileStudioWorkspace(unittest.TestCase):
         widget.deleteLater()
 
     def test_save_profile_persists_and_emits_signal(self):
+        """Saving stores a non-builtin profile and emits the profile-saved signal with its id."""
         # Step 1: Validate input parameters, operational preconditions, and state
         widget = AgentProfileStudioWorkspace(None)
         saved_names = []
@@ -98,6 +105,7 @@ class TestAgentProfileStudioWorkspace(unittest.TestCase):
         widget.deleteLater()
 
     def test_save_profile_rejects_invalid_id(self):
+        """An invalid id shows a warning box and nothing is saved."""
         # Step 1: Validate input parameters, operational preconditions, and state
         widget = AgentProfileStudioWorkspace(None)
         widget._on_new_profile()
@@ -109,6 +117,7 @@ class TestAgentProfileStudioWorkspace(unittest.TestCase):
         widget.deleteLater()
 
     def test_revert_restores_original_values_after_edit(self):
+        """Revert discards unsaved edits and restores the stored values."""
         # Step 1: Validate input parameters, operational preconditions, and state
         widget = AgentProfileStudioWorkspace(None)
         for row in range(widget._list_widget.count()):

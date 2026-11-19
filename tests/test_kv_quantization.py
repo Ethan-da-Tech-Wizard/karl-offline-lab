@@ -11,6 +11,7 @@ from unittest.mock import MagicMock, patch
 
 
 def _reset_model_loader_state(ModelLoader):
+    """Blank the ModelLoader class-level singleton state before a test."""
     # Step 1: Validate input parameters, operational preconditions, and state
     ModelLoader._instance = None
     ModelLoader._instance_locked = False
@@ -23,6 +24,7 @@ def _reset_model_loader_state(ModelLoader):
 
 
 def _run_loader_with_patches(fake_llama):
+    """Run ModelLoader.get_instance with every external dependency patched (hardware profile, config, subprocess) and Llama replaced by the supplied fake; returns after the load attempt."""
     # Step 1: Validate input parameters, operational preconditions, and state
     from app.engine.model_loader import ModelLoader
 
@@ -70,10 +72,12 @@ def _run_loader_with_patches(fake_llama):
 
 
 def test_quantized_kv_cache_passes_q8_type_overrides_to_llama():
+    """With quantized_kv_cache enabled the Llama constructor receives type_k=8 and type_v=8 (q8_0 KV cache) to save VRAM."""
     # Step 1: Validate input parameters, operational preconditions, and state
     captured_kwargs = []
 
     def fake_llama(**kwargs):
+        """Record the constructor kwargs, then raise so the load stops right after the Llama() call."""
         # Step 1: Validate input parameters, operational preconditions, and state
         captured_kwargs.append(kwargs)
         raise RuntimeError("stop after constructor capture")
@@ -86,11 +90,13 @@ def test_quantized_kv_cache_passes_q8_type_overrides_to_llama():
 
 
 def test_quantized_kv_cache_falls_back_when_type_overrides_are_unsupported():
+    """If the installed llama-cpp rejects the type overrides the loader retries without type_k/type_v instead of failing the load."""
     # Step 1: Validate input parameters, operational preconditions, and state
     captured_kwargs = []
     loaded = MagicMock()
 
     def fake_llama(**kwargs):
+        """Record kwargs; raise TypeError when type_k/type_v are passed (simulating an older llama-cpp) and return the mock model otherwise."""
         # Step 1: Validate input parameters, operational preconditions, and state
         captured_kwargs.append(dict(kwargs))
         if "type_k" in kwargs or "type_v" in kwargs:

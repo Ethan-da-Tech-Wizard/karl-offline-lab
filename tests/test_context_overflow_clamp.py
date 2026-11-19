@@ -33,12 +33,14 @@ from app.engine.agentic_thread import _clamp_max_tokens_to_context as agentic_cl
 
 
 def test_clamp_returns_configured_value_when_plenty_of_room():
+    """With plenty of context left the configured max_tokens is returned (both LLMThread and AgenticThread clamps)."""
     # 4096-token context, prompt only used 500 -- configured 1024 fits fine.
     assert llm_clamp(1024, 500, 4096) == 1024
     assert agentic_clamp(1024, 500, 4096) == 1024
 
 
 def test_clamp_shrinks_to_remaining_budget_near_the_edge():
+    """When the prompt has used most of the context the value shrinks to the remaining budget minus an 8-token margin (4096-3200-8=888); this reproduces the original continuation overflow bug."""
     # This is the exact shape of the reproduced bug: a continuation pass
     # where the prompt has already grown to consume most of the context.
     # 4096 budget, 3200 already used, 8-token safety margin -> 888 left,
@@ -48,6 +50,7 @@ def test_clamp_shrinks_to_remaining_budget_near_the_edge():
 
 
 def test_clamp_never_goes_negative_when_prompt_already_exceeds_budget():
+    """The clamp never returns a negative value (llama.cpp would reject it); it returns 0."""
     # Defensive: even if current_prompt_tokens somehow exceeds the budget
     # (tokenizer counting quirks, off-by-a-few), never return a negative
     # max_tokens -- llama.cpp would reject that outright.
@@ -56,6 +59,7 @@ def test_clamp_never_goes_negative_when_prompt_already_exceeds_budget():
 
 
 def test_clamp_respects_configured_value_as_a_ceiling():
+    """The clamp never exceeds what the user configured."""
     # Plenty of room, but the user only asked for 64 tokens -- never hand
     # back more than what was actually configured.
     assert llm_clamp(64, 100, 4096) == 64
@@ -63,6 +67,7 @@ def test_clamp_respects_configured_value_as_a_ceiling():
 
 
 def test_clamp_does_not_shrink_a_deliberately_small_configured_value():
+    """A small configured max_tokens (such as 8) is returned unchanged when there is room, so the '<16 means context ran out' check cannot misfire on intentionally tiny requests."""
     # Regression: a caller that deliberately configures a tiny max_tokens
     # (e.g. tests using max_tokens=8 to run fast, or a real "give me one
     # word" request) must not be treated as "context ran out" just because

@@ -20,7 +20,9 @@ from app.ui.workspaces.ai_lab import AILabWorkspace
 from app.utils.rag_pipeline import RAGPipeline
 
 class TestAILabWorkspace(unittest.TestCase):
+    """Tests for the AI Lab workspace: a sparse-retrieval pipeline visualiser and an agent composer that publishes custom agents."""
     def setUp(self):
+        """Create a temp database path and back up custom_agents.json so publishing tests cannot damage real data."""
         # Step 1: Validate input parameters, operational preconditions, and state
         self.state = AppState()
         self.temp_dir = tempfile.mkdtemp()
@@ -34,6 +36,7 @@ class TestAILabWorkspace(unittest.TestCase):
                 self.backup_content = f.read()
                 
     def tearDown(self):
+        """Remove temp data and restore (or delete) custom_agents.json."""
         # Clean up temp DB
         shutil.rmtree(self.temp_dir, ignore_errors=True)
         
@@ -50,6 +53,7 @@ class TestAILabWorkspace(unittest.TestCase):
                 f.write(self.backup_content)
 
     def test_construction_and_layout(self):
+        """The workspace builds two tabs (Pipeline Visualizer, Agent Composer) with all expected input, table and result widgets."""
         # Step 1: Validate input parameters, operational preconditions, and state
         workspace = AILabWorkspace(self.state)
         self.assertIsNotNone(workspace)
@@ -82,6 +86,7 @@ class TestAILabWorkspace(unittest.TestCase):
         self.assertTrue(hasattr(workspace, "_publish_btn"))
 
     def test_sparse_pipeline_math(self):
+        """Given sample documents the vocabulary and document-term matrix tables are populated with the right sizes, and a query renders cosine similarity, dot product and norm details."""
         # Step 1: Validate input parameters, operational preconditions, and state
         workspace = AILabWorkspace(self.state)
         
@@ -108,6 +113,7 @@ class TestAILabWorkspace(unittest.TestCase):
         self.assertIn("Norm", results_html)
 
     def test_custom_agent_publishing(self):
+        """Publishing an agent emits its id, writes label, description, prompt, system_prompt and RAG settings to custom_agents.json, and resets the form."""
         # Step 1: Validate input parameters, operational preconditions, and state
         workspace = AILabWorkspace(self.state)
         

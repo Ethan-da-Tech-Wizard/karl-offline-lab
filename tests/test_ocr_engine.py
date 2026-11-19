@@ -16,6 +16,7 @@ from app.vision.ocr_engine import TesseractOcrEngine
 
 
 def test_parse_tsv_extracts_text_confidence_and_boxes():
+    """Tesseract TSV output is parsed into joined text, a mean confidence (0.85) and per-word bounding boxes."""
     # Step 1: Validate input parameters, operational preconditions, and state
     raw = "\n".join([
         "level\tpage_num\tblock_num\tpar_num\tline_num\tword_num\tleft\ttop\twidth\theight\tconf\ttext",
@@ -33,6 +34,7 @@ def test_parse_tsv_extracts_text_confidence_and_boxes():
 
 
 def test_unavailable_tesseract_returns_structured_error(tmp_path):
+    """When the tesseract binary is missing, OCR returns an empty result with confidence 0.0 and an error entry ('not found') instead of raising."""
     # Step 1: Validate input parameters, operational preconditions, and state
     image_path = tmp_path / "missing.png"
     engine = TesseractOcrEngine(executable="definitely-not-installed-tesseract")

@@ -15,36 +15,42 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from core.cognitive_parser import parse_thought_stream
 
 def test_standard_closed():
+    """A normal <think>...</think> block is split into thought and response."""
     # Step 1: Validate input parameters, operational preconditions, and state
     thought, response = parse_thought_stream("<think>thought content</think>response content")
     assert thought == "thought content"
     assert response == "response content"
 
 def test_unclosed():
+    """If generation stops inside <think>, the remainder is thought and the response is empty."""
     # Step 1: Validate input parameters, operational preconditions, and state
     thought, response = parse_thought_stream("<think>unclosed thought content")
     assert thought == "unclosed thought content"
     assert response == ""
 
 def test_mixed_capitalization():
+    """Tag matching is case-insensitive."""
     # Step 1: Validate input parameters, operational preconditions, and state
     thought, response = parse_thought_stream("<ThInK>thought</tHiNk>response")
     assert thought == "thought"
     assert response == "response"
 
 def test_multiple_blocks():
+    """Several think blocks are merged into one thought and the response parts are joined."""
     # Step 1: Validate input parameters, operational preconditions, and state
     thought, response = parse_thought_stream("<think>thought 1</think>response 1<think>thought 2</think>response 2")
     assert thought == "thought 1thought 2"
     assert response == "response 1response 2"
 
 def test_no_blocks():
+    """No think tags means everything is response."""
     # Step 1: Validate input parameters, operational preconditions, and state
     thought, response = parse_thought_stream("just response")
     assert thought == ""
     assert response == "just response"
 
 def test_preseeded_cutoff():
+    """When the output starts inside a pre-seeded think block and is cut off, all text counts as thought."""
     # Step 1: Validate input parameters, operational preconditions, and state
     thought, response = parse_thought_stream("unclosed preseeded thought", start_in_thought=True)
     assert thought == "unclosed preseeded thought"
