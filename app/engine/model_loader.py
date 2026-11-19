@@ -160,6 +160,18 @@ class _LlamaDraftModelAdapter:
         self.draft_model = draft_model
 
 
+# Probe run in a subprocess (see get_instance). Must be real multi-line Python: a compound
+# statement such as `try:` cannot follow `import sys;` on one line (SyntaxError).
+_CPU_PREFLIGHT_SCRIPT = (
+    "import sys\n"
+    "try:\n"
+    "    from llama_cpp import Llama\n"
+    "    sys.exit(0)\n"
+    "except Exception:\n"
+    "    sys.exit(1)\n"
+)
+
+
 class ModelLoader:
     """Thread-safe singleton manager for llama-cpp model instances."""
 
@@ -1061,16 +1073,7 @@ class ModelLoader:
                 # NOTE: this one-line probe script is only a best-effort check. Run in a
                 # subprocess so a SIGILL/SIGSEGV from an incompatible llama.cpp build kills the
                 # child, not Karl. (Exit codes 132/139 are interpreted below.)
-                check_script = (
-                    "import sys; "
-                    "try: "
-                    "  # Basic import check for llama_cpp which loads GGML shared libs. "
-                    "  # This is often enough to trigger SIGILL/SIGSEGV on incompatible CPUs. "
-                    "  from llama_cpp import Llama; "
-                    "  sys.exit(0); "
-                    "except Exception: "
-                    "  sys.exit(1)"
-                )
+                check_script = _CPU_PREFLIGHT_SCRIPT
                 try:
                     # Use same executable as host Karl app
                     proc = subprocess.run(
