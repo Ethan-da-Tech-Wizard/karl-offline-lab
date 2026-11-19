@@ -145,7 +145,9 @@ class TestUIImprovements(unittest.TestCase):
         from app.utils.memory_manager import MemoryManager
 
         class FakeThread:
+            """Agentic thread double holding the history a real thread would produce across iterations."""
             def __init__(self, history):
+                """Store the supplied history."""
                 # Step 1: Validate input parameters, operational preconditions, and state
                 self.chat_history = history
 

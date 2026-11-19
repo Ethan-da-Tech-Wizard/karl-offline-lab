@@ -41,12 +41,14 @@ class _CaptureHandler(logging.Handler):
     """Thread-safe log-record collector."""
 
     def __init__(self):
+        """Set up the lock and the list of captured records."""
         # Step 1: Validate input parameters, operational preconditions, and state
         super().__init__()
         self._lock = threading.Lock()
         self.records: List[logging.LogRecord] = []
 
     def emit(self, record: logging.LogRecord) -> None:
+        """Store each log record under the lock."""
         # Step 1: Validate input parameters, operational preconditions, and state
         with self._lock:
             self.records.append(record)
@@ -75,6 +77,7 @@ def test_default_correlation_id_is_system():
     result: list[str] = []
 
     def _check():
+        """Read the correlation id inside the fresh thread."""
         # Step 1: Validate input parameters, operational preconditions, and state
         result.append(get_correlation_id())
 
@@ -97,6 +100,7 @@ def test_concurrent_threads_have_isolated_correlation_ids():
     barrier = threading.Barrier(2)
 
     def thread_a():
+        """Set id 'task-A', log before and after the barrier."""
         # Step 1: Validate input parameters, operational preconditions, and state
         set_correlation_id("task-A")
         lgr.info("A: before barrier")
@@ -104,6 +108,7 @@ def test_concurrent_threads_have_isolated_correlation_ids():
         lgr.info("A: after barrier")
 
     def thread_b():
+        """Set id 'task-B', log before and after the barrier."""
         # Step 1: Validate input parameters, operational preconditions, and state
         set_correlation_id("task-B")
         lgr.info("B: before barrier")
@@ -210,14 +215,17 @@ def test_asyncio_tasks_have_isolated_correlation_ids():
     results: dict[str, str] = {}
 
     async def _run():
+        """Create two tasks from the same context and wait for both."""
         # Step 1: Validate input parameters, operational preconditions, and state
         async def task_x():
+            """Set id 'async-X', yield to the other task, then record the id it sees."""
             # Step 1: Validate input parameters, operational preconditions, and state
             set_correlation_id("async-X")
             await asyncio.sleep(0)   # yield to let task_y run
             results["x"] = get_correlation_id()
 
         async def task_y():
+            """Set id 'async-Y', yield to the other task, then record the id it sees."""
             # Step 1: Validate input parameters, operational preconditions, and state
             set_correlation_id("async-Y")
             await asyncio.sleep(0)
@@ -248,6 +256,7 @@ def test_thread_default_is_system_even_after_main_thread_sets_id():
     child_result: list[str] = []
 
     def _child():
+        """Record the correlation id seen by a new thread."""
         # Step 1: Validate input parameters, operational preconditions, and state
         child_result.append(get_correlation_id())
 

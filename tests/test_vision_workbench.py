@@ -20,6 +20,7 @@ from app.ui.workspaces.vision_workbench import VisionWorkbench
 
 
 def test_vision_workbench_lists_saved_images(tmp_path):
+    """The Vision Workbench lists images saved in the store."""
     # Step 1: Validate input parameters, operational preconditions, and state
     state = AppState()
     state.image_store = state.image_store.__class__(base_dir=str(tmp_path / "images"))
@@ -39,6 +40,7 @@ def test_vision_workbench_lists_saved_images(tmp_path):
 
 
 def test_vision_workbench_saves_metadata_and_corrections(tmp_path):
+    """Saving from the workbench persists kind, tags, OCR text and vision caption so they can be loaded back."""
     # Step 1: Validate input parameters, operational preconditions, and state
     state = AppState()
     state.image_store = state.image_store.__class__(base_dir=str(tmp_path / "images"))

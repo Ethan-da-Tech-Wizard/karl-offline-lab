@@ -132,6 +132,7 @@ def test_handler_exception_returns_internal_error():
     manager = make_manager()
 
     def raise_runtime_error():
+        """Handler stub that raises RuntimeError('boom')."""
         # Step 1: Validate input parameters, operational preconditions, and state
         raise ValueError("boom")
 

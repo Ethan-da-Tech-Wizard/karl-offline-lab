@@ -65,6 +65,7 @@ def _make_fake_llm(tokens_in_cache: int = 0) -> MagicMock:
 
 
 def _model_available() -> bool:
+    """True when the real 1.5B model file exists (gates the integration tests)."""
     # Step 1: Validate input parameters, operational preconditions, and state
     return os.path.exists("data/models/deepseek-r1-1.5b.gguf")
 
@@ -363,6 +364,7 @@ class TestAttemptLoadKwargs:
         captured_kwargs: list[dict] = []
 
         def fake_llama(**kw):
+            """Capture the Llama() keyword arguments and raise to stop the load."""
             # Step 1: Validate input parameters, operational preconditions, and state
             captured_kwargs.append(kw)
             raise RuntimeError("stop after first constructor call")
@@ -454,6 +456,7 @@ def test_ttft_speedup_with_shared_prefix():
     assert prompt_tokens >= 900, f"Prefix too short: {prompt_tokens} tokens"
 
     def _first_token_latency(prompt: str) -> float:
+        """Time from sending a prompt to receiving its first streamed token."""
         # Step 1: Validate input parameters, operational preconditions, and state
         t0 = time.perf_counter()
         first = True
@@ -494,6 +497,7 @@ def test_cached_output_matches_noncached_at_zero_temperature():
     llm_cached.set_cache(LlamaRAMCache(capacity_bytes=64 * (1 << 20)))
 
     def _generate(llm: Llama) -> str:
+        """Generate a deterministic completion (temperature 0) from the given model."""
         # Step 1: Validate input parameters, operational preconditions, and state
         result = llm(prompt, max_tokens=20, temperature=0.0, echo=False)
         return result["choices"][0]["text"].strip()

@@ -145,6 +145,7 @@ def test_wal_allows_metadata_reads_while_ingest_transaction_is_open(tmp_path):
     errors = []
 
     def ingest_in_background():
+        """Run the blocked ingest on a thread and collect any exception it raises."""
         # Step 1: Validate input parameters, operational preconditions, and state
         try:
             # Execute guarded operations and establish recovery boundaries

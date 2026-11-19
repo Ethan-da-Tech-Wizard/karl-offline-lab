@@ -156,6 +156,7 @@ class TestWebSocketBridge(unittest.TestCase):
         """The runtime_status RPC returns bridge port, idle runtime state and model/adapter/system sections."""
         # Step 1: Validate input parameters, operational preconditions, and state
         async def run_client():
+            """Connect, call the runtime status RPC and assert the structure of the answer."""
             # Step 1: Validate input parameters, operational preconditions, and state
             async with websockets.connect(self._get_uri(), ssl=self._get_ssl_context(), close_timeout=2) as ws:
                 payload = {
@@ -201,6 +202,7 @@ class TestWebSocketBridge(unittest.TestCase):
             f.write(b"test")
 
         async def run_client():
+            """Connect, list registry models, set the active model and check the response."""
             # Step 1: Validate input parameters, operational preconditions, and state
             async with websockets.connect(self._get_uri(), ssl=self._get_ssl_context(), close_timeout=2) as ws:
                 await ws.send(json.dumps({
@@ -258,6 +260,7 @@ class TestWebSocketBridge(unittest.TestCase):
             pass
 
         async def run_client():
+            """Connect and exercise save, list, get and delete of a prompt pair."""
             # Step 1: Validate input parameters, operational preconditions, and state
             async with websockets.connect(self._get_uri(), ssl=self._get_ssl_context(), close_timeout=2) as ws:
                 await ws.send(json.dumps({
@@ -327,6 +330,7 @@ class TestWebSocketBridge(unittest.TestCase):
             f.write("Karl retrieves local project knowledge for prompt context.")
 
         async def run_client():
+            """Connect, check empty stats, ingest a file, wait for the finish notification and search."""
             # Step 1: Validate input parameters, operational preconditions, and state
             async with websockets.connect(self._get_uri(), ssl=self._get_ssl_context(), close_timeout=2) as ws:
                 await ws.send(json.dumps({
@@ -400,6 +404,7 @@ class TestWebSocketBridge(unittest.TestCase):
         """Full swarm run over the bridge with a mocked LLM: the submit RPC answers 'started', then task_plan_created, file_edited and finished_swarm notifications are broadcast to the client."""
         # Mock LLM to return simple JSON plan and script contents
         def mock_llm(prompt, **kwargs):
+            """Return a JSON architect plan and Python file content depending on the prompt."""
             # Step 1: Validate input parameters, operational preconditions, and state
             if "tasks" in prompt:
                 plan = {
@@ -425,6 +430,7 @@ class TestWebSocketBridge(unittest.TestCase):
                 await asyncio.sleep(0.01)
 
         async def run_client():
+            """Submit a swarm task over the bridge and collect notifications until finished_swarm."""
             # Spawn the Qt event loop spinner task in the background
             spinner = asyncio.create_task(qt_event_loop_spinner())
 
@@ -491,6 +497,7 @@ class TestWebSocketBridge(unittest.TestCase):
         """Chat over the bridge: the RPC answers 'started' and streamed thought tokens, response tokens and a chat_finished notification arrive."""
         # Step 1: Validate input parameters, operational preconditions, and state
         def mock_llm_stream(prompt, **kwargs):
+            """When streaming, return the chunks <think>, 'Thinking', </think>, 'Hello world' (only 'Hello world' once the prompt already contains more than one </think>); non-streaming calls return 'Response'."""
             # Step 1: Validate input parameters, operational preconditions, and state
             if kwargs.get("stream"):
                 if prompt.count("</think>") > 1:
@@ -511,6 +518,7 @@ class TestWebSocketBridge(unittest.TestCase):
         mock_get_llm.return_value = mock_llm_instance
 
         async def qt_event_loop_spinner():
+            """Periodically process Qt events so cross-thread signals are delivered while the async client waits."""
             # Step 1: Validate input parameters, operational preconditions, and state
             while True:
                 # Iterate over items, evaluate loop invariant, and update progress
@@ -518,6 +526,7 @@ class TestWebSocketBridge(unittest.TestCase):
                 await asyncio.sleep(0.01)
 
         async def run_client():
+            """Submit a chat request over the bridge and collect token notifications until chat_finished."""
             # Step 1: Validate input parameters, operational preconditions, and state
             spinner = asyncio.create_task(qt_event_loop_spinner())
             try:
@@ -598,6 +607,7 @@ class TestWebSocketBridge(unittest.TestCase):
         """A client presenting the valid bridge token can connect and make an RPC."""
         # Step 1: Validate input parameters, operational preconditions, and state
         async def run_client():
+            """Connect with the valid token and make a simple RPC."""
             # Step 1: Validate input parameters, operational preconditions, and state
             async with websockets.connect(self._get_uri(), ssl=self._get_ssl_context(), close_timeout=2) as ws:
                 payload = {"jsonrpc": "2.0", "id": 1, "method": "get_runtime_status"}
@@ -622,6 +632,7 @@ class TestWebSocketBridge(unittest.TestCase):
         mock_time.return_value = now + 46800.0
         
         async def run_client():
+            """Try to connect with an expired token and report the close code the server sends."""
             # Step 1: Validate input parameters, operational preconditions, and state
             uri = f"ws://localhost:{self.port}/?token={expired_token}"
             if os.path.exists(self.manager._SSL_CERT_PATH):
@@ -661,6 +672,7 @@ class TestWebSocketBridge(unittest.TestCase):
         
         # Attempting a connection with the old token should trigger rotation
         async def run_client():
+            """Attempt a connection with the old token, which triggers token rotation."""
             # Step 1: Validate input parameters, operational preconditions, and state
             uri = f"ws://localhost:{self.port}/?token={old_token}"
             if os.path.exists(self.manager._SSL_CERT_PATH):

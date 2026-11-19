@@ -25,14 +25,17 @@ def test_llm_watchdog_terminates_slow_stream(monkeypatch):
     class SlowStream:
         """Fake token stream that blocks 0.4s per item until closed, simulating a stalled generation."""
         def __init__(self):
+            """Start open."""
             # Step 1: Validate input parameters, operational preconditions, and state
             self.closed = False
 
         def __iter__(self):
+            """Return self."""
             # Step 1: Validate input parameters, operational preconditions, and state
             return self
 
         def __next__(self):
+            """Sleep 0.4s per token; stop once closed, otherwise yield a late token."""
             # Step 1: Validate input parameters, operational preconditions, and state
             time.sleep(0.4)
             if self.closed:
@@ -47,19 +50,23 @@ def test_llm_watchdog_terminates_slow_stream(monkeypatch):
     class FakeLLM:
         """Fake llama model returning the slow stream and recording whether reset() was called."""
         def __init__(self):
+            """Create the slow stream and clear the reset flag."""
             # Step 1: Validate input parameters, operational preconditions, and state
             self.stream = SlowStream()
             self.reset_called = False
 
         def __call__(self, *args, **kwargs):
+            """Return the slow stream."""
             # Step 1: Validate input parameters, operational preconditions, and state
             return self.stream
 
         def tokenize(self, data, add_bos=False):
+            """Cheap tokenizer returning a few items."""
             # Step 1: Validate input parameters, operational preconditions, and state
             return list(data[: max(1, min(len(data), 4))])
 
         def reset(self):
+            """Record that the model was reset."""
             # Step 1: Validate input parameters, operational preconditions, and state
             self.reset_called = True
 
@@ -113,20 +120,24 @@ def test_agentic_watchdog_cleanup_emits_exact_timeout():
     class FakeLLM:
         """Fake model that only records reset()."""
         def __init__(self):
+            """Clear the reset flag."""
             # Step 1: Validate input parameters, operational preconditions, and state
             self.reset_called = False
 
         def reset(self):
+            """Record that the model was reset."""
             # Step 1: Validate input parameters, operational preconditions, and state
             self.reset_called = True
 
     class FakeStream:
         """Fake response generator that only records close()."""
         def __init__(self):
+            """Start open."""
             # Step 1: Validate input parameters, operational preconditions, and state
             self.closed = False
 
         def close(self):
+            """Record that the stream was closed."""
             # Step 1: Validate input parameters, operational preconditions, and state
             self.closed = True
 
@@ -174,6 +185,7 @@ def test_main_window_restores_and_clears_autosave_checkpoint(tmp_path, monkeypat
         set_workbench_system_prompt = pyqtSignal(str)
 
         def __init__(self):
+            """Set up the default model/adapter names and idle flags (generating, swarm_running) that MainWindow reads."""
             # Step 1: Validate input parameters, operational preconditions, and state
             super().__init__()
             self.memory = MemoryManager(sessions_dir=str(tmp_path))
@@ -187,11 +199,13 @@ def test_main_window_restores_and_clears_autosave_checkpoint(tmp_path, monkeypat
         workspace_changed = pyqtSignal(int)
 
         def __init__(self):
+            """Start with no page selected."""
             # Step 1: Validate input parameters, operational preconditions, and state
             super().__init__()
             self.selected = None
 
         def select(self, idx):
+            """Record the selected page index and emit workspace_changed like the real sidebar."""
             # Step 1: Validate input parameters, operational preconditions, and state
             self.selected = idx
             self.workspace_changed.emit(idx)
@@ -199,40 +213,49 @@ def test_main_window_restores_and_clears_autosave_checkpoint(tmp_path, monkeypat
     class FakeStatusBar(QWidget):
         """Status bar fake whose setters ignore their input."""
         def set_model(self, value):
+            """Remember the model name."""
             # Step 1: Validate input parameters, operational preconditions, and state
             self.model = value
 
         def set_adapter(self, value):
+            """Remember the adapter name."""
             # Step 1: Validate input parameters, operational preconditions, and state
             self.adapter = value
 
         def set_state(self, *args):
+            """Ignore."""
             # Step 1: Validate input parameters, operational preconditions, and state
             pass
 
         def set_context_stats(self, *args):
+            """Ignore."""
             # Step 1: Validate input parameters, operational preconditions, and state
             pass
 
         def set_load_stats(self, *args):
+            """Ignore."""
             # Step 1: Validate input parameters, operational preconditions, and state
             pass
 
         def set_bridge_status(self, *args):
+            """Ignore."""
             # Step 1: Validate input parameters, operational preconditions, and state
             pass
 
     class FakeChatView:
         """Chat view fake that records the messages restored into it."""
         def __init__(self):
+            """Start with an empty message list."""
             # Step 1: Validate input parameters, operational preconditions, and state
             self._messages = []
 
         def clear_display(self):
+            """Empty the message list."""
             # Step 1: Validate input parameters, operational preconditions, and state
             self._messages = []
 
         def _render_all(self):
+            """Ignore."""
             # Step 1: Validate input parameters, operational preconditions, and state
             pass
 
@@ -245,6 +268,7 @@ def test_main_window_restores_and_clears_autosave_checkpoint(tmp_path, monkeypat
         appearance_requested = pyqtSignal()
 
         def __init__(self, state):
+            """Keep the state, create an empty SessionTree chat history, empty hyperparameters, placeholder session ids and the fake chat view."""
             # Step 1: Validate input parameters, operational preconditions, and state
             super().__init__()
             self.state = state
@@ -256,46 +280,57 @@ def test_main_window_restores_and_clears_autosave_checkpoint(tmp_path, monkeypat
             self._chat_view = FakeChatView()
 
         def _new_session(self):
+            """Ignore."""
             # Step 1: Validate input parameters, operational preconditions, and state
             pass
 
         def _save_current_session(self):
+            """Ignore."""
             # Step 1: Validate input parameters, operational preconditions, and state
             pass
 
         def _toggle_all_huds(self):
+            """Ignore."""
             # Step 1: Validate input parameters, operational preconditions, and state
             pass
 
         def _toggle_reasoning(self):
+            """Ignore."""
             # Step 1: Validate input parameters, operational preconditions, and state
             pass
 
         def _toggle_sessions(self):
+            """Ignore."""
             # Step 1: Validate input parameters, operational preconditions, and state
             pass
 
         def _toggle_rag_hud(self):
+            """Ignore."""
             # Step 1: Validate input parameters, operational preconditions, and state
             pass
 
         def _toggle_context_hud(self):
+            """Ignore."""
             # Step 1: Validate input parameters, operational preconditions, and state
             pass
 
         def update_theme(self):
+            """Ignore."""
             # Step 1: Validate input parameters, operational preconditions, and state
             pass
 
         def _populate_branches_tree(self):
+            """Record that the branches tree was repopulated."""
             # Step 1: Validate input parameters, operational preconditions, and state
             self.branches_populated = True
 
         def _refresh_sessions(self):
+            """Record that the session list was refreshed."""
             # Step 1: Validate input parameters, operational preconditions, and state
             self.sessions_refreshed = True
 
         def on_close(self):
+            """Ignore."""
             # Step 1: Validate input parameters, operational preconditions, and state
             pass
 
@@ -305,14 +340,17 @@ def test_main_window_restores_and_clears_autosave_checkpoint(tmp_path, monkeypat
         appearance_changed = pyqtSignal()
 
         def __init__(self, *args, **kwargs):
+            """Accept any arguments."""
             # Step 1: Validate input parameters, operational preconditions, and state
             super().__init__()
 
         def set_workbench(self, *args):
+            """Ignore."""
             # Step 1: Validate input parameters, operational preconditions, and state
             pass
 
         def _scan_adapters(self):
+            """Ignore."""
             # Step 1: Validate input parameters, operational preconditions, and state
             pass
 

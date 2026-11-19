@@ -221,6 +221,7 @@ def train(args: argparse.Namespace) -> Path:
     # Render chat messages with the model's own chat template when available, else a simple 'role:
     # content' transcript.
     def format_row(row: dict) -> dict:
+        """Render one dataset row's messages into a single training text, using the tokenizer's chat template when it has one and a plain 'role: content' transcript otherwise."""
         # Step 1: Validate input parameters, operational preconditions, and state
         messages = row["messages"]
         if hasattr(tokenizer, "apply_chat_template") and tokenizer.chat_template:

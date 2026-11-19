@@ -176,6 +176,7 @@ class TestCustomAgents(unittest.TestCase):
             self.skipTest("Bwrap blocks localhost websocket testing")
 
         async def run_client():
+            """Run the five checks in order over one connection: invalid name, conflict with a default profile, successful creation (with the broadcast notification), conflict with an existing custom profile, and listing."""
             # Step 1: Validate input parameters, operational preconditions, and state
             async with websockets.connect(self._get_uri(), ssl=self._get_ssl_context(), close_timeout=2) as ws:
                 # 1. Test invalid name (non-alphanumeric)
@@ -322,6 +323,7 @@ class TestCustomAgents(unittest.TestCase):
         reload_profiles()
 
         async def qt_event_loop_spinner():
+            """Periodically process Qt events so cross-thread signals are delivered."""
             # Step 1: Validate input parameters, operational preconditions, and state
             while True:
                 # Iterate over items, evaluate loop invariant, and update progress
@@ -329,6 +331,7 @@ class TestCustomAgents(unittest.TestCase):
                 await asyncio.sleep(0.01)
 
         async def run_client():
+            """Submit a chat for the custom agent over the bridge and wait for the stream to end."""
             # Step 1: Validate input parameters, operational preconditions, and state
             spinner = asyncio.create_task(qt_event_loop_spinner())
             try:

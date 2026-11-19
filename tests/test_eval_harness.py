@@ -20,11 +20,14 @@ from app.engine.model_loader import ModelLoader
 from eval.harness import EvalHarness
 
 class MockLlama:
+    """Scripted model: answers the electronics-return and Meridian-CEO questions (wrapped in <think> tags) and returns an unrelated answer otherwise."""
     def tokenize(self, text_bytes, add_bos=True):
+        """Cheap token count (about one token per 4 bytes)."""
         # Step 1: Validate input parameters, operational preconditions, and state
         return [0] * (len(text_bytes) // 4 + 1)
         
     def __call__(self, prompt, **kwargs):
+        """Return a canned reply chosen by keywords in the prompt."""
         # Step 1: Validate input parameters, operational preconditions, and state
         if "electronics" in prompt:
             return {"choices": [{"text": "<think>thinking</think>The return window is 15 days."}]}
@@ -34,12 +37,14 @@ class MockLlama:
 
 
 def _sleeping_eval_worker(queue, *args):
+    """Eval worker replacement that sleeps 10 seconds before answering, used to trigger the harness timeout."""
     # Step 1: Validate input parameters, operational preconditions, and state
     time.sleep(10)
     queue.put({"ok": True, "output": "late", "latency": 10.0})
 
 
 def test_eval_harness_model_and_adapter_selection():
+    """EvalHarness.run with a model_name and adapter_name override loads exactly that model path (deepseek-r1-llama-8b.gguf) and adapter through ModelLoader for every case, and a two-case dataset is graded 2/2 passed with correct case ids."""
     # Step 1: Validate input parameters, operational preconditions, and state
     print("Testing EvalHarness model and adapter selection...")
     
@@ -52,6 +57,7 @@ def test_eval_harness_model_and_adapter_selection():
     get_instance_calls = []
 
     def mock_get_instance(model_path=None, adapter_name=None):
+        """Record the (model_path, adapter_name) passed by the harness and return the mock model."""
         # Step 1: Validate input parameters, operational preconditions, and state
         get_instance_calls.append((model_path, adapter_name))
         return mock_llama
@@ -118,6 +124,7 @@ def test_eval_harness_model_and_adapter_selection():
 
 
 def test_eval_harness_failure_curation():
+    """A failing case is automatically curated into two training examples (the dataset's expected answer as 'chosen', the model's bad output as 'rejected') that export as one DPO pair."""
     # Step 1: Validate input parameters, operational preconditions, and state
     print("Testing EvalHarness failure curation...")
     from eval.harness import EvalHarness
@@ -135,10 +142,13 @@ def test_eval_harness_failure_curation():
     dataset_path = os.path.join(temp_dir, "dataset.jsonl")
     
     class FailingMockLlama:
+        """Model double that always answers 'bad response output'."""
         def tokenize(self, text_bytes, add_bos=True):
+            """Return a one-token list."""
             # Step 1: Validate input parameters, operational preconditions, and state
             return [0]
         def __call__(self, prompt, **kwargs):
+            """Return the fixed bad reply inside <think> tags."""
             # Step 1: Validate input parameters, operational preconditions, and state
             return {"choices": [{"text": "<think>thinking</think>bad response output"}]}
             
@@ -198,6 +208,7 @@ def test_eval_harness_failure_curation():
 
 
 def test_eval_harness_process_timeout_terminates_worker():
+    """With process isolation, a worker that exceeds timeout_limit is terminated and TimeoutError('...terminated...') is raised quickly (<3s) instead of waiting the full 10s sleep."""
     # Step 1: Validate input parameters, operational preconditions, and state
     harness = EvalHarness()
     harness._worker_target = _sleeping_eval_worker

@@ -22,34 +22,43 @@ class MockState:
         """Create the mock curator and RAG and attach them."""
         # Step 1: Validate input parameters, operational preconditions, and state
         class MockCurator:
+            """Fake training curator holding two example dicts."""
             def __init__(self):
+                """Seed the list with two examples (a thumbs_up and a corrected one)."""
                 # Step 1: Validate input parameters, operational preconditions, and state
                 self.examples = [
                     {"instruction": "say hello", "output": "hello there", "source": "thumbs_up"},
                     {"instruction": "fix python syntax", "output": "print('fixed')", "source": "corrected"}
                 ]
             def get_all_examples(self):
+                """Return the stored examples."""
                 # Step 1: Validate input parameters, operational preconditions, and state
                 return self.examples
             def delete_example(self, row):
+                """Remove an example by row index when in range."""
                 # Step 1: Validate input parameters, operational preconditions, and state
                 if 0 <= row < len(self.examples):
                     self.examples.pop(row)
         
         class MockRag:
+            """Fake RAG pipeline reporting an empty knowledge base."""
             def list_sources(self):
+                """No sources."""
                 # Step 1: Validate input parameters, operational preconditions, and state
                 return []
             @property
             def is_encoder_loaded(self):
+                """Encoder is not loaded."""
                 # Step 1: Validate input parameters, operational preconditions, and state
                 return False
             @property
             def total_chunks(self):
+                """Zero chunks."""
                 # Step 1: Validate input parameters, operational preconditions, and state
                 return 0
             @property
             def total_sources(self):
+                """Zero sources."""
                 # Step 1: Validate input parameters, operational preconditions, and state
                 return 0
             INDEX_FILE = "index.faiss"
