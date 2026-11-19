@@ -29,7 +29,7 @@ class InternVisionModel(MmprojModel):
         """Read the dynamic image tiling limits from the global config."""
         super().__init__(*args, **kwargs)
         assert self.hparams_vision is not None
-        # Tiling limits live in the top-level (not vision) config because InternVL splits a large image into 448px tiles in the preprocessor, not in the encoder; the runtime needs the same limits to reproduce that split.
+        # Tiling limits live in the top-level (not vision) config because InternVL splits a large image into fixed-size tiles in the preprocessor, not in the encoder; the runtime needs the same limits to reproduce that split.
         self.min_dynamic_tiles = self.global_config.get("min_dynamic_patch", 0)
         self.max_dynamic_tiles = self.global_config.get("max_dynamic_patch", 0)
 
