@@ -466,6 +466,9 @@ THEMES = {
 }
 
 # Module-level default palette for code that needs colours without a state object.
+# Module-level default palette for code that styles widgets before any AppState
+# exists (import-time constants, early splash). Runtime theming should go through
+# get_theme_colors() so mode/tone/accent overrides apply.
 PALETTE = THEMES["Karl Obsidian Core"]
 
 # CSS font stacks interpolated into the QSS. Order is the fallback order:
@@ -482,13 +485,14 @@ SANS = (
 
 def darken_hex_color(hex_str: str, factor: float = 0.7) -> str:
     """Darken a hex color string by a given factor."""
-    # Step 1: Validate input parameters, operational preconditions, and state
-    # Accept '#RRGGBB' or 'RRGGBB'; anything not 6 digits falls back to a safe teal.
+    # Accept '#RRGGBB' or 'RRGGBB'; anything not 6 digits (e.g. a 3-digit '#FFF'
+    # shorthand or a CSS name) is not expanded here, it falls back to a dark teal
+    # so a bad custom accent can never leave the UI without a visible highlight.
     hex_str = hex_str.lstrip('#')
     if len(hex_str) != 6:
         return "#008CB8"
     try:
-        # Execute guarded operations and establish recovery boundaries
+        # int(..., 16) raises ValueError on non-hex digits ('#GGHHII'); caught below.
         r = int(hex_str[0:2], 16)
         g = int(hex_str[2:4], 16)
         b = int(hex_str[4:6], 16)
@@ -502,12 +506,14 @@ def darken_hex_color(hex_str: str, factor: float = 0.7) -> str:
 
 def _tint_hex_color(hex_str: str, r_mod: int, g_mod: int, b_mod: int) -> str:
     """Tint a hex color by adding offsets to its RGB channels."""
-    # Step 1: Validate input parameters, operational preconditions, and state
+    # Malformed input is returned unchanged (re-prefixed with '#') rather than
+    # replaced with a default: callers use this for subtle shading, where an
+    # untouched colour is a better failure mode than a wrong one.
     hex_str = hex_str.lstrip('#')
     if len(hex_str) != 6:
         return "#" + hex_str
     try:
-        # Execute guarded operations and establish recovery boundaries
+        # Offsets are signed ints and the result is clamped to 0-255 per channel.
         r = int(hex_str[0:2], 16)
         g = int(hex_str[2:4], 16)
         b = int(hex_str[4:6], 16)
@@ -520,12 +526,13 @@ def _tint_hex_color(hex_str: str, r_mod: int, g_mod: int, b_mod: int) -> str:
 
 def hex_to_rgba(hex_str: str, alpha: float) -> str:
     """Convert a hex color string to rgba format."""
-    # Step 1: Validate input parameters, operational preconditions, and state
+    # QSS has no alpha-hex support in every Qt version, so translucent colours
+    # are emitted as rgba(). alpha is 0.0-1.0 (QSS accepts a float here).
+    # The fallback is the stock cyan so glass panels stay visible on bad input.
     hex_str = hex_str.lstrip('#')
     if len(hex_str) != 6:
         return f"rgba(0, 194, 255, {alpha})"
     try:
-        # Execute guarded operations and establish recovery boundaries
         r = int(hex_str[0:2], 16)
         g = int(hex_str[2:4], 16)
         b = int(hex_str[4:6], 16)
@@ -535,7 +542,8 @@ def hex_to_rgba(hex_str: str, alpha: float) -> str:
 
 def get_theme_colors(state_or_name, custom_accent=None, bg_tone="Default", mode: str = None) -> dict:
     """Get the palette colors dictionary for the given theme, custom accent and background overlays."""
-    # Step 1: Validate input parameters, operational preconditions, and state
+    # Two call shapes exist: the modern one passes the AppState (theme, accent and
+    # mode all live on it), the legacy one passes a theme name plus loose kwargs.
     # State object: read everything from it (tone is not stored on state).
     if hasattr(state_or_name, "theme_preset"):
         state = state_or_name
@@ -559,6 +567,9 @@ def get_theme_colors(state_or_name, custom_accent=None, bg_tone="Default", mode:
     # Modes re-skin the backgrounds of any theme; 'ember' also swaps the accent
     # to orange unless the user picked a custom one.
     # Theme mode overrides
+    # Modes only swap background/border ramps; text and status colours stay as the
+    # theme defines them so contrast ratios the theme author tuned are preserved.
+    # "midnight" is the identity mode (no override), which is why it has no branch.
     if mode == "slate":
         raw["bg_deep"] = "#0B0F17"
         raw["bg_surface"] = "#151C2C"
@@ -582,6 +593,8 @@ def get_theme_colors(state_or_name, custom_accent=None, bg_tone="Default", mode:
     else:
         raw["accent_alt"] = raw.get("accent_alt", darken_hex_color(raw["accent"], 0.7))
         
+    # Tone is a legacy per-call argument (AppState never carries it), kept so older
+    # callers and saved configs still resolve to the same colours.
     # Background tones are applied last so they win over mode overrides.
     # Tone overrides
     if tone == "Pitch Black":
@@ -632,6 +645,9 @@ def get_theme_colors(state_or_name, custom_accent=None, bg_tone="Default", mode:
         "error_border":     "rgba(255, 59, 48, 0.9)",
     }
     
+    # Non-colour metadata rides along in the same dict so the appearance panel can
+    # read description/glow/motion without a second registry lookup. Defaults keep
+    # third-party/legacy theme entries that omit these keys working.
     p["description"] = raw.get("description", "")
     p["glow_strength"] = raw.get("glow_strength", 1.0)
     p["motion_style"] = raw.get("motion_style", "normal")
@@ -648,7 +664,8 @@ _STYLESHEET_CACHE_MAX = 64
 
 def get_theme_stylesheet(state_or_name, custom_accent=None, bg_tone="Default", mode: str = None) -> str:
     """Compile the QSS stylesheet for the given state configurations."""
-    # Step 1: Validate input parameters, operational preconditions, and state
+    # The cache key must include every input that changes the output, including
+    # layout_preset and mode, or switching them would serve a stale sheet.
     # Layout preset only affects spacing/font size, not colours.
     layout_preset = "Focused Workbench"
     if hasattr(state_or_name, "layout_preset"):
@@ -1367,7 +1384,6 @@ QScrollBar::add-page:horizontal, QScrollBar::sub-page:horizontal {{
 
 def stylesheet(accent: str = ACCENT_DEFAULT, mode: str = "midnight") -> str:
     """Backward-compatible helper returning QSS for the default theme."""
-    # Step 1: Validate input parameters, operational preconditions, and state
     # Minimal stand-in exposing the attributes get_theme_stylesheet reads, so
     # legacy callers need not construct a full AppState.
     class DummyState:
