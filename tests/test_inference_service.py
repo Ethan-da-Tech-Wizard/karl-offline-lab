@@ -47,12 +47,14 @@ class _FakeLLMThread(QThread):
     DIAGS = {"generation_tokens": 2}
 
     def __init__(self, **kwargs):
+        """Accept and store the constructor kwargs the service passes (no real model work)."""
         # Step 1: Validate input parameters, operational preconditions, and state
         super().__init__()
         self.init_kwargs = kwargs
         self._should_error = kwargs.pop("_should_error", False)
 
     def run(self):
+        """Emit one full synthetic generation synchronously: thought token, chat tokens, live stats and finished."""
         # Step 1: Validate input parameters, operational preconditions, and state
         if self._should_error:
             self.error_occurred.emit("boom")
@@ -83,6 +85,7 @@ class _FakeAgenticThread(QThread):
     RESPONSE = "agentic response"
 
     def __init__(self, **kwargs):
+        """Accept the service's kwargs and set the final fields a real agentic thread would store."""
         # Step 1: Validate input parameters, operational preconditions, and state
         super().__init__()
         self.init_kwargs = kwargs
@@ -90,6 +93,7 @@ class _FakeAgenticThread(QThread):
         self.chat_history = [{"role": "assistant", "content": self.RESPONSE}]
 
     def run(self):
+        """Emit a synthetic agentic cycle and finish."""
         # Step 1: Validate input parameters, operational preconditions, and state
         self.new_chat_token.emit(self.RESPONSE)
         self.loop_finished.emit(1)
@@ -129,7 +133,9 @@ def test_single_shot_creates_llm_thread(service, monkeypatch):
     _OrigFake = svc_mod.LLMThread
 
     class _Spy(_OrigFake):
+        """Fake LLM thread that records that it was the class instantiated."""
         def __init__(self, **kw):
+            """Record this class name in 'created' then initialise normally."""
             # Step 1: Validate input parameters, operational preconditions, and state
             created.append(type(self).__name__)
             super().__init__(**kw)
@@ -155,7 +161,9 @@ def test_agentic_flag_creates_agentic_thread(service, monkeypatch):
     _OrigFake = svc_mod.AgenticThread
 
     class _Spy(_OrigFake):
+        """Fake agentic thread that records its instantiation."""
         def __init__(self, **kw):
+            """Record the class name then initialise normally."""
             # Step 1: Validate input parameters, operational preconditions, and state
             created.append(type(self).__name__)
             super().__init__(**kw)
@@ -182,7 +190,9 @@ def test_hyperparams_agentic_flag_selects_agentic_thread(service, monkeypatch):
     _OrigFake = svc_mod.AgenticThread
 
     class _Spy(_OrigFake):
+        """Fake agentic thread that records its instantiation."""
         def __init__(self, **kw):
+            """Record the class name then initialise normally."""
             # Step 1: Validate input parameters, operational preconditions, and state
             created.append(type(self).__name__)
             super().__init__(**kw)
@@ -208,7 +218,9 @@ def test_agentic_thread_receives_model_name_override(service, monkeypatch):
     _OrigFake = svc_mod.AgenticThread
 
     class _Spy(_OrigFake):
+        """Fake agentic thread that captures its constructor kwargs."""
         def __init__(self, **kw):
+            """Store the kwargs so the test can inspect model_name."""
             # Step 1: Validate input parameters, operational preconditions, and state
             created_kwargs.append(kw)
             super().__init__(**kw)
@@ -273,6 +285,7 @@ def test_on_finished_cb_called_with_normalised_args_for_llm(service):
     finished: list[tuple] = []
 
     def _cb(thought, response, diagnostics):
+        """Collect (thought, response, diagnostics) delivered to the finished callback."""
         # Step 1: Validate input parameters, operational preconditions, and state
         finished.append((thought, response, diagnostics))
 
@@ -299,6 +312,7 @@ def test_on_finished_cb_called_for_agentic_thread(service):
     finished: list[tuple] = []
 
     def _cb(thought, response, diagnostics):
+        """Collect the finished-callback arguments for the agentic path."""
         # Step 1: Validate input parameters, operational preconditions, and state
         finished.append((thought, response, diagnostics))
 
@@ -325,7 +339,9 @@ def test_on_error_cb_called_on_error(service, monkeypatch):
     import app.engine.inference_service as svc_mod
 
     class _ErrorThread(_FakeLLMThread):
+        """Fake LLM thread that fails instead of generating."""
         def run(self):
+            """Emit error_occurred('boom')."""
             # Step 1: Validate input parameters, operational preconditions, and state
             self.error_occurred.emit("boom")
 
@@ -369,7 +385,9 @@ def test_thread_added_to_active_set_while_running(service):
     captured_mid_run: list[bool] = []
 
     class _TrackThread(_FakeLLMThread):
+        """Fake thread that observes the service's active-thread set while running."""
         def run(self):
+            """Capture whether this thread is in _active_threads during its own run()."""
             # Called on worker thread; DirectConnection means discard() will also
             # run on the worker thread (via finished signal) before wait() returns.
             captured_mid_run.append(self in service._active_threads)

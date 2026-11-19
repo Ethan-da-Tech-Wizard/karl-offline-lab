@@ -61,23 +61,27 @@ def test_root_block_allows_normal_user():
 # ── 2. _safe_workspace_path unit tests ───────────────────────────────────────
 
 def test_safe_workspace_path_empty_rel_blocked(tmp_path):
+    """An empty relative path is rejected (None)."""
     # Step 1: Validate input parameters, operational preconditions, and state
     assert _safe_workspace_path(str(tmp_path), "") is None
 
 
 def test_safe_workspace_path_parent_traversal_blocked(tmp_path):
+    """A '../' path that leaves the workspace is rejected."""
     # Step 1: Validate input parameters, operational preconditions, and state
     result = _safe_workspace_path(str(tmp_path), "../../etc/passwd")
     assert result is None
 
 
 def test_safe_workspace_path_absolute_injection_blocked(tmp_path):
+    """An absolute path is rejected, so a tool argument cannot jump outside the workspace."""
     # Step 1: Validate input parameters, operational preconditions, and state
     result = _safe_workspace_path(str(tmp_path), "/etc/passwd")
     assert result is None
 
 
 def test_safe_workspace_path_normal_file_allowed(tmp_path):
+    """A normal relative file resolves inside the workspace."""
     # Step 1: Validate input parameters, operational preconditions, and state
     result = _safe_workspace_path(str(tmp_path), "src/app.py")
     assert result is not None
@@ -86,6 +90,7 @@ def test_safe_workspace_path_normal_file_allowed(tmp_path):
 
 
 def test_safe_workspace_path_nested_allowed(tmp_path):
+    """Nested relative paths resolve under the real workspace path."""
     # Step 1: Validate input parameters, operational preconditions, and state
     result = _safe_workspace_path(str(tmp_path), "a/b/c/deep.txt")
     assert result is not None
@@ -124,6 +129,7 @@ def test_tool_write_file_symlink_escape_blocked(tmp_path):
 
 
 def test_tool_write_file_parent_traversal_blocked(tmp_path):
+    """write_file refuses '../' paths and the outside file stays unchanged."""
     # Step 1: Validate input parameters, operational preconditions, and state
     outside_file = tmp_path / "sensitive.txt"
     outside_file.write_text("safe", encoding="utf-8")
@@ -137,6 +143,7 @@ def test_tool_write_file_parent_traversal_blocked(tmp_path):
 
 
 def test_tool_write_file_normal_path_works(tmp_path):
+    """write_file writes a normal file in the workspace and reports 'OK:'."""
     # Step 1: Validate input parameters, operational preconditions, and state
     workspace = tmp_path / "workspace"
     workspace.mkdir()
@@ -164,12 +171,14 @@ def test_tool_read_file_symlink_escape_blocked(tmp_path):
 
 
 def test_tool_read_file_absolute_path_blocked(tmp_path):
+    """read_file rejects absolute paths with the standard security-block message."""
     # Step 1: Validate input parameters, operational preconditions, and state
     result = _tool_read_file(str(tmp_path), {"path": "/etc/passwd"})
     assert result == _SECURITY_BLOCK_MSG
 
 
 def test_tool_read_file_parent_traversal_blocked(tmp_path):
+    """read_file rejects '../' paths."""
     # Step 1: Validate input parameters, operational preconditions, and state
     workspace = tmp_path / "workspace"
     workspace.mkdir()
@@ -181,6 +190,7 @@ def test_tool_read_file_parent_traversal_blocked(tmp_path):
 
 
 def test_tool_read_file_normal_path_works(tmp_path):
+    """read_file returns the content of a normal workspace file."""
     # Step 1: Validate input parameters, operational preconditions, and state
     workspace = tmp_path / "workspace"
     workspace.mkdir()
@@ -205,12 +215,14 @@ def test_tool_lint_python_symlink_escape_blocked(tmp_path):
 
 
 def test_tool_lint_python_empty_path_blocked(tmp_path):
+    """lint_python rejects an empty path."""
     # Step 1: Validate input parameters, operational preconditions, and state
     result = _tool_lint_python(str(tmp_path), {"path": ""})
     assert result == _SECURITY_BLOCK_MSG
 
 
 def test_tool_lint_python_normal_path_works(tmp_path):
+    """lint_python on a clean file runs without a security block."""
     # Step 1: Validate input parameters, operational preconditions, and state
     workspace = tmp_path / "workspace"
     workspace.mkdir()
@@ -230,6 +242,7 @@ class _StubManager:
     _is_safe_path = _cls._is_safe_path
 
     def __init__(self):
+        """Set the blocked-path list the real manager would hold, without starting a server."""
         # Step 1: Validate input parameters, operational preconditions, and state
         self.blocked_paths = {"/", "/etc", "/bin", "/sbin", "/root", "/proc", "/sys"}
         user_home = os.path.expanduser("~")
@@ -239,12 +252,14 @@ class _StubManager:
 
 
 def test_is_safe_path_blocks_etc(tmp_path):
+    """/etc paths are blocked."""
     # Step 1: Validate input parameters, operational preconditions, and state
     mgr = _StubManager()
     assert mgr._is_safe_path("/etc/passwd") is False
 
 
 def test_is_safe_path_blocks_empty():
+    """An empty path is blocked."""
     # Step 1: Validate input parameters, operational preconditions, and state
     mgr = _StubManager()
     assert mgr._is_safe_path("") is False

@@ -44,18 +44,21 @@ def _reset_safe_mode():
 
 @pytest.fixture
 def flags_path(tmp_path) -> str:
+    """Fixture: path of a not-yet-existing feature_flags.json in a temp directory."""
     # Step 1: Validate input parameters, operational preconditions, and state
     return str(tmp_path / "feature_flags.json")
 
 
 @pytest.fixture
 def lock_path(tmp_path) -> str:
+    """Fixture: path for the boot lock file in a temp directory."""
     # Step 1: Validate input parameters, operational preconditions, and state
     return str(tmp_path / "boot_in_progress.lock")
 
 
 @pytest.fixture
 def store(flags_path) -> FeatureFlagStore:
+    """Fixture: a FeatureFlagStore backed by the temp flags file."""
     # Step 1: Validate input parameters, operational preconditions, and state
     return FeatureFlagStore(path=flags_path)
 
@@ -63,6 +66,7 @@ def store(flags_path) -> FeatureFlagStore:
 # ── Default flag state ────────────────────────────────────────────────────────
 
 def test_default_flags_match_spec(store):
+    """Defaults: experimental speculative decoding and vision/OCR are off, agentic swarming loops are on."""
     # Step 1: Validate input parameters, operational preconditions, and state
     assert store.is_enabled("experimental_speculative_decoding") is False
     assert store.is_enabled("multimodal_vision_ocr") is False
@@ -70,6 +74,7 @@ def test_default_flags_match_spec(store):
 
 
 def test_unknown_flag_returns_false(store):
+    """Asking about an undefined flag returns False instead of raising."""
     # Step 1: Validate input parameters, operational preconditions, and state
     assert store.is_enabled("nonexistent_flag") is False
 
@@ -88,12 +93,14 @@ def test_defaults_are_persisted_on_first_load(flags_path):
 # ── set_flag ──────────────────────────────────────────────────────────────────
 
 def test_set_flag_updates_in_memory(store):
+    """set_flag changes what is_enabled reports immediately."""
     # Step 1: Validate input parameters, operational preconditions, and state
     store.set_flag("experimental_speculative_decoding", True)
     assert store.is_enabled("experimental_speculative_decoding") is True
 
 
 def test_set_flag_persists_to_disk(flags_path, store):
+    """set_flag writes through to disk; a freshly loaded store sees the new value."""
     # Step 1: Validate input parameters, operational preconditions, and state
     store.set_flag("multimodal_vision_ocr", True)
     # Reload from disk to verify persistence
@@ -102,12 +109,14 @@ def test_set_flag_persists_to_disk(flags_path, store):
 
 
 def test_set_flag_raises_for_unknown_flag(store):
+    """Setting an undefined flag raises KeyError so typos are caught."""
     # Step 1: Validate input parameters, operational preconditions, and state
     with pytest.raises(KeyError):
         store.set_flag("not_a_real_flag", True)
 
 
 def test_set_flag_persists_false(flags_path, store):
+    """Turning a default-on flag off also persists across reload."""
     # Step 1: Validate input parameters, operational preconditions, and state
     store.set_flag("agentic_swarming_loops", False)
     reloaded = FeatureFlagStore(path=flags_path)
@@ -117,6 +126,7 @@ def test_set_flag_persists_false(flags_path, store):
 # ── enter_safe_mode ───────────────────────────────────────────────────────────
 
 def test_safe_mode_disables_experimental_flags(store):
+    """enter_safe_mode switches every experimental flag off."""
     # Step 1: Validate input parameters, operational preconditions, and state
     store.set_flag("experimental_speculative_decoding", True)
     store.set_flag("multimodal_vision_ocr", True)
@@ -133,6 +143,7 @@ def test_safe_mode_preserves_non_experimental_flags(store):
 
 
 def test_safe_mode_sets_class_flag(store):
+    """Entering safe mode sets the class-level safe_mode_active indicator that the UI reads."""
     # Step 1: Validate input parameters, operational preconditions, and state
     assert FeatureFlagStore.safe_mode_active is False
     store.enter_safe_mode()
@@ -140,6 +151,7 @@ def test_safe_mode_sets_class_flag(store):
 
 
 def test_safe_mode_persists_experimental_flags_as_false(flags_path, store):
+    """The disabled state from safe mode survives a reload from disk."""
     # Step 1: Validate input parameters, operational preconditions, and state
     store.set_flag("experimental_speculative_decoding", True)
     store.enter_safe_mode()
@@ -150,11 +162,13 @@ def test_safe_mode_persists_experimental_flags_as_false(flags_path, store):
 # ── Boot Guard — individual helpers ──────────────────────────────────────────
 
 def test_check_boot_lock_false_when_absent(lock_path):
+    """No lock file means the previous boot finished cleanly."""
     # Step 1: Validate input parameters, operational preconditions, and state
     assert check_boot_lock(lock_path) is False
 
 
 def test_create_and_check_boot_lock(lock_path):
+    """Creating the lock makes check_boot_lock return True and creates the file."""
     # Step 1: Validate input parameters, operational preconditions, and state
     create_boot_lock(lock_path)
     assert check_boot_lock(lock_path) is True
@@ -162,6 +176,7 @@ def test_create_and_check_boot_lock(lock_path):
 
 
 def test_boot_lock_contains_timestamp(lock_path):
+    """The lock file stores the creation time (between the before/after readings), useful for diagnosing crashes."""
     # Step 1: Validate input parameters, operational preconditions, and state
     before = time.time()
     create_boot_lock(lock_path)
@@ -173,6 +188,7 @@ def test_boot_lock_contains_timestamp(lock_path):
 
 
 def test_release_boot_lock_removes_file(lock_path):
+    """Releasing the lock deletes the file (done on clean shutdown)."""
     # Step 1: Validate input parameters, operational preconditions, and state
     create_boot_lock(lock_path)
     release_boot_lock(lock_path)
@@ -199,6 +215,7 @@ def test_boot_guard_creates_lock_on_clean_boot(flags_path, lock_path):
 def test_boot_guard_returns_false_and_does_not_activate_safe_mode_on_clean_boot(
     flags_path, lock_path
 ):
+    """A clean boot reports no crash, leaves safe mode off and keeps default flag values."""
     # Step 1: Validate input parameters, operational preconditions, and state
     store = FeatureFlagStore(path=flags_path)
     crashed = run_boot_guard(store, lock_path)
@@ -283,12 +300,14 @@ def test_boot_guard_does_not_remove_lock_on_crash_detection(flags_path, lock_pat
 # ── all_flags helper ──────────────────────────────────────────────────────────
 
 def test_all_flags_returns_complete_dict(store):
+    """all_flags() returns every defined flag."""
     # Step 1: Validate input parameters, operational preconditions, and state
     flags = store.all_flags()
     assert set(flags.keys()) == set(FeatureFlagStore.DEFAULTS.keys())
 
 
 def test_all_flags_returns_copy(store):
+    """The dict from all_flags() is a copy; mutating it does not change the store."""
     # Step 1: Validate input parameters, operational preconditions, and state
     flags = store.all_flags()
     flags["agentic_swarming_loops"] = False

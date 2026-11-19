@@ -44,6 +44,7 @@ def _record(
     ts: str = "2026-01-01T00:00:00+00:00",
     warning: str | None = None,
 ) -> dict:
+    """Build one chat-format training record (system/user/assistant) with a timestamp, source tag and optional warning flag."""
     # Step 1: Validate input parameters, operational preconditions, and state
     r: dict = {
         "timestamp": ts,
@@ -60,6 +61,7 @@ def _record(
 
 
 def _write(path: str, records: list[dict]) -> None:
+    """Write records to path as JSONL, creating parent directories."""
     # Step 1: Validate input parameters, operational preconditions, and state
     os.makedirs(os.path.dirname(os.path.abspath(path)), exist_ok=True)
     with open(path, "w", encoding="utf-8") as fh:
@@ -69,6 +71,7 @@ def _write(path: str, records: list[dict]) -> None:
 
 
 def _read(path: str) -> list[dict]:
+    """Read a JSONL file back into a list of dicts."""
     # Step 1: Validate input parameters, operational preconditions, and state
     with open(path, encoding="utf-8") as fh:
         return [json.loads(line) for line in fh if line.strip()]
@@ -77,23 +80,29 @@ def _read(path: str) -> list[dict]:
 # ── Helper unit tests ─────────────────────────────────────────────────────────
 
 class TestIsAnomalous:
+    """_is_anomalous decides whether a training record is corrupt or low value and must be filtered before merging."""
     def test_good_record_passes(self):
+        """A normal record is not anomalous."""
         # Step 1: Validate input parameters, operational preconditions, and state
         assert not _is_anomalous(_record("hi", "hello!"))
 
     def test_missing_messages_key(self):
+        """A record without 'messages' is anomalous."""
         # Step 1: Validate input parameters, operational preconditions, and state
         assert _is_anomalous({"timestamp": "2026-01-01T00:00:00+00:00", "source": "x"})
 
     def test_messages_not_a_list(self):
+        """'messages' must be a list."""
         # Step 1: Validate input parameters, operational preconditions, and state
         assert _is_anomalous({"messages": "bad"})
 
     def test_too_few_messages(self):
+        """A single message cannot form a training example."""
         # Step 1: Validate input parameters, operational preconditions, and state
         assert _is_anomalous({"messages": [{"role": "user", "content": "hi"}]})
 
     def test_no_assistant_turn(self):
+        """A record with no assistant turn has nothing to learn from."""
         # Step 1: Validate input parameters, operational preconditions, and state
         r = {"messages": [
             {"role": "system", "content": "sys"},
@@ -102,11 +111,13 @@ class TestIsAnomalous:
         assert _is_anomalous(r)
 
     def test_empty_assistant_response(self):
+        """An empty or whitespace-only assistant reply is anomalous."""
         # Step 1: Validate input parameters, operational preconditions, and state
         assert _is_anomalous(_record("hi", ""))
         assert _is_anomalous(_record("hi", "   "))
 
     def test_traceback_dump_filtered(self):
+        """A short assistant reply that is just a Python traceback is a crash dump, not an answer, and is filtered."""
         # Step 1: Validate input parameters, operational preconditions, and state
         bad_response = (
             "Traceback (most recent call last):\n"
@@ -116,40 +127,48 @@ class TestIsAnomalous:
         assert _is_anomalous(_record("hi", bad_response))
 
     def test_latency_warning_flag_filtered(self):
+        """Records flagged with a latency/thermal warning are filtered because their output may be degraded."""
         # Step 1: Validate input parameters, operational preconditions, and state
         assert _is_anomalous(_record("hi", "good", warning="thermal"))
 
     def test_long_traceback_not_filtered(self):
+        """A long reply that merely mentions an error is probably a legitimate tutorial and is kept."""
         # A long response that happens to mention an error is likely a tutorial, not a dump.
         long_response = "SyntaxError: " + "x" * 700
         assert not _is_anomalous(_record("explain errors", long_response))
 
 
 class TestHashing:
+    """The hash helpers used for de-duplication."""
     def test_exact_hash_stable(self):
+        """The exact hash of a record is identical for equal records."""
         # Step 1: Validate input parameters, operational preconditions, and state
         r = _record("hello", "world")
         assert _exact_hash(r) == _exact_hash(r.copy())
 
     def test_different_assistant_differs_in_exact_hash(self):
+        """Different assistant replies produce different exact hashes."""
         # Step 1: Validate input parameters, operational preconditions, and state
         r1 = _record("hello", "world")
         r2 = _record("hello", "universe")
         assert _exact_hash(r1) != _exact_hash(r2)
 
     def test_same_prompt_shares_prompt_key(self):
+        """Records with the same system and user prompt share a prompt key."""
         # Step 1: Validate input parameters, operational preconditions, and state
         r1 = _record("hello", "world")
         r2 = _record("hello", "universe")
         assert _prompt_key(r1) == _prompt_key(r2)
 
     def test_different_prompts_differ_in_prompt_key(self):
+        """Different prompts have different prompt keys."""
         # Step 1: Validate input parameters, operational preconditions, and state
         r1 = _record("hello", "world")
         r2 = _record("goodbye", "world")
         assert _prompt_key(r1) != _prompt_key(r2)
 
     def test_prompt_key_ignores_assistant(self):
+        """The prompt key depends only on the prompt, so different answers to one prompt can be treated as conflicts."""
         # Step 1: Validate input parameters, operational preconditions, and state
         r1 = _record("hi", "response A", ts="2025-01-01T00:00:00+00:00")
         r2 = _record("hi", "response B", ts="2026-06-01T00:00:00+00:00")
@@ -159,16 +178,20 @@ class TestHashing:
 # ── merge_files integration tests ─────────────────────────────────────────────
 
 class TestMergeFiles:
+    """Integration tests for merge_files(primary, incoming): add, de-duplicate, resolve conflicts by timestamp, filter anomalies and write atomically. Stats keys are added, duplicates_skipped and errors."""
     def setup_method(self):
+        """Create a temp directory per test."""
         # Step 1: Validate input parameters, operational preconditions, and state
         self._tmpdir = tempfile.TemporaryDirectory()
         self.tmp = self._tmpdir.name
 
     def teardown_method(self):
+        """Delete the temp directory."""
         # Step 1: Validate input parameters, operational preconditions, and state
         self._tmpdir.cleanup()
 
     def _paths(self):
+        """Return the (primary, incoming) file paths inside the temp directory."""
         # Step 1: Validate input parameters, operational preconditions, and state
         return (
             os.path.join(self.tmp, "primary.jsonl"),
@@ -178,6 +201,7 @@ class TestMergeFiles:
     # ── stat keys ────────────────────────────────────────────────────────────
 
     def test_return_keys_match_spec(self):
+        """The returned stats dict has exactly the keys added, duplicates_skipped and errors."""
         # Step 1: Validate input parameters, operational preconditions, and state
         primary, incoming = self._paths()
         _write(primary, [])
@@ -188,6 +212,7 @@ class TestMergeFiles:
     # ── plain add ────────────────────────────────────────────────────────────
 
     def test_new_record_is_added(self):
+        """A record not in primary is appended and counted as added."""
         # Step 1: Validate input parameters, operational preconditions, and state
         primary, incoming = self._paths()
         _write(primary, [_record("Q1", "A1")])
@@ -199,6 +224,7 @@ class TestMergeFiles:
         assert len(_read(primary)) == 2
 
     def test_multiple_new_records(self):
+        """Several new records are all added."""
         # Step 1: Validate input parameters, operational preconditions, and state
         primary, incoming = self._paths()
         _write(primary, [])
@@ -210,6 +236,7 @@ class TestMergeFiles:
     # ── duplicate detection ───────────────────────────────────────────────────
 
     def test_exact_duplicate_skipped(self):
+        """An identical record is skipped and counted as a duplicate."""
         # Step 1: Validate input parameters, operational preconditions, and state
         primary, incoming = self._paths()
         r = _record("Q", "A")
@@ -231,6 +258,7 @@ class TestMergeFiles:
         assert stats["added"] == 0
 
     def test_multiple_duplicates_all_counted(self):
+        """Every duplicate is counted."""
         # Step 1: Validate input parameters, operational preconditions, and state
         primary, incoming = self._paths()
         records = [_record(f"Q{i}", f"A{i}") for i in range(4)]
@@ -243,6 +271,7 @@ class TestMergeFiles:
     # ── conflict resolution ───────────────────────────────────────────────────
 
     def test_newer_incoming_replaces_older_primary(self):
+        """For the same prompt, a newer incoming answer replaces the older one in primary (latest feedback wins)."""
         # Step 1: Validate input parameters, operational preconditions, and state
         primary, incoming = self._paths()
         _write(primary, [_record("Q", "OldAnswer", ts="2025-01-01T00:00:00+00:00")])
@@ -255,6 +284,7 @@ class TestMergeFiles:
         assert asst == "NewAnswer"
 
     def test_older_incoming_does_not_replace_newer_primary(self):
+        """An older incoming answer is ignored when primary already holds a newer one."""
         # Step 1: Validate input parameters, operational preconditions, and state
         primary, incoming = self._paths()
         _write(primary, [_record("Q", "NewerAnswer", ts="2026-06-01T00:00:00+00:00")])
@@ -267,6 +297,7 @@ class TestMergeFiles:
         assert asst == "NewerAnswer"
 
     def test_same_timestamp_conflict_keeps_primary(self):
+        """On equal timestamps the existing primary record wins, so merges are stable."""
         # Step 1: Validate input parameters, operational preconditions, and state
         ts = "2026-03-15T12:00:00+00:00"
         primary, incoming = self._paths()
@@ -280,6 +311,7 @@ class TestMergeFiles:
     # ── error / anomaly filtering ─────────────────────────────────────────────
 
     def test_empty_assistant_response_counted_as_error(self):
+        """Incoming records with an empty assistant response are rejected and counted as errors."""
         # Step 1: Validate input parameters, operational preconditions, and state
         primary, incoming = self._paths()
         _write(primary, [])
@@ -289,6 +321,7 @@ class TestMergeFiles:
         assert stats["added"] == 1
 
     def test_latency_warning_counted_as_error(self):
+        """Records carrying a latency warning are rejected as errors."""
         # Step 1: Validate input parameters, operational preconditions, and state
         primary, incoming = self._paths()
         _write(primary, [])
@@ -298,6 +331,7 @@ class TestMergeFiles:
         assert stats["added"] == 0
 
     def test_traceback_response_counted_as_error(self):
+        """A traceback-dump response is rejected as an error."""
         # Step 1: Validate input parameters, operational preconditions, and state
         primary, incoming = self._paths()
         _write(primary, [])
@@ -307,6 +341,7 @@ class TestMergeFiles:
         assert stats["errors"] == 1
 
     def test_malformed_json_line_skipped_gracefully(self):
+        """A garbage line is skipped silently (it is not a record, so it is not counted as an error) and valid lines still merge."""
         # Step 1: Validate input parameters, operational preconditions, and state
         primary, incoming = self._paths()
         _write(primary, [])
@@ -321,6 +356,7 @@ class TestMergeFiles:
         assert len(_read(primary)) == 2
 
     def test_missing_messages_key_counted_as_error(self):
+        """A record lacking 'messages' counts as an error."""
         # Step 1: Validate input parameters, operational preconditions, and state
         primary, incoming = self._paths()
         _write(primary, [])
@@ -331,6 +367,7 @@ class TestMergeFiles:
         assert stats["added"] == 0
 
     def test_does_not_crash_on_empty_incoming(self):
+        """An empty incoming file changes nothing and returns zero stats."""
         # Step 1: Validate input parameters, operational preconditions, and state
         primary, incoming = self._paths()
         _write(primary, [_record("Q", "A")])
@@ -340,6 +377,7 @@ class TestMergeFiles:
         assert len(_read(primary)) == 1
 
     def test_does_not_crash_on_empty_primary(self):
+        """An empty primary file accepts incoming records."""
         # Step 1: Validate input parameters, operational preconditions, and state
         primary, incoming = self._paths()
         _write(primary, [])
@@ -348,6 +386,7 @@ class TestMergeFiles:
         assert stats["added"] == 1
 
     def test_does_not_crash_when_primary_missing(self):
+        """A missing primary is created from the incoming records."""
         # Step 1: Validate input parameters, operational preconditions, and state
         incoming = os.path.join(self.tmp, "incoming.jsonl")
         primary = os.path.join(self.tmp, "sub", "primary.jsonl")
@@ -359,6 +398,7 @@ class TestMergeFiles:
     # ── output integrity ──────────────────────────────────────────────────────
 
     def test_output_is_valid_jsonl(self):
+        """The merged file is valid JSONL where every line has a messages list."""
         # Step 1: Validate input parameters, operational preconditions, and state
         primary, incoming = self._paths()
         _write(primary, [_record("Q1", "A1")])
@@ -398,6 +438,7 @@ class TestMergeFiles:
     # ── validate_file ─────────────────────────────────────────────────────────
 
     def test_validate_file_counts(self):
+        """validate_file reports total, valid and invalid line counts."""
         # Step 1: Validate input parameters, operational preconditions, and state
         path = os.path.join(self.tmp, "check.jsonl")
         _write(path, [
@@ -412,6 +453,7 @@ class TestMergeFiles:
         assert result["invalid"] == 2
 
     def test_validate_file_missing_path(self):
+        """validate_file on a missing path returns zeros instead of raising."""
         # Step 1: Validate input parameters, operational preconditions, and state
         result = DatasetMerger.validate_file("/nonexistent/path/data.jsonl")
         assert result == {"total": 0, "valid": 0, "invalid": 0}

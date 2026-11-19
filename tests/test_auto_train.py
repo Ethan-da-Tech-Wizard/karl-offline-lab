@@ -35,6 +35,7 @@ from app.engine.websocket_server import WebSocketServerManager
 
 
 def _running_under_bwrap() -> bool:
+    """True when PID 1 is bubblewrap (sandboxed run)."""
     # Step 1: Validate input parameters, operational preconditions, and state
     try:
         # Execute guarded operations and establish recovery boundaries
@@ -45,7 +46,9 @@ def _running_under_bwrap() -> bool:
 
 
 class TestAutoTrain(unittest.TestCase):
+    """Tests for the one-click auto-train pipeline helpers and its WebSocket start RPC."""
     def test_generate_fallback_tasks(self):
+        """The template fallback produces the requested number of tasks, each with an id, the topic as category, a numbered add_numbers_i problem, a verification script and type 'unit_test'."""
         # Step 1: Validate input parameters, operational preconditions, and state
         topic = "regex_parsing"
         count = 5
@@ -62,6 +65,7 @@ class TestAutoTrain(unittest.TestCase):
 
     @patch("auto_train.SafePythonSandbox")
     def test_verify_solution_passing(self, mock_sandbox_class):
+        """verify_solution returns (True, trace) when the sandbox reports success."""
         # Step 1: Validate input parameters, operational preconditions, and state
         mock_sandbox = MagicMock()
         mock_sandbox.run_code.return_value = (True, "output match")
@@ -77,6 +81,7 @@ class TestAutoTrain(unittest.TestCase):
 
     @patch("auto_train.SafePythonSandbox")
     def test_verify_solution_failing(self, mock_sandbox_class):
+        """verify_solution returns (False, traceback text) when the sandbox reports failure."""
         # Step 1: Validate input parameters, operational preconditions, and state
         mock_sandbox = MagicMock()
         mock_sandbox.run_code.return_value = (False, "AssertionError: verification failed")
@@ -91,6 +96,7 @@ class TestAutoTrain(unittest.TestCase):
         self.assertEqual(trace, "AssertionError: verification failed")
 
     def test_auto_train_thread_init(self):
+        """AutoTrainThread stores its topic, adapter name and config."""
         # Step 1: Validate input parameters, operational preconditions, and state
         topic = "binary_search"
         adapter_name = "binary_search_specialist"
@@ -110,6 +116,7 @@ class TestAutoTrain(unittest.TestCase):
     @pytest.mark.integration
     @pytest.mark.websocket
     def test_websocket_start_auto_train_rpc(self):
+        """The start_auto_train RPC answers 'started' (id 100) and spawns the training subprocess; Popen is mocked so nothing runs."""
         # Step 1: Validate input parameters, operational preconditions, and state
         if _running_under_bwrap():
             self.skipTest("Codex sandbox blocks reliable localhost WebSocket tests")
@@ -134,6 +141,7 @@ class TestAutoTrain(unittest.TestCase):
         uri = f"{proto}://localhost:{port}/?token={token}"
 
         async def run_client():
+            """Async client: connect with the bridge token, send start_auto_train and check the reply."""
             # Step 1: Validate input parameters, operational preconditions, and state
             async with websockets.connect(uri, ssl=ssl_context, close_timeout=2) as ws:
                 # Mock Popen inside websocket_server to run a dummy/no-op python command

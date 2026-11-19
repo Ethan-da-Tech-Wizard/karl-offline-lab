@@ -28,12 +28,15 @@ if not app:
 
 
 class MockLlama:
+    """Scripted llama double: the first stream stops with a 'length' finish once past 80% of the 4096-token context, then the compression summary call, then a resumed stream with the final response. Records whether compression was requested."""
     def __init__(self):
+        """Initialise call counters and the compress_called flag."""
         # Step 1: Validate input parameters, operational preconditions, and state
         self.call_count = 0
         self.compress_called = False
 
     def tokenize(self, text_bytes, add_bos=True):
+        """Fake tokenizer that reports a token count large enough to exceed the 80% context budget when the history is long."""
         # Step 1: Validate input parameters, operational preconditions, and state
         text = text_bytes.decode("utf-8")
         if "You are a cognitive compression tool" in text:
@@ -44,6 +47,7 @@ class MockLlama:
         return [0] * (len(text) // 4 + 1)
 
     def __call__(self, prompt, **kwargs):
+        """Dispatch by call type: non-streaming compression request, first streamed generation (hits the length limit) or the resumed generation after compression."""
         # Step 1: Validate input parameters, operational preconditions, and state
         self.call_count += 1
 
@@ -98,6 +102,7 @@ class MockLlama:
 
 
 def test_cognitive_compression_and_live_stats():
+    """When generation hits the context budget LLMThread asks the model to compress its reasoning, resumes, emits live stats, and finishes once with the compressed summary in the thought, the final response, not truncated, and diagnostics with positive token counts and time."""
     # Step 1: Validate input parameters, operational preconditions, and state
     print("Testing cognitive roll-up compression and live stats signals (LLMThread)...")
 
@@ -182,6 +187,7 @@ def test_cognitive_compression_and_live_stats():
 
 
 def test_agentic_cognitive_compression_and_live_stats():
+    """The same compression/resume behaviour inside AgenticThread: one iteration completes, per-iteration results carry the compressed thought and diagnostics, and the loop finishes after 1 iteration."""
     # Step 1: Validate input parameters, operational preconditions, and state
     print("Testing cognitive roll-up compression and live stats signals (AgenticThread)...")
 
