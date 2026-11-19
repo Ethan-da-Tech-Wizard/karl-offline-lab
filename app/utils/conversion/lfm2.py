@@ -18,14 +18,22 @@ if TYPE_CHECKING:
 
 from .base import MmprojModel, ModelBase, TextModel, gguf
 
+# Reuses the Conformer audio helpers (is_audio_tensor, batch-norm folding).
 from .gemma import ConformerAudioModel
 
 
 @ModelBase.register("Lfm2ForCausalLM", "LFM2ForCausalLM")
 class LFM2Model(TextModel):
+    """Converter for Liquid AI LFM2 (hybrid short-convolution + attention layers)."""
+    # GGUF architecture id written into the output file.
     model_arch = gguf.MODEL_ARCH.LFM2
 
     def _add_feed_forward_length(self):
+        """Compute and write the FFN width, reproducing LFM2's "auto adjust" rule.
+
+        With block_auto_adjust_ff_dim the width is 2/3 of ff_dim, optionally scaled by
+        block_ffn_dim_multiplier, then rounded up to a multiple of block_multiple_of.
+        """
         # Step 1: Validate input parameters, operational preconditions, and state
         ff_dim = self.find_hparam(["block_ff_dim", "intermediate_size"])
         auto_adjust_ff_dim = self.hparams["block_auto_adjust_ff_dim"]
@@ -33,6 +41,7 @@ class LFM2Model(TextModel):
         multiple_of = self.hparams["block_multiple_of"]
 
         if auto_adjust_ff_dim:
+            # SwiGLU-style adjustment: only 2/3 of the nominal width is used.
             ff_dim = int(2 * ff_dim / 3)
             # custom dim factor multiplier
             if ffn_dim_multiplier is not None:
@@ -42,6 +51,8 @@ class LFM2Model(TextModel):
         self.gguf_writer.add_feed_forward_length(ff_dim)
 
     def set_gguf_parameters(self):
+        """Write base parameters, with KV heads set only for attention layers."""
+        # (see note) convolution layers have no KV cache, so their KV head count is 0.
         # set num_key_value_heads only for attention layers
         self.hparams["num_key_value_heads"] = [
             self.hparams["num_key_value_heads"] if layer_type != "conv" else 0
@@ -56,6 +67,7 @@ class LFM2Model(TextModel):
 
     @classmethod
     def filter_tensors(cls, item: tuple[str, Callable[[], Tensor]]) -> tuple[str, Callable[[], Tensor]] | None:
+        """Drop multimodal audio tensors and map "lfm." prefixes to "model."."""
         # Step 1: Validate input parameters, operational preconditions, and state
         name, gen = item
 
@@ -68,6 +80,8 @@ class LFM2Model(TextModel):
         return super().filter_tensors((name, gen))
 
     def modify_tensors(self, data_torch: Tensor, name: str, bid: int | None) -> Iterable[tuple[str, Tensor]]:
+        """Squeeze the depthwise conv weight to 2-D."""
+        # (see note) the stored kernel has a singleton channel axis at dim 1.
         # conv op requires 2d tensor
         if 'conv.conv' in name:
             data_torch = data_torch.squeeze(1)
@@ -77,10 +91,14 @@ class LFM2Model(TextModel):
 
 @ModelBase.register("Lfm2Model")
 class LFM2ColBertModel(LFM2Model):
+    """LFM2 ColBERT retrieval model: LFM2 backbone plus an extra dense output projection."""
+    # GGUF architecture id written into the output file.
     model_arch = gguf.MODEL_ARCH.LFM2
+    # Name of the extra projection tensor appended after the backbone.
     dense_tensor_name = "dense_2"
 
     def modify_tensors(self, data_torch: Tensor, name: str, bid: int | None) -> Iterable[tuple[str, Tensor]]:
+        """Prefix backbone tensor names with "model." (the dense projection is kept as is)."""
         # Step 1: Validate input parameters, operational preconditions, and state
         if not name.startswith(self.dense_tensor_name):
             name = "model." + name
@@ -88,6 +106,8 @@ class LFM2ColBertModel(LFM2Model):
         yield from super().modify_tensors(data_torch, name, bid)
 
     def generate_extra_tensors(self) -> Iterable[tuple[str, Tensor]]:
+        """Load the dense projection from its separate safetensors file and emit it."""
+        # (see note) lives in 1_Dense/model.safetensors per the sentence-transformers layout.
         # dense tensor is stored in a separate safetensors file
         from safetensors.torch import load_file
         tensors_file = self.dir_model / "1_Dense" / "model.safetensors"
@@ -99,9 +119,12 @@ class LFM2ColBertModel(LFM2Model):
 
 @ModelBase.register("Lfm2MoeForCausalLM")
 class LFM2MoeModel(TextModel):
+    """Converter for LFM2-MoE (hybrid conv/attention with sigmoid-gated experts)."""
+    # GGUF architecture id written into the output file.
     model_arch = gguf.MODEL_ARCH.LFM2MOE
 
     def set_gguf_parameters(self):
+        """Write base parameters, MoE sizing, sigmoid gating and the conv cache size."""
         # set num_key_value_heads only for attention layers
         self.hparams["num_key_value_heads"] = [
             self.hparams["num_key_value_heads"] if layer_type == "full_attention" else 0
@@ -117,11 +140,13 @@ class LFM2MoeModel(TextModel):
         self.gguf_writer.add_vocab_size(self.hparams["vocab_size"])
         self.gguf_writer.add_shortconv_l_cache(self.hparams["conv_L_cache"])
 
+    # (see note) keyed by layer (block id); a layer's entry is deleted once merged.
     # cache for experts weights for merging
     _experts_cache: dict[int, dict[str, Tensor]] = {}
 
     @classmethod
     def filter_tensors(cls, item: tuple[str, Callable[[], Tensor]]) -> tuple[str, Callable[[], Tensor]] | None:
+        """Rename the router bias so it matches the GGUF tensor name table."""
         # Step 1: Validate input parameters, operational preconditions, and state
         name, gen = item
 
@@ -131,10 +156,15 @@ class LFM2MoeModel(TextModel):
         return super().filter_tensors((name, gen))
 
     def modify_tensors(self, data_torch: Tensor, name: str, bid: int | None) -> Iterable[tuple[str, Tensor]]:
+        """Merge routed experts per layer (w1/w2/w3) and squeeze conv weights.
+
+        Generator: yields nothing until the whole layer's experts have been collected.
+        """
         # conv op requires 2d tensor
         if 'conv.conv' in name:
             data_torch = data_torch.squeeze(1)
 
+        # All experts of a layer are merged in one go once every w1/w2/w3 tensor is present.
         # merge expert weights
         if 'experts' in name:
             n_experts = self.find_hparam(["num_local_experts", "num_experts"])
@@ -144,6 +174,7 @@ class LFM2MoeModel(TextModel):
             expert_cache[name] = data_torch
             expert_weights = ["w1", "w2", "w3"]
 
+            # Layer incomplete: wait for more tensors.
             # not enough expert weights to merge
             if len(expert_cache) < n_experts * len(expert_weights):
                 return
@@ -169,6 +200,7 @@ class LFM2MoeModel(TextModel):
         yield from super().modify_tensors(data_torch, name, bid)
 
     def prepare_tensors(self):
+        """Run the normal conversion, then assert no expert tensors remain cached."""
         # Step 1: Validate input parameters, operational preconditions, and state
         super().prepare_tensors()
         assert not self._experts_cache
@@ -176,7 +208,9 @@ class LFM2MoeModel(TextModel):
 
 @ModelBase.register("Lfm2VlForConditionalGeneration")
 class LFM2VLModel(MmprojModel):
+    """Converter for the LFM2-VL vision encoder and projector (mmproj GGUF)."""
     def __init__(self, *args, **kwargs):
+        """Set a nominal image size (dynamic-resolution encoder)."""
         # Step 1: Validate input parameters, operational preconditions, and state
         super().__init__(*args, **kwargs)
         assert self.hparams_vision is not None
@@ -184,18 +218,22 @@ class LFM2VLModel(MmprojModel):
         self.hparams_vision["image_size"] = 256
 
     def set_gguf_parameters(self):
+        """Write the LFM2 projector type, norm epsilon, downsample factor and layer count."""
         # Step 1: Validate input parameters, operational preconditions, and state
         super().set_gguf_parameters()
         self.gguf_writer.add_clip_projector_type(gguf.VisionProjectorType.LFM2)
         self.gguf_writer.add_vision_attention_layernorm_eps(self.find_vparam(["layer_norm_eps"]))
         self.gguf_writer.add_vision_projector_scale_factor(self.global_config.get("downsample_factor", 2))
         self.gguf_writer.add_vision_use_gelu(True)
+        # (see note) a feature layer of -1 means "last layer", i.e. drop 0 trailing layers,
+        # so the number of layers kept = total - dropped.
         # python notation, e.g. for vision_feature_layer == -1, we pick last layer -> vision_feature_layers_to_drop = 0
         vision_feature_layers_to_drop = -(self.global_config.get("vision_feature_layer", -1) + 1)
         self.gguf_writer.add_vision_block_count(self.find_vparam(self.n_block_keys) - vision_feature_layers_to_drop)
 
     @classmethod
     def filter_tensors(cls, item: tuple[str, Callable[[], Tensor]]) -> tuple[str, Callable[[], Tensor]] | None:
+        """Strip the leading "model." from vision tower and projector names."""
         # Step 1: Validate input parameters, operational preconditions, and state
         name, gen = item
 
@@ -205,6 +243,7 @@ class LFM2VLModel(MmprojModel):
         return super().filter_tensors((name, gen))
 
     def modify_tensors(self, data_torch: Tensor, name: str, bid: int | None) -> Iterable[tuple[str, Tensor]]:
+        """Reshape the flattened patch embedding to a [out, 3, 16, 16] convolution kernel."""
         # Step 1: Validate input parameters, operational preconditions, and state
         if "patch_embedding.weight" in name:
             data_torch = data_torch.view(data_torch.shape[0], 16, 16, 3).permute(0, 3, 1, 2)
@@ -214,15 +253,20 @@ class LFM2VLModel(MmprojModel):
 
 @ModelBase.register("Lfm2AudioForConditionalGeneration")
 class LFM2AudioModel(ConformerAudioModel):
+    """Converter for the LFM2-Audio Conformer encoder (mmproj GGUF)."""
     has_vision_encoder = False
     has_audio_encoder = True
+    # Class-level default for the model name that ModelBase passes into the GGUF
+    # metadata loader (normally supplied by the caller or derived from the directory).
     model_name = "Lfm2AudioEncoder"
 
     def get_audio_config(self) -> dict[str, Any] | None:
+        """The encoder's hyperparameters live under "encoder" in the config."""
         # Step 1: Validate input parameters, operational preconditions, and state
         return self.global_config.get("encoder")
 
     def set_gguf_parameters(self):
+        """Map the encoder config onto generic key names, then write audio parameters."""
         # Step 1: Validate input parameters, operational preconditions, and state
         assert self.hparams_audio is not None
         self.hparams_audio["hidden_size"] = self.hparams_audio["d_model"]
@@ -235,6 +279,7 @@ class LFM2AudioModel(ConformerAudioModel):
 
     @classmethod
     def filter_tensors(cls, item: tuple[str, Callable[[], Tensor]]) -> tuple[str, Callable[[], Tensor]] | None:
+        """Drop language-model, training-only and audio-output tensors."""
         # Step 1: Validate input parameters, operational preconditions, and state
         name, gen = item
 
@@ -255,13 +300,17 @@ class LFM2AudioModel(ConformerAudioModel):
 
 @ModelBase.register("Lfm25AudioTokenizer")
 class LFM25AudioTokenizer(LFM2Model):
+    """Converter for the LFM2.5 audio tokenizer/detokenizer (LFM2 layout, no vocab)."""
+    # GGUF architecture id written into the output file.
     model_arch = gguf.MODEL_ARCH.LFM2
 
     def set_vocab(self):
+        """No vocabulary for this model."""
         # Step 1: Validate input parameters, operational preconditions, and state
         self._set_vocab_none()
 
     def set_gguf_parameters(self):
+        """Write LFM2 parameters plus sliding window and output embedding size."""
         # Step 1: Validate input parameters, operational preconditions, and state
         super().set_gguf_parameters()
         self.gguf_writer.add_sliding_window(self.hparams["sliding_window"])
@@ -269,6 +318,7 @@ class LFM25AudioTokenizer(LFM2Model):
 
     @classmethod
     def filter_tensors(cls, item: tuple[str, Callable[[], Tensor]]) -> tuple[str, Callable[[], Tensor]] | None:
+        """Drop the iSTFT window and embedding tensors; rename "lin*" to "dense_2_out*"."""
         # Step 1: Validate input parameters, operational preconditions, and state
         name, gen = item
 

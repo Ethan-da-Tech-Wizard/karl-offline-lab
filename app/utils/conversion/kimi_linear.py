@@ -18,17 +18,25 @@ if TYPE_CHECKING:
 
 from .base import ModelBase, TextModel, gguf, logger
 
+# QwenModel supplies the tiktoken helpers used to rebuild merges for Kimi's vocabulary.
 from .qwen import QwenModel
 
 
 @ModelBase.register("KimiLinearModel", "KimiLinearForCausalLM")
+# (Hybrid of Multi-head Latent Attention (MLA) layers and Kimi Delta Attention (KDA)
+# linear-attention layers, plus a MoE feed-forward.)
 class KimiLinearModel(TextModel):
     """Kimi-Linear model with hybrid MLA+KDA architecture"""
     model_arch = gguf.MODEL_ARCH.KIMI_LINEAR
 
+    # Per-layer buffers for expert tensors awaiting merge.
     _experts: list[dict[str, Tensor]] | None = None
 
     def set_vocab(self):
+        """Try GPT-2 style BPE first; otherwise rebuild a Kimi-K2 tiktoken vocab with merges.
+
+        Raises NotImplementedError for any other pre-tokenizer.
+        """
         # Step 1: Validate input parameters, operational preconditions, and state
         try:
             # Execute guarded operations and establish recovery boundaries
@@ -41,6 +49,8 @@ class KimiLinearModel(TextModel):
         tokenizer = AutoTokenizer.from_pretrained(self.dir_model, trust_remote_code=True)
         tokpre = self.get_vocab_base_pre(tokenizer)
 
+        # tiktoken ranks have no merges file: reconstruct merges by re-running BPE on each
+        # token up to its own rank and keeping the 2-part results.
         if tokpre == "kimi-k2":
             # Build merges list using the approach similar to HunYuanMoE
             merges = []
@@ -54,6 +64,7 @@ class KimiLinearModel(TextModel):
                 merged = QwenModel.bpe(mergeable_ranks, token, max_rank=rank)
                 if len(merged) == 2:
                     merges.append(' '.join(map(QwenModel.token_bytes_to_string, merged)))
+            # Unknown ids get [PAD<i>] (UNUSED); special tokens are CONTROL; the rest NORMAL.
             # Build token list
             vocab_size = self.hparams["vocab_size"]
             special_tokens = tokenizer.special_tokens  # ty: ignore[unresolved-attribute]
@@ -82,18 +93,24 @@ class KimiLinearModel(TextModel):
 
             special_vocab = gguf.SpecialVocab(self.dir_model, load_merges=False)
             special_vocab.add_to_gguf(self.gguf_writer)
+            # (see note) the tiktoken EOS id replaces whatever config.json says.
             # override eos id in config.json with tiktoken eos id
             self.gguf_writer.add_eos_token_id(tokenizer.eos_id)  # ty: ignore[unresolved-attribute]
         else:
             raise NotImplementedError(f"Deepseek pre-tokenizer {tokpre!r} is not supported yet!")
 
     def set_gguf_parameters(self):
+        """Write MLA, KDA (linear attention), MoE and RoPE parameters.
+
+        Layers are typed by head count: MLA layers get n_kv_head=1, KDA layers 0.
+        """
         # note: To enable MLA KV cache, attention needs to be converted into MQA (ie: GQA with 1 group)
         self.hparams["num_key_value_heads"] = 1
 
         super().set_gguf_parameters()
         self.gguf_writer.add_vocab_size(self.hparams["vocab_size"])
 
+        # full_attn_layers uses 1-based layer numbers, hence the `il + 1` test below.
         # KDA & MLA params
         # Get ssm_d_conv from linear_attn_config.short_conv_kernel_size or ssm_d_conv
         linear_attn_config = self.hparams["linear_attn_config"]
@@ -101,6 +118,8 @@ class KimiLinearModel(TextModel):
         # full_attention_layers list will be used to distinguish layer type
         _num_kv_heads = list()
         _full_attn_layers = linear_attn_config["full_attn_layers"]
+        # Per-layer KV head count: 1 for MLA (full attention) layers, 0 for KDA layers
+        # (which keep recurrent state instead of a KV cache).
         for il in range(self.hparams["num_hidden_layers"]):
             # Iterate over items, evaluate loop invariant, and update progress
             if il + 1 in _full_attn_layers:
@@ -115,6 +134,7 @@ class KimiLinearModel(TextModel):
         if (kda_head_dim := linear_attn_config.get("head_dim")) is not None:
             self.gguf_writer.add_kda_head_dim(kda_head_dim)
 
+        # (see note) accept both HF and internal key names.
         # MLA params - use add_* methods that handle arch substitution
         # Support both HuggingFace naming (q_lora_rank, kv_lora_rank) and internal naming (n_lora_q, n_lora_kv)
         if (q_lora_rank := self.find_hparam(["q_lora_rank", "n_lora_q"], optional=True)) is not None:
@@ -132,6 +152,7 @@ class KimiLinearModel(TextModel):
         self.gguf_writer.add_key_length(kv_lora_rank + qk_rope_head_dim)
         v_head_dim = self.hparams.get("v_head_dim")
 
+        # Key length for MLA = nope part + rope part, unless given explicitly.
         # Calculate n_embd_head_k_mla = qk_nope_head_dim + qk_rope_head_dim
         if (n_embd_head_k_mla := self.find_hparam(["n_embd_head_k_mla"], optional=True)) is not None:
             self.gguf_writer.add_key_length_mla(n_embd_head_k_mla)
@@ -155,17 +176,26 @@ class KimiLinearModel(TextModel):
         self.gguf_writer.add_expert_weights_scale(self.hparams["routed_scaling_factor"])
 
     def prepare_tensors(self):
+        """Run the normal conversion, then verify every expert tensor was merged."""
         # Step 1: Validate input parameters, operational preconditions, and state
         super().prepare_tensors()
+        # Anything still buffered here means the checkpoint was missing expert
+        # tensors, so fail loudly instead of writing a broken GGUF.
         if self._experts is not None:
             experts = [k for d in self._experts for k in d.keys()]
             if len(experts) > 0:
                 raise ValueError(f"Unprocessed experts: {experts}")
 
     def modify_tensors(self, data_torch: Tensor, name: str, bid: int | None) -> Iterable[tuple[str, Tensor]]:
+        """Reshape KDA conv/gate tensors, merge experts, and split kv_b_proj for MLA absorption.
+
+        Generator: yields nothing while a layer's experts are still being collected.
+        """
         # Step 1: Validate input parameters, operational preconditions, and state
         logger.info(f"Processing {name}: shape before = {tuple(data_torch.shape)}")
 
+        # (see note) the depthwise conv kernels are reshaped to a 4-D numpy layout so that,
+        # after GGUF reverses the axes, ggml sees [d_conv, 1, d_inner, 1].
         # Handle KDA conv1d weights
         # HuggingFace/vLLM stores as [d_inner, d_conv] (2D), memory layout: conv_step changes fastest
         # llama.cpp expects ggml ne = [d_conv, 1, d_inner, 1], memory layout: ne[0]=d_conv changes fastest
@@ -185,25 +215,32 @@ class KimiLinearModel(TextModel):
                 data_torch = data_torch.reshape(1, d_inner, 1, d_conv)
                 logger.info(f"Reshaped conv1d weight {name}: [d_inner={d_inner}, 1, d_conv={d_conv}] -> numpy {tuple(data_torch.shape)} -> ggml ne=[{d_conv}, 1, {d_inner}, 1]")
 
+        # A is stored in log space; the runtime wants A = -exp(A_log).
         # Handle A_log: iHF stores as [1, 1, num_heads, 1]
         # llama.cpp expects ggml ne = [1, num_heads, 1, 1]
         # GGUF reverses numpy shape: numpy (1, 1, num_heads, 1) -> ggml ne = [1, num_heads, 1, 1]
         if name.endswith(".A_log"):
             data_torch = -torch.exp(data_torch)
+        # The time-step bias is renamed to the dt_proj.bias tensor the runtime expects.
         if name.endswith(".dt_bias"):
             name = name.rpartition(".dt_bias")[0] + ".dt_proj.bias"
             logger.info("Changed dt_bias to dt_proj.bias")
 
+        # Routed experts: buffer per layer and merge when the layer is complete.
         # process the experts separately
         if name.find("block_sparse_moe.experts") != -1:
             n_experts = self.find_hparam(["num_local_experts", "num_experts"])
             assert bid is not None
 
+            # Experts arrive as separate per-expert tensors; buffer them per layer
+            # (block id) until the whole set for that layer has been seen.
             if self._experts is None:
                 self._experts = [{} for _ in range(self.block_count)]
 
             self._experts[bid][name] = data_torch
 
+            # Layer complete once all {n_experts} experts have delivered their 3 weights
+            # (gate/up/down), i.e. n_experts * 3 buffered tensors.
             if len(self._experts[bid]) >= n_experts * 3:
                 # merge the experts into a single 3d tensor
                 # w1: gate, w2: down, w3: up
@@ -217,11 +254,14 @@ class KimiLinearModel(TextModel):
                         ename = f"model.layers.{bid}.block_sparse_moe.experts.{xid}.{wid}.weight"
                         datas.append(self._experts[bid][ename])
                         del self._experts[bid][ename]
+                    # Stack the per-expert 2D matrices into [n_experts, ...].
                     data_torch = torch.stack(datas, dim=0)
                     new_name = self.format_tensor_name(tname, bid)
                     yield from super().modify_tensors(data_torch, new_name, bid)
             return
 
+        # kv_b_proj holds both key (no-RoPE part) and value up-projections per head.
+        # Split into k_b (transposed) and v_b so the runtime can absorb them.
         # note: MLA with the absorption optimization, needs these two split and k_b_proj transposed
         if name.endswith("kv_b_proj.weight"):
             name_kb = name.replace("kv_b_proj", "k_b_proj")
