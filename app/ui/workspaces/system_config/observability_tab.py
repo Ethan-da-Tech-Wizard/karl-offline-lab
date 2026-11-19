@@ -23,21 +23,28 @@ from app.engine import config_store
 logger = logging.getLogger("karl.system_config.observability_tab")
 
 # Written by the inference engine; one JSON object per line.
+# Relative to the working directory (the project root), like every other data/
+# path in the app. Each line is a self-contained JSON object so the file can be
+# appended to concurrently and read tail-first without parsing the whole history.
+# Fields read here: prefill_duration_sec, tokens_per_second, prefill_tokens_count,
+# kv_cache_hits and vram_usage_mb_delta; any may be missing on older entries.
 TELEMETRY_LOG_PATH = "data/logs/performance_telemetry.jsonl"
 
 
+# Unlike most System tabs this is a real QWidget rather than a mixin, so it can
+# be built and refreshed independently. Nothing here is live: numbers update only
+# on construction, "Refresh Stats" and after a policy apply, never on a timer, so
+# reading a 100-line tail costs nothing while the tab is idle.
 class ObservabilityTab(QWidget):
     """Standalone tab widget for performance metrics and log retention policy."""
     def __init__(self, state, parent=None):
         """Store the app state and build the tab."""
-        # Step 1: Validate input parameters, operational preconditions, and state
         super().__init__(parent)
         self.state = state
         self._build_ui()
 
     def _build_ui(self):
         """Build the metric pills, retention/quota spin boxes and action buttons."""
-        # Step 1: Validate input parameters, operational preconditions, and state
         layout = QVBoxLayout(self)
         layout.setContentsMargins(12, 12, 12, 12)
         layout.setSpacing(12)
@@ -46,11 +53,16 @@ class ObservabilityTab(QWidget):
 
         # Four pills: time to first token, tokens/sec, KV-cache hit rate and VRAM delta.
         # Horizontal statistics layout
+        # Four equal pills in one row. They are windowed to the last 100 inferences
+        # (see refresh_metrics) so the figures track current behaviour after a model or
+        # setting change rather than lifetime averages.
         stats_widget = QWidget()
         sl = QHBoxLayout(stats_widget)
         sl.setContentsMargins(0, 0, 0, 0)
         sl.setSpacing(16)
 
+        # Initial strings are placeholders only; refresh_metrics at the end of _build_ui
+        # overwrites them before the tab is ever shown.
         self.ttft_pill = self._create_pill("Avg TTFT", "0.0 ms")
         self.tps_pill = self._create_pill("Avg TPS", "0.0 t/s")
         self.cache_pill = self._create_pill("Cache Hit Rate", "0.0%")
@@ -71,6 +83,8 @@ class ObservabilityTab(QWidget):
         cfg = config_store.get_ui_config()
 
         self._retention_spin = QSpinBox()
+        # Minimum 1 day: 0 would make the sweep delete today's logs. Maximum one year.
+        # Default 30 days mirrors the config store default.
         self._retention_spin.setRange(1, 365)
         self._retention_spin.setValue(cfg.get("log_retention_days", 30))
         self._retention_spin.setSuffix(" days")
@@ -78,6 +92,8 @@ class ObservabilityTab(QWidget):
 
         self._disk_size_spin = QSpinBox()
         # Range is 10 MB to 50 GB (the spin box works in MB).
+        # Spin boxes are int-valued, so the unit is whole megabytes; 50 * 1024 MB = 50 GB
+        # upper bound. The sweep deletes the oldest files first until the folder fits.
         self._disk_size_spin.setRange(10, 50 * 1024)  # 10 MB to 50 GB
         self._disk_size_spin.setValue(cfg.get("max_log_disk_size_mb", 1024))
         self._disk_size_spin.setSuffix(" MB")
@@ -86,6 +102,8 @@ class ObservabilityTab(QWidget):
         # Actions row
         actions_row = QWidget()
         al = QHBoxLayout(actions_row)
+        # 8 px top margin separates the buttons from the spin boxes above without
+        # another horizontal rule.
         al.setContentsMargins(0, 8, 0, 0)
         al.setSpacing(10)
 
@@ -108,8 +126,9 @@ class ObservabilityTab(QWidget):
 
     def _create_pill(self, label: str, val: str) -> QFrame:
         """Build one statistic card (muted caption over a large accent value) and expose the value label as val_lbl."""
-        # Step 1: Validate input parameters, operational preconditions, and state
         f = QFrame()
+        # Object name scopes the stylesheet below to this frame only; a bare QFrame rule
+        # would also restyle the QLabel children, which inherit from QFrame.
         f.setObjectName("observability-pill")
         f.setStyleSheet("""
             #observability-pill {
@@ -125,6 +144,8 @@ class ObservabilityTab(QWidget):
 
         lbl = QLabel(label.upper())
         lbl.setObjectName("lbl-muted")
+        # Caption is upper-cased and small with letter-spacing so the 14 pt value below
+        # is visually dominant.
         lbl.setStyleSheet("font-size: 7.5pt; font-weight: bold; letter-spacing: 0.5px;")
         lo.addWidget(lbl)
 
@@ -139,7 +160,6 @@ class ObservabilityTab(QWidget):
 
     def refresh_metrics(self):
         """Recompute the four averages from the last 100 telemetry lines and update the pills ("N/A" when no data)."""
-        # Step 1: Validate input parameters, operational preconditions, and state
         # No log yet (fresh install or no inferences) means nothing to average.
         log_path = TELEMETRY_LOG_PATH
         if not os.path.exists(log_path):
@@ -149,6 +169,10 @@ class ObservabilityTab(QWidget):
             self.vram_pill.val_lbl.setText("N/A")
             return
 
+        # Accumulators: TTFT and VRAM are averaged over every entry that has them, TPS
+        # over entries with tokens_per_second > 0, and cache hit rate is a weighted ratio
+        # (total hits / total prefill tokens), not a mean of per-run percentages, so
+        # long prompts count proportionally more.
         ttfts = []
         tps_list = []
         hits = 0
@@ -156,17 +180,20 @@ class ObservabilityTab(QWidget):
         vram_deltas = []
 
         try:
-            # Execute guarded operations and establish recovery boundaries
             with open(log_path, "r", encoding="utf-8") as f:
                 # Only the tail is used so the figures describe recent behaviour, not all-time history.
+                # readlines() loads the whole file before slicing; acceptable because retention
+                # and the disk quota above keep the file bounded.
                 lines = f.readlines()[-100:]
                 for line in lines:
-                    # Iterate over items, evaluate loop invariant, and update progress
                     if not line.strip():
                         continue
                     entry = json.loads(line)
                     
                     # TTFT is approximated by the prefill duration, converted to milliseconds.
+                    # Time to first token is dominated by prompt prefill for local models, so
+                    # prefill duration is the stored proxy; true streaming first-token time is not
+                    # logged separately.
                     prefill_sec = entry.get("prefill_duration_sec", 0.0)
                     ttfts.append(prefill_sec * 1000)
                     
@@ -189,6 +216,8 @@ class ObservabilityTab(QWidget):
         except Exception as e:
             logger.warning(f"Failed to read telemetry log line: {e}")
 
+        # Guarded divisions: each average falls back to 0.0 rather than raising when its
+        # list is empty (for example TPS when every run reported 0).
         total_runs = len(ttfts)
         avg_ttft = sum(ttfts) / total_runs if total_runs > 0 else 0.0
         avg_tps = sum(tps_list) / len(tps_list) if tps_list else 0.0
@@ -199,6 +228,8 @@ class ObservabilityTab(QWidget):
             self.ttft_pill.val_lbl.setText(f"{avg_ttft:.1f} ms")
             self.tps_pill.val_lbl.setText(f"{avg_tps:.2f} t/s")
             self.cache_pill.val_lbl.setText(f"{kv_hit_rate:.1f}%")
+            # "+" forces a sign: the delta is per-inference VRAM growth and can be negative
+            # when memory was released, which is itself informative.
             self.vram_pill.val_lbl.setText(f"{avg_vram_delta:+.1f} MB")
         else:
             self.ttft_pill.val_lbl.setText("N/A")
@@ -208,7 +239,6 @@ class ObservabilityTab(QWidget):
 
     def _apply_policy_and_clean(self):
         """Save the retention policy, run the retention sweep now, refresh stats and confirm."""
-        # Step 1: Validate input parameters, operational preconditions, and state
         retention = self._retention_spin.value()
         disk_size = self._disk_size_spin.value()
 
@@ -216,6 +246,9 @@ class ObservabilityTab(QWidget):
         cfg = config_store.get_ui_config()
         cfg["log_retention_days"] = retention
         cfg["max_log_disk_size_mb"] = disk_size
+        # Must be saved before the sweep: enforce_retention_policy re-reads
+        # log_retention_days and max_log_disk_size_mb from the config store rather than
+        # taking arguments, so the sweep would otherwise use the old policy.
         config_store.save_ui_config(cfg)
         # The Defaults tab and the config persistence in appearance_runtime read state.log_retention_days;
         # keep it in sync or the next Defaults save would overwrite the value chosen here.
@@ -224,8 +257,11 @@ class ObservabilityTab(QWidget):
         # Imported lazily; the logger module is only needed when a sweep is requested.
         from app.utils.trace_logger import TraceLogger
         try:
-            # Execute guarded operations and establish recovery boundaries
             logger_inst = TraceLogger()
+            # Runs synchronously on the GUI thread; it only deletes old files, which is
+            # quick for a bounded log folder. Failure is logged, not shown: the confirmation
+            # below reports that the settings were applied, so a failed sweep is visible only
+            # in the log.
             logger_inst.enforce_retention_policy()
         except Exception as e:
             logger.warning(f"Enforce retention policy failed in UI thread: {e}")
