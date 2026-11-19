@@ -29,6 +29,7 @@ class InternVisionModel(MmprojModel):
         """Read the dynamic image tiling limits from the global config."""
         super().__init__(*args, **kwargs)
         assert self.hparams_vision is not None
+        # Tiling limits live in the top-level (not vision) config because InternVL splits a large image into 448px tiles in the preprocessor, not in the encoder; the runtime needs the same limits to reproduce that split.
         self.min_dynamic_tiles = self.global_config.get("min_dynamic_patch", 0)
         self.max_dynamic_tiles = self.global_config.get("max_dynamic_patch", 0)
 
@@ -56,6 +57,7 @@ class InternVisionModel(MmprojModel):
         # downsample_ratio
         downsample_ratio = self.global_config.get("downsample_ratio")
         assert downsample_ratio is not None
+        # InternVL's pixel-shuffle merges r x r neighbouring patches into one token (ratio 0.5 means 2x2), shrinking the token count by 1/r^2; llama.cpp stores the integer side length 1/r.
         self.gguf_writer.add_vision_projector_scale_factor(int(1.0 / downsample_ratio))
         # older models may not have min/max_dynamic_patch in config
         if self.min_dynamic_tiles > 0:
@@ -65,6 +67,7 @@ class InternVisionModel(MmprojModel):
 
     def tensor_force_quant(self, name, new_name, bid, n_dims):
         """Keep position embeddings in F32."""
+        # Position embeddings are tiny but sensitive; quantizing them hurts accuracy for almost no size gain, so they stay F32 regardless of the requested file type.
         if ".position_embd." in new_name:
             return gguf.GGMLQuantizationType.F32
         return super().tensor_force_quant(name, new_name, bid, n_dims)
@@ -80,6 +83,7 @@ class InternVisionModel(MmprojModel):
         # Intern-S1 uses HF-style projector names; map them back to the original mlp1.* names.
         # deal with intern-s1 special case
         names_map = {
+            # The original InternVL projector is nn.Sequential(LayerNorm, Linear, GELU, Linear) named mlp1.N; indices 0, 1 and 3 are the parametrised layers (index 2 is the activation, which has no weights), which explains the gap in the numbering.
             "model.multi_modal_projector.layer_norm.bias": "mlp1.0.bias",
             "model.multi_modal_projector.layer_norm.weight": "mlp1.0.weight",
             "model.multi_modal_projector.linear_1.bias": "mlp1.1.bias",
@@ -108,6 +112,7 @@ class InternVisionModel(MmprojModel):
                 c3, _ = data_torch.shape
             else: # bias
                 c3 = data_torch.shape[0]
+            # A fused qkv with a row count that is not divisible by 3 would mean the layout assumption (equal Q, K and V blocks, i.e. no GQA in the vision tower) is wrong, so fail instead of producing misaligned heads.
             assert c3 % 3 == 0
             c = c3 // 3
             wq = data_torch[:c]
