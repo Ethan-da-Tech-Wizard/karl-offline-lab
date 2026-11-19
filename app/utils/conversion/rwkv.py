@@ -69,7 +69,13 @@ class Rwkv6Model(TextModel):
         self.gguf_writer.add_head_count(0)
 
     # Buffer of per-layer time_mix_lerp tensors until all five are present.
-    lerp_weights: dict[int, dict[str, Tensor]] = {}
+    # Created per instance (not at class level) so converter instances never share buffered tensors.
+    lerp_weights: dict[int, dict[str, Tensor]]
+
+    def __init__(self, *args, **kwargs):
+        """Create this converter's private lerp-weight buffer."""
+        super().__init__(*args, **kwargs)
+        self.lerp_weights = {}
 
     def modify_tensors(self, data_torch: Tensor, name: str, bid: int | None) -> Iterable[tuple[str, Tensor]]:
         """Transpose/squeeze RWKV6 tensors, apply the layer-wise output rescale and fuse the five time_mix_lerp tensors per layer.
@@ -231,9 +237,14 @@ class Rwkv7Model(TextModel):
         # required by llama.cpp, unused
         self.gguf_writer.add_head_count(0)
 
-    # Buffer of per-layer time-mix lerp tensors until all are present.
-    lerp_weights: dict[int, dict[str, Tensor]] = {}
+    # Buffer of per-layer time-mix lerp tensors until all are present (per instance, see Rwkv6Model).
+    lerp_weights: dict[int, dict[str, Tensor]]
     lora_needs_transpose: bool = True
+
+    def __init__(self, *args, **kwargs):
+        """Create this converter's private lerp-weight buffer."""
+        super().__init__(*args, **kwargs)
+        self.lerp_weights = {}
 
     @classmethod
     def filter_tensors(cls, item: tuple[str, Callable[[], Tensor]]) -> tuple[str, Callable[[], Tensor]] | None:
