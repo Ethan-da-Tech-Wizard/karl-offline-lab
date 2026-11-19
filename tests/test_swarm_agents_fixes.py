@@ -26,3 +26,22 @@ def test_grep_workspace_total_cap(tmp_path):
 def test_prompt_and_traceback_markers():
     assert "tool_call_call" not in SRC
     assert "Traceback (most recent call last):" in SRC
+
+
+def _tool_call_pattern():
+    """Pull the tool-call regex literal out of the source (the module itself needs heavy deps)."""
+    for node in ast.walk(ast.parse(SRC)):
+        if (isinstance(node, ast.Call) and node.args and isinstance(node.args[0], ast.Constant)
+                and isinstance(node.args[0].value, str) and node.args[0].value.startswith("<tool_call name=")):
+            return node.args[0].value
+    raise AssertionError("tool_call findall pattern not found")
+
+
+def test_tool_call_parser_accepts_single_and_double_quotes():
+    """default_prompts.py tells the coder to write name="write_file"; the parser must accept it."""
+    import re
+    pat = _tool_call_pattern()
+    single = "<tool_call name='write_file'>path: a.py</tool_call>"
+    double = '<tool_call name="write_file">path: a.py</tool_call>'
+    assert re.findall(pat, single, re.DOTALL) == [("write_file", "path: a.py")]
+    assert re.findall(pat, double, re.DOTALL) == [("write_file", "path: a.py")]
