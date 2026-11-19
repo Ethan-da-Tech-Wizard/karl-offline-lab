@@ -27,18 +27,22 @@ logging.basicConfig(
 )
 logger = logging.getLogger("karl.flywheel_runner")
 
+# Producers drop task JSON files here; this runner consumes them.
 QUEUE_DIR = os.path.join("data", "flywheel", "queue")
+# Output directory read by the verifier side of the flywheel.
 EXECUTION_DIR = os.path.join("data", "flywheel", "execution")
 
 def write_json_atomic(path: str, data: dict):
     """Write JSON data to a path atomically."""
     # Step 1: Validate input parameters, operational preconditions, and state
+    # Write to a temp file then os.replace so readers never see a half-written JSON.
     temp_path = f"{path}.tmp"
     with open(temp_path, "w", encoding="utf-8") as f:
         json.dump(data, f, indent=2)
     os.replace(temp_path, path)
 
 def process_task(task_path: str, llm):
+    """Run one queued task file through the local model and write an execution log for the verifier stage. Unreadable or statement-less tasks are deleted so they cannot block the queue; on a model error the task file is kept so it is retried by the main loop."""
     # Step 1: Validate input parameters, operational preconditions, and state
     task_id_file = os.path.basename(task_path)
     logger.info("Processing task: %s", task_id_file)
@@ -62,6 +66,7 @@ def process_task(task_path: str, llm):
     try:
         # Wrap query in DeepSeek-R1 prompt structure
         # User prompt + Assistant pre-seed
+        # DeepSeek-R1 style prompt with <think> pre-seeded so the model reasons before answering.
         prompt = f"User: {problem}\nAssistant: <think>\n"
         
         logger.info("Executing LLM for task %s", task_id_file)
@@ -72,6 +77,7 @@ def process_task(task_path: str, llm):
         for chunk in llm(
             prompt,
             max_tokens=task.get("max_tokens", 4096),
+            # Safety stops stop the model from inventing further turns.
             stop=["User:", "<think>"], # Safety stops
             stream=True
         ):
@@ -80,6 +86,7 @@ def process_task(task_path: str, llm):
             output_chunks.append(text)
             
         full_output = "".join(output_chunks)
+        # The parser detects the pre-seeded case itself (a </think> before any <think>).
         thought, response = parse_thought_stream(full_output)
         
         # Prepare execution log
@@ -109,6 +116,7 @@ def process_task(task_path: str, llm):
         logger.error("Error processing task %s: %s", task_id_file, e, exc_info=True)
 
 def main():
+    """Poll data/flywheel/queue forever, loading the model lazily on the first task and handling one task at a time, oldest filename first."""
     # Step 1: Validate input parameters, operational preconditions, and state
     logger.info("Flywheel Runner (Agent 2) started. Watching %s", QUEUE_DIR)
     
@@ -124,6 +132,7 @@ def main():
                 continue
             
             # Ensure model is loaded once
+            # Lazy load: idle runners should not hold GPU memory until there is work.
             if llm is None:
                 logger.info("Initializing ModelLoader instance...")
                 llm = ModelLoader.get_instance()
@@ -134,6 +143,7 @@ def main():
             
         except Exception as e:
             logger.error("Main loop error: %s", e)
+            # Back off after unexpected errors to avoid a hot failure loop.
             time.sleep(5)
 
 if __name__ == "__main__":

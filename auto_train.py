@@ -54,15 +54,20 @@ ADAPTERS_DIR = ROOT_DIR / "data" / "adapters"
 HF_MODELS_DIR = ROOT_DIR / "data" / "hf_models"
 
 # Ensure dirs exist
+# Create the data directories at import time so later writes never fail on a fresh checkout.
 for d in [QUEUE_DIR, EXECUTION_DIR, TRAINING_DIR, ADAPTERS_DIR, HF_MODELS_DIR]:
     # Iterate over items, evaluate loop invariant, and update progress
     d.mkdir(parents=True, exist_ok=True)
 
 # Add ROOT_DIR to path for internal imports
+# This file is run as a standalone subprocess, so the repo root must be put on sys.path to import
+# app/core/data packages.
 sys.path.insert(0, str(ROOT_DIR))
 
 try:
     # Execute guarded operations and establish recovery boundaries
+    # Core imports are wrapped so a broken install gives one clear log line and exit code 1 instead of
+    # a traceback.
     from app.engine.model_loader import ModelLoader
     from core.cognitive_parser import parse_thought_stream
     from data.flywheel.executor_sandbox import SafePythonSandbox
@@ -102,6 +107,8 @@ Example:
 
 Return ONLY the raw JSON list starting with [ and ending with ]. Do not include any reasoning, markdown blocks, or other text outside the JSON list.
 """
+    # Seed '<think>' so the distilled model starts in reasoning mode; stop on 'User:' to prevent it
+    # from inventing a next turn.
     # Instruct model to reason first
     prompt = f"User: {meta_prompt}\nAssistant: <think>\n"
 
@@ -131,6 +138,7 @@ Return ONLY the raw JSON list starting with [ and ending with ]. Do not include 
             response = response[:-3]
         response = response.strip()
 
+        # Models often add prose around the JSON; slice to the outermost list brackets before parsing.
         # Find first '[' and last ']'
         start_idx = response.find('[')
         end_idx = response.rfind(']')
@@ -140,6 +148,7 @@ Return ONLY the raw JSON list starting with [ and ending with ]. Do not include 
         tasks = json.loads(response)
         if isinstance(tasks, list):
             logger.info("Successfully generated %d tasks.", len(tasks))
+            # Tasks from the model have no ids; add uuids so queue/dataset entries are traceable.
             # assign IDs
             for t in tasks:
                 # Iterate over items, evaluate loop invariant, and update progress
@@ -149,6 +158,8 @@ Return ONLY the raw JSON list starting with [ and ending with ]. Do not include 
         else:
             raise ValueError("Model output is not a JSON list.")
     except Exception as e:
+        # Any failure (bad JSON, model error) falls back to trivial template tasks so the pipeline can
+        # still be exercised end to end.
         logger.warning("Failed to generate tasks using LLM: %s. Falling back to local templates.", e)
         return generate_fallback_tasks(topic, count)
 
@@ -187,6 +198,8 @@ def solve_task(task: dict, llm) -> tuple[str, str]:
     # Step 1: Validate input parameters, operational preconditions, and state
     problem = task.get("problem_statement", "")
     logger.info("Solving task: %s...", task.get("id"))
+    # Plain User/Assistant prompt with a seeded <think>; temperature 0.7 keeps some diversity between
+    # attempts.
     prompt = f"User: {problem}\nAssistant: <think>\n"
     
     output_chunks = []
@@ -214,6 +227,8 @@ def verify_solution(task: dict, solution: str) -> tuple[bool, str]:
         return False, "No verification script found."
 
     sandbox = SafePythonSandbox(cpu_timeout_sec=5.0, memory_limit_mb=256)
+    # Wrapper executed after the verifier definition: passes the response in as a JSON-escaped literal
+    # and maps outcome to exit codes (0 pass, 1 fail, 2 verifier crashed).
     test_code = (
         "import sys as _sys, json as _json\n"
         f"_resp = _json.loads({json.dumps(json.dumps(solution))})\n"
@@ -232,6 +247,8 @@ def reflect_and_correct(task: dict, failed_thought: str, failed_response: str, t
     """Queries the model to correct its own error trace."""
     # Step 1: Validate input parameters, operational preconditions, and state
     logger.info("Failed verification. Starting self-reflection debugger loop...")
+    # (Read but currently unused in the correction prompt; the model is shown only its own failure and
+    # traceback.)
     ground_truth = task.get("ground_truth_answer", "")
     problem = task.get("problem_statement", "")
     
@@ -251,6 +268,7 @@ def reflect_and_correct(task: dict, failed_thought: str, failed_response: str, t
     for chunk in llm(
         prompt_text,
         max_tokens=2048,
+        # Low temperature for repairs: we want the minimal correct fix, not variety.
         temperature=0.2,
         stream=True
     ):
@@ -288,9 +306,11 @@ def train_adapter(dataset_path: str, base_model_path: str, adapter_name: str, ar
     if tokenizer.pad_token is None:
         tokenizer.pad_token = tokenizer.eos_token
 
+    # CPU fallback uses float32 because fp16 math is unsupported/slow on CPU.
     torch_dtype = torch.float16 if torch.cuda.is_available() else torch.float32
     device_map = {"": 0} if torch.cuda.is_available() else "auto"
 
+    # 4-bit QLoRA only when a CUDA GPU is present; otherwise full-precision weights are loaded.
     if args.qlora and torch.cuda.is_available():
         bnb_config = BitsAndBytesConfig(
             load_in_4bit=True,
@@ -314,6 +334,7 @@ def train_adapter(dataset_path: str, base_model_path: str, adapter_name: str, ar
     lora_config = LoraConfig(
         r=args.rank,
         lora_alpha=args.alpha,
+        # All attention and MLP projections of Llama/Qwen-style models.
         target_modules=["q_proj", "k_proj", "v_proj", "o_proj", "gate_proj", "up_proj", "down_proj"],
         lora_dropout=args.dropout,
         bias="none",
@@ -321,6 +342,7 @@ def train_adapter(dataset_path: str, base_model_path: str, adapter_name: str, ar
     )
 
     model = get_peft_model(model, lora_config)
+    # Required for gradient checkpointing during training.
     model.config.use_cache = False
 
     adapter_path = ADAPTERS_DIR / adapter_name
@@ -329,6 +351,7 @@ def train_adapter(dataset_path: str, base_model_path: str, adapter_name: str, ar
     training_args = SFTConfig(
         output_dir=str(adapter_path / "temp_checkpoints"),
         dataset_text_field="messages",
+        # Short sequence cap keeps memory low; synthetic tasks are small.
         max_length=512,
         per_device_train_batch_size=1,
         gradient_accumulation_steps=4,
@@ -371,6 +394,8 @@ def convert_adapter_to_gguf(base_model_path: str, adapter_name: str):
     outfile = adapter_path / f"{adapter_name}.gguf"
     
     logger.info("Compiling PyTorch adapter weights into GGUF format...")
+    # llama.cpp-style converter shipped in app/utils turns the PEFT adapter into a single .gguf file
+    # the runtime can load.
     cmd = [
         sys.executable,
         "app/utils/convert_lora_to_gguf.py",
@@ -380,6 +405,8 @@ def convert_adapter_to_gguf(base_model_path: str, adapter_name: str):
     ]
     
     res = subprocess.run(cmd, capture_output=True, text=True)
+    # Surface the converter's stderr in both log and exception so failures are diagnosable from the
+    # RPC caller.
     if res.returncode != 0:
         logger.error("GGUF Conversion failed: %s", res.stderr)
         raise RuntimeError(f"GGUF conversion failed: {res.stderr}")
@@ -388,6 +415,7 @@ def convert_adapter_to_gguf(base_model_path: str, adapter_name: str):
 
 
 def main():
+    """CLI entry for the one-click pipeline: validate the adapter name, resolve a base model, then generate and verify synthetic cases, train a LoRA adapter and convert it to GGUF (see the numbered steps below)."""
     # This script is spawned as an independent subprocess (e.g. from the
     # start_auto_train WebSocket RPC), so main.py's startup privilege check
     # does not cover it — assert it separately. Sandbox resource limits in
@@ -422,6 +450,7 @@ def main():
     print(f"Adapter Save:    data/adapters/{args.adapter_name}")
     print("====================================================")
 
+    # Base model: explicit --base_model, else the first folder in data/hf_models.
     # 1. Resolve base model folder
     base_model = args.base_model
     if not base_model:
@@ -441,6 +470,8 @@ def main():
     # 3. Generate Tasks
     tasks = generate_tasks_for_topic(args.topic, args.count, llm)
 
+    # Only tasks that pass verification (directly or after one self-correction) become training data;
+    # failures are discarded.
     # 4. Process Loop (Solve, Verify, Reflect)
     verified_examples = []
     for index, task in enumerate(tasks, 1):
@@ -485,12 +516,15 @@ def main():
 
     logger.info("Dataset curated successfully with %d examples: %s", len(verified_examples), dataset_file)
 
+    # SFT on fewer than two examples is meaningless; abort with a clear error.
     if len(verified_examples) < 2:
         logger.error("Not enough verified examples (need at least 2) to perform SFT. Auto-training aborted.")
         sys.exit(1)
 
     # 5. Run SFT Trainer
     logger.info("Releasing GPU VRAM from active GGUF inference engine...")
+    # Free the inference model's VRAM before training loads the HF weights; both rarely fit on the GPU
+    # together.
     ModelLoader.reset_instance()
     train_adapter(str(dataset_file), base_model, args.adapter_name, args)
 

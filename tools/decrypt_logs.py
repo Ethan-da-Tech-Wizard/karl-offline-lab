@@ -26,9 +26,12 @@ import platform
 import ctypes
 
 # Ensure we can import from the project root
+# Allow 'core' and 'app' imports when the script is run directly from tools/.
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 # ── libc page locking ────────────────────────────────────────────────────────
+# Optional libc handle used to mlockall() so decrypted log plaintext is not swapped to disk.
+# Unavailable on Windows, in which case locking is skipped.
 _libc = None
 if sys.platform != "win32":
     try:
@@ -37,12 +40,15 @@ if sys.platform != "win32":
     except Exception:
         _libc = None
 
+# mlockall flags (Linux values): lock pages already mapped and all future ones.
 _MCL_CURRENT = 1
 _MCL_FUTURE  = 2
 # ─────────────────────────────────────────────────────────────────────────────
 
 try:
     # Execute guarded operations and establish recovery boundaries
+    # Dependencies are optional at import time of the module; a missing one produces a friendly
+    # message instead of a traceback.
     import psutil
     from core.hardware_scout import get_cpu_flags
     from app.utils.keychain_manager import load_cached_token, save_cached_token
@@ -52,6 +58,7 @@ except ImportError as e:
     sys.exit(1)
 
 def main():
+    """CLI entry: obtain the bridge token (flag, KARL_BRIDGE_TOKEN, OS keychain, then prompt), decrypt one archived .enc trace log with TraceLogger and write the plaintext JSONL. Exits 0 on success and 1 on any failure."""
     # Step 1: Validate input parameters, operational preconditions, and state
     parser = argparse.ArgumentParser(description="Decrypt Karl encrypted trace logs.")
     parser.add_argument("--input", "-i", required=True, help="Path to the .enc log file.")
@@ -61,6 +68,8 @@ def main():
     args = parser.parse_args()
 
     # 1. Get Token (check env, then keychain, then prompt)
+    # Token precedence: explicit flag, environment, cached keychain entry, then interactive prompt
+    # (not echoed).
     token = args.token or os.environ.get("KARL_BRIDGE_TOKEN")
     if not token:
         token = load_cached_token()
@@ -79,6 +88,7 @@ def main():
         print(f"Error: Input file not found: {args.input}")
         sys.exit(1)
 
+    # Best-effort memory locking: failure only warns, since decryption can still proceed.
     locked = False
     if _libc and hasattr(_libc, "mlockall"):
         res = _libc.mlockall(_MCL_CURRENT | _MCL_FUTURE)
@@ -87,6 +97,7 @@ def main():
         else:
             locked = True
 
+    # bytearray (mutable) so it can be zeroed in the finally block after use.
     plaintext_ba = None
     try:
         # Execute guarded operations and establish recovery boundaries
@@ -110,6 +121,8 @@ def main():
             print(f"Error: Decryption succeeded but decompression failed. The file may be corrupt. ({e})")
             sys.exit(1)
 
+        # Cache the token only when the user typed it, never when it came from a flag or env var that
+        # they already manage.
         # 3b. Successful manual auth -> cache in keyring
         if not args.token and not os.environ.get("KARL_BRIDGE_TOKEN"):
              save_cached_token(token)
@@ -126,6 +139,7 @@ def main():
         print(f"An unexpected error occurred: {e}")
         sys.exit(1)
     finally:
+        # Always wipe plaintext from memory and release the page lock, even on error or sys.exit.
         if plaintext_ba is not None:
             TraceLogger._zero_bytes(plaintext_ba)
         if locked and _libc and hasattr(_libc, "munlockall"):

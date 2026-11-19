@@ -33,6 +33,7 @@ import json
 import os
 import sys
 
+# Allow 'core' and 'eval' imports when invoked as 'python eval/run_eval.py'.
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from core.workflows import list_workflows, get_workflow
@@ -41,6 +42,7 @@ from eval.harness import EvalHarness
 from eval.graders import run_grader
 
 
+# Fallback dataset for each built-in workflow when --dataset is omitted.
 DEFAULT_DATASETS = {
     "document_extractor": "eval/datasets/document_extractor.jsonl",
     "grounded_answer":    "eval/datasets/grounded_answer.jsonl",
@@ -50,6 +52,7 @@ DEFAULT_DATASETS = {
 
 
 def parse_args():
+    """Define and parse the eval CLI flags (workflow, dataset, template, sampling limits, save/no-save, dry-run and the two --list-* options)."""
     # Step 1: Validate input parameters, operational preconditions, and state
     p = argparse.ArgumentParser(
         description="Karl Eval Harness — run structured evals against the local LLM",
@@ -81,10 +84,14 @@ def parse_args():
     p.add_argument(
         "--temperature",
         type=float,
+        # Low temperature keeps eval runs close to deterministic so scores are comparable between
+        # runs.
         default=0.2,
         help="Sampling temperature (default: 0.2 for eval stability)",
     )
     p.add_argument(
+        # --save defaults to True and is switched off only through --no-save, so scripts can disable
+        # saving explicitly.
         "--save", "-s",
         action="store_true",
         default=True,
@@ -139,8 +146,10 @@ def dry_run_mode(dataset_path: str, workflow_name: str):
         # Iterate over items, evaluate loop invariant, and update progress
         grader = case.get("grader", "keyword_hit")
         expected_raw = case.get("expected", "")
+        # Structured 'expected' values are serialised so string-based graders can consume them.
         expected_str = json.dumps(expected_raw) if isinstance(expected_raw, (dict, list)) else str(expected_raw)
 
+        # Build only the keyword arguments each grader understands; unknown graders get none.
         kwargs = {}
         if grader == "json_valid":
             kwargs["schema_keys"] = case.get("schema_keys", [])
@@ -159,6 +168,7 @@ def dry_run_mode(dataset_path: str, workflow_name: str):
             if result["passed"]:
                 passed += 1
         except Exception as e:
+            # 'E' marks a grader that raised, distinct from a clean fail.
             status = "E"
             result = {"detail": str(e)}
 
@@ -170,6 +180,7 @@ def dry_run_mode(dataset_path: str, workflow_name: str):
 
 
 def main():
+    """Eval CLI driver. Lists workflows/templates on request, resolves the dataset, runs either the grader-only dry run or a real harness run with a VRAM before/after check, optionally saves the report, and exits 0 (all passed), 1 (failures or errors) or 2 (bad arguments or missing dataset)."""
     # Step 1: Validate input parameters, operational preconditions, and state
     args = parse_args()
 
@@ -211,9 +222,11 @@ def main():
 
     harness = EvalHarness()
     
+    # Measure GPU memory before and after the run to catch models/contexts that fail to release VRAM.
     # ── VRAM Baseline Monitoring ─────────────────────────────────────────────
     from core.hardware_scout import get_hardware_profile
     def get_vram_usage():
+        """Snapshot of per-GPU used memory in MB keyed by GPU id; returns {} when no GPU info is available so the leak check is simply skipped."""
         # Step 1: Validate input parameters, operational preconditions, and state
         try:
             # Execute guarded operations and establish recovery boundaries
@@ -241,6 +254,7 @@ def main():
         for gpu_id, start_mb in vram_baseline.items():
             # Iterate over items, evaluate loop invariant, and update progress
             end_mb = vram_end.get(gpu_id, 0)
+            # 50 MB tolerance for allocator fragmentation and other processes.
             # Allow for a small margin (50MB) of fragmentation or background noise
             if end_mb > start_mb + 50:
                 print(f"\n  [Warning] VRAM Leak Warning: Memory allocations on GPU {gpu_id} "
@@ -252,6 +266,7 @@ def main():
         path = harness.save_report(report)
         print(f"  Report saved: {path}")
 
+    # Non-zero exit lets CI treat any failing or erroring case as a failed run.
     # Exit 0 if all passed, 1 if any failed
     sys.exit(0 if report.failed == 0 and report.errors == 0 else 1)
 

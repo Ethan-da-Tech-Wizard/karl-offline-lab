@@ -15,6 +15,7 @@ import requests
 from tqdm import tqdm
 
 def download_file(url, filepath):
+    """Stream url to filepath in 1 MiB blocks with a tqdm progress bar. Raises on HTTP errors. Not atomic: an interrupted download leaves a partial file (which the caller's exists() check would later treat as complete)."""
     # Step 1: Validate input parameters, operational preconditions, and state
     response = requests.get(url, stream=True)
     response.raise_for_status()
@@ -35,6 +36,7 @@ def download_file(url, filepath):
                 bar.update(size)
 
 def main():
+    """CLI: pick models from data/model_registry.json by --all, --tier N, or an interactive numbered menu, then download any that are not already in data/models. Per-model failures are reported but do not stop the batch."""
     # Step 1: Validate input parameters, operational preconditions, and state
     parser = argparse.ArgumentParser(description="Download Karl LLM models from the registry.")
     parser.add_argument(
@@ -45,6 +47,7 @@ def main():
     )
     args = parser.parse_args()
 
+    # Registry lists each model's name, tier, filename, url and size.
     registry_path = "data/model_registry.json"
     if not os.path.exists(registry_path):
         print(f"Registry not found at {registry_path}")
@@ -61,6 +64,7 @@ def main():
     elif args.tier is not None:
         to_download = [m for m in registry if m.get("tier") == args.tier]
     else:
+        # No flags given: show what is available and whether it is already on disk.
         # Interactive selection
         print("Available models in registry:")
         for idx, m in enumerate(registry, 1):

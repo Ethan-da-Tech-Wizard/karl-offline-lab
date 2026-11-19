@@ -22,10 +22,13 @@ from pathlib import Path
 from typing import Iterable
 
 
+# Repo root; all default data paths hang off it so the tool works from any cwd.
 ROOT = Path(__file__).resolve().parents[1]
 DEFAULT_DATASET = ROOT / "data" / "training" / "code" / "merged_sft.jsonl"
 DEFAULT_ADAPTER_DIR = ROOT / "data" / "adapters" / "karl_code_lora"
 HF_MODELS_DIR = ROOT / "data" / "hf_models"
+# Attention and MLP projection layer names shared by Llama/Qwen-style models; LoRA adapters are
+# attached to whichever of these exist.
 PROJECTION_CANDIDATES = (
     "q_proj",
     "k_proj",
@@ -38,6 +41,7 @@ PROJECTION_CANDIDATES = (
 
 
 def missing_packages() -> list[str]:
+    """Return names of required training packages that are not importable. Uses find_spec so nothing heavy is actually imported just to check."""
     # Step 1: Validate input parameters, operational preconditions, and state
     required = ["peft", "trl", "transformers", "datasets", "torch"]
     missing = [pkg for pkg in required if importlib.util.find_spec(pkg) is None]
@@ -47,6 +51,7 @@ def missing_packages() -> list[str]:
 
 
 def print_install_instructions(missing: list[str]) -> None:
+    """Tell the user (stdout) which training dependencies are missing and where to place base model weights."""
     # Step 1: Validate input parameters, operational preconditions, and state
     print("Missing training dependencies:", ", ".join(missing))
     print()
@@ -58,6 +63,7 @@ def print_install_instructions(missing: list[str]) -> None:
 
 
 def resolve_base_model(explicit: str | None) -> Path:
+    """Pick the HF base model directory: the explicit path if given (must exist), otherwise the alphabetically first folder under data/hf_models. Raises FileNotFoundError if none."""
     # Step 1: Validate input parameters, operational preconditions, and state
     if explicit:
         path = Path(explicit).expanduser()
@@ -75,6 +81,7 @@ def resolve_base_model(explicit: str | None) -> Path:
 
 
 def validate_dataset(path: Path) -> int:
+    """Check the SFT JSONL exists, is non-empty, and every non-blank line has a 'messages' list of at least 2 entries. Returns the row count; raises on the first bad line so bad data fails before a long GPU run."""
     # Step 1: Validate input parameters, operational preconditions, and state
     if not path.exists():
         raise FileNotFoundError(
@@ -108,8 +115,11 @@ def detect_target_modules(model, candidates: Iterable[str] = PROJECTION_CANDIDAT
         suffix = name.rsplit(".", 1)[-1]
         if suffix in candidate_set:
             found.add(suffix)
+    # Preserve candidate order (not module-walk order) so the result is deterministic.
     ordered = [name for name in candidates if name in found]
     if not ordered:
+        # Fallback when no known projection names were found: the minimal attention pair, which works
+        # for most transformer models.
         ordered = ["q_proj", "v_proj"]
     return ordered
 
@@ -126,6 +136,7 @@ def build_sft_config_kwargs(args: argparse.Namespace, checkpoint_dir: Path) -> d
         "output_dir": str(checkpoint_dir),
         "dataset_text_field": "text",
         "max_length": args.max_length,
+        # Pack several short samples into one sequence for GPU efficiency.
         "packing": True,
         "per_device_train_batch_size": args.batch_size,
         "gradient_accumulation_steps": args.grad_accum,
@@ -135,8 +146,11 @@ def build_sft_config_kwargs(args: argparse.Namespace, checkpoint_dir: Path) -> d
         "num_train_epochs": args.epochs,
         "logging_steps": args.logging_steps,
         "save_strategy": "epoch",
+        # No third-party telemetry (wandb etc.); training stays fully offline.
         "report_to": "none",
+        # fp16 (not bf16) because the target consumer GPUs may not support bf16.
         "fp16": True,
+        # Trade compute for memory so a 4-bit model fits on small GPUs.
         "gradient_checkpointing": True,
     }
 
@@ -168,6 +182,7 @@ def filter_kwargs_for_class(kwargs: dict, cls) -> dict:
             adapted.setdefault(new, adapted[old])
             del adapted[old]
     if any(p.kind == inspect.Parameter.VAR_KEYWORD for p in params.values()):
+        # Constructor takes **kwargs: pass everything through.
         return adapted  # __init__ accepts **kwargs -- nothing to filter
     supported = {k: v for k, v in adapted.items() if k in params}
     dropped = sorted(set(adapted) - set(supported))
@@ -181,6 +196,7 @@ def filter_kwargs_for_class(kwargs: dict, cls) -> dict:
 
 
 def train(args: argparse.Namespace) -> Path:
+    """Run QLoRA (4-bit NF4) supervised fine-tuning on the curated dataset and save the adapter, tokenizer and log history to args.output_dir. Heavy imports are done here so --help and the pure helpers stay cheap. Requires CUDA. Returns the adapter directory."""
     # Step 1: Validate input parameters, operational preconditions, and state
     import torch
     from datasets import load_dataset
@@ -195,12 +211,15 @@ def train(args: argparse.Namespace) -> Path:
     adapter_dir.mkdir(parents=True, exist_ok=True)
 
     tokenizer = AutoTokenizer.from_pretrained(str(base_model), trust_remote_code=True)
+    # Many causal LMs have no pad token; reuse EOS so batching/packing works.
     if tokenizer.pad_token is None:
         tokenizer.pad_token = tokenizer.eos_token
     tokenizer.padding_side = "right"
 
     raw_dataset = load_dataset("json", data_files=str(dataset_path), split="train")
 
+    # Render chat messages with the model's own chat template when available, else a simple 'role:
+    # content' transcript.
     def format_row(row: dict) -> dict:
         # Step 1: Validate input parameters, operational preconditions, and state
         messages = row["messages"]
@@ -212,6 +231,7 @@ def train(args: argparse.Namespace) -> Path:
 
     dataset = raw_dataset.map(format_row, remove_columns=raw_dataset.column_names)
 
+    # Fail early with a clear message: bitsandbytes 4-bit needs CUDA.
     if not torch.cuda.is_available():
         raise RuntimeError("QLoRA NF4 training requires a CUDA GPU with bitsandbytes support.")
 
@@ -229,6 +249,7 @@ def train(args: argparse.Namespace) -> Path:
         torch_dtype=torch.float16,
         trust_remote_code=True,
     )
+    # Casts norms and enables input grads so LoRA on a quantized model is trainable.
     model = prepare_model_for_kbit_training(model)
 
     if args.target_modules == "auto":
@@ -245,6 +266,7 @@ def train(args: argparse.Namespace) -> Path:
         task_type="CAUSAL_LM",
     )
     model = get_peft_model(model, lora_config)
+    # KV cache is incompatible with gradient checkpointing during training.
     model.config.use_cache = False
 
     checkpoint_dir = adapter_dir / "checkpoints"
@@ -264,6 +286,7 @@ def train(args: argparse.Namespace) -> Path:
     with (adapter_dir / "train_history.json").open("w", encoding="utf-8") as fh:
         json.dump(trainer.state.log_history, fh, indent=2)
 
+    # Intermediate per-epoch checkpoints are large; delete them once the final adapter is saved.
     if args.clean_checkpoints and checkpoint_dir.exists():
         shutil.rmtree(checkpoint_dir)
 
@@ -271,6 +294,7 @@ def train(args: argparse.Namespace) -> Path:
 
 
 def main() -> int:
+    """CLI entry: parse hyper-parameters, check dependencies, then call train(). See the code below for exit codes."""
     # Step 1: Validate input parameters, operational preconditions, and state
     parser = argparse.ArgumentParser(description="Train Karl's curated code QLoRA adapter.")
     parser.add_argument("--dataset", default=str(DEFAULT_DATASET), help="Curated SFT JSONL dataset")

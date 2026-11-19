@@ -30,10 +30,15 @@ from core.default_prompts import (
 logger = logging.getLogger("karl.codex_injector")
 
 
+# Per-run overrides set by the caller before generation (e.g. machine speak flags); consulted by
+# _machine_speak_enabled.
 ACTIVE_HYPERPARAMS: dict = {}
 
+# Minimal prompt matching what adapters were trained with.
 _ADAPTER_SYSTEM_PROMPT = "Always respond in English."
 _BASE_SYSTEM_PROMPT = DEFAULT_SYSTEM_PROMPT
+# Instruction appended to the system prompt when history is compressed, so the model answers in the
+# same compressed dialect.
 _MACHINE_SPEAK_RULE = (
     "[COMPRESSION RULE] The message history has been serialized into token-dense "
     "'Machine Speak' to save context space.\n"
@@ -44,6 +49,8 @@ _MACHINE_SPEAK_RULE = (
     "than writing full files."
 )
 
+# Maps lowercase keywords found in a user message to a reference page in data/codex_library. Several
+# aliases share one page (cpp/c++, js/javascript).
 _CODEX_KEYWORD_MAP = {
     "python": "Python.html",
     "c++": "C++.html",
@@ -80,7 +87,9 @@ _CODEX_KEYWORD_MAP = {
 }
 
 def strip_html_tags(html: str) -> str:
+    """Convert a codex HTML page to compact plain text for prompt injection: drop script/style, turn block tags into newlines, remove remaining tags, decode the few common entities, and collapse runs of blank lines."""
     # Remove script and style elements first
+    # Remove script/style bodies entirely; their text is code, not documentation.
     text = re.sub(r'<(script|style)\b[^>]*>([\s\S]*?)</\1>', '', html)
     # Replace block-level element tags with newlines or spaces to preserve spacing
     text = re.sub(r'</?(div|p|h[1-6]|li|ul|ol|table|tr|td|thead|tbody|br|pre|code)\b[^>]*>', '\n', text)
@@ -103,6 +112,7 @@ def strip_html_tags(html: str) -> str:
     return '\n'.join(cleaned).strip()
 
 def matches_keyword(text: str, keyword: str) -> bool:
+    """Case-insensitive keyword test with word boundaries. 'c' is special-cased so it does not fire on 'c++' or 'c#'; keywords that start or end with punctuation (c++, node.js) skip the boundary on that side."""
     # Step 1: Validate input parameters, operational preconditions, and state
     if keyword == "c":
         # Match 'c' but not 'c++' or 'c#'
@@ -120,6 +130,7 @@ def matches_keyword(text: str, keyword: str) -> bool:
     return bool(re.search(full_pattern, text, re.IGNORECASE))
 
 def _get_codex_context(chat_history):
+    """Look at the latest user message and, for up to two matching languages/tools in _CODEX_KEYWORD_MAP, load data/codex_library/<name>.html as text. Returns a 'Codex Reference Context' block, or '' if nothing matched or the files are missing/unreadable."""
     # Step 1: Validate input parameters, operational preconditions, and state
     last_user_msg = ""
     for msg in reversed(chat_history):
@@ -137,6 +148,7 @@ def _get_codex_context(chat_history):
         if matches_keyword(last_user_msg, kw):
             if filename not in matched_filenames:
                 matched_filenames.append(filename)
+            # Cap at two pages to bound how much reference text is injected into the prompt.
             if len(matched_filenames) >= 2:
                 break
 
@@ -175,6 +187,8 @@ def _apply_vocab_leak_bypass(text: str) -> str:
     we only sanitize the structural prompt scaffolding (system prompt, pre-seeds).
     """
     # Step 1: Validate input parameters, operational preconditions, and state
+    # Token texts that tokenise to <unk> under the active adapter; injecting them would corrupt the
+    # context.
     leak_map = ModelLoader.vocab_leak_tokens()
     if not leak_map:
         return text
@@ -191,6 +205,7 @@ def _apply_vocab_leak_bypass(text: str) -> str:
 
 
 def _truthy(value) -> bool:
+    """Lenient boolean parse for config values that may arrive as bool, string ('1','true','yes','on') or anything else."""
     # Step 1: Validate input parameters, operational preconditions, and state
     if isinstance(value, bool):
         return value
@@ -200,6 +215,7 @@ def _truthy(value) -> bool:
 
 
 def _machine_speak_enabled() -> bool:
+    """Resolve the Machine Speak toggle. Per-run ACTIVE_HYPERPARAMS win (either key spelling), then the saved UI config; any config error means disabled."""
     # Step 1: Validate input parameters, operational preconditions, and state
     if "machine_speak_enabled" in ACTIVE_HYPERPARAMS:
         return _truthy(ACTIVE_HYPERPARAMS.get("machine_speak_enabled"))
@@ -213,6 +229,7 @@ def _machine_speak_enabled() -> bool:
 
 
 def _machine_speak_history(system_prompt: str, chat_history: list[dict]) -> list[dict]:
+    """Re-serialize each chat turn through compact_trace_for_ai (token-dense 'Machine Speak'). The system prompt is attached to the first turn only so it is encoded once."""
     # Step 1: Validate input parameters, operational preconditions, and state
     compressed: list[dict] = []
     for index, msg in enumerate(chat_history):
@@ -254,13 +271,18 @@ def build_prompt(system_prompt, chat_history):
     
     rag_context = ""
     clean_sys = system_prompt
+    # RAG context is appended to the system prompt under this marker; split it off so the default-
+    # prompt comparison ignores it and it can be re-attached afterwards.
     if "\n\nRetrieved Context:\n" in system_prompt:
         parts = system_prompt.split("\n\nRetrieved Context:\n", 1)
         clean_sys = parts[0]
         rag_context = "\n\nRetrieved Context:\n" + parts[1]
 
+    # Include legacy defaults so old saved prompts still count as 'default' after prompt upgrades.
     default_sys_prompts = LEGACY_DEFAULT_SYSTEM_PROMPTS | {DEFAULT_SYSTEM_PROMPT}
 
+    # Whitespace-normalised comparison so formatting-only differences still count as the default
+    # prompt.
     clean_sys_stripped = " ".join(clean_sys.strip().split())
     is_default = any(
         clean_sys_stripped == " ".join(p.strip().split()) 
@@ -268,6 +290,7 @@ def build_prompt(system_prompt, chat_history):
     )
 
     def is_greeting(text: str) -> bool:
+        """True for bare greetings or very short (<=4 words) messages that start with one; such turns get the lightweight greeting prompt and no forced <think> seed."""
         # Step 1: Validate input parameters, operational preconditions, and state
         t = text.strip().lower().rstrip(".,!?")
         if not t:
@@ -308,9 +331,12 @@ def build_prompt(system_prompt, chat_history):
         else:
             effective_system = clean_sys + rag_context + codex_context
 
+    # Always end the system prompt with the recency instruction, but never duplicate it.
     if _RECENCY_INSTRUCTION not in effective_system:
         effective_system = (effective_system + "\n" if effective_system else "") + _RECENCY_INSTRUCTION
 
+    # Swarm agent prompts are detected by their role text; they have their own format so Machine Speak
+    # is skipped for them.
     is_swarm = False
     if isinstance(system_prompt, str):
         if "You are an expert software engineer" in system_prompt or "Coder Agent" in system_prompt or "Architect Agent" in system_prompt:
@@ -330,6 +356,8 @@ def build_prompt(system_prompt, chat_history):
         effective_system = _apply_vocab_leak_bypass(effective_system)
     # ─────────────────────────────────────────────────────────────────────────
 
+    # Pre-seeding <think> is skipped for greetings and when the adapter's vocabulary cannot represent
+    # the tag.
     preseed_think = True
     if is_user_greeting:
         preseed_think = False
@@ -343,6 +371,8 @@ def build_prompt(system_prompt, chat_history):
 
     model_name = ModelLoader.model_name().lower()
 
+    # Pick the chat template from the model name; unknown names use the DeepSeek-native fallback
+    # below.
     if "llama" in model_name:
         # Llama 3 chat template format
         prompt = ""
