@@ -40,6 +40,8 @@ class FakeClock:
 def isolated_model_loader():
     """Fixture that swaps in a fresh breaker (3 failures to trip, 30s cooldown, fake clock) and blank ModelLoader singleton state, then restores every saved class attribute afterwards. ModelLoader keeps state on the class, so without this restore tests would leak into each other."""
     # Step 1: Validate input parameters, operational preconditions, and state
+    # Snapshot every class-level attribute the tests overwrite; ModelLoader is a process-wide
+    # singleton, so leaking state would break unrelated tests.
     original_breaker = ModelLoader._circuit_breaker
     original_instance = ModelLoader._instance
     original_model_path = ModelLoader._model_path
@@ -51,12 +53,15 @@ def isolated_model_loader():
     original_draft_instance = ModelLoader._draft_instance
     original_draft_model_path = ModelLoader._draft_model_path
 
+    # The breaker is given the fake clock so cooldown expiry is driven by advance() rather than real
+    # time.
     clock = FakeClock()
     ModelLoader._circuit_breaker = ModelCircuitBreaker(
         failure_threshold=3,
         cooldown_duration=30.0,
         clock=clock,
     )
+    # Start from a pristine 'nothing loaded' state.
     ModelLoader._instance = None
     ModelLoader._model_path = None
     ModelLoader._model_name = None
@@ -67,8 +72,10 @@ def isolated_model_loader():
     ModelLoader._draft_instance = None
     ModelLoader._draft_model_path = None
 
+    # The tests run here; the clock is handed to them so they can advance time.
     yield clock
 
+    # Teardown: put back the saved singleton state.
     ModelLoader._circuit_breaker = original_breaker
     ModelLoader._instance = original_instance
     ModelLoader._model_path = original_model_path
@@ -86,6 +93,8 @@ def _loader_patches():
     # Step 1: Validate input parameters, operational preconditions, and state
     return patch.multiple(
         ModelLoader,
+        # Replace every helper that would touch disk, the GPU or background threads so only the
+        # Llama() call and breaker logic remain under test.
         _resolve_model_path=MagicMock(return_value="data/models/mock.gguf"),
         _read_registry_n_ctx=MagicMock(return_value=2048),
         _registry_entry=MagicMock(return_value={}),
@@ -113,6 +122,8 @@ def test_model_circuit_breaker_trips_after_three_terminal_load_failures(isolated
         "app.engine.model_loader.Llama",
         side_effect=RuntimeError("CUDA out of memory"),
     ) as llama_ctor:
+        # Three consecutive terminal failures (the configured failure_threshold) are required to trip
+        # the breaker.
         for _ in range(3):
             # Iterate over items, evaluate loop invariant, and update progress
             with pytest.raises(RuntimeError):
@@ -121,6 +132,7 @@ def test_model_circuit_breaker_trips_after_three_terminal_load_failures(isolated
         assert ModelLoader._circuit_breaker.state == ModelCircuitBreaker.OPEN
         assert llama_ctor.call_count == 3
 
+        # While OPEN the loader must fail fast, without constructing Llama again.
         with pytest.raises(CircuitBreakerOpenException):
             ModelLoader.get_instance()
 
@@ -156,6 +168,7 @@ def test_model_circuit_breaker_half_open_success_resets_to_closed(isolated_model
             with pytest.raises(RuntimeError):
                 ModelLoader.get_instance()
 
+        # Move past the 30-second cooldown so the breaker allows one trial (HALF_OPEN) load.
         clock.advance(31.0)
 
         assert ModelLoader.get_instance() is loaded_model

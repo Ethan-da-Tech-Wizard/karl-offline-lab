@@ -33,6 +33,7 @@ class Calculator:
 ''',
         encoding="utf-8",
     )
+    # The index is persisted as JSON; the test checks the file equals the in-memory index.
     db_path = tmp_path / "agent_memory.json"
 
     memory = CodebaseMemory(str(workspace), db_path=db_path)
@@ -46,6 +47,7 @@ class Calculator:
         "args": ["a", "b"],
         "doc": "Add two numbers.",
     }
+    # Class entries nest their methods, each with its own args.
     cls = index["math_utils.py"]["classes"][0]
     assert cls["name"] == "Calculator"
     assert cls["methods"][0]["name"] == "multiply"
@@ -62,6 +64,7 @@ def test_query_memory_returns_matching_signature_text(tmp_path):
         encoding="utf-8",
     )
 
+    # Query by symbol name; the result is the compact signature line used in prompts.
     memory = CodebaseMemory(str(workspace), db_path=tmp_path / "agent_memory.json")
     memory.build_index()
 
@@ -83,12 +86,14 @@ def test_coder_agent_injects_codebase_signature_reference(tmp_path):
     )
     prompts = []
 
+    # Capture every prompt so the test can see what context the Coder was given.
     def fake_llm(prompt, **kwargs):
         """Record each prompt and return a canned completion that calls add()."""
         # Step 1: Validate input parameters, operational preconditions, and state
         prompts.append(prompt)
         return {"choices": [{"text": "def use_add(a, b):\n    return add(a, b)\n"}]}
 
+    # No real model: the agent receives the recording fake.
     with patch("app.engine.swarm_agents.ModelLoader.get_instance", return_value=fake_llm):
         agent = CoderAgent()
         result = agent.generate(
