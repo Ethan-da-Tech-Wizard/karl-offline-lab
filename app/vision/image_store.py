@@ -1,3 +1,12 @@
+# ==============================================================================
+# Program: image_store.py
+# Programmer: Ethan-da-Tech-Wizard
+# Last Modified: November 18, 2026
+# Purpose: Core utility providing image store capabilities.
+#          Implements data structures and algorithms supporting offline
+#          introspection and model execution.
+# ==============================================================================
+
 """
 Disk-backed store for images the user pastes or imports into Karl.
 
@@ -10,14 +19,6 @@ Layout under base_dir (default data/images):
 
 Everything is local files; no database and no network.
 """
-# ==============================================================================
-# Program: image_store.py
-# Programmer: Ethan-da-Tech-Wizard
-# Last Modified: November 18, 2026
-# Purpose: Core utility providing image store capabilities.
-#          Implements data structures and algorithms supporting offline
-#          introspection and model execution.
-# ==============================================================================
 
 from __future__ import annotations
 

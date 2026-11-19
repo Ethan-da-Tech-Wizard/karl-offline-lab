@@ -33,6 +33,8 @@ logger = logging.getLogger("karl.quantizer_thread")
 
 # ── Binary search ─────────────────────────────────────────────────────────────
 
+# Likely locations of the llama-quantize binary (build output, install dirs).
+# Relative entries are resolved against the current working directory.
 _CANDIDATE_DIRS = [
     "build/bin",          # cmake out-of-source build (relative to project root)
     "build",
@@ -43,6 +45,7 @@ _CANDIDATE_DIRS = [
     "/opt/homebrew/bin",  # macOS Homebrew
 ]
 
+# Executable name (no .exe handling here).
 _BINARY_NAME = "llama-quantize"
 
 
@@ -62,6 +65,7 @@ def _locate_llama_quantize(input_path: str | None = None) -> str | None:
         model_dir = os.path.dirname(os.path.abspath(input_path))
         candidates.append(os.path.join(model_dir, _BINARY_NAME))
 
+    # Candidates are tried in order; the model's own folder was added first so it wins.
     for d in _CANDIDATE_DIRS:
         # Iterate over items, evaluate loop invariant, and update progress
         candidates.append(os.path.join(os.getcwd(), d, _BINARY_NAME))
@@ -71,6 +75,7 @@ def _locate_llama_quantize(input_path: str | None = None) -> str | None:
         if os.path.isfile(path) and os.access(path, os.X_OK):
             return path
 
+    # Last resort: whatever shutil.which finds on PATH.
     # Fall through to system PATH
     return shutil.which(_BINARY_NAME)
 
@@ -79,7 +84,9 @@ def _locate_llama_quantize(input_path: str | None = None) -> str | None:
 # llama-quantize emits layer progress as: [  1/ 291] blk.0.attn_norm ...
 # Capture both the bracketed fraction and bare "NN%" patterns.
 
+# Layer counter like "[  1/ 291]" gives a precise fraction.
 _RE_BRACKET = re.compile(r"\[\s*(\d+)\s*/\s*(\d+)\s*\]")
+# Fallback for lines that print a bare percentage.
 _RE_PERCENT = re.compile(r"\b(\d{1,3})\s*%")
 
 
@@ -125,11 +132,13 @@ class QuantizerThread(QThread):
         output_path: str,
         target_format: str,
     ) -> None:
+        """Remember the source/destination GGUF paths and quantization type; no work happens until start()."""
         # Step 1: Validate input parameters, operational preconditions, and state
         super().__init__()
         self.input_path    = input_path
         self.output_path   = output_path
         self.target_format = target_format
+        # Handle to the child process so cancel() can terminate it from another thread.
         self._proc: subprocess.Popen | None = None
 
     # ── public API ────────────────────────────────────────────────────────────
@@ -147,6 +156,7 @@ class QuantizerThread(QThread):
     # ── thread entry point ────────────────────────────────────────────────────
 
     def run(self) -> None:
+        """Thread body: locate the binary, validate input, launch it, stream progress, report the result."""
         # ── locate binary ─────────────────────────────────────────────────────
         binary = _locate_llama_quantize(self.input_path)
         if not binary:
@@ -174,6 +184,7 @@ class QuantizerThread(QThread):
             self._proc = subprocess.Popen(
                 cmd,
                 stdout=subprocess.PIPE,
+                # Merge stderr so progress lines printed there are also parsed.
                 stderr=subprocess.STDOUT,  # merge stderr into stdout
                 text=True,
                 bufsize=1,                 # line-buffered
@@ -184,6 +195,7 @@ class QuantizerThread(QThread):
             return
 
         # ── stream stdout, parse progress ─────────────────────────────────────
+        # Only emit when the percentage changes, to avoid flooding the UI with duplicate updates.
         last_pct = -1
         try:
             # Execute guarded operations and establish recovery boundaries
@@ -202,6 +214,7 @@ class QuantizerThread(QThread):
             logger.warning("Stream read error: %s", exc)
 
         # ── wait for process to exit ──────────────────────────────────────────
+        # stdout is exhausted, so the process has exited or is about to.
         exit_code = self._proc.wait()
         self._proc = None
 

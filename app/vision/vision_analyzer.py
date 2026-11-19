@@ -1,3 +1,12 @@
+# ==============================================================================
+# Program: vision_analyzer.py
+# Programmer: Ethan-da-Tech-Wizard
+# Last Modified: November 18, 2026
+# Purpose: Core utility providing vision analyzer capabilities.
+#          Implements data structures and algorithms supporting offline
+#          introspection and model execution.
+# ==============================================================================
+
 """
 Combines OCR text, simple keyword heuristics and an optional local vision model.
 
@@ -7,14 +16,6 @@ mock-up. VisionAnalyzer.analyze_record() then either returns a heuristic-only
 result (mode "ocr_only") or asks the vision model for a caption and merges
 the heuristic flags into it.
 """
-# ==============================================================================
-# Program: vision_analyzer.py
-# Programmer: Ethan-da-Tech-Wizard
-# Last Modified: November 18, 2026
-# Purpose: Core utility providing vision analyzer capabilities.
-#          Implements data structures and algorithms supporting offline
-#          introspection and model execution.
-# ==============================================================================
 
 from __future__ import annotations
 

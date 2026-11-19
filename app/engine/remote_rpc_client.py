@@ -7,6 +7,17 @@
 #          is available.
 # ==============================================================================
 
+"""
+Client that lets Karl use a remote Karl instance as its "model" over a WebSocket.
+
+RemoteRPCModel imitates the small part of the llama-cpp ``Llama`` interface that
+the generation threads use (tokenize and calling with a prompt). Internally it
+sends a JSON-RPC ``submit_chat`` request and converts the remote
+chat_thought_token / chat_response_token notifications back into the plain
+stream of text chunks llama-cpp would produce, so the local parser and UI work
+unchanged. If the remote fails, it can fall back to a local model.
+"""
+
 from __future__ import annotations
 
 import asyncio
@@ -29,10 +40,12 @@ class RemoteRPCError(RuntimeError):
 
 def _is_private_host(hostname: str | None) -> bool:
     # Step 1: Validate input parameters, operational preconditions, and state
+    """True for loopback or private-network addresses, or the names localhost/127.0.0.1/::1."""
     if not hostname:
         return False
     try:
         # Execute guarded operations and establish recovery boundaries
+        # Raises ValueError for DNS names, handled just below.
         return ip_address(hostname).is_private
     except ValueError:
         return hostname in {"localhost", "127.0.0.1", "::1"}
@@ -40,6 +53,11 @@ def _is_private_host(hostname: str | None) -> bool:
 
 def _ssl_context_for_url(url: str) -> ssl.SSLContext | None:
     # Step 1: Validate input parameters, operational preconditions, and state
+    """Return the SSL context for a wss:// URL, or None for plain ws://.
+
+    Certificate checking is disabled only for private/loopback hosts (typically
+    self-signed certificates on a LAN); public hosts get normal verification.
+    """
     parsed = urlparse(url)
     if parsed.scheme != "wss":
         return None
@@ -53,6 +71,7 @@ def _ssl_context_for_url(url: str) -> ssl.SSLContext | None:
 
 def _with_token_query(url: str, token: str) -> str:
     # Step 1: Validate input parameters, operational preconditions, and state
+    """Return ``url`` with a ``token`` query parameter added (existing parameters are kept)."""
     parsed = urlparse(url)
     query = dict(parse_qsl(parsed.query, keep_blank_values=True))
     if token:
@@ -79,6 +98,10 @@ class RemoteRPCModel:
         handshake_timeout: float = 5.0,
     ):
         # Step 1: Validate input parameters, operational preconditions, and state
+        """``on_fallback(message)`` is called with the error text when remote generation fails.
+        ``local_fallback_factory()`` may return a local model to finish the request instead.
+        Raises RemoteRPCError if no server URL is configured.
+        """
         self.server_url = server_url.strip()
         self.auth_token = auth_token
         self.on_fallback = on_fallback
@@ -89,10 +112,12 @@ class RemoteRPCModel:
 
     def tokenize(self, data: bytes | str, add_bos: bool = False) -> list[int]:
         # Step 1: Validate input parameters, operational preconditions, and state
+        """Cheap token-count stand-in (about 1 token per 3 characters) returning a list of dummy ids."""
         if isinstance(data, bytes):
             text = data.decode("utf-8", errors="ignore")
         else:
             text = data
+        # Real tokenization would need the remote model; this is only for UI/trim heuristics.
         # Conservative estimate used only for context HUD and trim heuristics in
         # remote mode. It deliberately avoids touching local llama-cpp.
         count = max(1, len(text) // 3) if text else 0
@@ -102,6 +127,10 @@ class RemoteRPCModel:
 
     def __call__(self, prompt: str, **kwargs) -> Iterator[dict[str, Any]]:
         # Step 1: Validate input parameters, operational preconditions, and state
+        """Generate from ``prompt``. With stream=True returns an iterator of llama-cpp style chunks.
+
+        Without stream, the whole stream is consumed and one completion dict is returned.
+        """
         if not kwargs.get("stream", False):
             text = "".join(
                 chunk["choices"][0].get("text", "")
@@ -112,6 +141,12 @@ class RemoteRPCModel:
 
     def _stream(self, prompt: str, kwargs: dict[str, Any]) -> Iterator[dict[str, Any]]:
         # Step 1: Validate input parameters, operational preconditions, and state
+        # Items: chunk dicts, {"error": msg} on failure, or None meaning "finished".
+        """Yield completion chunks produced by a background thread that talks to the server.
+
+        The async WebSocket code runs in its own thread/event loop and hands items back
+        through a Queue, so this generator can be consumed from ordinary synchronous code.
+        """
         queue: Queue[dict[str, Any] | None] = Queue()
         thread = Thread(
             target=lambda: asyncio.run(self._run_stream(prompt, kwargs, queue)),
@@ -124,6 +159,7 @@ class RemoteRPCModel:
             # Iterate over items, evaluate loop invariant, and update progress
             try:
                 # Execute guarded operations and establish recovery boundaries
+                # Poll with a timeout so a dead worker thread is noticed instead of hanging forever.
                 item = queue.get(timeout=0.25)
             except Empty:
                 if not thread.is_alive():
@@ -131,6 +167,7 @@ class RemoteRPCModel:
                 continue
             if item is None:
                 break
+            # Remote failed: notify, then try the local fallback model with the same sampling options, else raise.
             if "error" in item:
                 message = item["error"]
                 if self.on_fallback:
@@ -162,10 +199,15 @@ class RemoteRPCModel:
         queue: Queue[dict[str, Any] | None],
     ) -> None:
         # Step 1: Validate input parameters, operational preconditions, and state
+        """Async worker: connect, send submit_chat, translate notifications into queue items.
+
+        Always ends by putting None (success) or an error dict on the queue.
+        """
         try:
             # Execute guarded operations and establish recovery boundaries
             try:
                 # Execute guarded operations and establish recovery boundaries
+                # Lazy import: the websockets package is only needed in remote mode.
                 from websockets.asyncio.client import connect as ws_connect
             except ImportError as exc:
                 raise RemoteRPCError(
@@ -173,6 +215,7 @@ class RemoteRPCModel:
                     "Install requirements.txt before using RPC proxy mode."
                 ) from exc
 
+            # The token is sent both in the URL and in the request params.
             url = _with_token_query(self.server_url, self.auth_token)
             ssl_context = _ssl_context_for_url(url)
             websocket_cm = ws_connect(url, ssl=ssl_context, close_timeout=2)
@@ -182,6 +225,7 @@ class RemoteRPCModel:
             )
             try:
                 # Execute guarded operations and establish recovery boundaries
+                # Millisecond timestamp doubles as the JSON-RPC request id used to recognise the reply.
                 req_id = int(time.time() * 1000)
                 params = {
                     "message": prompt,
@@ -202,10 +246,13 @@ class RemoteRPCModel:
                     "params": params,
                 }))
 
+                # The remote sends thought tokens first, then answer tokens; a synthetic </think> is inserted
+                # at the switch so the local StreamingThoughtParser sees a normal think block.
                 in_thought = True
                 started = False
                 async for raw in websocket:
                     msg = json.loads(raw)
+                    # The direct reply to submit_chat carries no text; only errors matter.
                     if msg.get("id") == req_id:
                         if "error" in msg:
                             err = msg["error"].get("message", "Remote submit_chat failed.")
@@ -224,6 +271,7 @@ class RemoteRPCModel:
                             queue.put({"choices": [{"text": "</think>", "finish_reason": None}]})
                             in_thought = False
                         queue.put({"choices": [{"text": text, "finish_reason": None}]})
+                    # End of generation: close an unclosed think block, send a stop chunk, then the end marker.
                     elif method == "chat_finished":
                         if in_thought:
                             queue.put({"choices": [{"text": "</think>", "finish_reason": None}]})
@@ -235,9 +283,11 @@ class RemoteRPCModel:
                         if "[Error]" in message:
                             raise RemoteRPCError(message)
 
+                # Closed without a single token: treat as failure so fallback can kick in.
                 if not started:
                     raise RemoteRPCError("Remote connection closed before any tokens were received.")
                 queue.put(None)
+            # Always close the WebSocket cleanly.
             finally:
                 await websocket_cm.__aexit__(None, None, None)
         except Exception as exc:

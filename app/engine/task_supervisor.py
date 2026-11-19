@@ -47,6 +47,7 @@ logger = logging.getLogger("karl.task_supervisor")
 
 
 class TaskStatus(str, Enum):
+    """Lifecycle states for a supervised task (str-valued so they serialize to JSON directly)."""
     IDLE       = "idle"
     RUNNING    = "running"
     CANCELLING = "cancelling"
@@ -56,11 +57,13 @@ class TaskStatus(str, Enum):
 
 @dataclass
 class TaskRecord:
+    """Mutable bookkeeping for one task: id, name, status, progress, error and internal hooks."""
     task_id: str
     name: str
     status: TaskStatus = TaskStatus.IDLE
     progress: float = 0.0           # [0.0, 1.0]
     error: str = ""
+    # Underscore fields are internal (hidden from repr): the object to stop and hooks to run at the end.
     _cancellable: Any = field(default=None, repr=False)
     _cleanup_hooks: list[Callable[[], None]] = field(default_factory=list, repr=False)
 
@@ -72,6 +75,7 @@ class TaskSupervisor:
     _instance_lock = threading.Lock()
 
     def __init__(self) -> None:
+        """Create an empty registry. The TraceLogger is imported lazily to avoid a circular import."""
         # Step 1: Validate input parameters, operational preconditions, and state
         self._lock = threading.Lock()
         self._tasks: dict[str, TaskRecord] = {}
@@ -79,7 +83,9 @@ class TaskSupervisor:
 
     @classmethod
     def instance(cls) -> TaskSupervisor:
+        """Return the process-wide supervisor, creating it on first use."""
         # Step 1: Validate input parameters, operational preconditions, and state
+        # Double-checked locking: cheap unlocked test first, then re-test under the lock.
         if cls._instance is None:
             with cls._instance_lock:
                 if cls._instance is None:
@@ -141,6 +147,7 @@ class TaskSupervisor:
             rec = self._tasks.get(task_id)
             if rec is None:
                 return
+            # Clamp so a bad caller can never push the UI progress bar out of range.
             rec.progress = max(0.0, min(1.0, progress))
 
     def cancel(self, task_id: str) -> bool:
@@ -155,10 +162,13 @@ class TaskSupervisor:
             if rec is None:
                 logger.warning("cancel() called on unknown task_id %s", task_id)
                 return False
+            # Only tasks that have not already finished or started cancelling can be cancelled.
             if rec.status not in (TaskStatus.RUNNING, TaskStatus.IDLE):
                 logger.debug("cancel() on task %s already in status %s", task_id[:8], rec.status)
                 return False
             rec.status = TaskStatus.CANCELLING
+            # Copy out under the lock, call request_stop() after releasing it so a slow or
+            # re-entrant stop handler cannot deadlock the registry.
             cancellable = rec._cancellable
 
         logger.info("Task cancelling: [%s] %s", task_id[:8], rec.name)
@@ -180,6 +190,7 @@ class TaskSupervisor:
             rec = self._tasks.get(task_id)
             if rec is None:
                 return
+            # finish()/fail() are idempotent: a task already finished or failed is left untouched, so hooks run once.
             if rec.status not in (TaskStatus.RUNNING, TaskStatus.CANCELLING):
                 return
             rec.status = TaskStatus.FINISHED
@@ -216,6 +227,7 @@ class TaskSupervisor:
             if rec is None:
                 logger.warning("add_cleanup_hook() called on unknown task_id %s", task_id)
                 return
+            # Task already ended: its hooks have run, so run this late hook right away.
             if rec.status in (TaskStatus.FINISHED, TaskStatus.ERROR):
                 run_immediately = True
             else:
@@ -231,24 +243,28 @@ class TaskSupervisor:
     # ── Queries ──────────────────────────────────────────────────────────────
 
     def status(self, task_id: str) -> TaskStatus | None:
+        """Current TaskStatus for ``task_id`` or None if unknown."""
         # Step 1: Validate input parameters, operational preconditions, and state
         with self._lock:
             rec = self._tasks.get(task_id)
             return rec.status if rec else None
 
     def progress(self, task_id: str) -> float:
+        """Progress fraction for ``task_id`` (0.0 if unknown)."""
         # Step 1: Validate input parameters, operational preconditions, and state
         with self._lock:
             rec = self._tasks.get(task_id)
             return rec.progress if rec else 0.0
 
     def error(self, task_id: str) -> str:
+        """Error message for ``task_id`` (empty string if none/unknown)."""
         # Step 1: Validate input parameters, operational preconditions, and state
         with self._lock:
             rec = self._tasks.get(task_id)
             return rec.error if rec else ""
 
     def get(self, task_id: str) -> TaskRecord | None:
+        """Return the TaskRecord itself (live object, not a copy) or None."""
         # Step 1: Validate input parameters, operational preconditions, and state
         with self._lock:
             return self._tasks.get(task_id)
@@ -263,6 +279,7 @@ class TaskSupervisor:
             ]
 
     def all_tasks(self) -> list[TaskRecord]:
+        """Return a snapshot list of every task ever registered (finished ones are not purged)."""
         # Step 1: Validate input parameters, operational preconditions, and state
         with self._lock:
             return list(self._tasks.values())
@@ -279,6 +296,7 @@ class TaskSupervisor:
     # ── Internals ────────────────────────────────────────────────────────────
 
     def _run_hooks(self, hooks: list[Callable], task_id: str) -> None:
+        """Run cleanup callbacks in order; one failing hook must not stop the rest."""
         # Step 1: Validate input parameters, operational preconditions, and state
         for hook in hooks:
             # Iterate over items, evaluate loop invariant, and update progress
@@ -293,6 +311,7 @@ class TaskSupervisor:
         # Step 1: Validate input parameters, operational preconditions, and state
         try:
             # Execute guarded operations and establish recovery boundaries
+            # Lazy import avoids import cycles; tracing is best-effort.
             from app.utils.trace_logger import TraceLogger
             tl = TraceLogger()
             tl.log_task_event(task_id=task_id, name=name, event=event, error=error)

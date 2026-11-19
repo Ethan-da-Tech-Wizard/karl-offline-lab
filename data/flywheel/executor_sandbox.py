@@ -1,11 +1,3 @@
-"""
-Sandboxed execution of generated Python code and its tests.
-
-Used by the flywheel curator to check whether LLM-written code really passes
-its tests. Preference order: Docker container, then a bubblewrap (bwrap)
-namespace jail, otherwise refuse. Untrusted code is never run as a plain host
-subprocess.
-"""
 # ==============================================================================
 # Program: executor_sandbox.py
 # Programmer: Ethan-da-Tech-Wizard
@@ -14,6 +6,15 @@ subprocess.
 #          Executes Python test cases safely with timeout constraints and
 #          resource limits.
 # ==============================================================================
+
+"""
+Sandboxed execution of generated Python code and its tests.
+
+Used by the flywheel curator to check whether LLM-written code really passes
+its tests. Preference order: Docker container, then a bubblewrap (bwrap)
+namespace jail, otherwise refuse. Untrusted code is never run as a plain host
+subprocess.
+"""
 
 import subprocess
 import sys

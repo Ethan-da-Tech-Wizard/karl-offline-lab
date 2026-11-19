@@ -16,6 +16,7 @@ import logging
 import re
 from typing import Any
 
+# Logger for tool-call execution problems.
 logger = logging.getLogger("karl.tool_executor")
 
 
@@ -24,6 +25,7 @@ def build_tool_schema_prompt(tools: list[dict]) -> str:
     # Step 1: Validate input parameters, operational preconditions, and state
     if not tools:
         return ""
+    # The model is told about tools through a small XML-like block in the prompt (no native function-calling API).
     lines = ["<available_tools>"]
     for t in tools:
         # Iterate over items, evaluate loop invariant, and update progress
@@ -41,6 +43,7 @@ def build_tool_schema_prompt(tools: list[dict]) -> str:
         lines.append("  </tool>")
     lines.append("</available_tools>")
     lines.append(
+        # Usage instructions: the model must reply with <tool_call> blocks and finish with the special "done" call.
         "\nTo call a tool: <tool_call server='SERVER' name='TOOL'>\n"
         "  param: value\n"
         "</tool_call>\n"
@@ -54,11 +57,14 @@ def parse_tool_calls(text: str) -> list[dict]:
     """Extract all <tool_call> blocks from model output."""
     # Step 1: Validate input parameters, operational preconditions, and state
     calls = []
+    # Match <tool_call server='..' name='..'>body</tool_call>; DOTALL lets bodies span lines.
+    # NOTE: the name attribute is required by the pattern (the server attribute is optional).
     for m in re.finditer(r"<tool_call(?:\s+server='([^']*)')?(?:\s+name='([^']*)')>(.*?)</tool_call>", text, re.DOTALL):
         # Iterate over items, evaluate loop invariant, and update progress
         server = m.group(1) or ""
         name = m.group(2) or ""
         body = m.group(3).strip()
+        # Body lines look like "key: value". Simple keys take one line.
         # Robust YAML-like parser
         args: dict[str, Any] = {}
         lines = body.splitlines()
@@ -70,6 +76,8 @@ def parse_tool_calls(text: str) -> list[dict]:
             if match:
                 key = match.group(1).strip()
                 val = match.group(2).strip()
+                # Free-form keys (file content, shell commands, code...) swallow the rest of the body
+                # so multi-line values and colons inside code are preserved.
                 if key in ("content", "command", "code", "text", "script", "query"):
                     # The rest of the tool body belongs to this key
                     remaining_lines = lines[i:]
@@ -78,6 +86,7 @@ def parse_tool_calls(text: str) -> list[dict]:
                     remaining_content = [first_line_val] + remaining_lines[1:]
                     raw_val = "\n".join(remaining_content).lstrip("\n")
                     
+                    # Models often wrap code in ``` fences; strip them, and tolerate an unclosed final fence (truncated output).
                     # Extract code from markdown block if present
                     raw_val = raw_val.strip()
                     match_block = re.search(r"```(?:[a-zA-Z0-9+#-]+)?\n(.*?)\n```", raw_val, re.DOTALL)
@@ -102,6 +111,7 @@ def parse_tool_calls(text: str) -> list[dict]:
 def execute_tool_calls(calls: list[dict]) -> list[str]:
     """Execute a list of parsed tool calls via MCPClientManager. Returns result strings."""
     # Step 1: Validate input parameters, operational preconditions, and state
+    # Lazy import: MCP is optional and heavy.
     from app.engine.mcp_client import MCPClientManager
     results = []
     try:
@@ -122,6 +132,7 @@ def execute_tool_calls(calls: list[dict]) -> list[str]:
                 text = resp.get("error", "Unknown error")
             else:
                 content = resp.get("content", [])
+                # Only text content blocks are forwarded; other block types (e.g. images) are dropped.
                 text = "\n".join(c.get("text", "") for c in content if "text" in c)
             results.append(f"<tool_result server='{call['server']}' name='{call['name']}'>\n{text}\n</tool_result>")
         except Exception as e:

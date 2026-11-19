@@ -1,11 +1,3 @@
-"""
-Plain dataclasses describing the records the vision subsystem stores.
-
-These are the on-disk / over-the-wire shapes for OCR output, vision-model
-output and the combined per-image record kept by image_store. Each class has
-from_dict (tolerant of missing keys, so older saved records still load) and
-to_dict (JSON-serializable) helpers.
-"""
 # ==============================================================================
 # Program: schemas.py
 # Programmer: Ethan-da-Tech-Wizard
@@ -14,6 +6,15 @@ to_dict (JSON-serializable) helpers.
 #          Implements data structures and algorithms supporting offline
 #          introspection and model execution.
 # ==============================================================================
+
+"""
+Plain dataclasses describing the records the vision subsystem stores.
+
+These are the on-disk / over-the-wire shapes for OCR output, vision-model
+output and the combined per-image record kept by image_store. Each class has
+from_dict (tolerant of missing keys, so older saved records still load) and
+to_dict (JSON-serializable) helpers.
+"""
 
 from __future__ import annotations
 

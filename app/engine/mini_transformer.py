@@ -37,6 +37,7 @@ class CharTokenizer:
         self.itos = {}
 
     def fit(self, text: str):
+        """Build the vocabulary from ``text`` (sorted unique characters; a single space if empty)."""
         # Step 1: Validate input parameters, operational preconditions, and state
         self.chars = sorted(list(set(text)))
         # Ensure at least some characters are present
@@ -47,10 +48,12 @@ class CharTokenizer:
         self.itos = {i: ch for i, ch in enumerate(self.chars)}
 
     def encode(self, s: str) -> list[int]:
+        """Convert a string to ids; unknown characters map to id 0."""
         # Step 1: Validate input parameters, operational preconditions, and state
         return [self.stoi.get(c, 0) for c in s]  # Fallback to index 0 for unknown characters
 
     def decode(self, tokens: list[int]) -> str:
+        """Convert ids back to text; unknown ids are dropped."""
         # Step 1: Validate input parameters, operational preconditions, and state
         return "".join([self.itos.get(i, "") for i in tokens])
 
@@ -63,19 +66,23 @@ class Head(nn.Module):
         self.key = nn.Linear(n_embd, head_size, bias=False)
         self.query = nn.Linear(n_embd, head_size, bias=False)
         self.value = nn.Linear(n_embd, head_size, bias=False)
+        # Lower-triangular mask stored as a buffer: moves with the model but is not trained.
         self.register_buffer("tril", torch.tril(torch.ones(block_size, block_size)))
         self.attn_dropout = nn.Dropout(dropout)
         self.proj_dropout = nn.Dropout(dropout)
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
+        """Return attention output of shape (B, T, head_size) for input x of shape (B, T, n_embd)."""
         # Step 1: Validate input parameters, operational preconditions, and state
         B, T, C = x.shape
         k = self.key(x)    # (B, T, head_size)
         q = self.query(x)  # (B, T, head_size)
         
         # Compute attention scores ("affinities")
+        # Scaled dot-product scores. NOTE: the scale uses C (n_embd), where the original paper uses head_size.
         wei = q @ k.transpose(-2, -1) * (C ** -0.5)  # (B, T, head_size) @ (B, head_size, T) -> (B, T, T)
         # Apply causal masking (prevent looking into the future)
+        # Causal mask: future positions get -inf so softmax gives them zero weight.
         wei = wei.masked_fill(self.tril[:T, :T] == 0, float("-inf"))
         wei = F.softmax(wei, dim=-1)
         wei = self.attn_dropout(wei)
@@ -96,6 +103,7 @@ class MultiHeadAttention(nn.Module):
         self.dropout = nn.Dropout(dropout)
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
+        """Concatenate head outputs, then project back to n_embd with dropout."""
         # Concatenate outputs from all attention heads
         out = torch.cat([h(x) for h in self.heads], dim=-1)
         # Apply projection layer and dropout
@@ -117,6 +125,7 @@ class FeedForward(nn.Module):
         )
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
+        """Apply the MLP to every position independently."""
         # Step 1: Validate input parameters, operational preconditions, and state
         return self.net(x)
 
@@ -126,6 +135,7 @@ class Block(nn.Module):
     def __init__(self, n_embd: int, n_heads: int, block_size: int, dropout: float = 0.1):
         # Step 1: Validate input parameters, operational preconditions, and state
         super().__init__()
+        # Heads split the embedding evenly (n_embd must be divisible by n_heads to keep the width).
         head_size = n_embd // n_heads
         self.sa = MultiHeadAttention(n_heads, n_embd, head_size, block_size, dropout)
         self.ffwd = FeedForward(n_embd, dropout)
@@ -133,7 +143,9 @@ class Block(nn.Module):
         self.ln2 = nn.LayerNorm(n_embd)
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
+        """Apply pre-norm attention and feed-forward with residual (skip) connections."""
         # Pre-LayerNorm formulation (standard in modern architectures)
+        # Adding the input back ("residual") keeps gradients flowing through deep stacks.
         x = x + self.sa(self.ln1(x))
         x = x + self.ffwd(self.ln2(x))
         return x
@@ -142,6 +154,7 @@ class Block(nn.Module):
 class MiniGPT(nn.Module):
     """The main Decoder-Only GPT-style Language Model."""
     def __init__(self, vocab_size: int, n_embd: int = 128, n_heads: int = 4, n_layers: int = 4, block_size: int = 128, dropout: float = 0.1):
+        """Build the embedding tables, transformer blocks, final LayerNorm and output head."""
         # Step 1: Validate input parameters, operational preconditions, and state
         super().__init__()
         self.block_size = block_size
@@ -161,11 +174,13 @@ class MiniGPT(nn.Module):
         self.lm_head = nn.Linear(n_embd, vocab_size)
 
     def forward(self, idx: torch.Tensor, targets: torch.Tensor | None = None) -> tuple[torch.Tensor, torch.Tensor | None]:
+        """Compute logits (B, T, vocab) and, if ``targets`` is given, the cross-entropy loss."""
         # Step 1: Validate input parameters, operational preconditions, and state
         B, T = idx.shape
 
         # idx and targets are both (B, T) tensors of integers
         tok_emb = self.token_embedding_table(idx)  # (B, T, C)
+        # Learned position embedding; adding it gives the model word-order information.
         pos_emb = self.position_embedding_table(torch.arange(T, device=idx.device))  # (T, C)
         
         x = tok_emb + pos_emb  # (B, T, C)
@@ -176,6 +191,7 @@ class MiniGPT(nn.Module):
         loss = None
         if targets is not None:
             B, T, C = logits.shape
+            # cross_entropy expects (N, classes) and (N,), so flatten the batch and time axes.
             logits_flat = logits.view(B * T, C)
             targets_flat = targets.view(B * T)
             loss = F.cross_entropy(logits_flat, targets_flat)
@@ -195,16 +211,20 @@ class MiniGPT(nn.Module):
         Uses temperature and top-k filtering.
         """
         # Step 1: Validate input parameters, operational preconditions, and state
+        # Autoregressive loop: sample one token, append, repeat.
         for _ in range(max_new_tokens):
             # Crop context idx to block_size if it exceeds limits
+            # The position table only has block_size rows, so feed at most the last block_size tokens.
             idx_cond = idx[:, -self.block_size:]
             
             # Forward pass to get logits for the last token
             logits, _ = self(idx_cond)
             # Focus only on the last time step
+            # Only the final position predicts the next token; dividing by temperature sharpens (<1) or flattens (>1) the distribution.
             logits = logits[:, -1, :] / max(temperature, 1e-5)  # (B, vocab_size)
             
             # Optional top-k filtering
+            # Top-k: keep only the k best candidates by setting the rest to -inf before softmax.
             if top_k is not None and top_k > 0:
                 v, _ = torch.topk(logits, min(top_k, logits.size(-1)))
                 logits[logits < v[:, [-1]]] = float("-inf")

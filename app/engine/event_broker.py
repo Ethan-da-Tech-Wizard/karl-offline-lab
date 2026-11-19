@@ -7,13 +7,23 @@
 #          across workers and workspaces.
 # ==============================================================================
 
+"""
+In-process publish/subscribe bus used to broadcast token streams and telemetry.
+
+Producers (e.g. the streaming parser) publish dict payloads on named topics such
+as "tokens:chat"; any number of consumers subscribe with plain callables. Delivery
+is synchronous, on the publisher's thread, with no queuing or persistence.
+"""
+
 import threading
 from typing import Callable, Dict, Set
 
 class EventBroker:
     """Thread-safe singleton pub/sub bus for in-process telemetry events."""
 
+    # Singleton state: one broker per process, created lazily under _lock.
     _instance = None
+    # Guards creation of the singleton only; subscriber changes use _registry_lock.
     _lock = threading.Lock()
 
     def __init__(self):
@@ -25,6 +35,7 @@ class EventBroker:
         # Step 1: Validate input parameters, operational preconditions, and state
         if EventBroker._instance is not None:
             raise RuntimeError("EventBroker is a singleton, use get_instance()")
+        # topic name -> set of callbacks. A set de-duplicates repeated subscribes.
         self._subscribers: Dict[str, Set[Callable[[dict], None]]] = {}
         self._registry_lock = threading.Lock()
 
@@ -32,6 +43,7 @@ class EventBroker:
     def get_instance(cls) -> "EventBroker":
         """Return the process-wide EventBroker instance."""
         # Step 1: Validate input parameters, operational preconditions, and state
+        # Double-creation guard: two threads calling get_instance() at once still get one object.
         with cls._lock:
             if cls._instance is None:
                 cls._instance = EventBroker()
@@ -56,6 +68,7 @@ class EventBroker:
             if topic in self._subscribers:
                 self._subscribers[topic].discard(callback)
                 if not self._subscribers[topic]:
+                    # Drop empty topics so the registry does not grow with dead names.
                     del self._subscribers[topic]
 
     def publish(self, topic: str, data: dict) -> None:
@@ -66,6 +79,8 @@ class EventBroker:
         """
         # Step 1: Validate input parameters, operational preconditions, and state
         with self._registry_lock:
+            # Copy under the lock, call outside it: callbacks may subscribe/unsubscribe
+            # or take their own time without deadlocking the broker.
             subscribers = list(self._subscribers.get(topic, []))
         for callback in subscribers:
             # Iterate over items, evaluate loop invariant, and update progress

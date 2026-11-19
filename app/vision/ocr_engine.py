@@ -1,10 +1,3 @@
-"""
-OCR via the locally installed Tesseract command-line program.
-
-Nothing is bundled or downloaded: if the ``tesseract`` executable is not on
-PATH the engine reports itself unavailable and analyze() returns an empty
-result carrying an error box instead of raising.
-"""
 # ==============================================================================
 # Program: ocr_engine.py
 # Programmer: Ethan-da-Tech-Wizard
@@ -13,6 +6,14 @@ result carrying an error box instead of raising.
 #          Implements data structures and algorithms supporting offline
 #          introspection and model execution.
 # ==============================================================================
+
+"""
+OCR via the locally installed Tesseract command-line program.
+
+Nothing is bundled or downloaded: if the ``tesseract`` executable is not on
+PATH the engine reports itself unavailable and analyze() returns an empty
+result carrying an error box instead of raising.
+"""
 
 from __future__ import annotations
 
