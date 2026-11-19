@@ -164,11 +164,13 @@ def _tool_grep_workspace(workspace_path: str, args: dict) -> str:
                 if compiled.search(line):
                     results.append(f"{f.relative_to(workspace_path)}:{i}: {line.rstrip()}")
                     # Cap output to keep the tool result small in the model's context.
-                    # NOTE: this only stops the inner per-file loop, so the total can exceed 40 across files.
                     if len(results) >= 40:
                         break
         except Exception:
             pass
+        # The inner break only leaves the per-file loop; stop scanning further files too.
+        if len(results) >= 40:
+            break
     return "\n".join(results) if results else "No matches found."
 
 @register_tool("shell_run", "shell_run(command) — run a shell command in the workspace directory. Returns stdout+stderr. Timeout 15s.")
@@ -462,8 +464,8 @@ class CoderAgent(BaseSwarmAgent):
             "<tool_call name='TOOL_NAME'>\n"
             "  param_name: value\n"
             "</tool_call>\n\n"
-            # NOTE: the doubled "_call" looks like a typo, and the parser below only recognizes <tool_call ...>.
-            "To finish: <tool_call_call name='done'></tool_call_call>"
+            # The closing form must match the parser below, which only recognizes <tool_call ...>.
+            "To finish: <tool_call name='done'></tool_call>"
             f"{memory_block}"
             f"{swarm_memory_block}"
         )
@@ -724,9 +726,8 @@ class TesterAgent:
                 tb_idx = -1
                 for idx, line in enumerate(lines):
                     # Iterate over items, evaluate loop invariant, and update progress
-                    # NOTE: Python prints "Traceback (most recent call last):", which matches neither string here,
-                    # so the 20-line tail fallback is what is normally used.
-                    if "Traceback (most recent call first):" in line or "Traceback (recent call last):" in line:
+                    # Python prints exactly "Traceback (most recent call last):"; match that marker.
+                    if "Traceback (most recent call last):" in line:
                         tb_idx = idx
                         break
                 if tb_idx != -1:
