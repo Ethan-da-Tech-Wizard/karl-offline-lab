@@ -45,6 +45,8 @@ def missing_packages() -> list[str]:
     # Step 1: Validate input parameters, operational preconditions, and state
     required = ["peft", "trl", "transformers", "datasets", "torch"]
     missing = [pkg for pkg in required if importlib.util.find_spec(pkg) is None]
+    # bitsandbytes is checked separately from the list above: it is only needed for 4-bit loading
+    # and is the package most likely to be missing or unbuildable on Windows/Apple hardware.
     if importlib.util.find_spec("bitsandbytes") is None:
         missing.append("bitsandbytes")
     return missing
@@ -77,6 +79,8 @@ def resolve_base_model(explicit: str | None) -> Path:
             "No HuggingFace model folders found in data/hf_models/. "
             "Download a Llama/Qwen-compatible base model or pass --base-model."
         )
+    # Sorted so the choice is deterministic across filesystems; with several models present the
+    # user should pass --base-model explicitly instead of relying on this default.
     return sorted(candidates)[0]
 
 
@@ -95,6 +99,8 @@ def validate_dataset(path: Path) -> int:
             line = line.strip()
             if not line:
                 continue
+            # A bad JSON line raises (caller reports it) rather than being skipped: silently dropping
+            # rows would make the reported example count and the actual training set disagree.
             obj = json.loads(line)
             messages = obj.get("messages")
             if not isinstance(messages, list) or len(messages) < 2:
@@ -134,6 +140,7 @@ def build_sft_config_kwargs(args: argparse.Namespace, checkpoint_dir: Path) -> d
     # Step 1: Validate input parameters, operational preconditions, and state
     return {
         "output_dir": str(checkpoint_dir),
+        # Matches the "text" column produced by format_row() in train().
         "dataset_text_field": "text",
         "max_length": args.max_length,
         # Pack several short samples into one sequence for GPU efficiency.
@@ -210,10 +217,13 @@ def train(args: argparse.Namespace) -> Path:
     adapter_dir = Path(args.output_dir).expanduser()
     adapter_dir.mkdir(parents=True, exist_ok=True)
 
+    # trust_remote_code runs Python shipped inside the model folder; only point --base-model at
+    # weights you obtained and reviewed yourself.
     tokenizer = AutoTokenizer.from_pretrained(str(base_model), trust_remote_code=True)
     # Many causal LMs have no pad token; reuse EOS so batching/packing works.
     if tokenizer.pad_token is None:
         tokenizer.pad_token = tokenizer.eos_token
+    # Right padding is the safe choice for training (left padding is for batched generation).
     tokenizer.padding_side = "right"
 
     raw_dataset = load_dataset("json", data_files=str(dataset_path), split="train")
@@ -240,6 +250,8 @@ def train(args: argparse.Namespace) -> Path:
         load_in_4bit=True,
         bnb_4bit_quant_type="nf4",
         bnb_4bit_compute_dtype=torch.float16,
+        # Double quantisation also quantises the quantisation constants, saving roughly another
+        # 0.4 bits/parameter, which matters on 8 GB-class GPUs.
         bnb_4bit_use_double_quant=True,
     )
 
@@ -270,6 +282,8 @@ def train(args: argparse.Namespace) -> Path:
     # KV cache is incompatible with gradient checkpointing during training.
     model.config.use_cache = False
 
+    # Checkpoints live under the adapter dir so --keep-checkpoints keeps them next to the result,
+    # and the default cleanup removes exactly this folder and nothing else.
     checkpoint_dir = adapter_dir / "checkpoints"
     sft_kwargs = filter_kwargs_for_class(build_sft_config_kwargs(args, checkpoint_dir), SFTConfig)
     training_args = SFTConfig(**sft_kwargs)
@@ -282,6 +296,8 @@ def train(args: argparse.Namespace) -> Path:
     )
     trainer.train()
 
+    # Saves only the LoRA adapter weights (small), not the 4-bit base model; the tokenizer is
+    # saved alongside so the adapter folder is self-describing.
     trainer.model.save_pretrained(str(adapter_dir))
     tokenizer.save_pretrained(str(adapter_dir))
     with (adapter_dir / "train_history.json").open("w", encoding="utf-8") as fh:
@@ -316,10 +332,14 @@ def main() -> int:
         default="auto",
         help="Comma-separated LoRA target modules, or 'auto' to detect projections from the model",
     )
+    # Cleanup is the default (store_false flag flips it off) because per-epoch checkpoints can
+    # be several times larger than the final adapter.
     parser.add_argument("--keep-checkpoints", dest="clean_checkpoints", action="store_false")
     parser.set_defaults(clean_checkpoints=True)
     args = parser.parse_args()
 
+    # Dependencies are checked before the dataset so a missing install is reported first, with
+    # install instructions, instead of as an obscure ImportError deep inside train().
     missing = missing_packages()
     if missing:
         print_install_instructions(missing)
@@ -346,6 +366,8 @@ def main() -> int:
 
     try:
         # Execute guarded operations and establish recovery boundaries
+        # train() imports torch/trl lazily, so import-time failures also surface here as a clean
+        # "Training failed" message with exit code 1.
         adapter_dir = train(args)
     except Exception as exc:
         print(f"Training failed: {exc}", file=sys.stderr)
