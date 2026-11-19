@@ -98,14 +98,14 @@ class _TpsChart(QWidget):
         """Record one telemetry reading and schedule a repaint.
 
         tokens_per_second is plotted; cumulative_tokens is only shown in the caption.
-        Negative speeds are clamped to 0 for the plot, but the caption shows the raw value.
+        Negative speeds are clamped to 0 for both the plot and the caption.
         """
         # Clamp to >= 0 so a glitchy reading cannot draw below the baseline.
         self._samples.append(max(0.0, tokens_per_second))
         # Keep only the newest 60 samples so the line is a sliding window, not an ever-growing history.
         self._samples = self._samples[-60:]
-        # The caption uses the unclamped value, so it always reflects what was reported.
-        self._latest_tps = tokens_per_second
+        # A negative speed is meaningless (timer glitch); clamp the caption too so it never shows "-12.0 tok/s".
+        self._latest_tps = max(0.0, tokens_per_second)
         self._cumulative_tokens = cumulative_tokens
         # update() queues a paintEvent; never call paintEvent directly.
         self.update()
@@ -179,6 +179,8 @@ class SwarmStudioWorkspace(QWidget):
         self.setObjectName("workspace-root")
         # The running orchestrator thread, or None when idle.
         self._thread: SwarmOrchestratorThread | None = None
+        # File header currently being streamed (None until the first coder token of a run).
+        self._stream_current_file = None
         # Wall-clock start time of the run; drives the elapsed-time label.
         self._started_at = 0.0
         # Run bookkeeping, cleared by _reset_run_ui (see the file header for what each holds).
@@ -1034,7 +1036,7 @@ class SwarmStudioWorkspace(QWidget):
         self._cherry_pick_group.setVisible(False)
         self._commit_btn.setEnabled(False)
         self._stream_view.clear()
-        # Initialised here (not in __init__); _on_coder_token reads it via getattr for safety.
+        # Reset per run; also initialised in __init__ so it always exists.
         self._stream_current_file = None
         self._cognition_log.clear()
         self._active_filepaths = []
@@ -1663,7 +1665,10 @@ class SwarmStudioWorkspace(QWidget):
         if self._thread and self._thread.isRunning():
             # Asking for a stop first lets the thread finish its current step.
             self._thread.request_stop()
-            # Note: wait() has no timeout, so closing can block until the thread exits.
-            self._thread.wait()
+            # Bounded wait so a hung model call cannot freeze window close forever.
+            if not self._thread.wait(3000):
+                # Last resort: destroying a still-running QThread aborts the process, so force it down.
+                self._thread.terminate()
+                self._thread.wait(1000)
         # Always run the parent close handler.
         super().closeEvent(event)
