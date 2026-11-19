@@ -7,6 +7,18 @@
 #          offload layers according to hardware.
 # ==============================================================================
 
+"""Model lifecycle management for Karl.
+
+Contents:
+  * ModelMemoryError / CircuitBreakerOpenException - failure types raised to callers.
+  * ModelCircuitBreaker - CLOSED/OPEN/HALF_OPEN guard that stops repeated, expensive
+    failed loads (VRAM/RAM exhaustion) from hammering the machine.
+  * ModelLoader - process-wide singleton (class-level state guarded by an RLock) that
+    loads GGUF models through llama-cpp-python, applies LoRA adapters, handles
+    GPU-offload/context fallbacks, optional draft-model speculative decoding,
+    optional remote-RPC fallback, KV prompt caching and idle offloading.
+All state lives on the class, so any thread can call ModelLoader.get_instance().
+"""
 import json
 import logging
 import os
@@ -22,6 +34,7 @@ from app.engine.remote_rpc_client import RemoteRPCError, RemoteRPCModel
 from core.hardware_scout import get_hardware_profile
 
 
+# Namespaced logger so the app can filter model-loading messages independently.
 logger = logging.getLogger("karl.model_loader")
 
 
@@ -137,6 +150,8 @@ class ModelCircuitBreaker:
 
 
 
+# Marker wrapper so ModelLoader can recognize an adapter-wrapped draft model when
+# wiring speculative decoding; it adds no behavior of its own.
 class _LlamaDraftModelAdapter:
     """Compatibility marker for speculative draft-model integration."""
 
@@ -148,26 +163,37 @@ class _LlamaDraftModelAdapter:
 class ModelLoader:
     """Thread-safe singleton manager for llama-cpp model instances."""
 
+    # --- Class-level (process-wide) state. Everything here is shared by all callers and
+    # must only be mutated while holding `_lock` (re-entrant, since loaders call each other).
+    # The breaker protects against repeated terminal load failures.
     _instance = None
     _lock = threading.RLock()
     _circuit_breaker = ModelCircuitBreaker()
+    # Optional draft-model (speculative decoding) bookkeeping.
     _draft_model_path: str | None = None
     _draft_instance = None
     _draft_n_ctx: int | None = None
     _draft_n_gpu_layers: int | None = None
+    # Remote RPC model used instead of a local Llama when configured / as a fallback.
     _remote_instance = None
     _remote_fallback_reason: str | None = None
+    # Fraction of available memory a load plan may use; the 8% headroom leaves room for
+    # the OS, the KV cache and fragmentation.
     _MEMORY_SAFETY_MARGIN = 0.92
+    # Generation lock: while locked, the loaded model must not be swapped or offloaded.
     _instance_locked = False
     _active_generation_count: int = 0   # incremented by lock_instance, decremented by unlock_instance
+    # Diagnostics captured around the last load (tokenizer vocab leaks, timing, PCIe bandwidth).
     _vocab_leak_report: dict = {}
     _load_latency_s: float | None = None
     _vram_bandwidth_gbs: float | None = None
+    # Idle-offload bookkeeping: lets the watcher free VRAM when the model is unused.
     _backend_freed: bool = False
     _last_activity_time: float = 0.0
     _adapter_offloaded: bool = False
     _offloaded_adapter_name: str | None = None
     _idle_watcher_started: bool = False
+    # Identity of the currently loaded model; set by get_instance() on first load.
     # Set inside get_instance() on first load
     _model_path: str | None = None
     _active_adapter: str | None = None
@@ -185,6 +211,7 @@ class ModelLoader:
 
     @classmethod
     def _registry_entry(cls, filename: str) -> dict:
+        # Return the registry dict for `filename`, or {} if it is not registered.
         # Step 1: Validate input parameters, operational preconditions, and state
         for entry in config_store.get_model_registry():
             # Iterate over items, evaluate loop invariant, and update progress
@@ -193,6 +220,7 @@ class ModelLoader:
         return {}
 
     @staticmethod
+    # Interpret config/env values ("1", "true", "yes", "on", bools) as a boolean.
     def _truthy(value) -> bool:
         # Step 1: Validate input parameters, operational preconditions, and state
         if isinstance(value, bool):
@@ -202,6 +230,8 @@ class ModelLoader:
         return bool(value)
 
     @classmethod
+    # Quantized (q8_0) KV cache is opt-in. Precedence: KARL_QUANTIZED_KV_CACHE env var,
+    # then ui_config.json, then active_model.json.
     def _quantized_kv_cache_enabled(cls) -> bool:
         # Step 1: Validate input parameters, operational preconditions, and state
         env_value = os.environ.get("KARL_QUANTIZED_KV_CACHE")
@@ -218,6 +248,8 @@ class ModelLoader:
         return False
 
     @staticmethod
+    # GGML type id for q8_0 (used for type_k/type_v); falls back to the literal 8 for
+    # llama-cpp-python builds that don't export the constant.
     def _ggml_type_q8_0() -> int:
         # Step 1: Validate input parameters, operational preconditions, and state
         try:
@@ -228,6 +260,8 @@ class ModelLoader:
             return 8
 
     @classmethod
+    # Locate a LoRA adapter file for `adapter_name`, trying the several layouts the
+    # trainers produce (per-adapter dir or flat files; .bin or .gguf). None if not found.
     def _adapter_path(cls, adapter_name: str | None) -> str | None:
         # Step 1: Validate input parameters, operational preconditions, and state
         if not adapter_name:
@@ -247,6 +281,8 @@ class ModelLoader:
         return None
 
     @classmethod
+    # Use the requested model if it exists, else fall back to the bundled test model;
+    # raise FileNotFoundError with remediation text when neither is present.
     def _resolve_model_path(cls, model_path: str) -> str:
         # Step 1: Validate input parameters, operational preconditions, and state
         if os.path.exists(model_path):
@@ -374,6 +410,9 @@ class ModelLoader:
         seen_ids: set[int] = set()
         seen_texts: set[str] = set()
 
+        # Each parser below tolerates a missing/corrupt file (logs at debug and moves on)
+        # because adapters vary in which tokenizer files they ship; de-duplication is by
+        # both id and text so the same token from two files is only reported once.
         # ── tokenizer.json → added_tokens array ──────────────────────────────
         tj_path = os.path.join(adapter_dir, "tokenizer.json")
         if os.path.isfile(tj_path):
@@ -516,6 +555,8 @@ class ModelLoader:
         leaks: list[dict] = []
         clean: list[dict] = []
 
+        # Classify each adapter special token: "hard leak" (maps to <unk> or beyond the vocab),
+        # "fragmented" (split into several pieces; softer degradation) or "clean".
         for entry in special_tokens:
             # Iterate over items, evaluate loop invariant, and update progress
             content    = entry["content"]
@@ -592,6 +633,8 @@ class ModelLoader:
                     "source":      entry.get("source"),
                 })
 
+        # Build the report and (below) persist it on the class so later callers
+        # (e.g. prompt building) can ask which adapter tokens are unsafe to inject.
         report = {
             "adapter":  adapter_name,
             "checked":  len(special_tokens),
@@ -602,6 +645,7 @@ class ModelLoader:
         }
         cls._vocab_leak_report = report
 
+        # Only hard leaks are warned loudly; soft (fragmented) ones are informational.
         hard_leaks = [e for e in leaks if e["unk_hit"] or e["out_of_vocab"]]
         if hard_leaks:
             logger.warning(
@@ -666,6 +710,7 @@ class ModelLoader:
         file_gb = os.path.getsize(resolved_path) / (1024 ** 3)
 
         # KV cache grows roughly with context. This is a practical guardrail, not a
+        # KV cache grows roughly with context. This is a practical guardrail, not a
         # llama.cpp memory profiler.
         kv_cache_gb = max(0.25, (n_ctx / 4096.0) * 0.35)
         adapter_path = cls._adapter_path(adapter_name)
@@ -677,10 +722,14 @@ class ModelLoader:
             except OSError as exc:
                 logger.debug("could not stat adapter file %s: %s", adapter_path, exc)
 
+        # RAM estimate: 20% overhead on the weights (mmap/copy/runtime buffers), plus KV
+        # cache, adapter and a fixed 0.75 GB for the process itself; never below the
+        # registry's declared minimum.
         estimated_ram_gb = max(
             float(entry.get("min_ram_gb") or 0.0),
             (file_gb * 1.20) + kv_cache_gb + adapter_gb + 0.75,
         )
+        # VRAM estimate: with n_gpu_layers=-1 everything is offloaded, so weights + KV + adapter.
         estimated_vram_gb = max(
             float(entry.get("min_vram_gb") or 0.0),
             file_gb + kv_cache_gb + adapter_gb,
@@ -712,6 +761,8 @@ class ModelLoader:
 
     @classmethod
     def _show_memory_warning_dialog(cls, message: str):
+        # Dialogs may only be created on the Qt GUI thread; from worker threads this
+        # silently does nothing (the failure is still raised/logged by the caller).
         # Step 1: Validate input parameters, operational preconditions, and state
         try:
             # Execute guarded operations and establish recovery boundaries
@@ -740,10 +791,13 @@ class ModelLoader:
         """
         # Step 1: Validate input parameters, operational preconditions, and state
         plan = cls.estimate_load_memory(model_path, adapter_name)
+        # Explicit operator override for deliberately loading a model that may not fit.
         if os.environ.get("KARL_ALLOW_OVERSIZED_MODEL") == "1":
             plan["allowed_by_override"] = True
             return plan
 
+        # A zero "available" value means the hardware probe failed, so that check is
+        # skipped rather than blocking every load.
         failures = []
         available_ram = plan["available_ram_gb"]
         available_vram = plan["available_vram_gb"]
@@ -786,6 +840,9 @@ class ModelLoader:
             return
         cls._idle_watcher_started = True
 
+        # Background daemon: every 30 s, if the model has been idle for 5 minutes and no
+        # generation is in flight, detach the LoRA adapter to free VRAM. get_instance()
+        # lazily reloads it on the next call (see _adapter_offloaded).
         def _watcher():
             # Step 1: Validate input parameters, operational preconditions, and state
             while True:
@@ -849,6 +906,7 @@ class ModelLoader:
         """
         # Step 1: Validate input parameters, operational preconditions, and state
         with cls._lock:
+            # Mark this as an active inference call for the idle watcher.
             # Mark this as an active inference call for the idle watcher.
             cls._last_activity_time = time.time()
 
@@ -926,11 +984,13 @@ class ModelLoader:
                     return remote
             # ── End Remote Engine Mode ──────────────────────────────────────
 
+            # No explicit model requested: use the persisted selection (data/active_model.json).
             if model_path is None:
                 active = config_store.get_active_model()
                 model_path = os.path.join("data", "models", active["filename"])
                 if adapter_name is None:
                     adapter_name = active["adapter"]
+            # Resolve the speculative-decoding draft model (explicit arg wins over config).
             if draft_model_path is None:
                 draft_cfg = config_store.get_active_draft_model()
                 draft_n_ctx = int(draft_cfg.get("n_ctx", cls._n_ctx) or cls._n_ctx)
@@ -959,6 +1019,7 @@ class ModelLoader:
             current_adapter = getattr(cls, "_active_adapter", None)
 
             # change speculative draft model only when requested draft path differs
+            # change speculative draft model only when requested draft path differs
             needs_draft_reload = (
                 draft_model_path != getattr(cls, '_draft_model_path', None) or
                 (
@@ -969,12 +1030,16 @@ class ModelLoader:
                 )
             )
 
+            # A reload is needed when nothing is loaded yet, the model path changed, or the
+            # requested adapter differs from the one currently applied.
             needs_reload = (
                 cls._instance is None or
                 (model_path is not None and model_path != current_model_path) or
                 (adapter_name != current_adapter)
             )
 
+            # Reload path: the circuit breaker may reject the attempt, and a reload is
+            # refused outright while any generation is using the current instance.
             if needs_reload or needs_draft_reload:
                 cls._circuit_breaker.before_call()
 
@@ -993,6 +1058,9 @@ class ModelLoader:
                 # before loading a massive model.
                 import subprocess
                 import sys
+                # NOTE: this one-line probe script is only a best-effort check. Run in a
+                # subprocess so a SIGILL/SIGSEGV from an incompatible llama.cpp build kills the
+                # child, not Karl. (Exit codes 132/139 are interpreted below.)
                 check_script = (
                     "import sys; "
                     "try: "
@@ -1023,6 +1091,8 @@ class ModelLoader:
                     pass # Ignore timeouts for pre-flight check
                 # ─────────────────────────────────────────────────────────
 
+                # Memory guard first: refuse before tearing down the working model, otherwise a
+                # failed load would leave the user with no model at all.
                 n_ctx = cls._read_registry_n_ctx(model_name)
                 try:
                     # Execute guarded operations and establish recovery boundaries
@@ -1031,6 +1101,7 @@ class ModelLoader:
                     cls._circuit_breaker.record_failure(exc)
                     raise
 
+                # Release the old instance and GPU memory before allocating the new one.
                 if cls._instance is not None:
                     try:
                         # Execute guarded operations and establish recovery boundaries
@@ -1050,6 +1121,7 @@ class ModelLoader:
                 except ImportError:
                     pass
 
+                # Record the new identity before loading so concurrent readers see consistent state.
                 cls._model_path = model_path
                 cls._model_name = model_name
                 cls._n_ctx = n_ctx
@@ -1058,6 +1130,7 @@ class ModelLoader:
                 lora_path = cls._adapter_path(adapter_name)
 
                 # ── Multi-GPU VRAM Telemetry & Tensor Split ───────────────────
+                # Multi-GPU: split layers across devices in proportion to each GPU's free VRAM.
                 _gpu_list = get_hardware_profile().get("gpu_list", [])
                 tensor_split: list[float] | None = None
                 if len(_gpu_list) > 1:
@@ -1077,6 +1150,9 @@ class ModelLoader:
                 _reg_entry = cls._registry_entry(model_name)
                 n_batch = int(_reg_entry.get("n_batch", 512))
 
+                # Single load attempt with the full llama.cpp parameter set. Notable choices:
+                # n_gpu_layers=-1 (offload everything), flash attention, mmap+mlock for
+                # predictable residency, and cpu_count-2 threads to keep the UI responsive.
                 def _attempt_load(ctx_size, ts=None):
                     # Step 1: Validate input parameters, operational preconditions, and state
                     threads = max(1, multiprocessing.cpu_count() - 2)
@@ -1094,6 +1170,7 @@ class ModelLoader:
                         use_mmap=True,
                         use_mlock=True,
                     )
+                    # Adapter/split/KV-quantization options are only added when applicable.
                     if lora_path:
                         kwargs["lora_path"] = lora_path
                         logger.info(
@@ -1117,6 +1194,7 @@ class ModelLoader:
                             "Enabling 8-bit quantized KV cache (Q8_0) for long-context execution."
                         )
                     
+                    # Older llama-cpp-python builds reject type_k/type_v: retry with the default F16 KV cache.
                     try:
                         # Execute guarded operations and establish recovery boundaries
                         return Llama(**kwargs)
@@ -1131,6 +1209,8 @@ class ModelLoader:
                             return Llama(**kwargs)
                         raise
                     except (OSError, RuntimeError) as e:
+                        # Detect mlock privilege/limit failures: memory locking can fail on hosts with a
+                        # low `ulimit -l`; retry without mlock rather than failing the load entirely.
                         # Detect mlock privilege/limit failures
                         err_msg = str(e).lower()
                         if "mlock" in err_msg or "locked memory" in err_msg:
@@ -1148,6 +1228,8 @@ class ModelLoader:
                         raise # Re-raise OOM or other errors for the fallback loop to handle
 
                 # ── llama-cpp backend reinit after deep eviction ──────────────
+                # After reset_instance() freed the llama.cpp backend, it must be re-initialised
+                # before the next model can load.
                 if cls._backend_freed:
                     try:
                         # Execute guarded operations and establish recovery boundaries
@@ -1173,6 +1255,7 @@ class ModelLoader:
 
                 # ── Fallback Context Scaling Loop ─────────────────────────────
                 # If loading fails due to VRAM/RAM exhaustion, halve n_ctx and retry.
+                # Start from the registry's n_ctx and halve (down to 2048) on allocation failure.
                 current_n_ctx = cls._n_ctx
                 min_ctx = 2048
                 cls._instance = None
@@ -1231,6 +1314,7 @@ class ModelLoader:
                             pass
                 # ─────────────────────────────────────────────────────────────
 
+                # Human-readable summary of the load for the log / status bar.
                 _bw_str = (
                     f"{cls._vram_bandwidth_gbs:.1f} GB/s"
                     if cls._vram_bandwidth_gbs is not None
@@ -1242,6 +1326,7 @@ class ModelLoader:
                     _bw_str,
                 )
 
+                # Attach the prompt cache only after the model is live (it needs the instance).
                 # ── KV Prompt Cache ───────────────────────────────────────────
                 cls._attach_kv_cache()
                 # ─────────────────────────────────────────────────────────────
@@ -1255,6 +1340,9 @@ class ModelLoader:
                     cls._vocab_leak_report = {}
                 # ─────────────────────────────────────────────────────────────
 
+                # Speculative decoding: (re)build the draft model and, if it loads, re-create the
+                # primary model wired to it. Any failure degrades to normal decoding and
+                # auto-disables the draft setting so the failure doesn't repeat on every load.
                 if needs_reload or needs_draft_reload:
                     # Tear down existing draft
                     if cls._draft_instance is not None:
@@ -1345,9 +1433,12 @@ class ModelLoader:
                             except Exception as config_err:
                                 logger.warning(f"Failed to auto-disable speculative decoding in config: {config_err}")
 
+                    # Remember what the draft state is so an unchanged request skips the reload next time.
                     cls._draft_model_path = draft_model_path
                     cls._draft_n_ctx = draft_n_ctx
                     cls._draft_n_gpu_layers = draft_n_gpu_layers
+                # A fully successful load closes the circuit breaker; the idle watcher is then
+                # ensured running and the shared instance is returned.
                 cls._circuit_breaker.record_success()
             cls._start_idle_watcher()
             return cls._instance
@@ -1363,6 +1454,8 @@ class ModelLoader:
             cls._raise_if_inference_active("reset ModelLoader")
             cls._instance_locked = False
 
+            # Teardown order matters for reclaiming VRAM: cache -> handles -> GC -> CUDA
+            # allocator -> llama.cpp backend (numbered steps below).
             # 1. Release KV-cache memory before closing the Llama handle.
             if cls._instance is not None:
                 try:
@@ -1423,6 +1516,7 @@ class ModelLoader:
 
     # ── KV Prompt Cache Management ────────────────────────────────────────────
 
+    # --- KV prompt cache sizing helpers ---
     @staticmethod
     def _free_vram_mb() -> float | None:
         """Return the minimum free VRAM (MB) across all GPUs, or None."""
@@ -1456,6 +1550,7 @@ class ModelLoader:
             )
             return
 
+        # Cache budget: a quarter of the tightest GPU's free VRAM, clamped to 256 MB..2 GB.
         _256_mb = 256 * (1 << 20)
         _2_gb   =   2 * (1 << 30)
         if free_mb is not None:
@@ -1472,6 +1567,7 @@ class ModelLoader:
             logger.warning("Failed to attach KV prompt cache: %s", exc)
 
     @classmethod
+    # Replacing the cache with a fresh one discards all cached prompt prefixes.
     def clear_cache(cls) -> None:
         """Clear prompt cache to force fresh generation."""
         # Step 1: Validate input parameters, operational preconditions, and state
@@ -1482,6 +1578,7 @@ class ModelLoader:
     # ─────────────────────────────────────────────────────────────────────────
 
     @classmethod
+    # Guard used by reset/reload paths so a model is never torn down under a live generation.
     def _raise_if_inference_active(cls, operation: str = "reset ModelLoader") -> None:
         """Raise RuntimeError if any generation is in flight."""
         # Step 1: Validate input parameters, operational preconditions, and state
@@ -1494,6 +1591,8 @@ class ModelLoader:
             )
 
     @classmethod
+    # Reference-counted generation lock: every lock_instance() must be matched by an
+    # unlock_instance(); the instance counts as "locked" while any generation is active.
     def lock_instance(cls) -> None:
         """Mark the singleton as in-use by an active generation."""
         # Step 1: Validate input parameters, operational preconditions, and state
@@ -1527,6 +1626,8 @@ class ModelLoader:
         return llm
 
     @classmethod
+    # Remote engine failures are sticky: remote mode is switched off in config (so the
+    # next call uses the local model) and the reason is kept for the UI to display.
     def _remote_fallback(cls, reason: str) -> None:
         """Disable remote inference after a failure and remember the reason."""
         # Step 1: Validate input parameters, operational preconditions, and state
@@ -1543,6 +1644,7 @@ class ModelLoader:
 
     @classmethod
     def last_remote_fallback_reason(cls) -> str | None:
+        """Return why remote inference was last disabled, or None if it never was."""
         # Step 1: Validate input parameters, operational preconditions, and state
         return cls._remote_fallback_reason
 
@@ -1585,6 +1687,8 @@ class ModelLoader:
             # remote bridge owns that). Skip straight to the registry-based
             # estimate below rather than trusting a stale local Llama
             # instance left over from before remote mode was enabled.
+            # Resolution order for n_ctx: live Llama instance -> registry value for the active
+            # model -> last known class value -> 4096 default.
             if cls._instance is not None and cls._remote_instance is None:
                 try:
                     # Execute guarded operations and establish recovery boundaries
@@ -1657,6 +1761,7 @@ class ModelLoader:
         return {}
 
     @classmethod
+    # --- Registry-derived metadata for the loaded model ---
     def get_quantization(cls) -> str | None:
         """Return quantization level from the registry entry for the loaded model."""
         # Step 1: Validate input parameters, operational preconditions, and state
