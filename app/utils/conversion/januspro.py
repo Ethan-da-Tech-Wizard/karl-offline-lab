@@ -35,6 +35,8 @@ class JanusProModel(LlamaModel):
         name, gen = item
 
         # Skip vision, aligner, and generation tensors
+        # Non-text components of Janus-Pro: the vision tower, aligner, VQ image tokenizer and
+        # the image-generation branch; the text GGUF needs none of them.
         skip_prefixes = (
             'model.vision_model.',
             'model.aligner.',
@@ -58,6 +60,7 @@ class JanusProVisionModel(MmprojModel):
         super().__init__(*args, **kwargs)
         assert self.hparams_vision is not None
         if "intermediate_size" not in self.hparams_vision:
+            # intermediate_size = hidden_size * mlp_ratio (rounded) when not given explicitly.
             mlp_ratio = self.hparams_vision.get("mlp_ratio")
             hidden_size = self.hparams_vision.get("hidden_size")
             if mlp_ratio is not None and hidden_size is not None:
@@ -73,6 +76,7 @@ class JanusProVisionModel(MmprojModel):
 
         self.gguf_writer.add_vision_attention_layernorm_eps(self.hparams_vision.get("layer_norm_eps", 1e-6))
 
+        # Only GELU and SiLU activations are supported by the runtime; others write nothing.
         hidden_act = str(self.hparams_vision.get("hidden_act", "")).lower()
         if hidden_act == "gelu":
             self.gguf_writer.add_vision_use_gelu(True)
@@ -87,12 +91,14 @@ class JanusProVisionModel(MmprojModel):
         suffix = ".bias" if name.endswith(".bias") else ".weight"
 
         if name.startswith("model.aligner."):
+            # Strip the aligner prefix (HF with or without the "model." wrapper).
             local_name = name[len("model.aligner."):]
         elif name.startswith("aligner."):
             local_name = name[len("aligner."):]
         else:
             raise ValueError(f"Unsupported Janus aligner prefix: {name}")
 
+        # fc1 is the first projector layer (index 0); hidden_layers.N are layers N + 1.
         if local_name.startswith("fc1."):
             mm_index = 0
         elif local_name.startswith("hidden_layers."):
@@ -113,6 +119,8 @@ class JanusProVisionModel(MmprojModel):
         name, gen = item
 
         # Skip generation-related components
+        # Image generation (VQ model, generation embeddings/aligner/head) is not needed for
+        # image understanding; prefixes appear with and without "model.".
         skip_generation_prefixes = (
             'model.vqmodel.',
             'vqmodel.',

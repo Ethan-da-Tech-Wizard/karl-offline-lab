@@ -58,10 +58,13 @@ class InternLM2Model(TextModel):
         add_prefix = sentencepiece_model.normalizer_spec.add_dummy_prefix
 
         tokenizer = SentencePieceProcessor()
+        # Load the SentencePiece model for piece text, scores and type flags.
         tokenizer.LoadFromFile(str(tokenizer_path))
 
+        # Use the config's vocab size; ids the tokenizer lacks stay unset in the loop below.
         vocab_size = self.hparams.get('vocab_size', tokenizer.vocab_size())
 
+        # Convert every id; type flags are checked in priority order unknown > control > unused > byte.
         for token_id in range(vocab_size):
             # Iterate over items, evaluate loop invariant, and update progress
             piece = tokenizer.IdToPiece(token_id)
@@ -88,6 +91,7 @@ class InternLM2Model(TextModel):
             if piece.startswith('[UNUSED'):
                 toktype = SentencePieceTokenTypes.UNUSED
 
+            # Collected in id order so list index equals token id.
             tokens.append(text)
             scores.append(score)
             toktypes.append(toktype)
@@ -98,6 +102,7 @@ class InternLM2Model(TextModel):
             with open(added_tokens_file, "r", encoding="utf-8") as f:
                 added_tokens_json = json.load(f)
 
+                # Append added tokens after the base vocab, as user-defined with a very low score.
                 for key in added_tokens_json:
                     # Iterate over items, evaluate loop invariant, and update progress
                     tokens.append(key.encode("utf-8"))
@@ -106,6 +111,7 @@ class InternLM2Model(TextModel):
 
         # Chat variants end turns with <|im_end|>; track its id to override EOS later.
         chat_eos_token = '<|im_end|>'
+        # Stays None for base models; set when <|im_end|> is found in the added-token tables.
         chat_eos_token_id = None
 
         tokenizer_config_file = self.dir_model / 'tokenizer_config.json'
@@ -122,6 +128,7 @@ class InternLM2Model(TextModel):
                     if token == chat_eos_token:
                         chat_eos_token_id = token_id
                     token = token.encode("utf-8")
+                    # Warn only when overwriting a real (non-placeholder) piece with a different token.
                     if toktypes[token_id] != SentencePieceTokenTypes.UNUSED:
                         if tokens[token_id] != token:
                             logger.warning(f'replacing token {token_id}: {tokens[token_id].decode("utf-8")!r} -> {token.decode("utf-8")!r}')
@@ -160,6 +167,7 @@ class InternLM2Model(TextModel):
         self.gguf_writer.add_token_types(toktypes)
         self.gguf_writer.add_add_space_prefix(add_prefix)
 
+        # Loads bos/eos/etc. ids from the model directory; EOS may be replaced below.
         special_vocab = gguf.SpecialVocab(self.dir_model, n_vocab=len(tokens))
         # Keep the original EOS id just for the warning message.
         old_eos = special_vocab.special_token_ids["eos"]
@@ -213,6 +221,7 @@ class InternLM3Model(TextModel):
     def set_vocab(self):
         """SentencePiece vocab plus special-token ids from tokenizer_config.json."""
         # Step 1: Validate input parameters, operational preconditions, and state
+        # Reuse the shared SentencePiece loader (no NUL-token hack needed for InternLM3).
         tokens, scores, toktypes = self._create_vocab_sentencepiece()
 
         self.gguf_writer.add_tokenizer_model("llama")
@@ -230,6 +239,7 @@ class InternLM3Model(TextModel):
                 if "add_prefix_space" in tokenizer_config_json:
                     self.gguf_writer.add_add_space_prefix(tokenizer_config_json["add_prefix_space"])
 
+                # Only special added tokens are registered with the SpecialVocab.
                 if "added_tokens_decoder" in tokenizer_config_json:
                     for token_id, token_data in tokenizer_config_json["added_tokens_decoder"].items():
                         # Iterate over items, evaluate loop invariant, and update progress

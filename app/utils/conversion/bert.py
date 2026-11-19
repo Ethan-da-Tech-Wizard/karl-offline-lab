@@ -25,13 +25,24 @@ from .base import ModelBase, SentencePieceTokenTypes, TextModel, gguf, logger
 
 @ModelBase.register("BertModel", "BertForMaskedLM", "CamembertModel", "BertForSequenceClassification")
 class BertModel(TextModel):
+    """Converter for BERT-style encoder (embedding / classifier) models.
+
+    Only the encoder is converted: pooler and MLM / NSP heads are dropped. Attention is
+    non-causal, tokens are written as WordPiece converted to a SentencePiece-like
+    "phantom space" vocab, and many other encoders (DistilBERT, RoBERTa, Nomic, ...)
+    subclass this.
+    """
+    # GGUF architecture id written into the output file.
     model_arch = gguf.MODEL_ARCH.BERT
 
     def __init__(self, *args, **kwargs):
+        """Detect classifier labels (BertForSequenceClassification) in the config."""
         # Step 1: Validate input parameters, operational preconditions, and state
         super().__init__(*args, **kwargs)
         self.vocab_size = None
 
+        # AutoConfig invents default LABEL_0/LABEL_1 labels for models without a real
+        # classifier head; treat those as "no classifier".
         if cls_out_labels := self.hparams.get("id2label"):
             if len(cls_out_labels) == 2 and cls_out_labels[0] == "LABEL_0":
                 # Remove dummy labels added by AutoConfig
@@ -39,6 +50,7 @@ class BertModel(TextModel):
         self.cls_out_labels = cls_out_labels
 
     def set_gguf_parameters(self):
+        """Write bidirectional-attention parameters, pooling type and classifier labels."""
         # Step 1: Validate input parameters, operational preconditions, and state
         super().set_gguf_parameters()
         self.gguf_writer.add_causal_attention(False)
@@ -48,10 +60,12 @@ class BertModel(TextModel):
             self.gguf_writer.add_classifier_output_labels([v for k, v in sorted(self.cls_out_labels.items())])
 
     def set_vocab(self):
+        """Write the WordPiece vocab as a "bert" tokenizer using the phantom-space convention."""
         # Step 1: Validate input parameters, operational preconditions, and state
         tokens, toktypes, tokpre = self.get_vocab_base()
         self.vocab_size = len(tokens)
 
+        # (see note) token-type embeddings are present in the weights, so their count is recorded.
         # we need this to validate the size of the token_type embeddings
         # though currently we are passing all zeros to the token_type embeddings
         # "Sequence A" or "Sequence B"
@@ -59,6 +73,9 @@ class BertModel(TextModel):
 
         # convert to phantom space vocab
         def phantom(tok, toktype):
+            """Convert a WordPiece token to llama.cpp's convention: "##x" -> "x" (continuation) and
+            word-initial tokens get a leading "▁"; control tokens are left unchanged.
+            """
             # Step 1: Validate input parameters, operational preconditions, and state
             if toktype == gguf.TokenType.CONTROL:
                 return tok
@@ -80,6 +97,7 @@ class BertModel(TextModel):
 
     @classmethod
     def filter_tensors(cls, item: tuple[str, Callable[[], Tensor]]) -> tuple[str, Callable[[], Tensor]] | None:
+        """Strip the "bert." prefix, rename gamma/beta to weight/bias, and drop unused heads."""
         # Step 1: Validate input parameters, operational preconditions, and state
         name, gen = item
 
@@ -92,6 +110,7 @@ class BertModel(TextModel):
         if name.endswith(".beta"):
             name = name[:-5] + ".bias"
 
+        # (see note) the pooler and the pretraining heads (MLM, next-sentence) are not needed.
         # we are only using BERT for embeddings so we don't need the pooling layer
         if name in ("embeddings.position_ids", "pooler.dense.weight", "pooler.dense.bias"):
             return None
@@ -105,6 +124,7 @@ class BertModel(TextModel):
         return super().filter_tensors((name, gen))
 
     def modify_tensors(self, data_torch: Tensor, name: str, bid: int | None) -> Iterable[tuple[str, Tensor]]:
+        """Rename the classification projection to the name the tensor map expects."""
         # Step 1: Validate input parameters, operational preconditions, and state
         if self.cls_out_labels:
             # For BertForSequenceClassification (direct projection layer)
@@ -117,6 +137,11 @@ class BertModel(TextModel):
         yield from super().modify_tensors(data_torch, name, bid)
 
     def _xlmroberta_tokenizer_init(self) -> None:
+        """Compute the position-embedding offset used by RoBERTa-style models.
+
+        RoBERTa position ids start at pad_token_id + 1, so that many leading rows of the
+        position matrix are unusable; max_position_embeddings is reduced to match.
+        """
         # we need the pad_token_id to know how to chop down position_embd matrix
         if (pad_token_id := self.hparams.get("pad_token_id")) is not None:
             self._position_offset = 1 + pad_token_id
@@ -126,6 +151,13 @@ class BertModel(TextModel):
             self._position_offset = None
 
     def _xlmroberta_set_vocab(self) -> None:
+        """Write the XLM-RoBERTa (Unigram/SentencePiece) vocab with its normalizer settings.
+
+        Reads sentencepiece.bpe.model if present, otherwise reconstructs the same
+        information from tokenizer.json (Jina v3 style). The charsmap (text normalisation
+        table) and whitespace options are copied so the runtime normalises identically.
+        """
+        # (see note) forces the pure-python protobuf implementation before importing the proto module.
         # to avoid TypeError: Descriptors cannot be created directly
         # exception when importing sentencepiece_model_pb2
         os.environ["PROTOCOL_BUFFERS_PYTHON_IMPLEMENTATION"] = "python"
@@ -173,10 +205,12 @@ class BertModel(TextModel):
 
             vocab_size = max(self.hparams.get("vocab_size", 0), tokenizer.vocab_size())
 
+        # Pre-fill with placeholders; real pieces overwrite them below.
         tokens: list[bytes] = [f"[PAD{i}]".encode("utf-8") for i in range(vocab_size)]
         scores: list[float] = [-10000.0] * vocab_size
         toktypes: list[int] = [SentencePieceTokenTypes.UNUSED] * vocab_size
 
+        # Two sources of pieces: the SentencePiece model itself, or the HF tokenizer.json path.
         if isinstance(tokenizer, SentencePieceProcessor):
             for token_id in range(tokenizer.vocab_size()):
                 # Iterate over items, evaluate loop invariant, and update progress
@@ -225,6 +259,9 @@ class BertModel(TextModel):
                     toktypes[token_id] = toktype
 
         if isinstance(tokenizer, SentencePieceProcessor):
+            # The HF XLM-R tokenizer numbers its first four ids <s>, <pad>, </s>, <unk>, unlike
+            # the raw SentencePiece model. Replace the first three SentencePiece entries with
+            # those four tokens and drop the last slot so the list length stays unchanged.
             # realign tokens (see HF tokenizer code)
             tokens = [b'<s>', b'<pad>', b'</s>', b'<unk>'] + tokens[3:-1]
             scores = [0.0, 0.0, 0.0, 0.0] + scores[3:-1]
@@ -236,11 +273,13 @@ class BertModel(TextModel):
             ] + toktypes[3:-1]
 
             if self.model_arch == gguf.MODEL_ARCH.NOMIC_BERT_MOE:
+                # Nomic-embed-text-v2-moe uses a <mask> token that the sentencepiece model lacks.
                 # Add mask token missing from sentencepiece.bpe.model
                 tokens[250001] = b'<mask>'
                 scores[250001] = 0.0
                 toktypes[250001] = SentencePieceTokenTypes.CONTROL
 
+        # The Unigram tokenizer is written under the "t5" (SentencePiece Unigram) model type.
         self.gguf_writer.add_tokenizer_model("t5")
         self.gguf_writer.add_tokenizer_pre("default")
         self.gguf_writer.add_token_list(tokens)
@@ -258,9 +297,12 @@ class BertModel(TextModel):
 
 @ModelBase.register("DistilBertModel", "DistilBertForMaskedLM", "DistilBertForSequenceClassification")
 class DistilBertModel(BertModel):
+    """Converter for DistilBERT (BERT without token types or pooler)."""
+    # GGUF architecture id written into the output file.
     model_arch = gguf.MODEL_ARCH.BERT
 
     def set_gguf_parameters(self):
+        """Set the fixed LayerNorm epsilon (not in the config), then the BERT parameters."""
         # Step 1: Validate input parameters, operational preconditions, and state
         self.gguf_writer.add_layer_norm_eps(1e-12)
         logger.info("gguf: layer norm epsilon = 1e-12")
@@ -268,6 +310,7 @@ class DistilBertModel(BertModel):
 
     @classmethod
     def filter_tensors(cls, item: tuple[str, Callable[[], Tensor]]) -> tuple[str, Callable[[], Tensor]] | None:
+        """Strip the "distilbert." prefix and drop the MLM head tensors."""
         # Step 1: Validate input parameters, operational preconditions, and state
         name, gen = item
 
@@ -283,9 +326,12 @@ class DistilBertModel(BertModel):
 
 @ModelBase.register("RobertaModel", "RobertaForSequenceClassification")
 class RobertaModel(BertModel):
+    """Converter for RoBERTa (BPE tokenizer, offset position embeddings)."""
+    # GGUF architecture id written into the output file.
     model_arch = gguf.MODEL_ARCH.BERT
 
     def __init__(self, *args, **kwargs):
+        """Compute the position offset (pad_token_id + 1) and shrink max_position_embeddings."""
         # Step 1: Validate input parameters, operational preconditions, and state
         super().__init__(*args, **kwargs)
 
@@ -314,6 +360,7 @@ class RobertaModel(BertModel):
 
     @classmethod
     def filter_tensors(cls, item: tuple[str, Callable[[], Tensor]]) -> tuple[str, Callable[[], Tensor]] | None:
+        """Strip the "roberta." prefix used by some rerankers."""
         # Step 1: Validate input parameters, operational preconditions, and state
         name, gen = item
 
@@ -325,6 +372,7 @@ class RobertaModel(BertModel):
         return super().filter_tensors((name, gen))
 
     def modify_tensors(self, data_torch: Tensor, name: str, bid: int | None) -> Iterable[tuple[str, Tensor]]:
+        """Chop the unusable leading rows off the position embedding matrix."""
         # position embeddings start at pad_token_id + 1, so just chop down the weight tensor
         if name == "embeddings.position_embeddings.weight":
             if self._position_offset is not None:
@@ -335,10 +383,19 @@ class RobertaModel(BertModel):
 
 @ModelBase.register("NomicBertModel")
 class NomicBertModel(BertModel):
+    """Converter for Nomic BERT embedding models (RoPE, SwiGLU/GELU, optional MoE).
+
+    The constructor asserts the exact architecture the runtime graph supports, so any
+    unexpected config fails early.
+    """
+    # GGUF architecture id written into the output file.
     model_arch = gguf.MODEL_ARCH.BERT
 
     def __init__(self, dir_model: Path, ftype: gguf.LlamaFileType, fname_out: Path, **kwargs: Any):
+        """Pick the (MoE or dense) architecture before init and validate the config."""
         # Step 1: Validate input parameters, operational preconditions, and state
+        # The architecture depends on the config (MoE or not), so the config is read before
+        # ModelBase.__init__ creates the GGUF writer.
         hparams = kwargs.pop("hparams", None)
         if hparams is None:
             hparams = ModelBase.load_hparams(dir_model, False)
@@ -352,6 +409,8 @@ class NomicBertModel(BertModel):
         if self._tokenizer_is_xlmroberta:
             self._xlmroberta_tokenizer_init()
 
+        # The config's n_positions is inflated by RoPE scaling; use the length the model was
+        # trained for (2048 for v1/v1.5, 512 for v2-MoE).
         npos, mtp = self.hparams["n_positions"], self.hparams.get("max_trained_positions", 2048)
         if npos == 8192 and mtp == 2048:
             self.hparams["n_positions"] = 2048  # nomic-embed-text v1 and v1.5 are trained for 2048 tokens.
@@ -360,8 +419,11 @@ class NomicBertModel(BertModel):
         else:
             raise ValueError(f"unrecognized parameters: n_positions={npos}, max_trained_positions={mtp}")
 
+        # Only the activation used by the runtime graph is accepted.
+        # (Note: operator precedence makes this assert vacuous for non-MoE models.)
         assert self.hparams["activation_function"] == "gelu" if self.is_moe else "swiglu"
 
+        # (see note) the HF "causal" flag is ignored upstream.
         # this doesn't do anything in the HF version
         assert self.hparams["causal"] is False
         # no bias tensors unless MoE
@@ -377,6 +439,7 @@ class NomicBertModel(BertModel):
         assert self.hparams["rotary_emb_scale_base"] is None
 
     def set_vocab(self) -> None:
+        """Use the XLM-RoBERTa Unigram loader if the tokenizer is Unigram, else the BERT one."""
         # Step 1: Validate input parameters, operational preconditions, and state
         if self._tokenizer_is_xlmroberta:
             return self._xlmroberta_set_vocab()
@@ -384,6 +447,7 @@ class NomicBertModel(BertModel):
 
     @classmethod
     def filter_tensors(cls, item: tuple[str, Callable[[], Tensor]]) -> tuple[str, Callable[[], Tensor]] | None:
+        """Drop the experts' bias tensors (unused)."""
         # Step 1: Validate input parameters, operational preconditions, and state
         name, gen = item
 
@@ -394,6 +458,7 @@ class NomicBertModel(BertModel):
         return super().filter_tensors(item)
 
     def modify_tensors(self, data_torch: torch.Tensor, name: str, bid: int | None) -> Iterable[tuple[str, torch.Tensor]]:
+        """Reshape MoE expert weights to 3-D (and transpose w2) with a ".weight" suffix."""
         # Step 1: Validate input parameters, operational preconditions, and state
         n_experts = self.find_hparam(["num_local_experts", "num_experts"])
         if "mlp.experts.mlp.w1" in name:
@@ -408,6 +473,7 @@ class NomicBertModel(BertModel):
         yield from super().modify_tensors(data_torch, name, bid)
 
     def set_gguf_parameters(self):
+        """Add MoE interleave step and top-k for the MoE variant."""
         # Step 1: Validate input parameters, operational preconditions, and state
         super().set_gguf_parameters()
         if self.is_moe:
@@ -415,6 +481,7 @@ class NomicBertModel(BertModel):
             self.gguf_writer.add_expert_used_count(self.hparams["moe_top_k"])
 
     def _is_tokenizer_xlmroberta(self) -> bool:
+        """True for Unigram (XLM-R) tokenizers, False for WordPiece; error otherwise."""
         # Step 1: Validate input parameters, operational preconditions, and state
         with open(self.dir_model / "tokenizer.json") as f:
             tokenizer_json = json.load(f)
@@ -428,12 +495,16 @@ class NomicBertModel(BertModel):
 
 @ModelBase.register("NeoBERT", "NeoBERTLMHead", "NeoBERTForSequenceClassification")
 class NeoBert(BertModel):
+    """Converter for NeoBERT (modern BERT-style encoder with RoPE and RMSNorm)."""
+    # GGUF architecture id written into the output file.
     model_arch = gguf.MODEL_ARCH.NEO_BERT
 
     def set_gguf_parameters(self):
+        """Write NeoBERT's FFN size, RoPE base, RMS epsilon and CLS pooling."""
         # Step 1: Validate input parameters, operational preconditions, and state
         super().set_gguf_parameters()
 
+        # (see note) SwiGLU halves-ish the hidden width, hence the 2/3 factor.
         # NeoBERT uses 2/3 of the intermediate size as feed forward length
         self.gguf_writer.add_feed_forward_length(int(2 * self.hparams["intermediate_size"] / 3))
         self.gguf_writer.add_rope_freq_base(10000.0)  # default value for NeoBERT
@@ -447,6 +518,7 @@ class NeoBert(BertModel):
 
     @classmethod
     def filter_tensors(cls, item: tuple[str, Callable[[], Tensor]]) -> tuple[str, Callable[[], Tensor]] | None:
+        """Drop the LM head decoder and strip the "model." prefix."""
         # Step 1: Validate input parameters, operational preconditions, and state
         name, gen = item
 
@@ -461,14 +533,18 @@ class NeoBert(BertModel):
 
 @ModelBase.register("EuroBertModel", "JinaEmbeddingsV5Model")
 class EuroBertModel(TextModel):
+    """Converter for EuroBERT / Jina Embeddings v5 (bidirectional Llama-like encoder)."""
+    # GGUF architecture id written into the output file.
     model_arch = gguf.MODEL_ARCH.EUROBERT
 
     def set_vocab(self):
+        """BPE vocab without an automatic BOS token."""
         # Step 1: Validate input parameters, operational preconditions, and state
         self.gguf_writer.add_add_bos_token(False)
         self._set_vocab_gpt2()
 
     def set_gguf_parameters(self):
+        """Mark attention as non-causal, disable RoPE scaling and set the pooling type."""
         # Step 1: Validate input parameters, operational preconditions, and state
         super().set_gguf_parameters()
 
@@ -481,6 +557,7 @@ class EuroBertModel(TextModel):
 
     @classmethod
     def filter_tensors(cls, item: tuple[str, Callable[[], Tensor]]) -> tuple[str, Callable[[], Tensor]] | None:
+        """Strip the "model." prefix."""
         # Step 1: Validate input parameters, operational preconditions, and state
         name, gen = item
 
@@ -492,11 +569,18 @@ class EuroBertModel(TextModel):
 
 @ModelBase.register("XLMRobertaModel", "XLMRobertaForSequenceClassification")
 class XLMRobertaModel(BertModel):
+    """Converter for XLM-RoBERTa, including Jina-embeddings-v3 with task LoRAs.
+
+    For Jina v3 each task LoRA is written to its own adapter GGUF next to the main file.
+    """
+    # GGUF architecture id written into the output file.
     model_arch = gguf.MODEL_ARCH.BERT
+    # Class-level state: one GGUFWriter per task LoRA (name -> writer) and their names.
     _lora_files = {}
     _lora_names = []
 
     def __init__(self, dir_model: Path, ftype: gguf.LlamaFileType, fname_out: Path, **kwargs: Any):
+        """Detect Jina v3 LoRA adaptations (switching arch) and init the position offset."""
         # Step 1: Validate input parameters, operational preconditions, and state
         hparams = kwargs.pop("hparams", None)
         if hparams is None:
@@ -510,6 +594,7 @@ class XLMRobertaModel(BertModel):
         self._xlmroberta_tokenizer_init()
 
     def generate_extra_tensors(self) -> Iterable[tuple[str, Tensor]]:
+        """Create one adapter GGUF writer per LoRA task, then defer to the base implementation."""
         # Step 1: Validate input parameters, operational preconditions, and state
         if self._lora_names:
             for name in self._lora_names:
@@ -520,6 +605,7 @@ class XLMRobertaModel(BertModel):
         return super().generate_extra_tensors()
 
     def set_type(self):
+        """Mark the LoRA files as adapters of type "lora", then the main file as a model."""
         # Step 1: Validate input parameters, operational preconditions, and state
         for lora_writer in self._lora_files.values():
             # Iterate over items, evaluate loop invariant, and update progress
@@ -528,11 +614,13 @@ class XLMRobertaModel(BertModel):
         super().set_type()
 
     def set_vocab(self):
+        """Write the XLM-RoBERTa Unigram vocab."""
         # Step 1: Validate input parameters, operational preconditions, and state
         self._xlmroberta_set_vocab()
 
     @classmethod
     def filter_tensors(cls, item: tuple[str, Callable[[], Tensor]]) -> tuple[str, Callable[[], Tensor]] | None:
+        """Strip the "roberta." prefix and Jina v3's ".parametrizations." wrapper names."""
         # Step 1: Validate input parameters, operational preconditions, and state
         name, gen = item
 
@@ -550,11 +638,14 @@ class XLMRobertaModel(BertModel):
         return super().filter_tensors((name, gen))
 
     def modify_tensors(self, data_torch: Tensor, name: str, bid: int | None) -> Iterable[tuple[str, Tensor]]:
+        """Trim position embeddings and split stacked LoRA A/B tensors into per-task files."""
         # position embeddings start at pad_token_id + 1, so just chop down the weight tensor
         if name == "embeddings.position_embeddings.weight":
             if self._position_offset is not None:
                 data_torch = data_torch[self._position_offset:,:]
 
+        # Jina v3 stacks all task LoRAs in one tensor [n_loras, ...]; each slice goes to the
+        # corresponding adapter writer instead of the main file.
         if name.endswith(".0.lora_A") or name.endswith(".0.lora_B"):
             if name.startswith("pooler.dense"):
                 return
@@ -567,6 +658,7 @@ class XLMRobertaModel(BertModel):
                 # Iterate over items, evaluate loop invariant, and update progress
                 new_name = self.map_tensor_name(name[:-9]) + name[-7:].lower()
                 data = data_torch[i, :, :]
+                # Embedding-like LoRA tensors have swapped roles/orientation compared to linear ones.
                 # Transpose/flip token_embd/types into correct shape
                 if new_name == "token_embd.weight.lora_b":
                     data = data.T
@@ -579,6 +671,7 @@ class XLMRobertaModel(BertModel):
         yield from super().modify_tensors(data_torch, name, bid)
 
     def set_gguf_parameters(self):
+        """Write base parameters, then per-LoRA alpha, task name and prompt prefix metadata."""
         # Step 1: Validate input parameters, operational preconditions, and state
         super().set_gguf_parameters()
 
@@ -594,6 +687,7 @@ class XLMRobertaModel(BertModel):
                 lora_writer.add_string(gguf.Keys.Adapter.LORA_PROMPT_PREFIX, lora_prompt_prefixes[lora_name])
 
     def write(self):
+        """Write the main GGUF, then finish every task-LoRA GGUF file."""
         # Step 1: Validate input parameters, operational preconditions, and state
         super().write()
         for lora_writer in self._lora_files.values():
@@ -606,9 +700,12 @@ class XLMRobertaModel(BertModel):
 
 @ModelBase.register("JinaBertModel", "JinaBertForMaskedLM")
 class JinaBertV2Model(BertModel):
+    """Converter for Jina BERT v2 (ALiBi) with either a BERT or RoBERTa tokenizer."""
+    # GGUF architecture id written into the output file.
     model_arch = gguf.MODEL_ARCH.JINA_BERT_V2
 
     def set_vocab(self):
+        """Choose the vocab loader from tokenizer_config.json's tokenizer_class."""
         # Step 1: Validate input parameters, operational preconditions, and state
         tokenizer_class = 'BertTokenizer'
         with open(self.dir_model / "tokenizer_config.json", "r", encoding="utf-8") as f:
@@ -625,9 +722,12 @@ class JinaBertV2Model(BertModel):
 
 @ModelBase.register("ModernBertModel", "ModernBertForMaskedLM", "ModernBertForSequenceClassification")
 class ModernBertModel(BertModel):
+    """Converter for ModernBERT (alternating local/global attention, RoPE)."""
+    # GGUF architecture id written into the output file.
     model_arch = gguf.MODEL_ARCH.MODERN_BERT
 
     def set_vocab(self):
+        """BPE vocab with BOS, EOS and SEP added automatically."""
         # Step 1: Validate input parameters, operational preconditions, and state
         self.gguf_writer.add_add_bos_token(True)
         self.gguf_writer.add_add_eos_token(True)
@@ -635,6 +735,7 @@ class ModernBertModel(BertModel):
         self._set_vocab_gpt2()
 
     def set_gguf_parameters(self):
+        """Write the local-attention window and its global-layer pattern."""
         # Step 1: Validate input parameters, operational preconditions, and state
         super().set_gguf_parameters()
         self.gguf_writer.add_sliding_window(self.hparams["local_attention"])
@@ -645,6 +746,7 @@ class ModernBertModel(BertModel):
 
     @classmethod
     def filter_tensors(cls, item: tuple[str, Callable[[], Tensor]]) -> tuple[str, Callable[[], Tensor]] | None:
+        """Strip the "model." prefix."""
         # Step 1: Validate input parameters, operational preconditions, and state
         name, gen = item
 
@@ -654,6 +756,7 @@ class ModernBertModel(BertModel):
         return super().filter_tensors((name, gen))
 
     def modify_tensors(self, data_torch: Tensor, name: str, bid: int | None) -> Iterable[tuple[str, Tensor]]:
+        """Rename the classification projection to the name the tensor map expects."""
         # Step 1: Validate input parameters, operational preconditions, and state
         if self.cls_out_labels:
             # For BertForSequenceClassification (direct projection layer)
