@@ -6,6 +6,9 @@
 #          Provides responsive layout controls, parameter adjustment surfaces,
 #          and visual feedback components within Karl's PyQt6 shell.
 # ==============================================================================
+# Runtime half of the Theme tab: reacts to control changes, pushes the chosen
+# appearance into shared app state, tells the shell to re-apply its stylesheet
+# (appearance_changed signal), and persists the result to data/ui_config.json.
 
 from __future__ import annotations
 
@@ -23,13 +26,17 @@ from app.ui.themes import THEMES, get_theme_colors
 logger = logging.getLogger("karl.system_config")
 
 class AppearanceRuntimeMixin:
+    """Mixin with the apply/preview/save logic for appearance settings."""
     def _on_control_changed(self):
+        """Update slider read-outs, mirror reduced-motion, and schedule a debounced theme apply."""
+        # Slider ints are tenths, so divide by 10 for the real multiplier.
         # Update sliders numeric indicators
         gs = self._glow_strength_slider.value() / 10.0
         ai = self._animation_intensity_slider.value() / 10.0
         self._glow_strength_val_lbl.setText(f"{gs:.1f}x")
         self._animation_intensity_val_lbl.setText(f"{ai:.1f}x")
 
+        # Reduced motion exists as a checkbox on both the Defaults and Theme tabs; keep them equal.
         # Also sync reduced motion check in defaults tab
         self._reduced_motion_check.blockSignals(True)
         self._reduced_motion_check.setChecked(self._reduced_motion_check_app.isChecked())
@@ -49,6 +56,8 @@ class AppearanceRuntimeMixin:
 
 
     def _apply_active_theme(self):
+        """Copy control values into app state and notify the shell to rebuild and apply the stylesheet."""
+        # Controls are the source of truth here; state is written from them, not the reverse.
         # Read from controls
         theme_preset = self._theme_preset_combo.currentText()
         layout_preset = self._layout_preset_combo.currentText()
@@ -67,9 +76,11 @@ class AppearanceRuntimeMixin:
         self.state.animation_intensity = animation_intensity
         self.state.custom_accent = custom_accent
 
+        # The shell listens to this signal and recompiles the QApplication stylesheet.
         # Trigger QApplication stylesheet compilation & reload
         self.appearance_changed.emit()
 
+        # Preview widgets paint from state, so they must be told to repaint.
         # Update preview card elements
         self._preview_card.update_style()
         self._check_icon_preview.update()
@@ -79,6 +90,8 @@ class AppearanceRuntimeMixin:
 
 
     def _update_swatches(self):
+        """Rebuild the five colour swatches (accent, alt, surface, deep, text) from the current theme."""
+        # deleteLater (not immediate delete) is the safe way to discard widgets still in the layout.
         # Clear existing swatches
         while self._swatches_layout.count():
             # Iterate over items, evaluate loop invariant, and update progress
@@ -86,6 +99,7 @@ class AppearanceRuntimeMixin:
             if item.widget():
                 item.widget().deleteLater()
 
+        # get_theme_colors resolves preset + custom accent + mode into one palette dict.
         # Generate colors for current state
         colors = get_theme_colors(self.state)
         swatch_keys = [
@@ -125,6 +139,7 @@ class AppearanceRuntimeMixin:
 
 
     def _update_theme_gallery(self):
+        """Rebuild the theme gallery cards, skipping the work if the selection has not changed."""
         # Step 1: Validate input parameters, operational preconditions, and state
         if not hasattr(self, "_theme_gallery_layout"):
             return
@@ -207,6 +222,7 @@ class AppearanceRuntimeMixin:
 
 
     def _apply_theme_preset_from_gallery(self, name: str):
+        """Select the given preset in the combo; the combo's change signal does the actual apply."""
         # Step 1: Validate input parameters, operational preconditions, and state
         idx = self._theme_preset_combo.findText(name)
         if idx >= 0:
@@ -215,6 +231,9 @@ class AppearanceRuntimeMixin:
 
 
     def _save_appearance_config_silent(self):
+        """Persist all appearance and related runtime settings to ui_config without any dialog."""
+        # The dict also carries unrelated keys (log rotation, thermal, remote engine) because
+        # save_ui_config replaces the stored config as a whole; omitting them would reset them.
         # Step 1: Validate input parameters, operational preconditions, and state
         config_store.save_ui_config({
             "theme_preset": self.state.theme_preset,
@@ -241,15 +260,18 @@ class AppearanceRuntimeMixin:
 
 
     def _save_appearance_config(self):
+        """Save the appearance config, remove the legacy theme_config.json and confirm to the user."""
         # Step 1: Validate input parameters, operational preconditions, and state
         self._save_appearance_config_silent()
         
+        # data/theme_config.json is the old storage location; ui_config.json supersedes it.
         # Delete old config if exists to clean up
         old_path = "data/theme_config.json"
         if os.path.exists(old_path):
             try:
                 # Execute guarded operations and establish recovery boundaries
                 os.remove(old_path)
+            # Failing to remove the legacy file is harmless, so the error is ignored.
             except Exception:
                 pass
                 

@@ -6,6 +6,9 @@
 #          Provides responsive layout controls, parameter adjustment surfaces,
 #          and visual feedback components within Karl's PyQt6 shell.
 # ==============================================================================
+# Observability tab: shows SLA-style performance numbers averaged over the last
+# 100 entries of the telemetry JSONL log, plus log retention/disk-quota policy
+# controls that can trigger a cleanup sweep immediately.
 
 import os
 import json
@@ -19,17 +22,21 @@ from app.engine import config_store
 
 logger = logging.getLogger("karl.system_config.observability_tab")
 
+# Written by the inference engine; one JSON object per line.
 TELEMETRY_LOG_PATH = "data/logs/performance_telemetry.jsonl"
 
 
 class ObservabilityTab(QWidget):
+    """Standalone tab widget for performance metrics and log retention policy."""
     def __init__(self, state, parent=None):
+        """Store the app state and build the tab."""
         # Step 1: Validate input parameters, operational preconditions, and state
         super().__init__(parent)
         self.state = state
         self._build_ui()
 
     def _build_ui(self):
+        """Build the metric pills, retention/quota spin boxes and action buttons."""
         # Step 1: Validate input parameters, operational preconditions, and state
         layout = QVBoxLayout(self)
         layout.setContentsMargins(12, 12, 12, 12)
@@ -37,6 +44,7 @@ class ObservabilityTab(QWidget):
 
         layout.addWidget(_section("PERFORMANCE SLA METRICS (LAST 100 INFERENCES)"))
 
+        # Four pills: time to first token, tokens/sec, KV-cache hit rate and VRAM delta.
         # Horizontal statistics layout
         stats_widget = QWidget()
         sl = QHBoxLayout(stats_widget)
@@ -58,6 +66,7 @@ class ObservabilityTab(QWidget):
 
         layout.addWidget(_section("LOG RETENTION & GOVERNANCE POLICY"))
 
+        # Spin boxes start from the persisted UI config so the tab reflects what is stored.
         # Policy configs
         cfg = config_store.get_ui_config()
 
@@ -68,6 +77,7 @@ class ObservabilityTab(QWidget):
         layout.addWidget(_row("Log Retention Age:", self._retention_spin))
 
         self._disk_size_spin = QSpinBox()
+        # Range is 10 MB to 50 GB (the spin box works in MB).
         self._disk_size_spin.setRange(10, 50 * 1024)  # 10 MB to 50 GB
         self._disk_size_spin.setValue(cfg.get("max_log_disk_size_mb", 1024))
         self._disk_size_spin.setSuffix(" MB")
@@ -97,6 +107,7 @@ class ObservabilityTab(QWidget):
         self.refresh_metrics()
 
     def _create_pill(self, label: str, val: str) -> QFrame:
+        """Build one statistic card (muted caption over a large accent value) and expose the value label as val_lbl."""
         # Step 1: Validate input parameters, operational preconditions, and state
         f = QFrame()
         f.setObjectName("observability-pill")
@@ -120,13 +131,16 @@ class ObservabilityTab(QWidget):
         val_lbl = QLabel(val)
         val_lbl.setObjectName("lbl-accent")
         val_lbl.setStyleSheet("font-size: 14pt; font-weight: bold; color: #00C2FF;")
+        # Stashed on the frame so refresh_metrics can update the number without searching children.
         f.val_lbl = val_lbl  # Save reference to update value
         lo.addWidget(val_lbl)
 
         return f
 
     def refresh_metrics(self):
+        """Recompute the four averages from the last 100 telemetry lines and update the pills ("N/A" when no data)."""
         # Step 1: Validate input parameters, operational preconditions, and state
+        # No log yet (fresh install or no inferences) means nothing to average.
         log_path = TELEMETRY_LOG_PATH
         if not os.path.exists(log_path):
             self.ttft_pill.val_lbl.setText("N/A")
@@ -144,6 +158,7 @@ class ObservabilityTab(QWidget):
         try:
             # Execute guarded operations and establish recovery boundaries
             with open(log_path, "r", encoding="utf-8") as f:
+                # Only the tail is used so the figures describe recent behaviour, not all-time history.
                 lines = f.readlines()[-100:]
                 for line in lines:
                     # Iterate over items, evaluate loop invariant, and update progress
@@ -151,13 +166,16 @@ class ObservabilityTab(QWidget):
                         continue
                     entry = json.loads(line)
                     
+                    # TTFT is approximated by the prefill duration, converted to milliseconds.
                     prefill_sec = entry.get("prefill_duration_sec", 0.0)
                     ttfts.append(prefill_sec * 1000)
                     
                     tps = entry.get("tokens_per_second", 0.0)
+                    # Zero TPS entries are skipped so failed or empty runs do not drag the average down.
                     if tps > 0:
                         tps_list.append(tps)
                         
+                    # Hit rate = cache-hit tokens / prefill tokens, accumulated only for entries that prefilled.
                     prefill_count = entry.get("prefill_tokens_count", 0)
                     cache_hits = entry.get("kv_cache_hits", 0)
                     if prefill_count > 0:
@@ -167,6 +185,7 @@ class ObservabilityTab(QWidget):
                     vram = entry.get("vram_usage_mb_delta")
                     if vram is not None:
                         vram_deltas.append(vram)
+        # A malformed line aborts the loop; values gathered so far are still shown.
         except Exception as e:
             logger.warning(f"Failed to read telemetry log line: {e}")
 
@@ -188,15 +207,18 @@ class ObservabilityTab(QWidget):
             self.vram_pill.val_lbl.setText("N/A")
 
     def _apply_policy_and_clean(self):
+        """Save the retention policy, run the retention sweep now, refresh stats and confirm."""
         # Step 1: Validate input parameters, operational preconditions, and state
         retention = self._retention_spin.value()
         disk_size = self._disk_size_spin.value()
 
+        # Read-modify-write so unrelated UI config keys are preserved.
         cfg = config_store.get_ui_config()
         cfg["log_retention_days"] = retention
         cfg["max_log_disk_size_mb"] = disk_size
         config_store.save_ui_config(cfg)
 
+        # Imported lazily; the logger module is only needed when a sweep is requested.
         from app.utils.trace_logger import TraceLogger
         try:
             # Execute guarded operations and establish recovery boundaries

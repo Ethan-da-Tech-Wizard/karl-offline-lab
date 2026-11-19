@@ -6,6 +6,10 @@
 #          Provides responsive layout controls, parameter adjustment surfaces,
 #          and visual feedback components within Karl's PyQt6 shell.
 # ==============================================================================
+# Vision and Hardware tabs of the System workspace. Vision: choose, load and
+# reset the local vision model and inspect the registry. Hardware: live CPU /
+# RAM / disk meters, the scouted hardware profile, remote-engine offloading
+# settings, thermal protection settings and an About blurb.
 
 from __future__ import annotations
 
@@ -29,7 +33,9 @@ from .common import _section
 logger = logging.getLogger("karl.system_config")
 
 class VisionHardwarePanelMixin:
+    """Mixin that builds the Vision and Hardware tabs and their refresh/config handlers."""
     def _build_vision_tab(self) -> QWidget:
+        """Build the Vision tab: runtime status, model picker with action buttons, and registry viewer."""
         # Step 1: Validate input parameters, operational preconditions, and state
         w = QWidget()
         layout = QVBoxLayout(w)
@@ -43,6 +49,7 @@ class VisionHardwarePanelMixin:
         rp.setSpacing(8)
         rp.addWidget(_section("VISION RUNTIME"))
 
+        # OCR works with just Tesseract; describing pixels needs a vision GGUF plus its projector file.
         desc = QLabel(
             "Karl vision stays offline. OCR can run immediately when Tesseract is installed; "
             "pixel-level image description requires a local GGUF vision model plus its matching projector."
@@ -106,6 +113,7 @@ class VisionHardwarePanelMixin:
 
 
     def _refresh_vision_status(self):
+        """Refresh the runtime status text, the model combo and the registry HTML view."""
         # Step 1: Validate input parameters, operational preconditions, and state
         if not hasattr(self, "_vision_runtime_status"):
             return
@@ -125,12 +133,14 @@ class VisionHardwarePanelMixin:
             lines.append(f"Last error: {status['last_error']}")
         self._vision_runtime_status.setText("\n".join(lines))
 
+        # Preserve the user's selection across the rebuild, with signals blocked to avoid side effects.
         current = self._vision_model_combo.currentData()
         self._vision_model_combo.blockSignals(True)
         self._vision_model_combo.clear()
         rows = installed_vision_models()
         for row in rows:
             # Iterate over items, evaluate loop invariant, and update progress
+            # A model is usable only when both the model file and its projector are installed.
             ready = row.get("model_installed") and row.get("projector_installed")
             suffix = "ready" if ready else "missing files"
             self._vision_model_combo.addItem(f"{row['name']} ({suffix})", row["id"])
@@ -140,6 +150,7 @@ class VisionHardwarePanelMixin:
                 self._vision_model_combo.setCurrentIndex(idx)
         self._vision_model_combo.blockSignals(False)
 
+        # Registry entries come from disk and a JSON file, so every string is HTML-escaped.
         html_rows = []
         for row in rows:
             # Iterate over items, evaluate loop invariant, and update progress
@@ -168,6 +179,7 @@ class VisionHardwarePanelMixin:
 
 
     def _set_active_vision_model_from_combo(self):
+        """Persist the selected vision model as active and reset the loaded runtime so it reloads lazily."""
         # Step 1: Validate input parameters, operational preconditions, and state
         model_id = self._vision_model_combo.currentData()
         if not model_id:
@@ -179,6 +191,7 @@ class VisionHardwarePanelMixin:
 
 
     def _load_active_vision_model(self):
+        """Load the selected vision model now and refresh the status."""
         # Step 1: Validate input parameters, operational preconditions, and state
         model_id = self._vision_model_combo.currentData()
         VisionModelLoader.load(model_id=model_id)
@@ -186,6 +199,7 @@ class VisionHardwarePanelMixin:
 
 
     def _reset_vision_runtime(self):
+        """Unload the vision runtime and refresh the status."""
         # Step 1: Validate input parameters, operational preconditions, and state
         VisionModelLoader.reset()
         self._refresh_vision_status()
@@ -194,12 +208,14 @@ class VisionHardwarePanelMixin:
 
 
     def _build_hardware_tab(self) -> QWidget:
+        """Build the Hardware tab: meters, profile view, remote engine, thermal protection and About panels."""
         # Step 1: Validate input parameters, operational preconditions, and state
         w = QWidget()
         layout = QVBoxLayout(w)
         layout.setContentsMargins(12, 12, 12, 12)
         layout.setSpacing(12)
 
+        # Meters: CPU, memory and disk. A QTimer in the workspace updates them every 2 seconds.
         # Hardware Panel
         hw_panel = QWidget()
         hw_panel.setObjectName("panel")
@@ -239,6 +255,7 @@ class VisionHardwarePanelMixin:
         ram_l.addWidget(self._ram_progress)
         hwp_layout.addWidget(ram_row)
         
+        # The disk bar shows percent used (see _update_live_hardware), labelled with free space.
         # Disk Space meter
         disk_row = QWidget()
         disk_l = QHBoxLayout(disk_row)
@@ -265,6 +282,8 @@ class VisionHardwarePanelMixin:
 
         layout.addWidget(hw_panel)
 
+        # Remote offloading: when enabled prompts go to a remote Karl bridge over JSON-RPC/WSS
+        # instead of the local llama-cpp-python model.
         engine_panel = QWidget()
         engine_panel.setObjectName("panel")
         ep_layout = QVBoxLayout(engine_panel)
@@ -273,6 +292,7 @@ class VisionHardwarePanelMixin:
         ep_layout.addWidget(_section("REMOTE MODEL OFFLOADING"))
 
         self._remote_engine_check = QCheckBox("Remote Engine Mode")
+        # Both the newer remote_engine_enabled flag and the older engine_mode == "remote" count as enabled.
         self._remote_engine_check.setChecked(
             bool(getattr(self.state, "remote_engine_enabled", False))
             or getattr(self.state, "engine_mode", "local") == "remote"
@@ -289,6 +309,7 @@ class VisionHardwarePanelMixin:
         url_lay.addWidget(url_lbl)
         self._remote_url_input = QLineEdit()
         self._remote_url_input.setPlaceholderText("wss://localhost:8080")
+        # URL fallback chain: new remote_engine_url, legacy remote_server_url, then localhost default.
         self._remote_url_input.setText(
             getattr(self.state, "remote_engine_url", "")
             or getattr(self.state, "remote_server_url", "")
@@ -306,6 +327,7 @@ class VisionHardwarePanelMixin:
         token_lbl.setFixedWidth(180)
         token_lay.addWidget(token_lbl)
         self._remote_token_input = QLineEdit()
+        # Token is masked on screen; it is persisted via config_store.set_remote_engine_config.
         self._remote_token_input.setEchoMode(QLineEdit.EchoMode.Password)
         self._remote_token_input.setPlaceholderText("bridge token or password")
         self._remote_token_input.setText(
@@ -324,6 +346,7 @@ class VisionHardwarePanelMixin:
 
         layout.addWidget(engine_panel)
 
+        # Thermal protection pauses/throttles work above the threshold (handlers in defaults_panel).
         # Thermal Protection Settings Panel
         thermal_panel = QWidget()
         thermal_panel.setObjectName("panel")
@@ -346,6 +369,7 @@ class VisionHardwarePanelMixin:
         tr_lbl.setFixedWidth(180)
         tr_lay.addWidget(tr_lbl)
         self._thermal_threshold_spin = QSpinBox()
+        # 70-105 C: below 70 would trigger too often, above ~105 is past most CPU/GPU limits.
         self._thermal_threshold_spin.setRange(70, 105)
         self._thermal_threshold_spin.setValue(getattr(self.state, "thermal_protection_threshold", 95))
         self._thermal_threshold_spin.setFixedWidth(80)
@@ -384,7 +408,10 @@ class VisionHardwarePanelMixin:
 
 
     def _update_live_hardware(self):
+        """Timer callback: refresh the CPU, RAM and disk meters and the circuit-breaker label."""
         # Step 1: Validate input parameters, operational preconditions, and state
+        # Everything is inside try so a missing psutil or a transient error only logs a warning
+        # instead of killing the timer-driven slot.
         try:
             # Execute guarded operations and establish recovery boundaries
             import psutil
@@ -399,6 +426,7 @@ class VisionHardwarePanelMixin:
             total_gb = mem.total / 1_073_741_824
             self._ram_progress.setFormat(f"%p% ({used_gb:.1f} GB / {total_gb:.1f} GB)")
             
+            # Disk is measured on "/" only; models living on another volume are not reflected.
             # Disk space
             import shutil
             total, used, free = shutil.disk_usage("/")
@@ -408,6 +436,7 @@ class VisionHardwarePanelMixin:
             total_gb = total / 1_073_741_824
             self._disk_progress.setFormat(f"{free_gb:.1f} GB free ({free_percent:.1f}%)")
 
+            # Colours: COOLDOWN red, HALF_OPEN amber, otherwise green (closed).
             # Update circuit breaker status label if it exists
             if hasattr(self, "_cb_status_lbl") and self._cb_status_lbl is not None:
                 from app.engine.model_loader import ModelLoader
@@ -424,10 +453,12 @@ class VisionHardwarePanelMixin:
 
 
     def _refresh_hardware(self):
+        """Re-scout RAM, VRAM and storage and render them in the profile box."""
         # Step 1: Validate input parameters, operational preconditions, and state
         from core.hardware_scout import get_hardware_profile
         p = get_hardware_profile()
         
+        # Values may be missing; '?' and 'N/A' are shown verbatim instead of failing.
         ram = p.get('ram_gb', '?')
         vram = p.get('vram_gb', 'N/A')
         storage = p.get('storage_gb', '?')
@@ -457,11 +488,14 @@ class VisionHardwarePanelMixin:
 
 
     def _on_engine_config_changed(self, *_args):
+        """Copy the remote-engine controls into app state, persist them and update enabled/disabled UI."""
+        # Controls may not exist yet (signals can fire during construction), hence the hasattr guards.
         # Step 1: Validate input parameters, operational preconditions, and state
         enabled = bool(self._remote_engine_check.isChecked()) if hasattr(self, "_remote_engine_check") else False
         mode = "remote" if enabled else "local"
         url = self._remote_url_input.text().strip() if hasattr(self, "_remote_url_input") else "wss://localhost:8080"
         token = self._remote_token_input.text() if hasattr(self, "_remote_token_input") else ""
+        # State keeps both the new and legacy field names so older readers keep working.
         self.state.engine_mode = mode
         self.state.remote_server_url = url
         self.state.remote_auth_token = token
@@ -474,6 +508,7 @@ class VisionHardwarePanelMixin:
 
 
     def _sync_engine_controls_enabled(self):
+        """Enable the URL/token fields only in remote mode and show matching help text."""
         # Step 1: Validate input parameters, operational preconditions, and state
         if not hasattr(self, "_remote_engine_check"):
             return

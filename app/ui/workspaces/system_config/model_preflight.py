@@ -6,6 +6,9 @@
 #          Provides responsive layout controls, parameter adjustment surfaces,
 #          and visual feedback components within Karl's PyQt6 shell.
 # ==============================================================================
+# Preflight diagnostics for the active model: checks the file, estimates RAM
+# needs, flags adapter/base architecture mismatches, and renders a status card
+# plus quantization/VRAM info on the Model tab. Advisory only; it never blocks a load.
 
 from __future__ import annotations
 
@@ -18,8 +21,11 @@ from PyQt6.QtCore import Qt
 logger = logging.getLogger("karl.system_config")
 
 class ModelPreflightMixin:
+    """Mixin providing the model health report shown under the Model tab."""
     def _run_model_preflight_checks(self):
+        """Run all preflight checks and render the HTML report into the model status label."""
         # Step 1: Validate input parameters, operational preconditions, and state
+        # Imported lazily to avoid pulling hardware probing in at module import time.
         from core.hardware_scout import get_hardware_profile
         active_name = self._get_active_model_name()
 
@@ -31,7 +37,9 @@ class ModelPreflightMixin:
         report = []
         warnings = []
         
+        # Check 1: the file exists and starts with the 4-byte GGUF magic number.
         # 1. File existence & GGUF signature check
+        # Registry filenames are relative to data/models; absolute paths are used as-is.
         model_path = os.path.join("data", "models", active_name)
         if os.path.isabs(active_name):
             model_path = active_name
@@ -49,6 +57,8 @@ class ModelPreflightMixin:
             except Exception as e:
                 warnings.append(f"Could not verify model file header: {e}")
 
+        # Check 2: RAM. Prefer the registry's min_ram_gb; for unregistered models estimate
+        # 1.5x the file size. A sys_ram of 0 means detection failed, so no warning is raised.
         # 2. RAM requirement preflight check
         profile = get_hardware_profile()
         sys_ram = profile.get("ram_gb", 0.0)
@@ -79,7 +89,10 @@ class ModelPreflightMixin:
                 except Exception:
                     pass
 
+        # Check 3: adapter compatibility. Architecture is guessed from the file names only
+        # (qwen / llama / mistral), so this is a heuristic and can miss mismatches.
         # 3. Adapter compatibility warning
+        # If state has no adapter, fall back to the one persisted in active_model.json.
         active_adapter = self.state.adapter_name or "none"
         if active_adapter == "none":
             from app.engine import config_store
@@ -115,6 +128,7 @@ class ModelPreflightMixin:
             elif active_adapter != "none":
                 report.append(f"Active Adapter: <b>{active_adapter}</b> (loaded)")
 
+        # Yellow if any warning, green otherwise; the border colour reuses it with alpha 0x33.
         status_color = "#2DD4A0" if not warnings else "#FFD800"
         status_text = "HEALTHY" if not warnings else "WARNINGS DETECTED"
         
@@ -142,6 +156,7 @@ class ModelPreflightMixin:
         self._model_status.setText("".join(html_report))
         self._model_status.setTextFormat(Qt.TextFormat.RichText)
 
+        # Quantization tradeoff line: quality label plus required versus free VRAM.
         # Show quantization tradeoff info
         from app.engine.model_loader import ModelLoader
         from core.hardware_scout import get_hardware_profile
@@ -151,7 +166,9 @@ class ModelPreflightMixin:
             hw = get_hardware_profile()
             vram_free = hw.get("vram_gb", 0.0)
             vram_str = f"{vram_needed:.1f} GB required, {vram_free:.1f} GB free" if vram_needed else ""
+            # Quality labels are rough rules of thumb; unknown formats are shown verbatim.
             quant_quality = {"Q4_K_M": "Good", "Q5_K_M": "Better", "Q8_0": "Best", "Q6_K": "Very Good"}.get(quant, quant)
+            # Red when the estimate exceeds free VRAM.
             color = "#2DD4A0" if (not vram_needed or vram_free >= vram_needed) else "#FF5C7A"
             self._quant_info_lbl.setText(
                 f"<span style='color:{color};'>{quant}</span> — Quality: {quant_quality} "

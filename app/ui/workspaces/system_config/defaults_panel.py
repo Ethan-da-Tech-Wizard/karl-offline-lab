@@ -6,6 +6,9 @@
 #          Provides responsive layout controls, parameter adjustment surfaces,
 #          and visual feedback components within Karl's PyQt6 shell.
 # ==============================================================================
+# Defaults and Identity tabs of the System workspace: generation defaults,
+# logging/security toggles, and the system-prompt editor with named presets.
+# Most handlers write straight into the shared state object and persist at once.
 
 from __future__ import annotations
 
@@ -24,7 +27,9 @@ from core.default_prompts import DEFAULT_SYSTEM_PROMPT, load_prompt_presets, sav
 logger = logging.getLogger("karl.system_config")
 
 class DefaultsPanelMixin:
+    """Mixin that builds the Defaults and Identity tabs and handles their change events."""
     def _build_params_tab(self) -> QWidget:
+        """Build the Defaults tab: generation limits, toggles, logging and security settings with a search filter."""
         # Step 1: Validate input parameters, operational preconditions, and state
         w = QWidget()
         layout = QVBoxLayout(w)
@@ -46,6 +51,7 @@ class DefaultsPanelMixin:
         desc.setWordWrap(True)
         pp_layout.addWidget(desc)
 
+        # Every row is registered in self._settings_rows so the search box can hide non-matching ones.
         # Settings Search
         search_layout = QHBoxLayout()
         search_layout.setSpacing(8)
@@ -60,6 +66,7 @@ class DefaultsPanelMixin:
         pp_layout.addLayout(search_layout)
         pp_layout.addWidget(_hline())
 
+        # Ranges: temperature 0-2, top-p 0-1, max tokens 64-8192 (matching what the Workbench accepts).
         self._temp_spin = QDoubleSpinBox()
         self._temp_spin.setRange(0.0, 2.0)
         self._temp_spin.setSingleStep(0.05)
@@ -78,6 +85,7 @@ class DefaultsPanelMixin:
         self._maxtok_spin.setValue(2048)
         self._maxtok_spin.setFixedWidth(90)
 
+        # Mirrors the checkbox on the Theme tab; _on_reduced_motion_changed keeps both in step.
         self._reduced_motion_check = QCheckBox("Disable active glowing animations")
         self._reduced_motion_check.setChecked(getattr(self.state, "reduced_motion", False))
         self._reduced_motion_check.stateChanged.connect(self._on_reduced_motion_changed)
@@ -115,6 +123,7 @@ class DefaultsPanelMixin:
         self._settings_rows.append(("Accessibility", row4))
         pp_layout.addWidget(row4)
 
+        # Theme mode (midnight/slate/ember) is separate from the preset palette chosen on the Theme tab.
         # Theme Mode settings row
         self._theme_mode_combo = QComboBox()
         self._theme_mode_combo.addItems(["midnight", "slate", "ember"])
@@ -162,6 +171,7 @@ class DefaultsPanelMixin:
         self._settings_rows.append(("Session Security", row8))
         pp_layout.addWidget(row8)
 
+        # Applies the three generation defaults to the Workbench via _apply_defaults in workspace.py.
         apply_btn = QPushButton("apply defaults")
         apply_btn.setObjectName("btn-primary")
         apply_btn.setToolTip("Save and apply default generation limits")
@@ -174,7 +184,10 @@ class DefaultsPanelMixin:
 
 
     def _on_reduced_motion_changed(self, state):
+        """Store the reduced-motion flag, mirror it to the Theme tab checkbox, then re-apply and save."""
         # Step 1: Validate input parameters, operational preconditions, and state
+        # Qt may deliver the state as int 2 or as an enum value depending on binding version;
+        # the trailing `or state` makes any truthy value count as checked.
         is_checked = (state == 2 or state == Qt.CheckState.Checked.value or state)
         self.state.reduced_motion = is_checked
         if hasattr(self, "_reduced_motion_check_app"):
@@ -186,6 +199,7 @@ class DefaultsPanelMixin:
 
 
     def _on_theme_mode_changed(self, text: str):
+        """Switch the theme mode live by recompiling the application stylesheet, then persist it."""
         # Step 1: Validate input parameters, operational preconditions, and state
         self.state.theme_mode = text
         from app.ui import themes
@@ -195,18 +209,21 @@ class DefaultsPanelMixin:
 
 
     def _on_log_rotation_changed(self, val):
+        """Store the log rotation size limit (MB) and persist."""
         # Step 1: Validate input parameters, operational preconditions, and state
         self.state.log_rotation_size_mb = val
         self._save_appearance_config_silent()
 
 
     def _on_log_retention_changed(self, val):
+        """Store the log retention period (days) and persist."""
         # Step 1: Validate input parameters, operational preconditions, and state
         self.state.log_retention_days = val
         self._save_appearance_config_silent()
 
 
     def _on_machine_speak_changed(self, state):
+        """Store the Machine Speak flag and save through AppState itself."""
         # Step 1: Validate input parameters, operational preconditions, and state
         is_checked = (state == 2 or state == Qt.CheckState.Checked.value or state is True)
         self.state.enable_machine_speak = is_checked
@@ -217,6 +234,7 @@ class DefaultsPanelMixin:
 
 
     def _on_single_session_auth_changed(self, state):
+        """Store the single-session-auth flag and persist."""
         # Step 1: Validate input parameters, operational preconditions, and state
         is_checked = (state == 2 or state == Qt.CheckState.Checked.value or state is True)
         self.state.single_session_auth = is_checked
@@ -224,6 +242,7 @@ class DefaultsPanelMixin:
 
 
     def _on_thermal_protection_enabled_changed(self, state):
+        """Store the thermal-protection enabled flag and persist (wired from the hardware tab)."""
         # Step 1: Validate input parameters, operational preconditions, and state
         is_checked = (state == 2 or state == Qt.CheckState.Checked.value or state is True)
         self.state.thermal_protection_enabled = is_checked
@@ -231,6 +250,7 @@ class DefaultsPanelMixin:
 
 
     def _on_thermal_threshold_changed(self, val: int):
+        """Store the thermal-protection temperature threshold and persist."""
         # Step 1: Validate input parameters, operational preconditions, and state
         self.state.thermal_protection_threshold = val
         self._save_appearance_config_silent()
@@ -238,6 +258,7 @@ class DefaultsPanelMixin:
     # ── identity tab ──────────────────────────────────────────────────────────
 
     def _build_identity_tab(self) -> QWidget:
+        """Build the Identity tab: preset picker and the editable system prompt."""
         # Step 1: Validate input parameters, operational preconditions, and state
         w = QWidget()
         layout = QVBoxLayout(w)
@@ -259,6 +280,7 @@ class DefaultsPanelMixin:
         desc.setWordWrap(True)
         ip_layout.addWidget(desc)
 
+        # Presets row: pick, load into the editor, save the editor text as a new preset, or delete.
         # ── Presets row ────────────────────────────────────────────────────────
         presets_row = QHBoxLayout()
         presets_row.setSpacing(6)
@@ -299,6 +321,7 @@ class DefaultsPanelMixin:
 
         ip_layout.addLayout(presets_row)
 
+        # Shows the selected preset's description (italic, muted).
         # Preset description label
         self._preset_desc_lbl = QLabel("")
         self._preset_desc_lbl.setObjectName("lbl-muted")
@@ -306,6 +329,7 @@ class DefaultsPanelMixin:
         self._preset_desc_lbl.setStyleSheet("font-size: 8pt; font-style: italic;")
         ip_layout.addWidget(self._preset_desc_lbl)
         self._preset_combo.currentIndexChanged.connect(self._on_preset_combo_changed)
+        # Populate the description for the initial selection.
         # Trigger once to populate description for the initial selection
         self._on_preset_combo_changed(self._preset_combo.currentIndex())
 
@@ -316,7 +340,9 @@ class DefaultsPanelMixin:
         self._system_edit.setToolTip(
             "System prompt active during generation. Determines Karl's personality and guidelines."
         )
+        # Show the persisted prompt if present, otherwise the built-in default.
         # Load currently-active prompt (persisted or default)
+        # Imported lazily to avoid an import cycle at module load.
         from app.engine import config_store as _cs
         stored = _cs.get_ui_config().get("workbench_system_prompt", "")
         self._system_edit.setPlainText(stored if stored.strip() else DEFAULT_SYSTEM_PROMPT)
