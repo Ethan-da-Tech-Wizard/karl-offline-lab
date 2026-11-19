@@ -12,9 +12,21 @@ Karl design system — customizable theme engine.
 Palettes are compiled dynamically into QSS.
 """
 
+# Fallback accent colour (neon cyan) used when no custom accent is chosen.
 ACCENT_DEFAULT = "#00E5FF"
 
+# Theme registry: name -> raw palette. Every entry supplies the same keys:
+#   accent / accent_alt   highlight colour and its darker partner
+#   bg_deep/surface/raised  three background elevations (back to front)
+#   border / border_hi    normal and emphasised outlines
+#   text_hi/mid/lo        primary, secondary and muted text
+#   success/warning/danger  status colours
+#   glow_strength         multiplier for neon glow effects
+#   motion_style          animation flavour ("normal" or "pulse")
+# get_theme_colors() derives the final palette from these, so adding a theme
+# only requires adding one entry here.
 THEMES = {
+    # Default theme: deep navy/black with neon cyan outlines. Also the fallback when a name is unknown.
     "Karl Obsidian Core": {
         "description": "Default cybernetic dark navy and black interface with sharp neon cyan outlines.",
         "accent": "#00E5FF",
@@ -33,6 +45,7 @@ THEMES = {
         "glow_strength": 1.0,
         "motion_style": "normal"
     },
+    # Deep ocean blues with cyan accents and cold white text; mild pulse motion.
     "Abyssal Blue Engine": {
         "description": "Deep ocean blue base, high-energy cyan accents, and cold white text layers.",
         "accent": "#00FFFF",
@@ -51,6 +64,7 @@ THEMES = {
         "glow_strength": 1.2,
         "motion_style": "pulse"
     },
+    # Green phosphor terminal look on near-black; strongest glow (1.5) of the set.
     "Matrix Verdant": {
         "description": "Classic hacker green phosphor terminal layout with black grid backgrounds.",
         "accent": "#33FF33",
@@ -69,6 +83,7 @@ THEMES = {
         "glow_strength": 1.5,
         "motion_style": "normal"
     },
+    # Graphite surfaces with white-blue electric accents.
     "White Lightning Lab": {
         "description": "Graphite black theme accented by sharp, high-intensity white-blue electric sparks.",
         "accent": "#E0F7FA",
@@ -87,6 +102,7 @@ THEMES = {
         "glow_strength": 0.8,
         "motion_style": "pulse"
     },
+    # Cyber blue with magenta borders and bright highlights.
     "Neon Circuit": {
         "description": "Cyber blue with high-energy magenta borders and flashing highlights.",
         "accent": "#00E5FF",
@@ -105,6 +121,7 @@ THEMES = {
         "glow_strength": 1.6,
         "motion_style": "pulse"
     },
+    # Icy blue-gray surfaces, restrained glow; the lightest-feeling palette.
     "Arctic Mainframe": {
         "description": "Icy light blue-gray surfaces, clean white panels, and highly restrained glow.",
         "accent": "#88C0D0",
@@ -123,6 +140,7 @@ THEMES = {
         "glow_strength": 0.4,
         "motion_style": "slow"
     },
+    # Near-black console with subtle violet highlights and muted starlight text.
     "Deep Space Console": {
         "description": "Near-black console accented by subtle dark violet highlights and muted starlight text.",
         "accent": "#7B2CBF",
@@ -141,6 +159,7 @@ THEMES = {
         "glow_strength": 0.6,
         "motion_style": "slow"
     },
+    # Scientific-instrument look: teal borders, high readability.
     "Quantum Teal": {
         "description": "Precision scientific instrument look with quantum teal borders and high readability.",
         "accent": "#00B4D8",
@@ -159,6 +178,7 @@ THEMES = {
         "glow_strength": 1.0,
         "motion_style": "normal"
     },
+    # Muted dark base with golden/amber warning-style accents.
     "Solar Flare Dark": {
         "description": "Muted dark base with high-contrast golden flare warnings and solar amber lines.",
         "accent": "#FF9100",
@@ -177,6 +197,7 @@ THEMES = {
         "glow_strength": 1.1,
         "motion_style": "normal"
     },
+    # Charcoal and black with tactical crimson alerts (security-console feel).
     "Red Team Ops": {
         "description": "Charcoal and black base layered with tactical crimson alerts for a security console environment.",
         "accent": "#FF1744",
@@ -195,6 +216,7 @@ THEMES = {
         "glow_strength": 1.3,
         "motion_style": "normal"
     },
+    # Slate 'glass' background with soft glowing borders.
     "Ghost Glass": {
         "description": "Simulated transparent slate glass background with soft glowing borders.",
         "accent": "#00B0FF",
@@ -213,6 +235,7 @@ THEMES = {
         "glow_strength": 0.7,
         "motion_style": "slow"
     },
+    # Very low-glare coding palette: slate panels, indigo highlights.
     "Midnight Compiler": {
         "description": "Extremely low-glare midnight coding view with slate panels and indigo highlights.",
         "accent": "#6366F1",
@@ -231,6 +254,7 @@ THEMES = {
         "glow_strength": 0.5,
         "motion_style": "slow"
     },
+    # Holographic projection style with thin pale-cyan contours.
     "Hologram Blue": {
         "description": "Futuristic holographic projection interface utilizing thin pale cyan tracing contours.",
         "accent": "#80DEEA",
@@ -249,6 +273,7 @@ THEMES = {
         "glow_strength": 1.4,
         "motion_style": "pulse"
     },
+    # Muted neon violet and magenta tints.
     "Synthwave Control": {
         "description": "Muted neon violet, deep magenta tints, and high-energy tracing circuits.",
         "accent": "#D946EF",
@@ -267,6 +292,7 @@ THEMES = {
         "glow_strength": 1.2,
         "motion_style": "normal"
     },
+    # Black/gray/white with stark electric-blue indicators; high contrast.
     "Monochrome Signal": {
         "description": "High-contrast black, gray, and white layouts with stark electric blue indicators.",
         "accent": "#2563EB",
@@ -285,6 +311,7 @@ THEMES = {
         "glow_strength": 0.9,
         "motion_style": "static"
     },
+    # Softer green CRT look tuned for long reading sessions.
     "Emerald Archive": {
         "description": "Softer, historical green CRT archival view optimized for long documentation reads.",
         "accent": "#10B981",
@@ -303,6 +330,7 @@ THEMES = {
         "glow_strength": 0.8,
         "motion_style": "slow"
     },
+    # Slate gray with lightning-blue accents and strong alert borders.
     "Storm Grid": {
         "description": "Slate gray surfaces, electric lightning blue accents, and high-contrast alert borders.",
         "accent": "#60A5FA",
@@ -321,6 +349,7 @@ THEMES = {
         "glow_strength": 1.0,
         "motion_style": "normal"
     },
+    # Plasma cyan plus neon pink accents; high glow threshold.
     "Plasma Lab": {
         "description": "High-energy plasma cyan mixed with neon pink accents and high glow thresholds.",
         "accent": "#06B6D4",
@@ -339,6 +368,7 @@ THEMES = {
         "glow_strength": 1.4,
         "motion_style": "pulse"
     },
+    # Charcoal tactical surfaces, low-contrast borders, very low glow.
     "Stealth Operator": {
         "description": "Charcoal tactical surfaces, low contrast borders, and extremely low glow strength.",
         "accent": "#3B82F6",
@@ -357,6 +387,7 @@ THEMES = {
         "glow_strength": 0.2,
         "motion_style": "slow"
     },
+    # Neon cyan and pure white on pitch black for maximum contrast.
     "God Mode Cyan": {
         "description": "High-intensity neon cyan and pure white accents over pitch black for absolute contrast.",
         "accent": "#00FFFF",
@@ -375,6 +406,7 @@ THEMES = {
         "glow_strength": 1.8,
         "motion_style": "pulse"
     },
+    # Obsidian variant with deeper blacks and cooler borders.
     "Karl Midnight": {
         "description": "Pure midnight variant — same obsidian core but deeper blacks and cooler border tones.",
         "accent": "#00E5FF",
@@ -393,6 +425,7 @@ THEMES = {
         "glow_strength": 1.2,
         "motion_style": "normal"
     },
+    # Cooler blue-gray slate base with subdued cyan accents.
     "Karl Slate": {
         "description": "Cooler blue-gray slate base with subdued cyan accents and high-readability text.",
         "accent": "#7EC8E3",
@@ -411,6 +444,7 @@ THEMES = {
         "glow_strength": 0.6,
         "motion_style": "slow"
     },
+    # Warm amber/brown with orange accents for night sessions.
     "Karl Ember": {
         "description": "Warm amber and deep brown tones with glowing orange accents for focused night sessions.",
         "accent": "#FF9A3C",
@@ -431,8 +465,11 @@ THEMES = {
     }
 }
 
+# Module-level default palette for code that needs colours without a state object.
 PALETTE = THEMES["Karl Obsidian Core"]
 
+# CSS font stacks interpolated into the QSS. Order is the fallback order:
+# first installed family wins, then the generic family as a last resort.
 MONO = (
     "'JetBrains Mono', 'Fira Code', 'Cascadia Code', "
     "'Consolas', 'Courier New', monospace"
@@ -446,6 +483,7 @@ SANS = (
 def darken_hex_color(hex_str: str, factor: float = 0.7) -> str:
     """Darken a hex color string by a given factor."""
     # Step 1: Validate input parameters, operational preconditions, and state
+    # Accept '#RRGGBB' or 'RRGGBB'; anything not 6 digits falls back to a safe teal.
     hex_str = hex_str.lstrip('#')
     if len(hex_str) != 6:
         return "#008CB8"
@@ -454,6 +492,7 @@ def darken_hex_color(hex_str: str, factor: float = 0.7) -> str:
         r = int(hex_str[0:2], 16)
         g = int(hex_str[2:4], 16)
         b = int(hex_str[4:6], 16)
+        # Scale each channel and clamp to the valid 0-255 byte range.
         r = max(0, min(255, int(r * factor)))
         g = max(0, min(255, int(g * factor)))
         b = max(0, min(255, int(b * factor)))
@@ -497,6 +536,7 @@ def hex_to_rgba(hex_str: str, alpha: float) -> str:
 def get_theme_colors(state_or_name, custom_accent=None, bg_tone="Default", mode: str = None) -> dict:
     """Get the palette colors dictionary for the given theme, custom accent and background overlays."""
     # Step 1: Validate input parameters, operational preconditions, and state
+    # State object: read everything from it (tone is not stored on state).
     if hasattr(state_or_name, "theme_preset"):
         state = state_or_name
         theme_name = getattr(state, "theme_preset", "Karl Obsidian Core")
@@ -506,14 +546,18 @@ def get_theme_colors(state_or_name, custom_accent=None, bg_tone="Default", mode:
         tone = "Default"
     else:
         theme_name = state_or_name
+        # Legacy name from older saved configs.
         if theme_name == "Karl Obsidian":
             theme_name = "Karl Obsidian Core"
         if mode is None:
             mode = "midnight"
         tone = bg_tone
         
+    # Copy so the per-call overrides below never mutate the shared registry.
     raw = dict(THEMES.get(theme_name, THEMES["Karl Obsidian Core"]))
 
+    # Modes re-skin the backgrounds of any theme; 'ember' also swaps the accent
+    # to orange unless the user picked a custom one.
     # Theme mode overrides
     if mode == "slate":
         raw["bg_deep"] = "#0B0F17"
@@ -531,12 +575,14 @@ def get_theme_colors(state_or_name, custom_accent=None, bg_tone="Default", mode:
             raw["accent"] = "#FF8C00"
             raw["accent_alt"] = "#B35F00"
 
+    # A user-chosen accent wins; its alt shade is derived by darkening 30%.
     if custom_accent:
         raw["accent"] = custom_accent
         raw["accent_alt"] = darken_hex_color(custom_accent, 0.7)
     else:
         raw["accent_alt"] = raw.get("accent_alt", darken_hex_color(raw["accent"], 0.7))
         
+    # Background tones are applied last so they win over mode overrides.
     # Tone overrides
     if tone == "Pitch Black":
         raw["bg_deep"] = "#000000"
@@ -551,6 +597,8 @@ def get_theme_colors(state_or_name, custom_accent=None, bg_tone="Default", mode:
         raw["bg_surface"] = "#151C2C"
         raw["bg_raised"] = "#202A3E"
         
+    # Flatten into the key names the QSS template uses. bg_input and sidebar/think
+    # shades are derived by darkening so they stay consistent for any theme.
     p = {
         "bg_deep":     raw["bg_deep"],
         "bg_base":     raw["bg_deep"],
@@ -572,6 +620,8 @@ def get_theme_colors(state_or_name, custom_accent=None, bg_tone="Default", mode:
         "sidebar_bg":  darken_hex_color(raw["bg_deep"], 0.85),
         "sidebar_sel": darken_hex_color(raw["bg_raised"], 0.9),
         
+        # Translucent variants for the glass/HUD styling; alpha values are tuned
+        # by eye (0.75 panels, 0.15 borders, 0.3 glow).
         # Glassmorphism / Heavenscape extensions
         "bg_surface_glass": hex_to_rgba(raw["bg_surface"], 0.75),
         "bg_raised_glass":  hex_to_rgba(raw["bg_raised"], 0.75),
@@ -590,6 +640,8 @@ def get_theme_colors(state_or_name, custom_accent=None, bg_tone="Default", mode:
 # Compiled QSS memo: the sheet is a pure function of (theme, accent, tone,
 # layout), so repeat applications (live preview, startup, slider edits) reuse
 # the cached string instead of re-formatting the ~450-line template.
+# Bounded: cleared wholesale when it reaches the max rather than tracking LRU,
+# which is fine because only a handful of distinct combinations occur.
 _STYLESHEET_CACHE: dict = {}
 _STYLESHEET_CACHE_MAX = 64
 
@@ -597,6 +649,7 @@ _STYLESHEET_CACHE_MAX = 64
 def get_theme_stylesheet(state_or_name, custom_accent=None, bg_tone="Default", mode: str = None) -> str:
     """Compile the QSS stylesheet for the given state configurations."""
     # Step 1: Validate input parameters, operational preconditions, and state
+    # Layout preset only affects spacing/font size, not colours.
     layout_preset = "Focused Workbench"
     if hasattr(state_or_name, "layout_preset"):
         layout_preset = getattr(state_or_name, "layout_preset", "Focused Workbench")
@@ -618,6 +671,7 @@ def get_theme_stylesheet(state_or_name, custom_accent=None, bg_tone="Default", m
     else:
         cache_key = (state_or_name, custom_accent, bg_tone, layout_preset, theme_mode)
 
+    # Cache hit: skip re-formatting the large template.
     cached = _STYLESHEET_CACHE.get(cache_key)
     if cached is not None:
         return cached
@@ -626,6 +680,7 @@ def get_theme_stylesheet(state_or_name, custom_accent=None, bg_tone="Default", m
     p["mono"] = MONO
     p["sans"] = SANS
 
+    # Default density; presets below tighten or loosen margins, spacing and font.
     margin = 12
     spacing = 10
     font_size = 10
@@ -647,12 +702,19 @@ def get_theme_stylesheet(state_or_name, custom_accent=None, bg_tone="Default", m
     p["spacing"] = str(spacing)
     p["font_size"] = str(font_size)
 
+    # str.format fills the {placeholders} in _SHEET; literal QSS braces are
+    # doubled ({{ }}) in the template for that reason.
     sheet = _SHEET.format(**p)
     if len(_STYLESHEET_CACHE) >= _STYLESHEET_CACHE_MAX:
         _STYLESHEET_CACHE.clear()
     _STYLESHEET_CACHE[cache_key] = sheet
     return sheet
 
+# QSS template (a plain string, so no comments can live inside it). Sections:
+# reset, text widgets, buttons (primary/danger/success/warning/ghost/icon),
+# combo boxes, sliders, spin boxes, lists, check boxes, group boxes, docks,
+# progress bars, tooltips, scrollbars and the HUD/settings overlays. Colours,
+# fonts and spacing come from get_theme_colors() via str.format.
 _SHEET = """\
 /* ── Reset ───────────────────────────────────────────────── */
 * {{ outline: none; }}
@@ -1306,6 +1368,8 @@ QScrollBar::add-page:horizontal, QScrollBar::sub-page:horizontal {{
 def stylesheet(accent: str = ACCENT_DEFAULT, mode: str = "midnight") -> str:
     """Backward-compatible helper returning QSS for the default theme."""
     # Step 1: Validate input parameters, operational preconditions, and state
+    # Minimal stand-in exposing the attributes get_theme_stylesheet reads, so
+    # legacy callers need not construct a full AppState.
     class DummyState:
         theme_preset = "Karl Obsidian Core"
         custom_accent = accent
