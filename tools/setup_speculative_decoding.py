@@ -22,6 +22,9 @@ from pathlib import Path
 
 # Small Qwen2.5-0.5B Q8 GGUF used as the speculative-decoding draft model: fast enough to propose
 # tokens that the main model then verifies.
+# Draft and main model must share a tokenizer family for speculative decoding to accept
+# proposed tokens; Qwen2.5-0.5B pairs with the Qwen-family models Karl ships. Pairing it with
+# an unrelated family would load fine but get almost no accepted tokens.
 URL = (
     "https://huggingface.co/Qwen/Qwen2.5-0.5B-Instruct-GGUF/resolve/main/"
     "qwen2.5-0.5b-instruct-q8_0.gguf"
@@ -69,6 +72,8 @@ def download(url: str, target: Path, force: bool = False) -> None:
 
     # Download to a temp name; atomically replaced below.
     tmp = target.with_suffix(target.suffix + ".part")
+    # Identify the tool explicitly rather than sending the default Python-urllib agent, which
+    # some hosts throttle or block.
     req = urllib.request.Request(url, headers={"User-Agent": "Karl/SpeculativeSetup"})
     start = time.monotonic()
     downloaded = 0
@@ -99,6 +104,9 @@ def download(url: str, target: Path, force: bool = False) -> None:
             print(status, end="", flush=True)
 
     print()
+    # Rename only after the loop ends cleanly; a dropped connection raises before this line, so the
+    # target path never holds a truncated model. (A stale .part file may remain; it is overwritten
+    # on the next attempt.)
     tmp.replace(target)
     print(f"Saved draft model to {target}")
 
@@ -109,7 +117,10 @@ def write_config(target: Path, config_path: Path) -> None:
     config_path.parent.mkdir(parents=True, exist_ok=True)
     payload = {
         "draft_model_path": str(target),
+        # Kept modest: the draft model only needs enough context to follow the main model, and its
+        # KV cache competes with the main model for memory.
         "n_ctx": 4096,
+        # -1 offloads every layer; at 0.5B parameters the whole draft model costs well under 1 GB.
         "n_gpu_layers": -1,
     }
     with config_path.open("w", encoding="utf-8") as fh:
