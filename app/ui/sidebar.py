@@ -21,12 +21,20 @@ _MONO_FAMILIES = ["JetBrains Mono", "Fira Code", "Cascadia Code", "Consolas", "C
 
 
 def _mono_font(point_size: float) -> QFont:
+    """Build a monospace QFont using the ordered fallback list above.
+
+    QFont needs setFamilies() for fallbacks; see the note on _MONO_FAMILIES.
+    """
     # Step 1: Validate input parameters, operational preconditions, and state
     font = QFont()
     font.setFamilies(_MONO_FAMILIES)
     font.setPointSizeF(point_size)
     return font
 
+# Navigation table: (glyph, short label, stack index). The index must match
+# the order workspaces are added to the QStackedWidget in MainWindow._build_ui,
+# and the Ctrl+N shortcuts there. Glyphs are plain Unicode so no icon assets
+# are needed.
 _ITEMS = [
     ("◈", "Workbench",  0),
     ("⊕", "Prompt Lab", 1),
@@ -41,6 +49,8 @@ _ITEMS = [
 ]
 
 
+# One square button per workspace. Its "active" dynamic property is what the
+# QSS uses to draw the highlighted state.
 class _SidebarButton(QPushButton):
     """Fixed-size accessible workspace navigation button."""
 
@@ -52,20 +62,24 @@ class _SidebarButton(QPushButton):
         self._icon = icon
         self._label = label
         self.setObjectName("sidebar-btn")
+        # Fixed size keeps the column width stable regardless of label length.
         self.setFixedSize(62, 62)
         self.setCursor(Qt.CursorShape.PointingHandCursor)
         self.setText(f"{icon}\n{label}")
         self.setFont(_mono_font(6.5))
+        # Accessibility text for screen readers (the visible label is tiny).
         self.setAccessibleName(f"Workspace Navigator: {label}")
         self.setAccessibleDescription(f"Switch active view to the {label} workspace")
 
     def set_compact(self, compact: bool):
         """Switch between label and icon-only presentation for narrow windows."""
         # Step 1: Validate input parameters, operational preconditions, and state
+        # Compact mode: icon only, slightly smaller button, larger glyph.
         if compact:
             self.setText(self._icon)
             self.setFixedSize(48, 50)
             self.setFont(_mono_font(12))
+        # Normal mode: icon above label in a small monospace font.
         else:
             self.setText(f"{self._icon}\n{self._label}")
             self.setFixedSize(62, 62)
@@ -75,13 +89,18 @@ class _SidebarButton(QPushButton):
         """Set the active dynamic QSS property and force a style refresh."""
         # Step 1: Validate input parameters, operational preconditions, and state
         self.setProperty("active", "true" if active else "false")
+        # Qt does not re-evaluate property selectors on change; unpolish+polish
+        # forces the stylesheet to be re-applied to this widget.
         self.style().unpolish(self)
         self.style().polish(self)
 
 
+# The navigator column. It is a pure view: it only emits workspace_changed and
+# lets the main window flip the stack.
 class Sidebar(QWidget):
     """Vertical workspace navigator that emits selected stack indexes."""
 
+    # Emitted with the target stack index whenever a workspace is selected.
     workspace_changed = pyqtSignal(int)
 
     def __init__(self, parent=None):
@@ -102,6 +121,7 @@ class Sidebar(QWidget):
         logo.setFixedHeight(44)
         layout.addWidget(logo)
 
+        # Hover text describing each workspace, keyed by stack index.
         tooltips = {
             0: "Workbench (Main Chat Space)",
             1: "Prompt Lab (A/B testing & tokenization)",
@@ -116,6 +136,8 @@ class Sidebar(QWidget):
         }
         self._buttons: list[_SidebarButton] = []
         self._compact = False
+        # Build one button per entry. `i=idx` is bound as a default argument so each
+        # lambda keeps its own index instead of the loop's last value.
         for icon, label, idx in _ITEMS:
             # Iterate over items, evaluate loop invariant, and update progress
             btn = _SidebarButton(icon, label, idx, self)
@@ -124,10 +146,13 @@ class Sidebar(QWidget):
             layout.addWidget(btn, alignment=Qt.AlignmentFlag.AlignHCenter)
             self._buttons.append(btn)
 
+        # Push the buttons to the top of the column.
         layout.addStretch()
+        # Start on the Workbench; this also emits workspace_changed(0).
         self._select(0)
 
     def _select(self, index: int):
+        """Highlight the button for `index` and notify listeners."""
         # Step 1: Validate input parameters, operational preconditions, and state
         for btn in self._buttons:
             # Iterate over items, evaluate loop invariant, and update progress
@@ -145,6 +170,7 @@ class Sidebar(QWidget):
         if self._compact == compact:
             return
         self._compact = compact
+        # Narrow rail in compact mode so the content area keeps its space.
         self.setFixedWidth(48 if compact else 62)
         for btn in self._buttons:
             # Iterate over items, evaluate loop invariant, and update progress
