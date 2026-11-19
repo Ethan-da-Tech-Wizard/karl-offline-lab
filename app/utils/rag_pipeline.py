@@ -235,6 +235,7 @@ class RAGPipeline:
 
     def _add_embeddings_to_index(self, embeddings: np.ndarray, vector_ids: list[int]):
         """Add embeddings to the FAISS index under explicit vector ids."""
+        # IndexIDMap only accepts int64 ids and float32 vectors; other dtypes raise or silently reinterpret memory.
         ids = np.asarray(vector_ids, dtype="int64")
         self.index.add_with_ids(np.asarray(embeddings, dtype="float32"), ids)
 
@@ -242,6 +243,7 @@ class RAGPipeline:
         """Write the index to a temp file then rename it over the real file so readers never see a partial index.
         """
         active_index = index or self.index
+        # The temp file sits next to the target so os.replace stays on one filesystem, where rename is atomic.
         tmp_path = f"{self.INDEX_FILE}.tmp"
         faiss.write_index(active_index, tmp_path)
         os.replace(tmp_path, self.INDEX_FILE)
@@ -598,6 +600,7 @@ class RAGPipeline:
     def _embed_texts_batched(self, texts: list[str], batch_size: int = 32) -> np.ndarray:
         """Embed texts in batches and return a float32 matrix (empty (0, dimension) matrix for no input).
         """
+        # Return a correctly shaped empty matrix (not None) so callers can vstack/add it without special cases.
         if not texts:
             return np.empty((0, self.dimension), dtype="float32")
 
@@ -660,6 +663,8 @@ class RAGPipeline:
             flush_job = None
             with self._pool.get_connection() as conn:
                 try:
+                    # IMMEDIATE takes the write lock up front, so two writers fail/wait at BEGIN instead of
+                    # deadlocking halfway when both try to upgrade a read transaction.
                     conn.execute("BEGIN IMMEDIATE")
                     conn.executemany(
                         "INSERT INTO documents(vector_id, text, source_file, chunk_id, ingested_at)"
@@ -1144,6 +1149,7 @@ class RAGPipeline:
 
         results = list(exact_matches)
         for rank, (dist, idx) in enumerate(zip(distances[0], indices[0])):
+            # FAISS pads with -1 when fewer than fetch_k vectors match; those slots are not real hits.
             if idx == -1:
                 continue
             doc = docs_by_vector_id.get(int(idx))
