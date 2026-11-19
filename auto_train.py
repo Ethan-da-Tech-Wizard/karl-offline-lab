@@ -460,9 +460,9 @@ def main():
     parser.add_argument("--rank", type=int, default=16, help="LoRA rank")
     parser.add_argument("--alpha", type=int, default=32, help="LoRA alpha")
     parser.add_argument("--dropout", type=float, default=0.05, help="LoRA dropout")
-    # NOTE: store_true with default=True means this flag is always on; QLoRA cannot be disabled
-    # from the CLI. Non-CUDA machines still skip 4-bit via the torch.cuda check in train_adapter.
-    parser.add_argument("--qlora", action="store_true", default=True, help="Use QLoRA 4-bit SFT")
+    # BooleanOptionalAction gives --qlora / --no-qlora, so QLoRA (default on) can be turned off.
+    # Non-CUDA machines still skip 4-bit via the torch.cuda check in train_adapter.
+    parser.add_argument("--qlora", action=argparse.BooleanOptionalAction, default=True, help="Use QLoRA 4-bit SFT (disable with --no-qlora)")
     parser.add_argument("--base_model", type=str, default=None, help="Path to HF base model folder")
     args = parser.parse_args()
 
