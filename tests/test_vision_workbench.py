@@ -22,6 +22,7 @@ from app.ui.workspaces.vision_workbench import VisionWorkbench
 def test_vision_workbench_lists_saved_images(tmp_path):
     """The Vision Workbench lists images saved in the store."""
     state = AppState()
+    # Point the store at tmp_path so the test never writes into the user's real image library; the class is reused rather than imported to keep the swap one line.
     state.image_store = state.image_store.__class__(base_dir=str(tmp_path / "images"))
 
     image = QImage(40, 30, QImage.Format.Format_RGB32)
@@ -29,6 +30,7 @@ def test_vision_workbench_lists_saved_images(tmp_path):
     record = state.image_store.save_qimage(image, source="test")
 
     workspace = VisionWorkbench(state)
+    # refresh() is called explicitly because the widget does not populate its list until asked; the item ids are then read back out of the Qt list model rather than checking labels.
     workspace.refresh()
 
     ids = [
@@ -48,11 +50,13 @@ def test_vision_workbench_saves_metadata_and_corrections(tmp_path):
     record = state.image_store.save_qimage(image, source="test")
 
     workspace = VisionWorkbench(state)
+    # Selecting by id plus _render_record mimics a user clicking the record: the editing widgets only act on the currently selected record.
     workspace._selected_id = record.id
     workspace._render_record(record)
 
     workspace._kind_combo.setCurrentIndex(workspace._kind_combo.findData("code_screenshot"))
     workspace._tags.setText("code, error")
+    # Each _save_* handler is driven separately because they write different parts of the record (metadata, OCR correction, caption correction) and none may clobber the others.
     workspace._save_metadata()
 
     workspace._ocr.setPlainText("NameError visible in screenshot")
@@ -63,6 +67,7 @@ def test_vision_workbench_saves_metadata_and_corrections(tmp_path):
 
     loaded = state.image_store.get(record.id)
     assert loaded.kind == "code_screenshot"
+    # The tag field is a comma-separated string in the UI; it must be split and trimmed into a list when stored.
     assert loaded.tags == ["code", "error"]
     assert loaded.ocr.text == "NameError visible in screenshot"
     assert loaded.vision.caption == "Editor screenshot with a Python NameError."

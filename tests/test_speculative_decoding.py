@@ -19,6 +19,7 @@ def test_registry_companion_draft_is_discoverable(tmp_path, monkeypatch):
     from app.engine import config_store
 
     monkeypatch.chdir(tmp_path)
+    # The registry is cached in module globals keyed by mtime; reset them so this test's fresh file is read instead of a cached one from an earlier test.
     config_store._registry_cache = None
     config_store._registry_cache_mtime = None
 
@@ -37,6 +38,7 @@ def test_registry_companion_draft_is_discoverable(tmp_path, monkeypatch):
     draft_cfg = config_store.get_active_draft_model()
 
     assert config_store.registry_draft_model_filename("target.gguf") == "draft.gguf"
+    # Speculative decoding is opt-in: merely naming a companion draft in the registry must not turn it on.
     assert not draft_cfg["enabled"]
     assert draft_cfg["filename"] == "draft.gguf"
 
@@ -52,6 +54,7 @@ def test_active_draft_model_persists_enabled_flag(tmp_path, monkeypatch):
     assert draft_cfg1["enabled"]
     assert draft_cfg1["filename"] == "draft.gguf"
 
+    # Clearing the draft must also clear the filename (None), so a stale draft file is never loaded after the user turns the feature off.
     assert config_store.set_active_draft_model(None, enabled=False)
     draft_cfg2 = config_store.get_active_draft_model()
     assert not draft_cfg2["enabled"]
@@ -60,6 +63,7 @@ def test_active_draft_model_persists_enabled_flag(tmp_path, monkeypatch):
 
 def test_model_loader_uses_persisted_draft_setting():
     """Source-level guard: ModelLoader reads the persisted draft setting, reloads when it changes, wraps the draft in an adapter class and passes it as draft_model."""
+    # Source-level guards: loading a model needs hardware, so the wiring is pinned by checking the source text. They fail loudly if a refactor removes the draft path, but do not prove it works at runtime.
     source = Path("app/engine/model_loader.py").read_text(encoding="utf-8")
 
     assert "config_store.get_active_draft_model()" in source
