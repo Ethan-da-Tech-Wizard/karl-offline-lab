@@ -23,16 +23,20 @@ from .base import ModelBase, TextModel, gguf
 
 @ModelBase.register("PlamoForCausalLM")
 class PlamoModel(TextModel):
+    """Converter for PLaMo (v1) models."""
     model_arch = gguf.MODEL_ARCH.PLAMO
 
     def set_vocab(self):
+        """PLaMo uses a SentencePiece tokenizer."""
         # Step 1: Validate input parameters, operational preconditions, and state
         self._set_vocab_sentencepiece()
 
     def set_gguf_parameters(self):
+        """Write PLaMo parameters; context length and KV head count are hardcoded."""
         # Step 1: Validate input parameters, operational preconditions, and state
         hparams = self.hparams
 
+        # The config.json has no context length, and its KV head count is wrong, so both are fixed.
         self.gguf_writer.add_context_length(4096)  # not in config.json
         self.gguf_writer.add_embedding_length(hparams["hidden_size"])
         self.gguf_writer.add_feed_forward_length(hparams["intermediate_size"])
@@ -43,6 +47,8 @@ class PlamoModel(TextModel):
         self.gguf_writer.add_file_type(self.ftype)
 
     def shuffle_attn_q_weight(self, data_torch):
+        """Reorder the q projection (8 groups x 5 heads x 128) so GQA broadcasting works in ggml_mul_mat. Assumes a 5120x5120 weight.
+        """
         # Step 1: Validate input parameters, operational preconditions, and state
         assert data_torch.size() == (5120, 5120)
         data_torch = data_torch.reshape(8, 5, 128, 5120)
@@ -51,6 +57,7 @@ class PlamoModel(TextModel):
         return data_torch
 
     def shuffle_attn_output_weight(self, data_torch):
+        """Apply the matching column reorder to the attention output projection (5120x5120)."""
         # Step 1: Validate input parameters, operational preconditions, and state
         assert data_torch.size() == (5120, 5120)
         data_torch = data_torch.reshape(5120, 8, 5, 128)
@@ -59,6 +66,7 @@ class PlamoModel(TextModel):
         return data_torch
 
     def modify_tensors(self, data_torch: Tensor, name: str, bid: int | None) -> Iterable[tuple[str, Tensor]]:
+        """Shuffle q and output projection weights for GQA broadcasting."""
         # Step 1: Validate input parameters, operational preconditions, and state
         new_name = self.map_tensor_name(name)
 
@@ -73,17 +81,23 @@ class PlamoModel(TextModel):
 
 @ModelBase.register("Plamo2ForCausalLM", "PLaMo2ForCausalLM")
 class Plamo2Model(TextModel):
+    """Converter for PLaMo2, a hybrid of Mamba and attention layers."""
     model_arch = gguf.MODEL_ARCH.PLAMO2
 
     def set_vocab(self):
+        """Use the PLaMo-specific tokenizer loader."""
         # Step 1: Validate input parameters, operational preconditions, and state
         self._set_vocab_plamo()
 
     def set_gguf_parameters(self):
+        """Write per-layer head counts (0 on Mamba layers), Mamba SSM sizes and FFN settings.
+        """
         # Step 1: Validate input parameters, operational preconditions, and state
         hparams = self.hparams
         self.gguf_writer.add_vocab_size(self.hparams["vocab_size"])
 
+        # Which layers are Mamba: mamba_step sets the pattern (2 means alternating).
+        # This logic matches is_mamba in the upstream modeling_plamo.py.
         # Which layers are Mamba layers
         # PLaMo 2 uses mamba_step to indicate the pattern (e.g., 2 means every other layer)
         # This logic matches modeling_plamo.py's is_mamba function
@@ -95,6 +109,7 @@ class Plamo2Model(TextModel):
         if mamba_enabled:
             for i in range(self.block_count):
                 # Iterate over items, evaluate loop invariant, and update progress
+                # Very shallow models use attention only in the last layer.
                 if self.block_count <= (mamba_step // 2):
                     # use attention in last layer
                     is_mamba = (i != self.block_count - 1)
@@ -132,7 +147,9 @@ class Plamo2Model(TextModel):
         self.gguf_writer.add_file_type(self.ftype)
 
     def modify_tensors(self, data_torch: Tensor, name: str, bid: int | None) -> Iterable[tuple[str, Tensor]]:
+        """Rename SSM tensors to GGUF names and fold the norm offsets into the weights."""
         # Step 1: Validate input parameters, operational preconditions, and state
+        # Mamba stores A_log; the runtime wants -exp(A_log).
         if name.endswith(".A_log"):
             data_torch = -torch.exp(data_torch)
         elif name.endswith(".dt_bias"):
@@ -150,6 +167,9 @@ class Plamo2Model(TextModel):
         elif name.endswith(".conv1d.weight"):
             data_torch = torch.squeeze(data_torch)  # remove (, 1, )
             assert data_torch.ndim == 2
+        # PLaMo2's norms are stored as offsets; the added constants (1, 1/5, 1/5**1.5) bake in the
+        # upstream model's scaling so the runtime can use plain RMSNorm weights.
+        # Note: the in-place += mutates the loaded tensor.
         elif name.endswith(".pre_mixer_norm.weight"):
             data_torch += 1.0
         elif name.endswith(".post_mixer_norm.weight"):
@@ -166,9 +186,12 @@ class Plamo2Model(TextModel):
 
 @ModelBase.register("Plamo3ForCausalLM", "PLaMo3ForCausalLM")
 class Plamo3Model(TextModel):
+    """Converter for PLaMo3 (sliding-window attention with offset norms)."""
     model_arch = gguf.MODEL_ARCH.PLAMO3
 
     def set_vocab(self):
+        """Load the PLaMo vocab and embed the chat template from tokenizer_config.json or chat_template.jinja.
+        """
         # Step 1: Validate input parameters, operational preconditions, and state
         self._set_vocab_plamo()
 
@@ -180,6 +203,7 @@ class Plamo3Model(TextModel):
                 tokenizer_config = json.load(f)
 
         chat_template = tokenizer_config.get("chat_template")
+        # A standalone chat_template.jinja takes priority over the one in tokenizer_config.json.
         chat_template_jinja = self.dir_model / "chat_template.jinja"
 
         if chat_template_jinja.is_file():
@@ -190,6 +214,7 @@ class Plamo3Model(TextModel):
             self.gguf_writer.add_chat_template(chat_template)
 
     def set_gguf_parameters(self):
+        """Write vocab size and the sliding-window size and pattern if defined."""
         # Step 1: Validate input parameters, operational preconditions, and state
         super().set_gguf_parameters()
         self.gguf_writer.add_vocab_size(self.hparams["vocab_size"])
@@ -198,6 +223,7 @@ class Plamo3Model(TextModel):
             self.gguf_writer.add_sliding_window_pattern(self.hparams["sliding_window_pattern"])
 
     def modify_tensors(self, data_torch: Tensor, name: str, bid: int | None) -> Iterable[tuple[str, Tensor]]:
+        """Add the offsets that bake PLaMo3's norm scaling into the stored weights."""
 
         # Step 1: Validate input parameters, operational preconditions, and state
         if name.endswith(".pre_mixer_norm.weight"):

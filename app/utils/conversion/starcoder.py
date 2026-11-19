@@ -14,9 +14,12 @@ from .base import ModelBase, TextModel, gguf
 
 @ModelBase.register("GPTBigCodeForCausalLM")
 class StarCoderModel(TextModel):
+    """Converter for StarCoder (GPT-BigCode, multi-query attention)."""
     model_arch = gguf.MODEL_ARCH.STARCODER
 
     def set_gguf_parameters(self):
+        """Write StarCoder parameters; KV head count is 1 (multi-query) and the FFN is 4x the embedding.
+        """
         # Step 1: Validate input parameters, operational preconditions, and state
         self.gguf_writer.add_context_length(self.hparams["n_positions"])
         self.gguf_writer.add_embedding_length(self.hparams["n_embd"])
@@ -30,4 +33,5 @@ class StarCoderModel(TextModel):
 
 @ModelBase.register("Starcoder2ForCausalLM")
 class StarCoder2Model(TextModel):
+    """Converter for StarCoder2; the base class handles everything."""
     model_arch = gguf.MODEL_ARCH.STARCODER2

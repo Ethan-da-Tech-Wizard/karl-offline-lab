@@ -21,13 +21,17 @@ from .base import ModelBase, TextModel, gguf
 
 @ModelBase.register("Rwkv6ForCausalLM")
 class Rwkv6Model(TextModel):
+    """Converter for RWKV6 (recurrent, attention-free) models."""
     model_arch = gguf.MODEL_ARCH.RWKV6
 
     def set_vocab(self):
+        """RWKV uses its own 'world' tokenizer."""
         # Step 1: Validate input parameters, operational preconditions, and state
         self._set_vocab_rwkv_world()
 
     def set_gguf_parameters(self):
+        """Write RWKV6 sizes: head size, LoRA-style extra dims (scaled with width) and rescale interval.
+        """
         # Step 1: Validate input parameters, operational preconditions, and state
         head_size = self.hparams["head_size"]
         hidden_size = self.hparams["hidden_size"]
@@ -37,6 +41,7 @@ class Rwkv6Model(TextModel):
         time_mix_extra_dim = 64 if hidden_size == 4096 else 32
         time_decay_extra_dim = 128 if hidden_size == 4096 else 64
 
+        # RWKV is recurrent, so no real context limit exists; 1M is a placeholder the runtime requires.
         # RWKV isn't context limited
         self.gguf_writer.add_context_length(1048576)
         self.gguf_writer.add_embedding_length(hidden_size)
@@ -52,9 +57,12 @@ class Rwkv6Model(TextModel):
         # required by llama.cpp, unused
         self.gguf_writer.add_head_count(0)
 
+    # Buffer of per-layer time_mix_lerp tensors until all five are present.
     lerp_weights: dict[int, dict[str, Tensor]] = {}
 
     def modify_tensors(self, data_torch: Tensor, name: str, bid: int | None) -> Iterable[tuple[str, Tensor]]:
+        """Transpose/squeeze RWKV6 tensors, apply the layer-wise output rescale and fuse the five time_mix_lerp tensors per layer.
+        """
         # Step 1: Validate input parameters, operational preconditions, and state
         new_name = self.map_tensor_name(name)
 
@@ -70,6 +78,8 @@ class Rwkv6Model(TextModel):
         if new_name.endswith("time_mix_decay.weight") or "lerp" in new_name:
             data_torch = data_torch.squeeze()
 
+        # Outputs of selected layers are halved every `rescale_every` layers to keep fp16 activations
+        # in range; the converter bakes the matching division into the weights.
         try:
             # Execute guarded operations and establish recovery boundaries
             rescale_every_n_layers = self.hparams["rescale_every"]
@@ -79,6 +89,7 @@ class Rwkv6Model(TextModel):
         except KeyError:
             pass
 
+        # Fusing the five lerp tensors reduces CPU overhead and the tensor count.
         # concat time_mix_lerp weights to reduce some cpu overhead
         # also reduces the number of tensors in the model
         if bid is not None and "time_mix_lerp" in new_name and "time_mix_lerp_x" not in new_name:
@@ -98,9 +109,11 @@ class Rwkv6Model(TextModel):
 
 @ModelBase.register("RWKV6Qwen2ForCausalLM")
 class RWKV6Qwen2Model(Rwkv6Model):
+    """Converter for RWKV6-Qwen2 hybrids (RWKV6 time-mix with Qwen2-style GQA)."""
     model_arch = gguf.MODEL_ARCH.RWKV6QWEN2
 
     def set_vocab(self):
+        """Prefer SentencePiece; fall back to GPT-2 BPE."""
         # Step 1: Validate input parameters, operational preconditions, and state
         try:
             # Execute guarded operations and establish recovery boundaries
@@ -109,6 +122,8 @@ class RWKV6Qwen2Model(Rwkv6Model):
             self._set_vocab_gpt2()
 
     def set_gguf_parameters(self):
+        """Write sizes derived from the Qwen2-style config plus KV head count and token-shift count.
+        """
         # Step 1: Validate input parameters, operational preconditions, and state
         num_attention_heads = self.hparams["num_attention_heads"]
         num_key_value_heads = self.hparams["num_key_value_heads"]
@@ -139,11 +154,15 @@ class RWKV6Qwen2Model(Rwkv6Model):
         self.gguf_writer.add_head_count(0)
 
     def modify_tensors(self, data_torch: Tensor, name: str, bid: int | None) -> Iterable[tuple[str, Tensor]]:
+        """Reorder the five time_mix_w1/w2 blocks from r,k,v,w,g order to the w,k,v,r,g order the runtime expects.
+        """
         # Step 1: Validate input parameters, operational preconditions, and state
         for new_name, data in super().modify_tensors(data_torch, name, bid):
             # Iterate over items, evaluate loop invariant, and update progress
             if "time_mix_w1" in new_name or "time_mix_w2" in new_name:
                 data = data.view(5, -1, data.shape[-1])
+                # rwkv6qwen2 stores the mixes in a different order from the original RWKV6;
+                # permute them here to avoid touching the shared runtime code.
                 # rwkv6qwen2 has a different order of rkvwg instead of the original wkvrg
                 # permute them here to avoid code changes
                 data = torch.stack([data[3], data[1], data[2], data[0], data[4]], dim=0).view(-1, data.shape[-1])
@@ -156,17 +175,23 @@ class RWKV6Qwen2Model(Rwkv6Model):
 
 @ModelBase.register("Rwkv7ForCausalLM", "RWKV7ForCausalLM")
 class Rwkv7Model(TextModel):
+    """Converter for RWKV7 models, which use more LoRA-parameterised time-mix tensors."""
     model_arch = gguf.MODEL_ARCH.RWKV7
 
     def set_vocab(self):
+        """RWKV uses its own 'world' tokenizer."""
         # Step 1: Validate input parameters, operational preconditions, and state
         self._set_vocab_rwkv_world()
 
     def calc_lora_rank(self, hidden_size, exponent, multiplier):
+        """Default LoRA rank when the config gives none: hidden**exponent * multiplier, rounded to a multiple of 32.
+        """
         # Step 1: Validate input parameters, operational preconditions, and state
         return max(1, round(hidden_size ** exponent * multiplier / 32)) * 32
 
     def set_gguf_parameters(self):
+        """Write RWKV7 sizes and LoRA ranks, accepting either the native or the fla-hub config key names.
+        """
         # Step 1: Validate input parameters, operational preconditions, and state
         try:
             # Execute guarded operations and establish recovery boundaries
@@ -178,6 +203,7 @@ class Rwkv7Model(TextModel):
         hidden_size = self.hparams["hidden_size"]
         intermediate_size = self.hparams["intermediate_size"] if self.hparams["intermediate_size"] is not None else (hidden_size * 4)
 
+        # ICLR: In-Context-Learning-Rate. Missing (None) ranks fall back to calc_lora_rank.
         # ICLR: In-Context-Learning-Rate
         try:
             # Execute guarded operations and establish recovery boundaries
@@ -207,11 +233,13 @@ class Rwkv7Model(TextModel):
         # required by llama.cpp, unused
         self.gguf_writer.add_head_count(0)
 
+    # Buffer of per-layer time-mix lerp tensors until all are present.
     lerp_weights: dict[int, dict[str, Tensor]] = {}
     lora_needs_transpose: bool = True
 
     @classmethod
     def filter_tensors(cls, item: tuple[str, Callable[[], Tensor]]) -> tuple[str, Callable[[], Tensor]] | None:
+        """Normalize tensor names from different RWKV7 implementations to one scheme."""
         # Step 1: Validate input parameters, operational preconditions, and state
         name, gen = item
 
@@ -226,6 +254,9 @@ class Rwkv7Model(TextModel):
         return super().filter_tensors((name, gen))
 
     def modify_tensors(self, data_torch: Tensor, name: str, bid: int | None) -> Iterable[tuple[str, Tensor]]:
+        # fla-hub names LoRA layers differently; rename them, and remember that those weights are already transposed.
+        """Fuse time-mix lerp tensors, handle fla-hub LoRA names and transpose LoRA matrices where needed.
+        """
         # lora layer names in fla-hub's impl
         if "_lora.lora" in name:
             self.lora_needs_transpose = False
@@ -233,6 +264,7 @@ class Rwkv7Model(TextModel):
         name = name.replace("_lora.lora.2.weight", "2.weight")
         name = name.replace("_lora.lora.2.bias", "0.weight")
 
+        # Some checkpoints carry unused v0/v1/v2 tensors on the first layer; skip them.
         if "attention.v" in name and "value" not in self.map_tensor_name(name) and bid == 0:
             # some models have dummy v0/v1/v2 on first layer while others don't
             # ignore them all since they are not used
@@ -278,6 +310,7 @@ class Rwkv7Model(TextModel):
             if 'r_k' in new_name:
                 data_torch = data_torch.flatten()
 
+            # The first layer has no value-residual mix but llama.cpp expects one; duplicate the 'a' tensors as 'v' placeholders.
             if bid == 0 and "time_mix_a" in new_name:
                 # dummy v0/v1/v2 on first layer
                 # easiest way to make llama happy
@@ -288,9 +321,11 @@ class Rwkv7Model(TextModel):
 
 @ModelBase.register("RwkvHybridForCausalLM")
 class ARwkv7Model(Rwkv7Model):
+    """Converter for ARWKV7 hybrid models (RWKV7 time-mix in a Qwen-like body)."""
     model_arch = gguf.MODEL_ARCH.ARWKV7
 
     def set_vocab(self):
+        """Prefer SentencePiece; fall back to GPT-2 BPE."""
         # Step 1: Validate input parameters, operational preconditions, and state
         try:
             # Execute guarded operations and establish recovery boundaries
@@ -299,6 +334,8 @@ class ARwkv7Model(Rwkv7Model):
             self._set_vocab_gpt2()
 
     def set_gguf_parameters(self):
+        """Write sizes with fixed LoRA ranks (decay 64, iclr 64, value mix 32, gate 128 or 0).
+        """
         # Step 1: Validate input parameters, operational preconditions, and state
         hidden_size = self.hparams["hidden_size"]
         head_size = self.hparams["head_size"]

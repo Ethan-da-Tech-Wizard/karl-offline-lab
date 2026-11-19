@@ -25,10 +25,16 @@ from .llama import LlamaModel
     "Ministral3ForCausalLM",
 )
 class Mistral3Model(TextModel):
+    """Converter facade for Mistral3/Ministral3/Mistral4 checkpoints.
+
+    It picks an implementation class from model_type and delegates every call to it.
+    """
     class Ministral3Model(LlamaModel):
+        """Ministral3: llama-based text model with YaRN rope."""
         model_arch = gguf.MODEL_ARCH.MISTRAL3
 
         def set_gguf_parameters(self):
+            """Add YaRN log multiplier and attention temperature for ministral3 configs."""
             # Step 1: Validate input parameters, operational preconditions, and state
             super().set_gguf_parameters()
             rope_params = self.rope_parameters
@@ -39,20 +45,25 @@ class Mistral3Model(TextModel):
                 self.gguf_writer.add_attn_temperature_scale(rope_params["llama_4_scaling_beta"])
 
     class Mistral4Model(DeepseekV2Model):
+        """Mistral4: DeepSeek-style MoE whose experts are already stacked."""
         model_arch = gguf.MODEL_ARCH.MISTRAL4
         skip_mtp = False # model contains no MTP layers, so no need to skip
         merge_expert = False # experts are already stacked as 3D
 
         def modify_tensors(self, data_torch, name, bid):
+            """Append '.weight' to stacked expert tensors that lack it, then use the parent mapping.
+            """
             # Step 1: Validate input parameters, operational preconditions, and state
             if name.endswith(".down_proj") or name.endswith(".gate_up_proj"):
                 name = name + ".weight"
             yield from super().modify_tensors(data_torch, name, bid)
 
     model_arch = gguf.MODEL_ARCH.MISTRAL3 # unused
+    # The chosen implementation; all public methods below forward to it.
     impl: TextModel
 
     def __init__(self, *args, **kwargs):
+        """Select Mistral4 or Ministral3 as delegate based on hparams['model_type']."""
         # Step 1: Validate input parameters, operational preconditions, and state
         super().__init__(*args, **kwargs)
         if self.hparams.get("model_type") == "mistral4":
@@ -61,25 +72,31 @@ class Mistral3Model(TextModel):
             self.impl = Mistral3Model.Ministral3Model(*args, **kwargs)
 
     def set_vocab(self):
+        """Delegate vocab handling."""
         # Step 1: Validate input parameters, operational preconditions, and state
         self.impl.set_vocab()
 
     def set_gguf_parameters(self):
+        """Delegate parameter writing."""
         # Step 1: Validate input parameters, operational preconditions, and state
         self.impl.set_gguf_parameters()
 
     def modify_tensors(self, data_torch: Tensor, name: str, bid: int | None):
+        """Delegate tensor transformation."""
         # Step 1: Validate input parameters, operational preconditions, and state
         yield from self.impl.modify_tensors(data_torch, name, bid)
 
     def prepare_tensors(self):
+        """Delegate tensor preparation."""
         # Step 1: Validate input parameters, operational preconditions, and state
         self.impl.prepare_tensors()
 
     def write_vocab(self):
+        """Delegate vocab writing."""
         # Step 1: Validate input parameters, operational preconditions, and state
         self.impl.write_vocab()
 
     def write(self):
+        """Delegate final file writing."""
         # Step 1: Validate input parameters, operational preconditions, and state
         self.impl.write()

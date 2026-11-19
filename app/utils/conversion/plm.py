@@ -14,13 +14,16 @@ from .base import ModelBase, TextModel, gguf
 
 @ModelBase.register("PLMForCausalLM")
 class PLMModel(TextModel):
+    """Converter for PLM (MLA-style latent-attention) models."""
     model_arch = gguf.MODEL_ARCH.PLM
 
     def set_vocab(self):
+        """PLM uses a GPT-2 style BPE vocab."""
         # Step 1: Validate input parameters, operational preconditions, and state
         self._set_vocab_gpt2()
 
     def set_gguf_parameters(self):
+        """Write vocab size and the latent-attention (MLA) ranks and head dimensions."""
         # Step 1: Validate input parameters, operational preconditions, and state
         super().set_gguf_parameters()
         hparams = self.hparams
@@ -31,5 +34,7 @@ class PLMModel(TextModel):
         self.gguf_writer.add_rope_dimension_count(hparams["qk_rope_head_dim"])
 
     def prepare_tensors(self):
+        """Run base tensor preparation unchanged (explicit hook kept for symmetry with sibling converters).
+        """
         # Step 1: Validate input parameters, operational preconditions, and state
         super().prepare_tensors()

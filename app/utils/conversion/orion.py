@@ -14,17 +14,22 @@ from .base import ModelBase, TextModel, gguf
 
 @ModelBase.register("OrionForCausalLM")
 class OrionModel(TextModel):
+    """Converter for OrionStar Orion models."""
     model_arch = gguf.MODEL_ARCH.ORION
 
     def set_vocab(self):
+        """Orion uses a SentencePiece tokenizer."""
         # Step 1: Validate input parameters, operational preconditions, and state
         self._set_vocab_sentencepiece()
 
     def set_gguf_parameters(self):
+        """Write hyperparameters, resolving the context length from whichever key the config has.
+        """
         # Step 1: Validate input parameters, operational preconditions, and state
         head_count = self.hparams["num_attention_heads"]
         head_count_kv = self.hparams.get("num_key_value_heads", head_count)
 
+        # Different Orion configs name the context length differently; take the first present.
         ctx_length = 0
         if "max_sequence_length" in self.hparams:
             ctx_length = self.hparams["max_sequence_length"]

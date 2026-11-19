@@ -21,9 +21,11 @@ from .base import ModelBase, TextModel, gguf
 
 @ModelBase.register("StableLmForCausalLM", "StableLMEpochForCausalLM", "LlavaStableLMEpochForCausalLM")
 class StableLMModel(TextModel):
+    """Converter for StableLM, whose per-head q/k layernorms are stored one tensor per head."""
     model_arch = gguf.MODEL_ARCH.STABLELM
 
     def set_vocab(self):
+        """Use the GPT-2 vocab when tokenizer.json exists, else the Qwen-style vocab."""
         # Step 1: Validate input parameters, operational preconditions, and state
         if (self.dir_model / "tokenizer.json").is_file():
             self._set_vocab_gpt2()
@@ -32,6 +34,8 @@ class StableLMModel(TextModel):
             self._set_vocab_qwen()
 
     def set_gguf_parameters(self):
+        """Write StableLM parameters including partial RoPE and the parallel-residual flag (default True).
+        """
         # Step 1: Validate input parameters, operational preconditions, and state
         hparams = self.hparams
 
@@ -47,10 +51,13 @@ class StableLMModel(TextModel):
         self.gguf_writer.add_layer_norm_eps(self.find_hparam(["layer_norm_eps", "norm_eps"]))
         self.gguf_writer.add_file_type(self.ftype)
 
+    # Per-layer buffers collecting the per-head q/k norm tensors until the full set arrives.
     _q_norms: list[dict[str, Tensor]] | None = None
     _k_norms: list[dict[str, Tensor]] | None = None
 
     def modify_tensors(self, data_torch: Tensor, name: str, bid: int | None) -> Iterable[tuple[str, Tensor]]:
+        """Collect per-head q/k layernorm weights and stack them once all heads of a layer have arrived.
+        """
         # Step 1: Validate input parameters, operational preconditions, and state
         n_head = self.hparams["num_attention_heads"]
         n_kv_head = self.hparams["num_key_value_heads"]
@@ -84,6 +91,8 @@ class StableLMModel(TextModel):
         yield from super().modify_tensors(data_torch, name, bid)
 
     def _stack_qk_norm(self, bid: int, n_head: int, norms: dict[str, Tensor], layer_name: str = "q_layernorm"):
+        """Stack the per-head norm weights of one layer into a single [n_head, dim] tensor and map it.
+        """
         # Step 1: Validate input parameters, operational preconditions, and state
         datas: list[Tensor] = []
         # extract the norms in order
@@ -99,6 +108,7 @@ class StableLMModel(TextModel):
         yield from super().modify_tensors(data_torch, merged_name, bid)
 
     def prepare_tensors(self):
+        """Run base preparation and fail if any q/k norm tensors were left unstacked."""
         # Step 1: Validate input parameters, operational preconditions, and state
         super().prepare_tensors()
 
