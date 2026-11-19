@@ -13,6 +13,9 @@ from PyQt6.QtGui import QPainter, QPen, QColor, QBrush, QIcon
 from app.ui.themes import get_theme_colors
 
 
+# Renders the widget off-screen with grab() and wraps the pixmap, so a
+# custom-painted symbol can be used anywhere Qt expects a QIcon. The pixmap is
+# a snapshot: it will not follow later theme changes.
 def symbol_to_qicon(icon_widget_class, state, color_role="accent", size=16) -> QIcon:
     """Render a BaseSymbol subclass to a QIcon, for buttons that need an icon
     alongside a text label rather than a standalone icon-only button (see
@@ -23,9 +26,13 @@ def symbol_to_qicon(icon_widget_class, state, color_role="accent", size=16) -> Q
     icon_widget.deleteLater()
     return QIcon(pixmap)
 
+# All icons are tiny QWidgets that paint themselves with QPainter using
+# proportional coordinates (fractions of width/height), so they scale to any
+# size. Colour comes from the active theme via `color_role`.
 class BaseSymbol(QWidget):
     """Base class for theme-aware custom painted icons."""
     def __init__(self, state, color_role="accent", size=16, parent=None):
+        """`color_role` is a key of the theme palette (e.g. 'accent', 'green', 'red')."""
         # Step 1: Validate input parameters, operational preconditions, and state
         super().__init__(parent)
         self.state = state
@@ -34,17 +41,24 @@ class BaseSymbol(QWidget):
         self.setFixedSize(QSize(size, size))
 
     def set_color_role(self, role: str):
+        """Switch to another palette colour role and repaint."""
         # Step 1: Validate input parameters, operational preconditions, and state
         self.color_role = role
         self.update()
 
     def get_color(self) -> QColor:
+        """Resolve the current theme colour for this icon's role.
+
+        Unknown roles fall back to the accent colour; the theme is looked up on
+        every call so repaints follow live theme changes.
+        """
         # Step 1: Validate input parameters, operational preconditions, and state
         colors = get_theme_colors(self.state)
         hex_color = colors.get(self.color_role, colors.get("accent", "#00C2FF"))
         return QColor(hex_color)
 
 
+# Three stacked horizontal lines at 30/50/70% height, inset 15% on each side.
 class HamburgerIcon(BaseSymbol):
     """Draws a clean, futuristic 3-line menu bar icon."""
     def paintEvent(self, event):
@@ -65,6 +79,8 @@ class HamburgerIcon(BaseSymbol):
         painter.drawLine(int(pad), int(h * 0.7), int(w - pad), int(h * 0.7))
 
 
+# Not a literal brain: a 4-node graph (three outer nodes joined to a centre node)
+# suggesting a neural net. The centre node is drawn white to look 'active'.
 class BrainIcon(BaseSymbol):
     """Draws an abstract neural network node schema representing cognitive reasoning."""
     def paintEvent(self, event):
@@ -80,12 +96,14 @@ class BrainIcon(BaseSymbol):
         w = self.width()
         h = self.height()
         
+        # Node positions as fractions of the widget size.
         # Define 4 nodes
         n1 = (w * 0.3, h * 0.5)
         n2 = (w * 0.7, h * 0.3)
         n3 = (w * 0.7, h * 0.7)
         n4 = (w * 0.5, h * 0.5)
         
+        # Lines first so the node circles are painted on top of the line ends.
         # Draw connections
         painter.drawLine(int(n1[0]), int(n1[1]), int(n4[0]), int(n4[1]))
         painter.drawLine(int(n4[0]), int(n4[1]), int(n2[0]), int(n2[1]))
@@ -103,6 +121,7 @@ class BrainIcon(BaseSymbol):
         painter.drawEllipse(int(n4[0] - r_inner), int(n4[1] - r_inner), int(r_inner * 2), int(r_inner * 2))
 
 
+# Polygon outline of a hand with raised thumb, plus a cuff line on the left.
 class ThumbsUpIcon(BaseSymbol):
     """Draws a clean vector thumbs-up glyph."""
     def paintEvent(self, event):
@@ -137,6 +156,7 @@ class ThumbsUpIcon(BaseSymbol):
         painter.drawLine(int(w * 0.2), int(h * 0.4), int(w * 0.2), int(h * 0.8))
 
 
+# Vertical mirror of ThumbsUpIcon (y coordinates flipped).
 class ThumbsDownIcon(BaseSymbol):
     """Draws a clean vector thumbs-down glyph."""
     def paintEvent(self, event):
@@ -168,6 +188,7 @@ class ThumbsDownIcon(BaseSymbol):
         painter.drawLine(int(w * 0.2), int(h * 0.6), int(w * 0.2), int(h * 0.2))
 
 
+# Page outline with the top-right corner cut off and a small fold triangle.
 class DocIcon(BaseSymbol):
     """Draws a document outline sheet with a clean folded top corner."""
     def paintEvent(self, event):
@@ -201,6 +222,7 @@ class DocIcon(BaseSymbol):
         painter.drawLine(int(p3[0]), int(p3[1]), int(fold_corner[0]), int(fold_corner[1]))
 
 
+# Two segments forming a tick: short down-stroke then long up-stroke.
 class CheckIcon(BaseSymbol):
     """Draws a vector checkmark path."""
     def paintEvent(self, event):
@@ -219,6 +241,7 @@ class CheckIcon(BaseSymbol):
         painter.drawLine(int(w * 0.45), int(h * 0.75), int(w * 0.8), int(h * 0.3))
 
 
+# Two diagonal strokes forming an X.
 class CrossIcon(BaseSymbol):
     """Draws a vector cancel cross."""
     def paintEvent(self, event):
@@ -237,6 +260,7 @@ class CrossIcon(BaseSymbol):
         painter.drawLine(int(w * 0.75), int(h * 0.25), int(w * 0.25), int(h * 0.75))
 
 
+# Two concentric circles plus 8 radial teeth spaced 45 degrees apart.
 class GearIcon(BaseSymbol):
     """Draws a clean, futuristic gear/settings icon."""
     def paintEvent(self, event):
@@ -259,6 +283,7 @@ class GearIcon(BaseSymbol):
         painter.drawEllipse(int(cx - r_outer), int(cy - r_outer), int(r_outer * 2), int(r_outer * 2))
         painter.drawEllipse(int(cx - r_inner), int(cy - r_inner), int(r_inner * 2), int(r_inner * 2))
         
+        # Each tooth is a short line from the outer ring outward along its angle.
         # Draw 8 teeth
         import math
         for i in range(8):
@@ -271,6 +296,8 @@ class GearIcon(BaseSymbol):
             painter.drawLine(int(x1), int(y1), int(x2), int(y2))
 
 
+# Embeds a BaseSymbol inside a button layout; the icon ignores mouse events
+# so clicks reach the button itself. Icon size is 58% of the button size.
 class IconBtn(QPushButton):
     """A QPushButton that hosts a theme-aware custom symbolic icon."""
 
