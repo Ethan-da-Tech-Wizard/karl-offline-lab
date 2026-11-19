@@ -16,6 +16,7 @@ import os
 import time
 import ctypes
 import sys
+import tempfile
 
 # Module logger for keychain events (token values are never logged).
 logger = logging.getLogger("karl.keychain")
@@ -317,14 +318,21 @@ def add_scoped_token(token: str, scopes: list[str], token_path: str = TOKEN_PATH
     data["tokens"][token] = list(scopes)
     # Bearer tokens (including admin:execute-scoped ones) are stored here in
     # plaintext, so restrict the file to the owner before any content is
-    # written — os.open with an explicit mode avoids a window where a
-    # default-umask file briefly exists before a later chmod() would apply.
-    # Create with mode 0600 from the start so the plaintext tokens are never briefly world-readable.
-    # Note the file is truncated and rewritten in place (not via a temp file).
-    fd = os.open(token_path, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
-    with os.fdopen(fd, "w", encoding="utf-8") as f:
-        json.dump(data, f, indent=2)
-    os.chmod(token_path, 0o600)
+    # written; mkstemp creates the temp file 0600, so the plaintext tokens are never briefly world-readable.
+    # Write a sibling temp file (created 0600 by mkstemp) and atomically os.replace it over the real file,
+    # so a crash mid-write can never leave a truncated or empty token store behind.
+    fd, tmp_path = tempfile.mkstemp(dir=dir_ or ".", prefix=".tokens-", suffix=".tmp")
+    try:
+        with os.fdopen(fd, "w", encoding="utf-8") as f:
+            json.dump(data, f, indent=2)
+        os.chmod(tmp_path, 0o600)
+        os.replace(tmp_path, token_path)
+    except BaseException:
+        try:
+            os.unlink(tmp_path)
+        except OSError:
+            pass
+        raise
     logger.info("Scoped token registered: scopes=%s path=%s", scopes, token_path)
 
 
