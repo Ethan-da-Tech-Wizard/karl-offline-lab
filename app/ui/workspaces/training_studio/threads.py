@@ -6,24 +6,42 @@
 #          Provides responsive layout controls, parameter adjustment surfaces,
 #          and visual feedback components within Karl's PyQt6 shell.
 # ==============================================================================
+# FILE OVERVIEW
+# Who loads this: the tabs of app/ui/workspaces/training_studio (train_tab, auto_train_tab,
+# flywheel_tab, mini_gpt_tab) create one of these QThread subclasses per user action and connect
+# to its signals. What they call: Hugging Face transformers/peft/trl (LoRA), the auto_train.py
+# CLI (subprocess), app.engine.mini_transformer (educational MiniGPT) and TaskSupervisor.
+# Contract shared by every worker: (1) never touch widgets, only emit signals; (2) register with
+# TaskSupervisor.instance() at the start of run() and call finish()/fail() at the end, so the
+# global task list shows progress and offers Cancel; (3) implement request_stop() so Cancel works.
+# Known limits: paths such as data/training/curated.jsonl are relative to the current working
+# directory (the repo root when launched via main.py); LoRA training needs the optional
+# torch/peft/trl/datasets/bitsandbytes stack and a GPU for reasonable speed.
 # Background QThread workers for the Training Studio tabs. Each worker reports
 # only through Qt signals (never touches widgets), registers with the
 # TaskSupervisor so it appears in the global task list, and exposes
 # request_stop() so the supervisor can cancel it.
 
+# os/json: paths and JSON (de)serialisation; sys/subprocess: spawn auto_train.py with the same interpreter.
 import os
 import json
 import sys
 import subprocess
 
+# QThread gives the worker its own OS thread; pyqtSignal delivers results to the GUI thread safely.
 from PyQt6.QtCore import QThread, pyqtSignal
 
+# Signals (see below) are class attributes; each tuple documents the payload order.
 class TrainingThread(QThread):
     """Fine-tune a LoRA/QLoRA adapter on data/training/curated.jsonl and convert it to GGUF."""
+    # loss: emitted on every logged trainer step, drives the loss curve widget.
     loss = pyqtSignal(int, float, float)     # step, loss_val, epoch
+    # progress: emitted at every optimiser step end, drives the progress bar.
     progress = pyqtSignal(int, int, float)   # step, total_steps, epoch
+    # done: adapter folder (data/adapters/<name>) after training and GGUF conversion succeeded.
     done = pyqtSignal(str)                   # adapter_path
     error = pyqtSignal(str)
+    # log: free-form status lines for the log pane.
     log = pyqtSignal(str)
 
     def __init__(self, hf_base_dir: str, adapter_name: str, config: dict):
@@ -33,6 +51,8 @@ class TrainingThread(QThread):
         self.adapter_name = adapter_name
         self.config = config
 
+    # QThread has no built-in cancel; requestInterruption() only sets a flag, and the Hugging Face loop
+    # does not poll it. TaskSupervisor still calls this so the flag is set for any cooperating code.
     def request_stop(self):
         """Ask the training loop to stop (cooperative interruption flag)."""
         self.requestInterruption()
@@ -40,11 +60,13 @@ class TrainingThread(QThread):
     def run(self):
         """Run the whole pipeline: load model, apply LoRA, train with SFTTrainer, save, convert to GGUF."""
         # Registering lets the task supervisor show progress and call request_stop() on cancel.
+        # Imported here (not at module top) to avoid circular imports between engine and UI modules.
         from app.engine.task_supervisor import TaskSupervisor
         task_id = TaskSupervisor.instance().register(
             name=f"LoRA Training: {self.adapter_name}",
             cancellable=self,
         )
+        # Kept on the thread so callers can look up the task entry (for example to show a cancel button).
         self.task_id = task_id
         try:
             # torch, transformers, peft, trl and datasets are imported here, not at module top:
@@ -53,15 +75,19 @@ class TrainingThread(QThread):
             import gc
             import torch
 
+            # expandable_segments lets the CUDA allocator grow blocks instead of fragmenting, which prevents
+            # spurious out-of-memory errors on 6-8 GB GPUs.
             # expandable_segments reduces CUDA memory fragmentation on small GPUs.
             # Configure PyTorch to prevent memory fragmentation
             os.environ["PYTORCH_ALLOC_CONF"] = "expandable_segments:True"
             
+            # Free anything left from a previous run (e.g. the inference model) before allocating training memory.
             # Clear CUDA cache before starting
             gc.collect()
             if torch.cuda.is_available():
                 torch.cuda.empty_cache()
 
+            # Progress messages are shown in the Training tab log pane, in order.
             self.log.emit("Preparing training dataset...")
             from datasets import load_dataset
             from transformers import AutoModelForCausalLM, AutoTokenizer, BitsAndBytesConfig, TrainerCallback
@@ -69,18 +95,22 @@ class TrainingThread(QThread):
             from trl import SFTConfig, SFTTrainer
 
             # Training data is the curated example file written by the Dataset/Workbench feedback flow.
+            # Training data is the curated example file written by the Dataset/Workbench feedback flow.
             # Load dataset from curated examples
             dataset_path = "data/training/curated.jsonl"
             dataset = load_dataset("json", data_files=dataset_path, split="train")
 
+            # Models without a pad token (common for decoder-only LLMs) reuse EOS, otherwise batching fails.
             self.log.emit("Loading tokenizer and model...")
             tokenizer = AutoTokenizer.from_pretrained(self.hf_base_dir)
             if tokenizer.pad_token is None:
                 tokenizer.pad_token = tokenizer.eos_token
 
+            # Set up QLoRA if requested and bitsandbytes is available.
             # QLoRA: load the base weights in 4-bit NF4 with double quantization to fit in far less VRAM.
             # Set up QLoRA if requested and bitsandbytes is available
             use_qlora = self.config.get("use_qlora", False)
+            # {"": 0} puts the whole model on GPU 0 (no sharding); "auto" lets accelerate place it on CPU.
             device_map_to_use = {"": 0} if torch.cuda.is_available() else "auto"
             
             # fp16 on GPU halves memory versus fp32; on CPU stay in fp32 because fp16 math is unsupported/slow there.
@@ -94,6 +124,7 @@ class TrainingThread(QThread):
                     bnb_4bit_compute_dtype=torch.float16,
                     bnb_4bit_use_double_quant=True,
                 )
+                # Weights are quantised on load; compute still runs in fp16.
                 model = AutoModelForCausalLM.from_pretrained(
                     self.hf_base_dir,
                     quantization_config=bnb_config,
@@ -108,6 +139,9 @@ class TrainingThread(QThread):
                 )
 
             # LoRA adapters are attached to all attention and MLP projection layers of a Llama/Qwen-style model.
+            # r is the rank of the low-rank update (more = more capacity and memory), alpha scales the update,
+            # dropout regularises the adapter. bias="none" trains no bias terms.
+            # LoRA adapters are attached to all attention and MLP projection layers of a Llama/Qwen-style model.
             self.log.emit("Configuring LoRA...")
             lora_config = LoraConfig(
                 r=self.config.get("rank", 16),
@@ -119,20 +153,25 @@ class TrainingThread(QThread):
             )
 
             # Prepare model for training
+            # get_peft_model freezes the base weights and injects the trainable low-rank matrices.
             model = get_peft_model(model, lora_config)
             
             # The KV cache conflicts with gradient checkpointing, so it is disabled during training.
             # Disable caching to support gradient checkpointing during SFT
             model.config.use_cache = False
 
+            # The adapter folder holds weights, tokenizer, history and the GGUF file produced at the end.
             adapter_path = os.path.join("data", "adapters", self.adapter_name)
             os.makedirs(adapter_path, exist_ok=True)
 
             # Batch size 1 with 4 accumulation steps gives an effective batch of 4 while keeping memory low.
             # save_strategy="no": only the final adapter is kept; the temp_checkpoints folder is deleted later.
+            # max_length=512 truncates examples: small GPUs cannot afford longer sequences.
+            # 1 x 4 accumulation = effective batch size 4 while keeping peak memory low.
             training_args = SFTConfig(
                 output_dir=os.path.join(adapter_path, "temp_checkpoints"),
                 dataset_text_field="messages",
+                # dataset_text_field names the column holding chat messages in curated.jsonl.
                 max_length=512,
                 per_device_train_batch_size=1,
                 gradient_accumulation_steps=4,
@@ -141,15 +180,21 @@ class TrainingThread(QThread):
                 num_train_epochs=self.config.get("epochs", 3),
                 save_strategy="no",
                 report_to="none",
+                # fp16 and gradient checkpointing are enabled only on CUDA; CPU training would be slower or fail.
                 fp16=True if torch.cuda.is_available() else False,
                 gradient_checkpointing=True if torch.cuda.is_available() else False,
             )
 
+            # Trainer callback bridges Hugging Face logging to Qt signals; thread_ref is needed because the
+            # callback class has its own `self` and cannot see the thread otherwise.
             # Trainer callback bridges Hugging Face logging to Qt signals; thread_ref is needed because
             # the callback class has its own `self` and cannot see the thread otherwise.
             # Callback to report progress and loss
             thread_ref = self
+            # TrainerCallback hooks are called by the HF training loop on this worker thread.
             class TrainerProgressCallback(TrainerCallback):
+                # on_log: called each logging_steps (=1) with the metrics dict; only entries with "loss" are forwarded
+                # (eval and final summaries have no "loss").
                 def on_log(self, args, state, control, logs=None, **kwargs):
                     if logs and "loss" in logs:
                         loss_val = float(logs["loss"])
@@ -157,6 +202,8 @@ class TrainingThread(QThread):
                         thread_ref.loss.emit(state.global_step, loss_val, epoch_val)
                         thread_ref.log.emit(f"Step {state.global_step}/{state.max_steps} | Epoch {epoch_val:.2f} | Loss: {loss_val:.4f}")
 
+                # on_step_end: fires after each optimiser step; converts step/max_steps into the 0..1 fraction the
+                # TaskSupervisor expects.
                 def on_step_end(self, args, state, control, **kwargs):
                     epoch_val = state.epoch if state.epoch is not None else 0.0
                     thread_ref.progress.emit(state.global_step, state.max_steps, epoch_val)
@@ -165,6 +212,7 @@ class TrainingThread(QThread):
                         TaskSupervisor.instance().update_progress(task_id, state.global_step / state.max_steps)
 
             self.log.emit("Starting SFTTrainer...")
+            # processing_class is the tokenizer (the newer trl name for what used to be tokenizer=).
             trainer = SFTTrainer(
                 model=model,
                 train_dataset=dataset,
@@ -173,8 +221,10 @@ class TrainingThread(QThread):
                 callbacks=[TrainerProgressCallback()]
             )
 
+            # Blocking call: runs all epochs. Cancellation is not honoured mid-run (see request_stop).
             trainer.train()
 
+            # The log history (loss per step) is stored beside the adapter so the loss curve can be shown later.
             # The log history (loss per step) is stored beside the adapter so the loss curve can be shown later.
             # Save training history
             try:
@@ -196,6 +246,7 @@ class TrainingThread(QThread):
                 shutil.rmtree(temp_checkpoints)
 
             # llama.cpp loads LoRA as GGUF, so the PEFT adapter is converted with the bundled script in a subprocess.
+            # llama.cpp loads LoRA as GGUF, so the PEFT adapter is converted with the bundled script in a subprocess.
             # Convert to GGUF format
             self.log.emit("Converting PyTorch adapter to GGUF format...")
             import subprocess
@@ -208,18 +259,24 @@ class TrainingThread(QThread):
                 adapter_path
             ]
             self.log.emit(f"Running: {' '.join(cmd)}")
+            # capture_output keeps converter chatter out of the UI; stderr is surfaced if it fails.
             res = subprocess.run(cmd, capture_output=True, text=True)
+            # A non-zero exit makes the whole training count as failed, because without the GGUF file llama.cpp
+            # cannot use the adapter.
             if res.returncode != 0:
                 raise RuntimeError(f"LoRA GGUF conversion failed: {res.stderr}")
 
             self.log.emit("Training and GGUF conversion completed successfully!")
             self.done.emit(adapter_path)
+            # finish() is called only after done is emitted, so the UI is updated before the task disappears.
             TaskSupervisor.instance().finish(task_id)
 
+        # Any failure is reported to both the supervisor and the UI.
         # Any failure is reported to both the supervisor and the UI.
         except Exception as e:
             TaskSupervisor.instance().fail(task_id, str(e))
             self.error.emit(str(e))
+        # Always release Python and CUDA memory so the inference model can be reloaded afterwards.
         # Always release Python and CUDA memory so the inference model can be reloaded afterwards.
         finally:
             # Re-collect garbage and empty CUDA cache to release VRAM to the OS
@@ -229,10 +286,14 @@ class TrainingThread(QThread):
                 import torch
                 if torch.cuda.is_available():
                     torch.cuda.empty_cache()
+            # torch may be missing (that is how we got here); ignore, nothing to free.
             except Exception:
                 pass
 
 
+# Two-stage pipeline implemented by the auto_train.py CLI (also exposed over the WebSocket bridge):
+# a synthesizer writes problems, a solver answers, a verifier filters them, and the survivors are
+# used to train a LoRA adapter. Running it as a subprocess isolates GPU memory and crashes.
 class AutoTrainThread(QThread):
     """Run auto_train.py (the synthesize/solve/verify/train flywheel) as a subprocess and stream its output."""
     # log: one line of subprocess output; done: adapter name; error: failure text.
@@ -244,6 +305,7 @@ class AutoTrainThread(QThread):
         """Remember the topic, adapter name and config dict; no process exists until run()."""
         super().__init__()
         self.topic = topic
+        # self.process stays None until run() launches the child; request_stop() checks it.
         self.adapter_name = adapter_name
         self.config = config
         self.process = None
@@ -251,6 +313,7 @@ class AutoTrainThread(QThread):
     def request_stop(self):
         """Interrupt the read loop and terminate the child process if one is running."""
         self.requestInterruption()
+        # The process may already have exited; terminate() then raises and we ignore it.
         if self.process is not None:
             try:
                 self.process.terminate()
@@ -267,11 +330,13 @@ class AutoTrainThread(QThread):
         self.task_id = task_id
         
         # A separate process isolates the heavy training run (and its GPU memory) from the UI process.
+        # A separate process isolates the heavy training run (and its GPU memory) from the UI process.
         cmd = [
             sys.executable,
             "auto_train.py",
             "--topic", self.topic,
             "--adapter_name", self.adapter_name,
+            # Defaults mirror the CLI's: 15 synthetic examples, 3 epochs, lr 2e-4, LoRA rank 16 / alpha 32.
             "--count", str(self.config.get("count", 15)),
             "--epochs", str(self.config.get("epochs", 3)),
             "--lr", str(self.config.get("lr", 2e-4)),
@@ -279,12 +344,14 @@ class AutoTrainThread(QThread):
             "--alpha", str(self.config.get("alpha", 32)),
             "--dropout", str(self.config.get("dropout", 0.05)),
         ]
+        # --qlora switches the CLI to 4-bit base weights; on by default here to fit consumer GPUs.
         if self.config.get("use_qlora", True):
             cmd.append("--qlora")
 
         self.log.emit(f"Launching Auto-Train Swarm Process: {' '.join(cmd)}")
         
         try:
+            # stderr is merged into stdout so one stream carries every message; bufsize=1 gives line buffering.
             # stderr is merged into stdout so one stream carries every message; bufsize=1 gives line buffering.
             self.process = subprocess.Popen(
                 cmd,
@@ -295,6 +362,9 @@ class AutoTrainThread(QThread):
                 universal_newlines=True
             )
             
+            # Blocking read loop on the worker thread; the interruption flag is checked once per output line.
+            # A silent child therefore cannot be interrupted until it prints; terminate() in request_stop()
+            # covers that case.
             # Blocking read loop on the worker thread; the interruption flag is checked once per output line.
             while True:
                 if self.isInterruptionRequested():
@@ -308,6 +378,7 @@ class AutoTrainThread(QThread):
                 self.log.emit(line.strip())
                 
             # Exit code 0 means success; anything else is reported as an error.
+            # Exit code 0 means success; anything else is reported as an error.
             rc = self.process.wait()
             if rc == 0:
                 self.done.emit(self.adapter_name)
@@ -320,6 +391,8 @@ class AutoTrainThread(QThread):
             self.error.emit(str(e))
 
 
+# Short-lived helper: the Flywheel tab refreshes its numbers on a timer, and reading many files
+# on the GUI thread would make the window stutter.
 class _FlywheelStatsThread(QThread):
     """Reads flywheel stats off the main thread to avoid blocking the UI."""
     # All keys are strings ready to drop into the Flywheel tab labels.
@@ -329,6 +402,7 @@ class _FlywheelStatsThread(QThread):
         """Read the data files and emit stats_ready with a dict of display strings."""
         stats = {}
         try:
+            # Traces: count non-blank lines in every trace JSONL file (one line = one generation).
             # Traces: count non-blank lines in every trace JSONL file.
             # Traces
             import glob
@@ -342,6 +416,7 @@ class _FlywheelStatsThread(QThread):
                     pass
             stats["traces_total"] = str(total_traces)
 
+            # Sessions: count saved session files and report how long ago the newest was written.
             # Sessions: count saved session files and report how long ago the newest was written.
             # Sessions
             session_files = glob.glob("data/sessions/*.json")
@@ -361,6 +436,8 @@ class _FlywheelStatsThread(QThread):
 
             # Feedback tallies come from the "source" field of each curated example.
             # SFT examples are good + corrected ones; DPO pairs are limited by the smaller of thumbs up and down.
+            # Feedback tallies come from the "source" field of each curated example.
+            # SFT examples are good + corrected ones; DPO pairs are limited by the smaller of thumbs up and down.
             # Feedback from curated.jsonl
             thumbs_up = thumbs_down = corrections = 0
             curated_path = "data/training/curated.jsonl"
@@ -370,6 +447,7 @@ class _FlywheelStatsThread(QThread):
                         line = line.strip()
                         if not line:
                             continue
+                        # Malformed lines are skipped; one bad record must not zero out the statistics.
                         try:
                             entry = json.loads(line)
                             src = entry.get("source", "")
@@ -388,6 +466,7 @@ class _FlywheelStatsThread(QThread):
             stats["dpo_pairs"] = str(min(thumbs_up, thumbs_down))
 
             # Last export: the newest file in data/training that is not the curated dataset itself.
+            # Last export: the newest file in data/training that is not the curated dataset itself.
             # Last export
             export_files = sorted(
                 glob.glob("data/training/*.jsonl") + glob.glob("data/training/*.json"),
@@ -401,6 +480,7 @@ class _FlywheelStatsThread(QThread):
             else:
                 stats["last_export"] = "none"
 
+            # Preview: first 50 lines of the newest exported JSONL (cheap, bounded read).
             # Preview: first 50 lines of the newest exported JSONL.
             # Last SFT export content
             last_sft_content = ""
@@ -420,6 +500,7 @@ class _FlywheelStatsThread(QThread):
                     pass
             stats["last_sft_content"] = last_sft_content
 
+            # Eval score is read from the last evaluation summary file (data/eval_last.json, gitignored).
             # Eval score is read from the last evaluation summary file.
             # Eval score
             if os.path.exists("data/eval_last.json"):
@@ -436,14 +517,19 @@ class _FlywheelStatsThread(QThread):
                 stats["eval_date"] = "—"
 
         # A failure is surfaced in the first label rather than raised, because this runs on a worker thread.
+        # A failure is surfaced in the first label rather than raised, because this runs on a worker thread.
         except Exception as e:
             stats["traces_total"] = f"error: {e}"
 
+        # Always emit, even after an error, so the UI does not stay on "loading".
         self.stats_ready.emit(stats)
 
 
 class MiniTrainThread(QThread):
+    # Educational trainer: a character-level transformer so students can watch loss fall in seconds
+    # on CPU. No Hugging Face stack is needed, only PyTorch.
     """Train the educational character-level MiniGPT (app/engine/mini_transformer) on plain text."""
+    # loss: (step, validation loss); progress: (step, total, sample text); done: save folder.
     # loss: (step, validation loss); progress: (step, total, sample text); done: save folder.
     # Signals for communicating with UI
     loss = pyqtSignal(int, float)            # step, loss_val
@@ -469,10 +555,13 @@ class MiniTrainThread(QThread):
         """Set the stop flag; the training loop checks it once per step."""
         self._stop_requested = True
 
+    # TaskSupervisor expects request_stop(); delegating avoids two code paths.
     def request_stop(self):
         """Alias of stop() so the task supervisor can cancel this thread."""
         self.stop()
 
+    # Steps: tokenize -> model -> loop(train step, periodic eval, periodic sample) -> save weights,
+    # config and tokenizer so the inference sandbox can reload the same model.
     def run(self):
         """Tokenize, build the model, run the training loop with periodic evaluation and sampling, then save."""
         from app.engine.task_supervisor import TaskSupervisor
@@ -484,10 +573,13 @@ class MiniTrainThread(QThread):
         try:
             self.log.emit("Initializing MiniGPT Trainer...")
             
+            # Lazy imports: torch is optional, so the UI loads without it.
             # Lazy imports
             import torch
             from app.engine.mini_transformer import MiniGPT, CharTokenizer
 
+            # Hyperparameters come from the config dict with small-model defaults (about 0.8M parameters at
+            # n_embd=128, 4 heads, 4 layers).
             # Hyperparameters come from the config dict with small-model defaults.
             # 1. Hyperparameters
             batch_size = self.config.get("batch_size", 32)
@@ -502,9 +594,11 @@ class MiniTrainThread(QThread):
             sample_interval = self.config.get("sample_interval", 100)
 
             # Device configuration
+            # GPU if present, otherwise CPU; the model is tiny so both work.
             device = "cuda" if torch.cuda.is_available() else "cpu"
             self.log.emit(f"Using device: {device.upper()}")
 
+            # The tokenizer is fitted on the dataset text, so its vocabulary is the set of distinct characters.
             # The tokenizer is fitted on the dataset text, so its vocabulary is the set of distinct characters.
             # 2. Tokenizer
             self.log.emit("Fitting tokenizer...")
@@ -513,9 +607,11 @@ class MiniTrainThread(QThread):
             vocab_size = tokenizer.vocab_size
             self.log.emit(f"Dataset Vocabulary Size: {vocab_size} characters")
 
+            # Encode data into a 1-D tensor of integer ids.
             # Encode data
             data = torch.tensor(tokenizer.encode(self.dataset_text), dtype=torch.long)
             
+            # 90% of the characters train the model and 10% are held out for validation.
             # 90% of the characters train the model and 10% are held out for validation.
             # Split train / val
             n = int(0.9 * len(data))
@@ -523,9 +619,11 @@ class MiniTrainThread(QThread):
             val_data = data[n:]
             
             # Need more than one block of training data or get_batch could not sample a window.
+            # Need more than one block of training data or get_batch could not sample a window.
             if len(train_data) <= block_size:
                 raise ValueError(f"Dataset is too short! Must be longer than block size ({block_size}).")
 
+            # 3. Model setup
             # 3. Model setup
             self.log.emit("Instantiating MiniGPT Model...")
             model = MiniGPT(
@@ -542,13 +640,17 @@ class MiniTrainThread(QThread):
             param_count = sum(p.numel() for p in model.parameters())
             self.log.emit(f"Model Parameters: {param_count:,}")
 
+            # AdamW with the configured learning rate (default 1e-3, suitable for such a small model).
             # Optimizer
             optimizer = torch.optim.AdamW(model.parameters(), lr=learning_rate)
 
             # get_batch: random windows of block_size characters; targets are the same window shifted one character ahead.
+            # get_batch: random windows of block_size characters; targets are the same window shifted one character ahead.
             # Batch helper
             def get_batch(split):
                 split_data = train_data if split == 'train' else val_data
+                # Upper bound is len - block_size so that the shifted target window (i+1 .. i+block_size) never runs
+                # past the end of the data.
                 # Upper bound is len - block_size so that the shifted target window (i+1 .. i+block_size) never runs
                 # past the end of the data.
                 ix = torch.randint(len(split_data) - block_size, (batch_size,))
@@ -558,11 +660,14 @@ class MiniTrainThread(QThread):
                 return x, y
 
             # Validation loss helper
+            # estimate_loss: average of 10 random batches per split, with the model in eval mode (no dropout),
+            # then back to train mode. no_grad avoids storing activations for backprop.
             # estimate_loss: average of 10 random batches per split, with the model in eval mode (no dropout), then back to train mode.
             @torch.no_grad()
             def estimate_loss():
                 out = {}
                 model.eval()
+                # Both splits are measured so overfitting (train loss << val loss) is visible in the log.
                 for split in ['train', 'val']:
                     losses = torch.zeros(10)
                     for k in range(10):
@@ -574,9 +679,12 @@ class MiniTrainThread(QThread):
                 return out
 
             # Standard loop: sample a batch, forward, backprop, optimiser step, with periodic evaluation and sampling.
+            # Standard loop: sample a batch, forward, backprop, optimiser step, with periodic evaluation and sampling.
             self.log.emit("Starting training loop...")
             
+            # max_iters + 1 so step max_iters also runs evaluation and sampling once.
             for step in range(max_iters + 1):
+                # Cooperative stop: checked once per step, so cancellation takes effect within one iteration.
                 if self._stop_requested:
                     self.log.emit("Training interrupted by user.")
                     break
@@ -590,16 +698,19 @@ class MiniTrainThread(QThread):
                 optimizer.zero_grad(set_to_none=True)
                 loss.backward()
                 optimizer.step()
+                # The supervisor shows 0..1; guard avoids dividing by zero when max_iters is 0.
                 if max_iters > 0:
                     from app.engine.task_supervisor import TaskSupervisor
                     TaskSupervisor.instance().update_progress(task_id, step / max_iters)
 
                 # Periodic evaluation
+                # Every eval_interval steps (default 50) the validation loss is emitted for the curve widget.
                 if step % eval_interval == 0:
                     eval_losses = estimate_loss()
                     self.log.emit(f"Step {step}/{max_iters} | Train Loss: {eval_losses['train']:.4f} | Val Loss: {eval_losses['val']:.4f}")
                     self.loss.emit(step, eval_losses['val'])
 
+                # Periodic text sampling.
                 # Periodic text sampling
                 # Sample from a single start token (index 0) every sample_interval steps.
                 if step % sample_interval == 0:
@@ -616,9 +727,12 @@ class MiniTrainThread(QThread):
                     self.progress.emit(step, max_iters, sample_text)
 
             # Save weights, architecture config and tokenizer tables so the inference sandbox can rebuild the model.
+            # Save weights, architecture config and tokenizer tables so the inference sandbox can rebuild the model.
             # 4. Save model weights, tokenizer, and config
             os.makedirs(self.save_dir, exist_ok=True)
             
+            # state_dict is the architecture-independent way to save PyTorch weights; the config below holds the
+            # shape information required to rebuild the model before loading them.
             # Save PyTorch weights
             weights_path = os.path.join(self.save_dir, "weights.pt")
             torch.save(model.state_dict(), weights_path)
@@ -649,6 +763,7 @@ class MiniTrainThread(QThread):
             self.done.emit(self.save_dir)
             TaskSupervisor.instance().finish(task_id)
 
+        # traceback goes to stderr for developers; the UI gets only the message.
         except Exception as e:
             import traceback
             traceback.print_exc()
