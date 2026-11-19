@@ -21,10 +21,13 @@ from app.engine import config_store
 logger = logging.getLogger("karl.widgets.model_combo")
 
 
+# Each combo item carries a dict {model, adapter, meta} as item data so callers
+# can read the selection with currentData() instead of parsing the label.
 class ModelComboBox(QComboBox):
     """Reusable dropdown to select local models and their compatible LoRA adapters."""
 
     def __init__(self, state, parent=None, short_labels: bool = True):
+        """`short_labels` shows bare filenames; otherwise the long registry detail line."""
         # Step 1: Validate input parameters, operational preconditions, and state
         super().__init__(parent)
         self.state = state
@@ -39,10 +42,14 @@ class ModelComboBox(QComboBox):
     def refresh_models(self):
         """Re-scan models and adapters, rebuild items, and restore selection."""
         # Step 1: Validate input parameters, operational preconditions, and state
+        # Block signals while rebuilding so listeners do not see a flurry of
+        # intermediate currentIndexChanged events.
         self.blockSignals(True)
         current_data = self.currentData()
         self.clear()
 
+        # An adapter is a directory under data/adapters containing a .gguf or .bin file.
+        # Paths are relative to the working directory.
         # Scan adapters
         adapters_dir = "data/adapters"
         adapters = []
@@ -59,6 +66,7 @@ class ModelComboBox(QComboBox):
             except Exception as e:
                 logger.warning("Error scanning adapters in ModelComboBox: %s", e)
 
+        # Base models are *.gguf files directly under data/models.
         # Scan models
         models_dir = "data/models"
         files = []
@@ -69,6 +77,7 @@ class ModelComboBox(QComboBox):
             except Exception as e:
                 logger.warning("Error scanning models in ModelComboBox: %s", e)
 
+        # Registry metadata (tier, context length, RAM) is keyed by filename.
         # Get registry
         registry = {}
         try:
@@ -79,6 +88,7 @@ class ModelComboBox(QComboBox):
         except Exception as e:
             logger.warning("Error reading model registry in ModelComboBox: %s", e)
 
+        # Build one entry per model, plus one per adapter that is compatible with it.
         entries = []
         for filename in sorted(files):
             # Iterate over items, evaluate loop invariant, and update progress
@@ -102,6 +112,7 @@ class ModelComboBox(QComboBox):
                         "data": {"model": filename, "adapter": adapter, "meta": meta},
                     })
 
+        # Short vs long label is decided here; tooltip always has the full detail.
         # Add items
         for entry in entries:
             # Iterate over items, evaluate loop invariant, and update progress
@@ -110,6 +121,8 @@ class ModelComboBox(QComboBox):
             idx = self.count() - 1
             self.setItemData(idx, entry["tooltip"], Qt.ItemDataRole.ToolTipRole)
 
+        # Prefer the user's previous choice; if the list was empty, fall back to the
+        # model/adapter recorded in AppState.
         # Restore selection
         target_model = None
         target_adapter = None
@@ -156,6 +169,7 @@ class ModelComboBox(QComboBox):
         return found
 
     def _model_file_size_label(self, filename: str) -> str:
+        """Return the model file size as '<n.nn> GB' or 'unknown size' if it cannot be read."""
         # Step 1: Validate input parameters, operational preconditions, and state
         path = os.path.join("data", "models", filename)
         try:
@@ -165,6 +179,7 @@ class ModelComboBox(QComboBox):
             return "unknown size"
 
     def _model_registry_detail(self, filename: str, meta: dict, size: str) -> str:
+        """One-line description: filename, size, tier, context, RAM and an ACTIVE marker."""
         # Step 1: Validate input parameters, operational preconditions, and state
         tier = meta.get("tier")
         n_ctx = meta.get("n_ctx")
@@ -181,6 +196,7 @@ class ModelComboBox(QComboBox):
         return " · ".join(bits)
 
     def _model_tooltip(self, filename: str, meta: dict, size: str, adapter: str | None) -> str:
+        """Multi-line tooltip text with file, size, adapter and registry metadata."""
         # Step 1: Validate input parameters, operational preconditions, and state
         lines = [
             f"File: {filename}",
