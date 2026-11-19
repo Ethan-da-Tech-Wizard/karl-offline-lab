@@ -45,7 +45,6 @@ class MambaModel(TextModel):
     def __init__(self, dir_model: Path, *args, **kwargs):
         """Load hparams straight from config.json instead of going through AutoConfig."""
         # Avoid using AutoConfig for hparams
-        # Avoid using AutoConfig for hparams
         hparams = kwargs.pop("hparams", None)
         if hparams is None:
             with open(dir_model / "config.json", "r", encoding="utf-8") as f:
