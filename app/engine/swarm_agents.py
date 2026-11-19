@@ -547,7 +547,7 @@ class CoderAgent(BaseSwarmAgent):
             # Format: <tool_call name='TOOL'>key: value lines</tool_call>.
             # Parse tool calls from raw output
             tool_calls = re.findall(
-                r"<tool_call name='([^']+)'>(.*?)</tool_call>",
+                r"<tool_call name=['\"]([^'\"]+)['\"]>(.*?)</tool_call>",
                 raw, re.DOTALL
             )
 
