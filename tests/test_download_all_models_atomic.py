@@ -49,7 +49,9 @@ def test_success_renames(mod, tmp_path, monkeypatch):
     monkeypatch.setattr(mod.requests, "get", lambda *a, **k: _Resp([b"abc", b"def"]))
     dest = str(tmp_path / "m.gguf")
     mod.download_file("u", dest)
-    assert open(dest, "rb").read() == b"abcdef" and not (tmp_path / "m.gguf.part").exists()
+    with open(dest, "rb") as fh:
+        data = fh.read()
+    assert data == b"abcdef" and not (tmp_path / "m.gguf.part").exists()
 
 
 def test_failure_leaves_no_final_file(mod, tmp_path, monkeypatch):
