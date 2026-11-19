@@ -19,6 +19,7 @@ import sys
 import json
 import unittest
 import asyncio
+from pathlib import Path
 from unittest.mock import patch, MagicMock
 
 # Ensure project root is in path
@@ -169,6 +170,32 @@ class TestAutoTrain(unittest.TestCase):
         finally:
             loop.close()
             WebSocketServerManager.reset_instance()
+
+
+class TestQloraFlag(unittest.TestCase):
+    """--qlora must be switchable off from the CLI (it used to be store_true with default True)."""
+
+    def _build_parser(self):
+        """Rebuild an argparse parser from auto_train.py's real --qlora add_argument call (AST-extracted)."""
+        import argparse
+        import ast
+        src = Path(__file__).resolve().parent.parent.joinpath("auto_train.py").read_text(encoding="utf-8")
+        for node in ast.walk(ast.parse(src)):
+            if (isinstance(node, ast.Call) and node.args and isinstance(node.args[0], ast.Constant)
+                    and node.args[0].value == "--qlora"):
+                parser = argparse.ArgumentParser()
+                expr = ast.Expression(ast.Call(
+                    func=ast.Attribute(ast.Name("parser", ast.Load()), "add_argument", ast.Load()),
+                    args=node.args, keywords=node.keywords))
+                eval(compile(ast.fix_missing_locations(expr), "qlora", "eval"), {"parser": parser, "argparse": argparse})
+                return parser
+        raise AssertionError("--qlora argument not found")
+
+    def test_default_on_and_no_qlora_turns_off(self):
+        """Default stays True for existing callers; --no-qlora yields False."""
+        parser = self._build_parser()
+        self.assertTrue(parser.parse_args([]).qlora)
+        self.assertFalse(parser.parse_args(["--no-qlora"]).qlora)
 
 
 if __name__ == "__main__":
