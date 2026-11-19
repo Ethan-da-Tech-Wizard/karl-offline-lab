@@ -518,6 +518,9 @@ class KarlSidebarProvider {
     }
 
     /**
+     // Single exit path for every kind of connection loss (socket error, close, auth rejection). It always
+     // tears the socket down first so no stale listener can fire a second time, then decides whether to
+     // retry. isError distinguishes a failed connect attempt (backend probably down) from a normal close.
      * Handles connection disconnect and auto-reconnection.
      * @param {boolean} [isError]
      * @private
@@ -528,6 +531,7 @@ class KarlSidebarProvider {
         // Show the failure immediately; the countdown label replaces it just below if a retry is scheduled.
         this._setConnectionState('offline', isError ? 'Error' : 'Offline');
 
+        // karl.autoConnect (default true) is the user's opt-in for automatic reconnection and backend start.
         const config = vscode.workspace.getConfiguration('karl');
         const autoConnect = config.get('autoConnect', true);
 
@@ -537,6 +541,8 @@ class KarlSidebarProvider {
             this.startBackendHeadless();
         }
 
+        // Three conditions must all hold to schedule a retry: user wants auto-connect, they did not press
+        // Disconnect, and no retry timer is already counting down (prevents stacked timers).
         if (autoConnect && !this.manualDisconnect && !this.reconnectTimer) {
             // Retry in 5 seconds with a visible countdown in the connection label.
             let nextReconnectSec = 5;
@@ -548,6 +554,7 @@ class KarlSidebarProvider {
                 if (nextReconnectSec <= 0) {
                     clearInterval(this.reconnectTimer);
                     this.reconnectTimer = null;
+                    // The port setting is re-read at fire time so a change made during the countdown takes effect.
                     const port = config.get('port', 8080);
                     this.connectToBridge(port);
                 } else {
@@ -561,9 +568,12 @@ class KarlSidebarProvider {
      * Spawns the Karl Python backend in headless mode.
      */
     startBackendHeadless() {
+        // _startingBackend is a re-entrancy guard: connection errors can arrive in bursts and each one
+        // would otherwise spawn another Python process.
         if (this._startingBackend) return;
         this._startingBackend = true;
 
+        // Required lazily: only needed on the rare auto-start path.
         // Required lazily: only needed on the rare auto-start path.
         const cp = require('child_process');
         const fs = require('fs');
@@ -583,8 +593,11 @@ class KarlSidebarProvider {
             return;
         }
 
+        // Default to the system interpreter; replaced below when the repo has its own venv.
         let pythonPath = pythonBin;
         // Prefer the project's virtualenv so the backend's dependencies are found.
+        // POSIX venv layout (bin/python); a Windows venv uses Scripts\python.exe and is not detected here,
+        // so Windows users fall back to the global "python" interpreter.
         const venvPy = path.join(karlRoot, 'venv', 'bin', 'python');
         if (fs.existsSync(venvPy)) {
             pythonPath = venvPy;
@@ -600,6 +613,8 @@ class KarlSidebarProvider {
                 stdio: 'ignore'
             });
             child.unref();
+            // User-visible confirmation, because the backend takes several seconds to open its port; the
+            // reconnect countdown then connects automatically.
             vscode.window.showInformationMessage('Karl: Starting backend server in the background...');
         } catch (err) {
             console.error('[Karl] Failed to spawn backend:', err);
@@ -617,10 +632,12 @@ class KarlSidebarProvider {
      * @private
      */
     _startHeartbeat() {
+        // Stop any previous timer first so reconnects never leave two heartbeat loops running.
         this._stopHeartbeat();
 
         // Immediate first ping so the status panel does not wait 4 s for its first heartbeat.
         this._sendHeartbeatRpc();
+        // 4 s is short enough to notice a dead backend within a few seconds yet cheap (one tiny JSON-RPC call).
         this.heartbeatTimer = setInterval(() => {
             this._sendHeartbeatRpc();
         }, 4000);
@@ -642,6 +659,7 @@ class KarlSidebarProvider {
      * @private
      */
     _sendHeartbeatRpc() {
+        // Only send on an OPEN socket; sending on a closing socket would throw inside the timer callback.
         if (this.socket && this.socket.readyState === WebSocket.OPEN) {
             this.socket.send(JSON.stringify({
                 jsonrpc: '2.0',
@@ -660,7 +678,10 @@ class KarlSidebarProvider {
      */
     _setConnectionState(state, label) {
         // Cached so a webview that loads later ('ready') can be brought up to date.
+        // Cached so a webview that loads later ('ready') can be brought up to date.
         this.connectionState = state;
+        // The webview renders this as the connection badge (colour from `state`, text from `label`) and the
+        // tooltip lines (last connected, last heartbeat, last error).
         this.postMessageToWebview({
             command: 'connection_state',
             state,
@@ -683,6 +704,7 @@ class KarlSidebarProvider {
     /**
      * Release every resource (socket, watcher, queues) when the extension shuts down.
      */
+    // Called from extension.js deactivate(); leaves nothing running that could outlive the extension host.
     dispose() {
         this.teardownSocket();
         if (this._gitWatcher) {
@@ -705,6 +727,7 @@ class KarlSidebarProvider {
     waitForWebview() {
         // Callers can await this before posting a message that must not be queued.
         if (this.isReady) return Promise.resolve();
+        // The resolver is stored so the 'ready' handler can call it later; only one waiter is supported.
         return new Promise(resolve => {
             this._resolveWebview = resolve;
         });
@@ -743,11 +766,14 @@ class KarlSidebarProvider {
 
         // Dispatcher for messages from the webview page. Each ``command`` maps to a host action.
         // async handler: each command may await VS Code APIs; errors inside a case propagate to the host log.
+        // The webview <-> host protocol is a plain {command, ...} message. Cases that call into the review
+        // queue (preview/apply/reject/...) take an editId that the webview received in 'pending_file_edit'.
         webviewView.webview.onDidReceiveMessage(async message => {
             switch (message.command) {
                 // Page loaded: send connection status, the saved review queue and swarm history, then flush queued messages
                 // and release anyone waiting in waitForWebview().
                 case 'ready':
+                    // From here on postMessageToWebview() delivers immediately instead of queueing.
                     this.isReady = true;
                     
                     // Sync current connection status
@@ -792,9 +818,11 @@ class KarlSidebarProvider {
                 case 'persist_state':
                     await this.context.workspaceState.update('karl.sidebarState', message.state || {});
                     break;
+                // Information toast: used by the page for non-error feedback (e.g. "branch created").
                 case 'show_message':
                     vscode.window.showInformationMessage(message.text);
                     break;
+                // Error toast: used for validation problems the page detects (empty prompt, disconnected, ...).
                 case 'show_error':
                     vscode.window.showErrorMessage(message.text);
                     break;
@@ -802,6 +830,7 @@ class KarlSidebarProvider {
                 case 'run_command':
                     await vscode.commands.executeCommand(message.commandId);
                     break;
+                // The two chooser commands open native file/folder pickers; the webview itself cannot show OS dialogs.
                 case 'choose_kb_file':
                     await this.chooseKbFile();
                     break;
@@ -828,6 +857,8 @@ class KarlSidebarProvider {
                         }
                     }
                     break;
+                // Review-queue actions. preview opens a diff; apply writes the file; reject drops the edit; the
+                // *_all variants act on the entire queue. All of them are keyed by the editId from queueFileEdit.
                 case 'preview_file':
                     await this.previewFile(message.editId);
                     break;
@@ -840,6 +871,8 @@ class KarlSidebarProvider {
                 case 'reject_all_files':
                     this.rejectAllFiles();
                     break;
+                // open/copy/rollback act on an edit that was already applied: open the file in an editor, copy its
+                // path, or restore the pre-edit content that was saved when it was applied.
                 case 'open_file':
                     await this.openFile(message.editId);
                     break;
@@ -849,6 +882,7 @@ class KarlSidebarProvider {
                 case 'rollback_applied_file':
                     await this.rollbackAppliedFile(message.editId);
                     break;
+                // Batch actions: open every pending diff, or put a plain-text summary of all edits on the clipboard.
                 case 'preview_all_files':
                     await this.previewAllFiles();
                     break;
@@ -866,6 +900,7 @@ class KarlSidebarProvider {
                 case 'record_swarm_run':
                     this.recordSwarmRun(message.run);
                     break;
+                // Restores files from the swarm backup manifest after user confirmation (see rollbackSwarmRun).
                 case 'rollback_swarm_run':
                     await this.rollbackSwarmRun(message.runId);
                     break;
@@ -874,14 +909,18 @@ class KarlSidebarProvider {
                 case 'runWorkflow':
                     await runWorkflowById(this, message.workflowId, message.payload);
                     break;
+                // The page asks for fresh editor state (active file, diagnostics, git branch) after switching tabs.
                 case 'get_cockpit_state':
                     await sendActiveStateToWebview(this);
                     break;
+                // Jump to a diagnostic's line/column in the real editor when the user clicks it in the panel.
                 case 'open_diagnostic_line':
                     await this.openDiagnosticLine(message.filepath, message.line, message.character);
                     break;
 
                 // manualDisconnect=false re-enables auto-reconnect after the user pressed Disconnect earlier.
+                // 'connect' is sent by the Connect button; message.port may be undefined, in which case
+                // connectToBridge falls back to discovery or settings.
                 case 'connect':
                     this.manualDisconnect = false;
                     this.connectToBridge(message.port);
@@ -894,6 +933,7 @@ class KarlSidebarProvider {
                     this._setConnectionState('offline', 'Offline');
                     break;
                 // Forward a raw JSON-RPC payload over the host's own socket (used by the host-relay mode).
+                // Relay used only in host-relay mode; in the default mode the webview talks to the bridge itself.
                 case 'rpc':
                     if (this.socket && this.socket.readyState === WebSocket.OPEN) {
                         this.socket.send(JSON.stringify(message.payload));
@@ -922,6 +962,7 @@ class KarlSidebarProvider {
      */
     postMessageToWebview(message) {
         // Before 'ready' the page's message listener does not exist yet, so posting now would lose the message.
+        // Before 'ready' the page's message listener does not exist yet, so posting now would lose the message.
         if (this.isReady && this.webviewView) {
             this.webviewView.webview.postMessage(message);
         } else {
@@ -930,6 +971,8 @@ class KarlSidebarProvider {
     }
 
     /**
+     // Review Bay entry point: both the Swarm file proposals (with swarmBatchId) and single-file chat
+     // edits go through here. Nothing is written to disk by this method; applyFile does that after approval.
      * Add a proposed edit to the review queue (status "proposed") and tell the webview.
      *
      * The current file content is read only to count lines for the size/risk display; a missing file counts as 0 lines.
@@ -940,6 +983,7 @@ class KarlSidebarProvider {
      * @returns {Promise<string | undefined>} the new edit id, or undefined for an invalid payload
      */
     async queueFileEdit(filepath, content, summary = '', meta = {}) {
+        // Reject malformed payloads loudly: a silent drop would leave the user waiting for an edit that never arrives.
         if (!filepath || typeof content !== 'string') {
             vscode.window.showErrorMessage('Karl sent an invalid file edit payload.');
             return;
@@ -948,10 +992,12 @@ class KarlSidebarProvider {
         // Not cryptographic: ids only need to be unique within one workspace's queue.
         const editId = `${Date.now()}-${Math.random().toString(16).slice(2)}`;
         const filename = path.basename(filepath);
+        // `previous` stays empty for a new file; that case is handled as 0 old lines below.
         let previous = '';
         try {
             const fileUri = vscode.Uri.file(filepath);
 
+            // stat() throws for missing files; wrapping it is the standard VS Code way to test existence.
             // stat() throws for missing files; wrapping it is the standard VS Code way to test existence.
             let fileExists = false;
             try {
@@ -964,6 +1010,7 @@ class KarlSidebarProvider {
             } else {
                 previous = '';
             }
+        // Any read failure (permissions, binary file, ...) degrades to "unknown old content", never to an exception.
         } catch {
             previous = '';
         }
@@ -973,6 +1020,7 @@ class KarlSidebarProvider {
         const newLines = content ? content.split(/\r?\n/).length : 0;
 
         // Full proposed content is kept in memory (not in the message) so apply/preview can run without another round trip.
+        // status moves proposed -> previewed/approved -> applied or rejected through the other methods.
         this.pendingEdits.set(editId, {
             filepath,
             content,
@@ -983,8 +1031,10 @@ class KarlSidebarProvider {
             status: 'proposed',
             swarmBatchId: meta.swarmBatchId || null,
         });
+        // Persist right away so a window reload does not lose the queue.
         this._savePendingEdits();
 
+        // Only metadata goes to the webview (size, line counts), never the whole file content.
         this.postMessageToWebview({
             command: 'pending_file_edit',
             edit: {
@@ -1000,6 +1050,7 @@ class KarlSidebarProvider {
                 swarmBatchId: meta.swarmBatchId || null
             }
         });
+        // Refresh cockpit counters (number of pending edits) in the sidebar header.
         sendActiveStateToWebview(this);
         return editId;
     }
